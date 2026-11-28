@@ -87,7 +87,7 @@ export function makeIdentity(now: Date = new Date()): LinkIdentity {
   const der = sequence(tbs, ECDSA_SHA256, tlv(0x03, Buffer.from([0]), signature));
   const body = der.toString("base64").replace(/.{1,64}/gu, "$&\n");
   return {
-    key: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+    key: privateKey.export({ type: "pkcs8", format: "pem" }),
     cert: `-----BEGIN CERTIFICATE-----\n${body}-----END CERTIFICATE-----\n`,
   };
 }
@@ -97,7 +97,9 @@ export function makeIdentity(now: Date = new Date()): LinkIdentity {
  * carries the computer's, and a phone is known by its own.
  */
 export function pinOf(key: KeyObject): string {
-  return createHash("sha256").update(key.export({ type: "spki", format: "der" })).digest("base64url");
+  return createHash("sha256")
+    .update(key.export({ type: "spki", format: "der" }))
+    .digest("base64url");
 }
 
 /** The pin of a certificate's key, or undefined when the text is no certificate. */

@@ -132,7 +132,10 @@ export function phoneBatch(batch: BatchMessage): BatchMessage {
     ...batch,
     events: batch.events.map((event) => ({
       ...event,
-      entities: event.entities.map((entity) => ({ ...entity, row: rowOf(entity.type, entity.row) })),
+      entities: event.entities.map((entity) => ({
+        ...entity,
+        row: rowOf(entity.type, entity.row),
+      })),
     })),
   };
 }

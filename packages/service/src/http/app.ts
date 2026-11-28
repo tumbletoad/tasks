@@ -330,9 +330,7 @@ export class HttpApp {
       // A page's feed lives with its sign-in, a phone's (link/) with its pairing.
       live: (grant) => {
         const row = options.grants.get(grant);
-        return row?.kind === "device"
-          ? isLive(row, this.#date())
-          : this.#live(row) !== undefined;
+        return row?.kind === "device" ? isLive(row, this.#date()) : this.#live(row) !== undefined;
       },
       instances: (space) => this.launches.instances(space),
       ...(options.machine === undefined

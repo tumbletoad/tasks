@@ -45,7 +45,8 @@ describe("[S5.link.cert] the link's certificates and the computer's key file", (
     const dir = temp.root;
     const first = loadOrCreateHome(dir);
     expect(loadOrCreateHome(dir).pin).toBe(first.pin);
-    if (process.platform !== "win32") expect(statSync(join(dir, "link.json")).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32")
+      expect(statSync(join(dir, "link.json")).mode & 0o777).toBe(0o600);
     writeFileSync(join(dir, "link.json"), "{}");
     expect(loadOrCreateHome(dir).pin).not.toBe(first.pin);
   });
@@ -59,7 +60,7 @@ describe("[S5.link.rows] a phone's rows name nothing of the computer", () => {
       title: "Fixture",
       place: { state: "here" as const },
       last: { open: "codex" },
-      run: { id: "ru_1", state: "running", instance: "codex" },
+      run: { id: "ru_1", state: "working" as const, instance: "codex" },
       questions: [{ ref: "l1", by: "codex", instance: "codex", text: "Fixture?", at: 1 }],
       some_new_field: "not yet named",
     };
@@ -67,7 +68,7 @@ describe("[S5.link.rows] a phone's rows name nothing of the computer", () => {
       id: "tk_1",
       ref: "M-1",
       title: "Fixture",
-      run: { id: "ru_1", state: "running" },
+      run: { id: "ru_1", state: "working" },
       questions: [{ ref: "l1", by: "codex", text: "Fixture?", at: 1 }],
     });
     const batch = phoneBatch({
@@ -85,7 +86,10 @@ describe("[S5.link.rows] a phone's rows name nothing of the computer", () => {
           request_id: "r",
           actor: { kind: "human", label: "user" },
           kind: "task.add",
-          entities: [{ type: "task", id: "tk_1", row, changed: [] }, { type: "note", id: "n", row: null, changed: [] }],
+          entities: [
+            { type: "task", id: "tk_1", row, changed: [] },
+            { type: "note", id: "n", row: null, changed: [] },
+          ],
         },
       ],
     });
@@ -94,7 +98,18 @@ describe("[S5.link.rows] a phone's rows name nothing of the computer", () => {
   });
 
   test("private, link-local and loopback addresses are let in; public ones are not", () => {
-    for (const a of ["10.1.2.3", "172.20.0.1", "192.168.1.20", "100.101.1.2", "169.254.1.1", "127.0.0.1", "::ffff:192.168.0.2", "fd12::1", "fe80::1", "::1"]) {
+    for (const a of [
+      "10.1.2.3",
+      "172.20.0.1",
+      "192.168.1.20",
+      "100.101.1.2",
+      "169.254.1.1",
+      "127.0.0.1",
+      "::ffff:192.168.0.2",
+      "fd12::1",
+      "fe80::1",
+      "::1",
+    ]) {
       expect({ a, ok: isPrivateAddress(a) }).toEqual({ a, ok: true });
     }
     for (const a of ["8.8.8.8", "172.32.0.1", "100.128.0.1", "2001:db8::1", ""]) {

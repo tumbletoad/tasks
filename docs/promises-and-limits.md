@@ -431,7 +431,7 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Task text cannot run scripts or load remote images.
 - A website you visit cannot read or change your tasks through the page.
 - Logs hold no task text, and there is no telemetry. Task text leaves TTasks only where you send it:
-  what you copy, and what an agent reads through its connection.
+  what you copy, what an agent reads through its connection, and what a phone you paired reads.
 - What you type in the top field, a search included, stays out of the page's address, so a copied
   link and the browser's history list hold the search page but not your words. A reload, Back and
   Forward bring the search back in that tab; the search's link opened in another tab is an empty
@@ -439,6 +439,22 @@ the behaviour it describes, and keep each one to a sentence or two.
 - The generated folder of readable files is not where tasks are stored. A file you edit or add
   there is kept or moved to a rescue folder, never deleted. A generated file that goes missing,
   removed by hand or by a sync, is written again within seconds while TTasks runs.
+
+## Your phone
+
+- A phone reaches this computer only after you paired it with a code from Settings > Phones. The
+  code works once, until its dialog closes or for five minutes. Anyone who sees the code and is on
+  your network can use it first, which is why the dialog says so.
+- Before it sends anything, the phone checks that it reached the computer whose key the code
+  carried. A device on your network that is not paired gets no answer, and learns only that a
+  port is open.
+- A paired phone reads and edits the one space it was paired for, and nothing of this computer:
+  not its folders, its agent apps or its backups. It never starts or stops an agent unless you
+  switch Run on for that phone, and nothing it asks is kept to run later.
+- Remove ends the phone's access at once and closes its connection. A removed phone that comes
+  back within 30 days is told so.
+- A capture the phone sends again after its answer was lost, also after you removed and paired
+  the same phone again, makes one task.
 
 ## Installing and updating
 
@@ -492,6 +508,11 @@ the behaviour it describes, and keep each one to a sentence or two.
 
 ## Where the protection stops
 
+- What a phone read stays on it until it reaches this computer again and is told it was removed.
+  A lost phone that never comes back keeps what it read.
+- A phone listens to no one but the computer it paired with, but this computer's listener for
+  phones is open on your private network while a phone is paired, a code waits or a phone was
+  removed in the last 30 days, and shows its certificate to anyone who connects.
 - A program that runs as you, or an administrator of the machine, can read and change your
   spaces. TTasks guards against mistakes and against agents that are misled, not against software
   on your own machine that works against it on purpose.

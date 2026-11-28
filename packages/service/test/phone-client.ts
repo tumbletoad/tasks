@@ -40,9 +40,16 @@ export function readPairing(text: string): Pairing {
 export interface PhoneLink {
   readonly ws: WebSocket;
   readonly messages: Record<string, unknown>[];
-  next(match?: (m: Record<string, unknown>) => boolean, ms?: number): Promise<Record<string, unknown>>;
+  next(
+    match?: (m: Record<string, unknown>) => boolean,
+    ms?: number,
+  ): Promise<Record<string, unknown>>;
   /** One call: its reply's status and body. */
-  call(path: string, body: unknown, copy?: string): Promise<{ status: number; body: Record<string, unknown> }>;
+  call(
+    path: string,
+    body: unknown,
+    copy?: string,
+  ): Promise<{ status: number; body: Record<string, unknown> }>;
   send(message: unknown): void;
   readonly closed: Promise<number>;
 }
@@ -146,7 +153,9 @@ export async function openLink(
     call: async (path, body, copy) => {
       calls += 1;
       const id = `c${String(calls)}`;
-      ws.send(JSON.stringify({ type: "call", id, path, body, ...(copy === undefined ? {} : { copy }) }));
+      ws.send(
+        JSON.stringify({ type: "call", id, path, body, ...(copy === undefined ? {} : { copy }) }),
+      );
       const reply = await next((m) => m["type"] === "reply" && m["id"] === id);
       return { status: reply["status"] as number, body: reply["body"] as Record<string, unknown> };
     },

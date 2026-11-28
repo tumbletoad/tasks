@@ -183,7 +183,10 @@ export class LinkService {
     const since = this.#options.now() - REMOVED_TOLD_MS;
     return this.#options.grants
       .list("device")
-      .some((g) => isLive(g, this.#date()) || (g.revoked_at !== null && Date.parse(g.revoked_at) > since));
+      .some(
+        (g) =>
+          isLive(g, this.#date()) || (g.revoked_at !== null && Date.parse(g.revoked_at) > since),
+      );
   }
 
   get port(): number | undefined {
@@ -219,18 +222,16 @@ export class LinkService {
   /** The paired phones, and what became of the code `ticket` when one is named. */
   view(input: Record<string, unknown>): { phones: PhoneView[]; pairing?: PairingState } {
     const names = new Map(this.#options.ops.spaces().map((s) => [s.id, s.name]));
-    const phones = this.#phones().map(
-      (g): PhoneView => ({
-        id: g.grant_id,
-        name: typeof g.attrs["name"] === "string" ? g.attrs["name"] : "",
-        platform: typeof g.attrs["platform"] === "string" ? g.attrs["platform"] : "",
-        space: g.spaces[0] ?? "",
-        space_name: names.get(g.spaces[0]) ?? null,
-        paired_at: g.created_at,
-        last_used_at: g.last_used_at,
-        run: g.scopes.includes(RUN_SCOPE),
-      }),
-    );
+    const phones = this.#phones().map((g): PhoneView => ({
+      id: g.grant_id,
+      name: typeof g.attrs["name"] === "string" ? g.attrs["name"] : "",
+      platform: typeof g.attrs["platform"] === "string" ? g.attrs["platform"] : "",
+      space: g.spaces[0] ?? "",
+      space_name: names.get(g.spaces[0]) ?? null,
+      paired_at: g.created_at,
+      last_used_at: g.last_used_at,
+      run: g.scopes.includes(RUN_SCOPE),
+    }));
     const ticket = input["ticket"];
     if (typeof ticket !== "string") return { phones };
     return { phones, pairing: this.#pairingState(ticket) };
@@ -276,7 +277,9 @@ export class LinkService {
     const code = this.#codes.mint(ticket, now);
     this.#tickets.set(ticket, { space: space.id, expires: now + PAIRING_MS });
     const port = this.#port;
-    const addresses = (this.#options.addresses ?? privateAddresses)().map((a) => `${a}:${port}`);
+    const addresses = (this.#options.addresses ?? privateAddresses)().map(
+      (a) => `${a}:${String(port)}`,
+    );
     const payload = {
       v: LINK_PROTOCOL,
       addrs: addresses,
@@ -304,7 +307,10 @@ export class LinkService {
     if (typeof run !== "boolean") {
       throw new AppError({ code: "invalid_input", message: "Expected run: true or false." });
     }
-    this.#options.grants.setScopes(grant.grant_id, run ? [...EDIT_SCOPES, RUN_SCOPE] : [...EDIT_SCOPES]);
+    this.#options.grants.setScopes(
+      grant.grant_id,
+      run ? [...EDIT_SCOPES, RUN_SCOPE] : [...EDIT_SCOPES],
+    );
     return { run };
   }
 
@@ -386,7 +392,11 @@ export class LinkService {
         this.#session(ws, pin);
       });
     });
-    const ports = this.#options.ports ?? [...(home.port === undefined ? [] : [home.port]), LINK_PORT, 0];
+    const ports = this.#options.ports ?? [
+      ...(home.port === undefined ? [] : [home.port]),
+      LINK_PORT,
+      0,
+    ];
     for (const port of ports) {
       const bound = await new Promise<boolean>((resolve, reject) => {
         const failed = (error: NodeJS.ErrnoException) => {
@@ -599,7 +609,10 @@ export class LinkService {
       const body = message["body"] ?? {};
       const copy = message["copy"];
       if (!validId || typeof path !== "string" || !isRecord(body)) {
-        throw new AppError({ code: "invalid_input", message: "A call needs an ID, a path and a body." });
+        throw new AppError({
+          code: "invalid_input",
+          message: "A call needs an ID, a path and a body.",
+        });
       }
       if (copy !== undefined && (typeof copy !== "string" || !/^[0-9a-f]{24}$/u.test(copy))) {
         throw new AppError({ code: "invalid_input", message: "A copy is 24 hex characters." });
@@ -637,7 +650,11 @@ export class LinkService {
         throw new AppError({ code: "not_found", message: "Nothing is here." });
       }
       const needs =
-        entry.remote === "read" ? "space:read" : entry.remote === "write" ? "space:write" : undefined;
+        entry.remote === "read"
+          ? "space:read"
+          : entry.remote === "write"
+            ? "space:write"
+            : undefined;
       if (needs === undefined || !scopes.includes(needs)) {
         throw forbidden("A phone cannot do this. Use TTasks on the computer.", "phone_rights");
       }

@@ -7,7 +7,14 @@ import { afterEach, describe, expect, test } from "vitest";
 import { LINK_PATH, PAIRING_MS } from "../src/link/service.ts";
 import { post } from "./http-client.ts";
 import { httpWorld, signIn, type HttpWorld } from "./http-world.ts";
-import { openLink, phoneKey, readPairing, tlsTo, type Pairing, type PhoneKey } from "./phone-client.ts";
+import {
+  openLink,
+  phoneKey,
+  readPairing,
+  tlsTo,
+  type Pairing,
+  type PhoneKey,
+} from "./phone-client.ts";
 
 const SLOW = { timeout: 300_000 };
 
@@ -21,7 +28,10 @@ interface Page {
   readonly token: string;
   /** Moves the service's clock on. */
   advance(ms: number): void;
-  machine(action: string, body: unknown): Promise<{ status: number; result: Record<string, unknown> }>;
+  machine(
+    action: string,
+    body: unknown,
+  ): Promise<{ status: number; result: Record<string, unknown> }>;
   /** A new code for the space Mira. */
   code(): Promise<{ pairing: Pairing; ticket: string }>;
 }
@@ -43,7 +53,7 @@ async function page(label: string): Promise<Page> {
   const machine = async (action: string, body: unknown) => {
     const reply = await post(world.port(), `/api/v1/machine/${action}`, body, { token });
     const parsed = JSON.parse(reply.body) as { result?: Record<string, unknown> };
-    return { status: reply.status, result: parsed.result ?? (parsed as Record<string, unknown>) };
+    return { status: reply.status, result: parsed.result ?? parsed };
   };
   return {
     world,
@@ -75,39 +85,56 @@ async function paired(p: Page, key: PhoneKey = phoneKey()) {
   return { key, pairing, ticket, link: opened.link, hello: opened.hello };
 }
 
-const searchCount = async (link: { call: (p: string, b: unknown) => Promise<{ body: Record<string, unknown> }> }, q: string) => {
+const searchCount = async (
+  link: { call: (p: string, b: unknown) => Promise<{ body: Record<string, unknown> }> },
+  q: string,
+) => {
   const found = await link.call("/api/v1/op/task.search", { q: `"${q}"` });
   const result = found.body["result"] as { tasks?: unknown[]; rows?: unknown[] } | undefined;
   return (result?.tasks ?? result?.rows ?? []).length;
 };
 
 describe("[S5.link.pairing] a phone pairs with a code from Settings > Phones, once", () => {
-  test("the code pairs one phone, is spent, and Settings lists the phone with Run off", SLOW, async () => {
-    const p = await page("link-pair");
-    const { pairing, ticket, hello, key } = await paired(p);
-    expect(pairing.space.name).toBe("Mira");
-    expect(hello["link"]).toMatchObject({ space: { id: pairing.space.id, name: "Mira" }, run: false });
-    const view = await p.machine("phones", { ticket });
-    expect(view.result["pairing"]).toMatchObject({ state: "paired" });
-    expect(view.result["phones"]).toEqual([
-      expect.objectContaining({ name: "Test phone", platform: "android", space_name: "Mira", run: false }),
-    ]);
-    // The same code a second time, by another phone: refused, with no answer.
-    const again = await openLink(addrOf(pairing), pairing.pin, phoneKey(), {
-      space: pairing.space.id,
-      pair: { code: pairing.code },
-    });
-    expect(again.kind).toBe("refused");
-    // The paired phone comes back without a code.
-    const back = await openLink(addrOf(pairing), pairing.pin, key, { space: pairing.space.id });
-    expect(back.kind).toBe("served");
-  });
+  test(
+    "the code pairs one phone, is spent, and Settings lists the phone with Run off",
+    SLOW,
+    async () => {
+      const p = await page("link-pair");
+      const { pairing, ticket, hello, key } = await paired(p);
+      expect(pairing.space.name).toBe("Mira");
+      expect(hello["link"]).toMatchObject({
+        space: { id: pairing.space.id, name: "Mira" },
+        run: false,
+      });
+      const view = await p.machine("phones", { ticket });
+      expect(view.result["pairing"]).toMatchObject({ state: "paired" });
+      expect(view.result["phones"]).toEqual([
+        expect.objectContaining({
+          name: "Test phone",
+          platform: "android",
+          space_name: "Mira",
+          run: false,
+        }),
+      ]);
+      // The same code a second time, by another phone: refused, with no answer.
+      const again = await openLink(addrOf(pairing), pairing.pin, phoneKey(), {
+        space: pairing.space.id,
+        pair: { code: pairing.code },
+      });
+      expect(again.kind).toBe("refused");
+      // The paired phone comes back without a code.
+      const back = await openLink(addrOf(pairing), pairing.pin, key, { space: pairing.space.id });
+      expect(back.kind).toBe("served");
+    },
+  );
 
   test("a code ends when its dialog closes, and after five minutes", SLOW, async () => {
     const p = await page("link-code-end");
     const first = await p.code();
     await p.machine("phone_pair", { end: first.ticket });
-    expect((await p.machine("phones", { ticket: first.ticket })).result["pairing"]).toEqual({ state: "ended" });
+    expect((await p.machine("phones", { ticket: first.ticket })).result["pairing"]).toEqual({
+      state: "ended",
+    });
     const closed = await openLink(addrOf(first.pairing), first.pairing.pin, phoneKey(), {
       space: first.pairing.space.id,
       pair: { code: first.pairing.code },
@@ -124,101 +151,131 @@ describe("[S5.link.pairing] a phone pairs with a code from Settings > Phones, on
 });
 
 describe("[S5.link.pin] the phone checks the computer's key before it sends anything", () => {
-  test("the scanned pin is accepted; another key at the address is refused before a byte", SLOW, async () => {
-    const p = await page("link-pin");
-    const { pairing } = await p.code();
-    const right = await tlsTo(addrOf(pairing), pairing.pin, phoneKey());
-    expect(right.pinned).toBe(true);
-    right.socket.destroy();
-    // The phone holds a pin of another computer: it closes the connection and writes nothing.
-    const other = phoneKey().pin;
-    const opened = await openLink(addrOf(pairing), other, phoneKey(), {
-      space: pairing.space.id,
-      pair: { code: pairing.code },
-    });
-    expect(opened.kind).toBe("pin_rejected");
-    // The code was never sent, so it still pairs the right phone.
-    const later = await openLink(addrOf(pairing), pairing.pin, phoneKey(), {
-      space: pairing.space.id,
-      pair: { code: pairing.code },
-    });
-    expect(later.kind).toBe("served");
-  });
+  test(
+    "the scanned pin is accepted; another key at the address is refused before a byte",
+    SLOW,
+    async () => {
+      const p = await page("link-pin");
+      const { pairing } = await p.code();
+      const right = await tlsTo(addrOf(pairing), pairing.pin, phoneKey());
+      expect(right.pinned).toBe(true);
+      right.socket.destroy();
+      // The phone holds a pin of another computer: it closes the connection and writes nothing.
+      const other = phoneKey().pin;
+      const opened = await openLink(addrOf(pairing), other, phoneKey(), {
+        space: pairing.space.id,
+        pair: { code: pairing.code },
+      });
+      expect(opened.kind).toBe("pin_rejected");
+      // The code was never sent, so it still pairs the right phone.
+      const later = await openLink(addrOf(pairing), pairing.pin, phoneKey(), {
+        space: pairing.space.id,
+        pair: { code: pairing.code },
+      });
+      expect(later.kind).toBe("served");
+    },
+  );
 });
 
 describe("[S5.link.unpaired] a peer that is not paired learns nothing", () => {
-  test("no client certificate, another path, plain HTTP, or no grant: closed with no answer", SLOW, async () => {
-    const p = await page("link-unpaired");
-    const { pairing } = await p.code();
-    const [host = "", port = "0"] = addrOf(pairing).split(":");
-    const exchange = (key: PhoneKey | undefined, request: string) =>
-      new Promise<string>((resolve) => {
-        const socket = connect({
-          host,
-          port: Number(port),
-          rejectUnauthorized: false,
-          minVersion: "TLSv1.3",
-          ...(key === undefined ? {} : { key: key.key, cert: key.cert }),
+  test(
+    "no client certificate, another path, plain HTTP, or no grant: closed with no answer",
+    SLOW,
+    async () => {
+      const p = await page("link-unpaired");
+      const { pairing } = await p.code();
+      const [host = "", port = "0"] = addrOf(pairing).split(":");
+      const exchange = (key: PhoneKey | undefined, request: string) =>
+        new Promise<string>((resolve) => {
+          const socket = connect({
+            host,
+            port: Number(port),
+            rejectUnauthorized: false,
+            minVersion: "TLSv1.3",
+            ...(key === undefined ? {} : { key: key.key, cert: key.cert }),
+          });
+          let got = "";
+          socket.on("data", (d: Buffer) => {
+            got += d.toString("latin1");
+          });
+          socket.on("secureConnect", () => {
+            socket.write(request);
+          });
+          socket.on("error", () => undefined);
+          socket.on("close", () => {
+            resolve(got);
+          });
         });
-        let got = "";
-        socket.on("data", (d: Buffer) => {
-          got += d.toString("latin1");
-        });
-        socket.on("secureConnect", () => {
-          socket.write(request);
-        });
-        socket.on("error", () => undefined);
-        socket.on("close", () => {
-          resolve(got);
-        });
+      const upgrade = (path: string) =>
+        `GET ${path} HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
+      expect(await exchange(undefined, upgrade(LINK_PATH))).toBe("");
+      expect(await exchange(phoneKey(), upgrade("/api/v1/op/task.get"))).toBe("");
+      expect(await exchange(phoneKey(), "GET / HTTP/1.1\r\nHost: x\r\n\r\n")).toBe("");
+      // A certificate and the right path, but no grant and no code: the open gets no message.
+      const stranger = await openLink(addrOf(pairing), pairing.pin, phoneKey(), {
+        space: pairing.space.id,
       });
-    const upgrade = (path: string) =>
-      `GET ${path} HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
-      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
-    expect(await exchange(undefined, upgrade(LINK_PATH))).toBe("");
-    expect(await exchange(phoneKey(), upgrade("/api/v1/op/task.get"))).toBe("");
-    expect(await exchange(phoneKey(), "GET / HTTP/1.1\r\nHost: x\r\n\r\n")).toBe("");
-    // A certificate and the right path, but no grant and no code: the open gets no message.
-    const stranger = await openLink(addrOf(pairing), pairing.pin, phoneKey(), { space: pairing.space.id });
-    expect(stranger.kind).toBe("refused");
-  });
+      expect(stranger.kind).toBe("refused");
+    },
+  );
 });
 
 describe("[S5.link.rights] what a paired phone may call, in its own space only", () => {
-  test("every registry entry by its remote class, runs watched, Run refused until switched on", SLOW, async () => {
-    const p = await page("link-rights");
-    const { link, hello } = await paired(p);
-    for (const entry of registry) {
-      const answer = await link.call(`/api/v1/op/${entry.name}`, {});
-      const rule = (answer.body["error"] as { data?: { rule?: string } } | undefined)?.data?.rule;
-      if (entry.remote === "never" || entry.remote === "execute") {
-        expect({ entry: entry.name, rule }).toEqual({ entry: entry.name, rule: "phone_rights" });
-      } else {
-        expect({ entry: entry.name, rule }).not.toEqual({ entry: entry.name, rule: "phone_rights" });
+  test(
+    "every registry entry by its remote class, runs watched, Run refused until switched on",
+    SLOW,
+    async () => {
+      const p = await page("link-rights");
+      const { link, hello } = await paired(p);
+      for (const entry of registry) {
+        const answer = await link.call(`/api/v1/op/${entry.name}`, {});
+        const rule = (answer.body["error"] as { data?: { rule?: string } } | undefined)?.data?.rule;
+        if (entry.remote === "never" || entry.remote === "execute") {
+          expect({ entry: entry.name, rule }).toEqual({ entry: entry.name, rule: "phone_rights" });
+        } else {
+          expect({ entry: entry.name, rule }).not.toEqual({
+            entry: entry.name,
+            rule: "phone_rights",
+          });
+        }
       }
-    }
-    for (const path of ["/api/v1/machine/apps", "/api/v1/space/list", "/api/v1/launch/folder", "/api/v1/auth/redeem"]) {
-      expect((await link.call(path, {})).status).toBe(404);
-    }
-    const runs = await link.call("/api/v1/launch/runs", { task: "nothing" });
-    expect((runs.body["error"] as { data?: { rule?: string } } | undefined)?.data?.rule).not.toBe("phone_rights");
-    const phone = (hello["link"] as { phone: string }).phone;
-    for (const path of ["/api/v1/launch/run", "/api/v1/launch/stop"]) {
-      const refused = await link.call(path, {});
-      expect(refused.status).toBe(403);
-      expect(refused.body["error"]).toMatchObject({ data: { rule: "phone_run" } });
-    }
-    expect((await p.machine("phone_rights", { phone, run: true })).result).toEqual({ run: true });
-    const allowed = await link.call("/api/v1/launch/run", {});
-    expect((allowed.body["error"] as { data?: { rule?: string } } | undefined)?.data?.rule).not.toBe("phone_run");
-    await p.machine("phone_rights", { phone, run: false });
-    expect((await link.call("/api/v1/launch/stop", {})).body["error"]).toMatchObject({ data: { rule: "phone_run" } });
-  });
+      for (const path of [
+        "/api/v1/machine/apps",
+        "/api/v1/space/list",
+        "/api/v1/launch/folder",
+        "/api/v1/auth/redeem",
+      ]) {
+        expect((await link.call(path, {})).status).toBe(404);
+      }
+      const runs = await link.call("/api/v1/launch/runs", { task: "nothing" });
+      expect((runs.body["error"] as { data?: { rule?: string } } | undefined)?.data?.rule).not.toBe(
+        "phone_rights",
+      );
+      const phone = (hello["link"] as { phone: string }).phone;
+      for (const path of ["/api/v1/launch/run", "/api/v1/launch/stop"]) {
+        const refused = await link.call(path, {});
+        expect(refused.status).toBe(403);
+        expect(refused.body["error"]).toMatchObject({ data: { rule: "phone_run" } });
+      }
+      expect((await p.machine("phone_rights", { phone, run: true })).result).toEqual({ run: true });
+      const allowed = await link.call("/api/v1/launch/run", {});
+      expect(
+        (allowed.body["error"] as { data?: { rule?: string } } | undefined)?.data?.rule,
+      ).not.toBe("phone_run");
+      await p.machine("phone_rights", { phone, run: false });
+      expect((await link.call("/api/v1/launch/stop", {})).body["error"]).toMatchObject({
+        data: { rule: "phone_run" },
+      });
+    },
+  );
 
   test("another space: no open, no subscription", SLOW, async () => {
     const p = await page("link-space");
     const { pairing, key, link } = await paired(p);
-    const elsewhere = await openLink(addrOf(pairing), pairing.pin, key, { space: "sp_0000000000000000000000000" });
+    const elsewhere = await openLink(addrOf(pairing), pairing.pin, key, {
+      space: "sp_0000000000000000000000000",
+    });
     expect(elsewhere.kind).toBe("refused");
     link.send({ type: "subscribe", space: "Other" });
     expect(await link.next((m) => m["type"] === "error")).toMatchObject({ code: "forbidden" });
@@ -235,9 +292,17 @@ describe("[S5.link.snapshot] a phone's feed carries the space's data and nothing
     });
     link.send({ type: "subscribe" });
     const snapshot = await link.next((m) => m["type"] === "snapshot");
-    expect(Object.keys(snapshot).sort()).toEqual(
-      ["agent_changes", "areas", "asking", "cursor", "preferences", "projects", "space", "tasks", "type"],
-    );
+    expect(Object.keys(snapshot).sort()).toEqual([
+      "agent_changes",
+      "areas",
+      "asking",
+      "cursor",
+      "preferences",
+      "projects",
+      "space",
+      "tasks",
+      "type",
+    ]);
     expect(Object.keys(snapshot["space"] as object).sort()).toEqual(
       expect.arrayContaining(["id", "name", "ref_prefix"]),
     );
