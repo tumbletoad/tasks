@@ -53,7 +53,7 @@ describe("[A1.3.16.prefs.read] the service reads preferences through the registr
     expect(reset.statuses.map((s) => s.status)).toEqual(["open", "waiting", "review", "backlog"]);
   });
 
-  test("the snapshot carries every space preference and flag; a batch names a changed one", async () => {
+  test("the snapshot carries every space preference; a batch names a changed one", async () => {
     const start = (await readHead(readerOf(fx.reader))).cursor.seq;
     const result = submit([{ kind: "pref.set", key: "tasks.dedupe_window_days", value: 7 }]);
     const snapshot = await readSnapshot(readerOf(fx.reader));
@@ -62,22 +62,15 @@ describe("[A1.3.16.prefs.read] the service reads preferences through the registr
       "tasks.effort_scale",
       "tasks.dedupe_window_days",
       "grouping.names",
-      "autonomy.level",
-      "autonomy.agent_tasks_to_inbox",
       "autonomy.overrides",
       "autonomy.areas",
-      "targets.default",
-      "projection.enabled",
-      "features.search_trigram",
     ]);
     expect(snapshot.preferences.find((p) => p.key === "tasks.dedupe_window_days")).toEqual({
       key: "tasks.dedupe_window_days",
       value: 7,
       state: "set",
     });
-    expect(snapshot.preferences.find((p) => p.key === "projection.enabled")).toEqual({
-      key: "projection.enabled",
-      value: true,
+    expect(snapshot.preferences.find((p) => p.key === "grouping.names")).toMatchObject({
       state: "default",
     });
     const { batch } = await readBatch(readerOf(fx.reader), start);
@@ -94,29 +87,25 @@ describe("[A1.3.16.prefs.read] the service reads preferences through the registr
   });
 
   test("readPreferences gives each declared key with its declaration, this machine's from machine.toml", async () => {
-    const { config } = parseMachineConfig(
-      '[preferences]\n"projection.dir" = "/srv/ttasks-view"\n',
-      "linux",
-    );
-    submit([{ kind: "pref.set", key: "features.search_trigram", value: true }]);
+    const { config } = parseMachineConfig('[preferences]\n"ui.theme" = "washi"\n', "linux");
+    submit([{ kind: "pref.set", key: "tasks.dedupe_window_days", value: 9 }]);
     const all = await readPreferences(readerOf(fx.reader), config);
-    expect(all.find((p) => p.key === "projection.dir")).toEqual({
-      key: "projection.dir",
-      value: "/srv/ttasks-view",
+    expect(all.find((p) => p.key === "ui.theme")).toEqual({
+      key: "ui.theme",
+      value: "washi",
       state: "set",
       scope: "machine",
       policy: false,
       writers: ["human"],
-      default: null,
+      default: "sumi",
       summary: expect.any(String) as string,
     });
-    expect(all.find((p) => p.key === "features.search_trigram")).toMatchObject({
-      value: true,
+    expect(all.find((p) => p.key === "tasks.dedupe_window_days")).toMatchObject({
+      value: 9,
       state: "set",
-      default: false,
-      flag: { stability: "preview" },
+      default: 30,
     });
-    expect(all.find((p) => p.key === "autonomy.level")).toMatchObject({
+    expect(all.find((p) => p.key === "autonomy.overrides")).toMatchObject({
       policy: true,
       writers: ["human"],
     });

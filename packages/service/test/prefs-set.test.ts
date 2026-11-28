@@ -250,17 +250,8 @@ describe("[A3.3.4.prefs.set] the person changes a space's settings, and everythi
     expect(await get("tasks.dedupe_window_days")).toBe(14);
   });
 
-  test("a key this build does not act on, an unknown key and a value that does not fit are refused", async () => {
+  test("an unknown key and a value that does not fit are refused", async () => {
     const before = await asOf();
-    expect(await refusal(set(person, "features.search_trigram", "true"))).toMatchObject({
-      code: "invalid_input",
-      message: "This build does not act on this key yet, so it is not changed.",
-    });
-    // A machine key nothing reads yet answers the same, not as a key no declaration has.
-    expect(await refusal(set(person, "projection.dir", "/srv/view"))).toMatchObject({
-      code: "invalid_input",
-      message: "This build does not act on this key yet, so it is not changed.",
-    });
     expect(await refusal(set(person, "tasks.statuss", "open"))).toMatchObject({
       code: "invalid_input",
       hint: "Did you mean tasks.statuses?",

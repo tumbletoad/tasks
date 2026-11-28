@@ -1,4 +1,4 @@
-// The preferences registry (A1 3.16): every preference and feature flag, declared once with its
+// The preferences registry (A1 3.16): every preference, declared once with its
 // value shape, its default, its scope (the space or this machine), its writers and whether it is a
 // policy key. The writer checks `pref.set` against it, machine.toml's `[preferences]` is read with
 // it, and every reader takes a stored value through `preferenceValue`, so no reader keeps a rule of
@@ -12,7 +12,6 @@
 //   bounded: lists, maps and text have a maximum.
 // - `null` is never a value: it resets a key to its default. A default may be null, meaning "none".
 // - A policy key has the human as its only writer (A3 3.8.2, R7).
-// - A feature flag lives under `features.` and is a boolean or an enum (A1 3.16).
 // - A key's name is never reused once removed: it moves to RETIRED_PREFERENCES.
 
 /** Plain JSON data, as a preference's value is stored. */
@@ -28,8 +27,6 @@ export type ValueShape =
   | { readonly type: "boolean" }
   | { readonly type: "integer"; readonly min: number; readonly max: number }
   | { readonly type: "text"; readonly max: number; readonly pattern?: RegExp }
-  /** An absolute path in either OS's form. machine.toml's reader adds the platform's own rule. */
-  | { readonly type: "path" }
   | {
       readonly type: "list";
       readonly item: ValueShape;
@@ -79,11 +76,9 @@ export interface PreferenceSpec {
   readonly stored?: true;
   /** One line for `describe` (A3 3.4.11). */
   readonly summary: string;
-  /** A feature flag (A1 3.16). A graduated flag stays readable and is ignored. */
-  readonly flag?: { readonly stability: "preview" | "graduated" };
 }
 
-/** A preference's name: dotted lower-case words, `features.search_trigram`. */
+/** A preference's name: dotted lower-case words, `ui.theme`. */
 export const PREFERENCE_KEY = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/;
 export const PREFERENCE_KEY_MAX = 64;
 /** The largest stored value, as JSON. Every shape stays far below it. */
@@ -161,8 +156,6 @@ const EFFORT_TIME: ValueShape = {
   },
 };
 const EFFORT_ABOUT: ValueShape = { type: "text", max: EFFORT_ABOUT_MAX };
-/** An instance's key in machine.toml (A4 3.2). */
-const INSTANCE_KEY = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 /** An area's or project's slug (A1 3.3). */
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 /** An autonomy action key: an operation kind, with the field for `task.patch` (A3 3.8.1). */
@@ -178,21 +171,8 @@ function pref(
   return { key, writers: ["human"], policy: false, schemaVer: 1, ...spec };
 }
 
-function flag(
-  key: string,
-  spec: { default: boolean; stability: "preview" | "graduated"; summary: string },
-): PreferenceSpec {
-  return pref(key, {
-    scope: "space",
-    shape: { type: "boolean" },
-    default: spec.default,
-    summary: spec.summary,
-    flag: { stability: spec.stability },
-  });
-}
-
 /**
- * Every preference and feature flag. Writers are the human unless a declaration lists the agent
+ * Every preference. Writers are the human unless a declaration lists the agent
  * too (A1 3.16: "An agent writes only keys whose declaration lists it").
  */
 export const PREFERENCES: readonly PreferenceSpec[] = [
@@ -264,20 +244,6 @@ export const PREFERENCES: readonly PreferenceSpec[] = [
     default: { area: "Area", project: "Project" },
     summary: "What the space calls its areas and projects",
   }),
-  pref("autonomy.level", {
-    scope: "space",
-    policy: true,
-    shape: { type: "enum", values: LEVELS },
-    default: "review",
-    summary: "What agents may change without the user: full, review or suggest",
-  }),
-  pref("autonomy.agent_tasks_to_inbox", {
-    scope: "space",
-    policy: true,
-    shape: { type: "boolean" },
-    default: false,
-    summary: "Tasks agents create go to the Inbox, at every level",
-  }),
   pref("autonomy.overrides", {
     scope: "space",
     policy: true,
@@ -297,34 +263,17 @@ export const PREFERENCES: readonly PreferenceSpec[] = [
     default: {},
     summary: "Per area or project slug: its own level; the nearest wins",
   }),
-  pref("targets.default", {
-    scope: "space",
-    policy: true,
-    shape: { type: "text", max: 64, pattern: INSTANCE_KEY },
-    default: null,
-    summary: "The instance Open uses when none is chosen: a key of machine.toml, never a command",
-  }),
-  pref("projection.enabled", {
-    scope: "space",
-    shape: { type: "boolean" },
-    default: true,
-    summary: "Keep the generated folder of readable files",
-  }),
-  pref("projection.dir", {
-    scope: "machine",
-    shape: { type: "path" },
-    default: null,
-    summary: "Where this machine writes the readable files; none is inside the space folder",
-  }),
-  flag("features.search_trigram", {
-    default: false,
-    stability: "preview",
-    summary: "Substring search through a trigram index",
-  }),
 ];
 
 /** Names of removed preferences. A name here is never declared again (A1 3.16). */
-export const RETIRED_PREFERENCES: readonly string[] = [];
+export const RETIRED_PREFERENCES: readonly string[] = [
+  "autonomy.level",
+  "autonomy.agent_tasks_to_inbox",
+  "targets.default",
+  "projection.enabled",
+  "projection.dir",
+  "features.search_trigram",
+];
 
 const BY_KEY = new Map(PREFERENCES.map((spec) => [spec.key, spec]));
 
@@ -332,9 +281,6 @@ const BY_KEY = new Map(PREFERENCES.map((spec) => [spec.key, spec]));
 export function preferenceSpec(key: string): PreferenceSpec | undefined {
   return BY_KEY.get(key);
 }
-
-/** The feature flags (A1 3.16). */
-export const FEATURE_FLAGS: readonly PreferenceSpec[] = PREFERENCES.filter((p) => p.flag);
 
 // ---------------------------------------------------------------------------------------------
 // Values
@@ -488,9 +434,6 @@ export function effortTimeText(time: EffortTime): string {
   return `${String(time.amount)} ${time.amount === 1 ? time.unit.slice(0, -1) : time.unit}`;
 }
 
-const PATH_MAX = 1_024;
-const ABSOLUTE = /^(?:\/|[A-Za-z]:[\\/]|\\\\)/;
-
 /** Whether `value` fits `shape`. It never says why: a reason could quote the value. */
 export function fitsShape(shape: ValueShape, value: unknown): boolean {
   switch (shape.type) {
@@ -507,8 +450,6 @@ export function fitsShape(shape: ValueShape, value: unknown): boolean {
       );
     case "text":
       return isLine(value, shape.max) && (shape.pattern?.test(value) ?? true);
-    case "path":
-      return isLine(value, PATH_MAX) && ABSOLUTE.test(value);
     case "list": {
       if (!Array.isArray(value) || value.length < shape.min || value.length > shape.max) {
         return false;
@@ -589,8 +530,6 @@ export function shapeText(shape: ValueShape): string {
       return `a whole number from ${String(shape.min)} to ${String(shape.max)}`;
     case "text":
       return `one line of up to ${String(shape.max)} characters`;
-    case "path":
-      return "an absolute path";
     case "list": {
       const span = `a list of ${String(shape.min)} to ${String(shape.max)}`;
       if (shape.item.type === "text") return `${span} keys`;
@@ -715,16 +654,6 @@ export function checkPreferences(
     }
     if (!Number.isSafeInteger(spec.schemaVer) || spec.schemaVer < 1) {
       problems.push(`${key}: the schema version is a whole number from 1`);
-    }
-    const isFlag = spec.flag !== undefined;
-    if (isFlag !== key.startsWith("features.")) {
-      problems.push(`${key}: flags, and only flags, live under features.`);
-    }
-    if (isFlag && spec.shape.type !== "boolean" && spec.shape.type !== "enum") {
-      problems.push(`${key}: a flag is a boolean or an enum`);
-    }
-    if (isFlag && (spec.default === null || spec.policy || spec.scope !== "space")) {
-      problems.push(`${key}: a flag has a default and is a space preference that is not policy`);
     }
     if (!isLine(spec.summary, 120)) problems.push(`${key}: the summary is one short line`);
   }

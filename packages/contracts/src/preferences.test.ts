@@ -10,7 +10,6 @@ import {
   EFFORT_NAME_MAX,
   effortNamesFit,
   effortTimeText,
-  FEATURE_FLAGS,
   fitsShape,
   mayWrite,
   PREFERENCES,
@@ -53,18 +52,6 @@ describe("[A1.3.16.prefs.registry] every preference is declared once, with a sha
       [{ policy: true, writers: ["human", "agent"] }, "a policy key has the human"],
       [{ scope: "machine", writers: ["human", "agent"] }, "a machine preference"],
       [{ schemaVer: 0 }, "the schema version"],
-      [{ key: "features.sample" }, "flags, and only flags"],
-      [{ flag: { stability: "preview" } }, "flags, and only flags"],
-      [
-        {
-          key: "features.sample",
-          flag: { stability: "preview" },
-          shape: { type: "integer", min: 0, max: 1 },
-          default: 0,
-        },
-        "a flag is a boolean or an enum",
-      ],
-      [{ key: "features.sample", flag: { stability: "preview" }, policy: true }, "a flag has"],
       [{ summary: "two\nlines" }, "the summary"],
     ];
     expect(checkPreferences([base])).toEqual([]);
@@ -85,20 +72,11 @@ describe("[A1.3.16.prefs.registry] every preference is declared once, with a sha
       ["tasks.effort_scale", "space", false, "human"],
       ["tasks.dedupe_window_days", "space", false, "human"],
       ["grouping.names", "space", false, "human"],
-      ["autonomy.level", "space", true, "human"],
-      ["autonomy.agent_tasks_to_inbox", "space", true, "human"],
       ["autonomy.overrides", "space", true, "human"],
       ["autonomy.areas", "space", true, "human"],
-      ["targets.default", "space", true, "human"],
-      ["projection.enabled", "space", false, "human"],
-      ["projection.dir", "machine", false, "human"],
-      ["features.search_trigram", "space", false, "human"],
     ]);
     expect(spec("ui.theme").default).toBe("sumi");
     expect(spec("tasks.dedupe_window_days").default).toBe(30);
-    expect(spec("projection.enabled").default).toBe(true);
-    expect(spec("autonomy.level").default).toBe("review");
-    expect(spec("targets.default").default).toBeNull();
     expect(preferenceSpec("ui.nothing")).toBeUndefined();
     expect(preferenceSpec("constructor")).toBeUndefined();
   });
@@ -129,7 +107,6 @@ describe("[A1.3.16.prefs.registry] every preference is declared once, with a sha
         ["abc"],
         ["abcd", "ABC", "", " ", "a\nb", "a\u202eb", "e\u0301"],
       ],
-      [{ type: "path" }, ["/home/x", "C:\\x", "D:/x", "\\\\server\\share"], ["x", "./x", "/a\nb"]],
       [
         { type: "list", item: { type: "boolean" }, min: 1, max: 2, unique: "self" },
         [[true], [true, false]],
@@ -195,41 +172,6 @@ describe("[A1.3.16.prefs.registry] every preference is declared once, with a sha
     expect(readPreference("tasks.dedupe_window_days", stored(5)).value).toBe(5);
     expect(readPreference("tasks.dedupe_window_days", stored(3_651)).value).toBe(30);
     expect(() => readPreference("ui.nothing", undefined)).toThrow();
-  });
-});
-
-describe("[A1.3.16.prefs.flags] each feature flag has a default and is read through the registry", () => {
-  test("there is at least one flag, and each one is a space key under features.", () => {
-    expect(FEATURE_FLAGS.map((f) => f.key)).toContain("features.search_trigram");
-    for (const f of FEATURE_FLAGS) {
-      expect(f.key.startsWith("features."), f.key).toBe(true);
-      expect(f.scope).toBe("space");
-      expect(f.policy).toBe(false);
-    }
-  });
-
-  test.each(FEATURE_FLAGS.map((f) => [f.key, f] as const))(
-    "%s reads its default unset, its value set, and its default again after a reset",
-    (_key, f) => {
-      expect(f.default).not.toBeNull();
-      expect(preferenceValue(f, undefined).value).toBe(f.default);
-      const other =
-        f.shape.type === "boolean"
-          ? !(f.default as boolean)
-          : f.shape.type === "enum"
-            ? f.shape.values.find((v) => v !== f.default)
-            : undefined;
-      expect(other).toBeDefined();
-      expect(preferenceValue(f, stored(other)).value).toBe(other);
-      expect(preferenceValue(f, stored(null)).value).toBe(f.default);
-      expect(preferenceValue(f, stored("not a flag value")).value).toBe(f.default);
-    },
-  );
-
-  test("features.search_trigram is off by default, as a preview", () => {
-    const f = spec("features.search_trigram");
-    expect(f.default).toBe(false);
-    expect(f.flag).toEqual({ stability: "preview" });
   });
 });
 

@@ -1,5 +1,4 @@
-// `ttasks prefs` as a person reads it: a key this build does not act on yet is still the person's
-// to read, though an agent is not shown it. The CLI in this process against a service in this
+// `ttasks prefs` as a person reads it. The CLI in this process against a service in this
 // process; fixture text and temporary folders only.
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -26,21 +25,6 @@ const tasks = (args: readonly string[], terminal = true): Promise<Ran> =>
 
 /** The first line of a prefs answer: the key and its value, a list of levels by their names. */
 const firstLine = (ran: Ran): string => ran.stdout.split("\n")[0] ?? "";
-
-describe("[A3.3.4.prefs.tool] ttasks prefs", () => {
-  test("a person reads a key nothing acts on yet, with what is in force; a script is not shown it", async () => {
-    const person = await tasks(["prefs", "get", "--keys", "autonomy.level", "--json"]);
-    expect(person.code).toBe(0);
-    expect(JSON.parse(person.stdout)).toMatchObject({
-      prefs: [{ key: "autonomy.level", value: "review", in_force: "full" }],
-    });
-    expect((await tasks(["prefs", "get", "autonomy.level"])).stdout).toBe(
-      'autonomy.level: "review" (default) · policy · in force: "full", as this build does not read it yet\n',
-    );
-    const script = await tasks(["prefs", "get", "--keys", "autonomy.level", "--json"], false);
-    expect(script.code).toBe(EXIT_CODES.usage);
-  });
-});
 
 describe("[A1.3.16.prefs.effort-stored] a new space holds its levels", () => {
   test("a space made through the service has the five default levels stored, by its own act", async () => {

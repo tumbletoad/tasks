@@ -151,9 +151,6 @@ const PrefRow = z.strictObject({
   writable: z.boolean().describe("Whether this caller may change it"),
   policy: z.literal(true).describe("Policy: the user's own (A3 3.8)").optional(),
   fixed: z.literal(true).describe("Fixed in this build: nobody changes it").optional(),
-  in_force: PrefValueOutput.describe(
-    "What this build does whatever the key says: it does not act on the key yet",
-  ).optional(),
   held: z
     .array(z.strictObject({ effort: Size.describe("The size"), ...Counts }))
     .describe("tasks.effort_scale (get): the tasks on each size, by state")
