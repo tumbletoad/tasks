@@ -6,8 +6,8 @@
 // finishes every open task below; and the history check sees a row that went missing. Fixture text
 // only.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { TreeResult } from "../src/tree/core.ts";
-import { checkedDriver, tempFolders } from "./space-helpers.ts";
+import { TreeWriter, type TreeResult } from "../src/tree/core.ts";
+import { checkedDriver, tempFolders, TEST_MACHINE } from "./space-helpers.ts";
 import { openTree, treeHistoryProblems, type TreeFixture } from "./tree-helpers.ts";
 
 const temp = tempFolders("tree-boundary");
@@ -145,6 +145,73 @@ describe("[S2.tree.boundary] the tree writer keeps today's guarantees at the req
     const all = ok(fx.send("task.finish", { task: "M-1", subtasks: "all" }));
     expect(all.result).toMatchObject({ subtasks: 1 });
     expect(lifecycle(2)).toBe("completed");
+  });
+
+  test("a second Trash, a restore of a live task, and any change of a task in the Trash", () => {
+    add("Move house");
+    ok(fx.send("nodes.trash", { task: "M-1" }));
+    expect(fx.send("nodes.trash", { task: "M-1" })).toMatchObject({
+      status: "unchanged",
+      result: { tasks: 0 },
+    });
+    expect(fx.send("task.update", { task: "M-1", set: { title: "Stay" } }).error?.code).toBe(
+      "DELETED",
+    );
+    ok(fx.send("nodes.restore", { task: "M-1" }));
+    expect(fx.send("nodes.restore", { task: "M-1" })).toMatchObject({
+      status: "unchanged",
+      result: { tasks: 0 },
+    });
+  });
+
+  test("a writer that is not the authority, and a request for another space, decide nothing", () => {
+    const other = new TreeWriter(fx.conn, { machineId: "m_00000000000000000000000000" });
+    const request = {
+      space_id: fx.spaceId,
+      request_id: "elsewhere",
+      actor: fx.human,
+      command: "tasks.add",
+      input: { tasks: [{ title: "Hi" }] },
+    };
+    expect(other.submit(request).error?.code).toBe("SPACE_READ_ONLY");
+    expect(
+      fx.writer.submit({ ...request, space_id: "sp_00000000000000000000000000" }).error?.code,
+    ).toBe("SPACE_MISMATCH");
+    expect(count("SELECT count(*) AS n FROM receipts")).toBe(0);
+  });
+
+  test("a person's new step ends what could be redone; a named Undo of another step leaves the stack", () => {
+    add("Renew the passport");
+    const done = ok(fx.send("task.finish", { task: "M-1" }));
+    ok(fx.send("task.update", { task: "M-1", set: { title: "Renew it" } }));
+    expect(fx.send("undo", { commit: done.commit }, { base: null }).error?.code).toBe(
+      "INVALID_TRANSITION",
+    );
+    expect(
+      fx.send("undo", { commit: "op_00000000000000000000000000" }, { base: null }).error?.code,
+    ).toBe("NOT_FOUND");
+    ok(fx.send("undo", {}, { base: null }));
+    ok(fx.send("task.update", { task: "M-1", set: { title: "Renew both" } }));
+    expect(fx.send("redo", {}, { base: null }).error?.code).toBe("NOTHING_TO_REDO");
+  });
+
+  test("a commit's time never goes back when the clock does", () => {
+    let now = 2_000_000_000_000;
+    const late = new TreeWriter(fx.conn, { machineId: TEST_MACHINE, clock: () => (now -= 60_000) });
+    for (const title of ["One", "Two", "Three"]) {
+      late.submit({
+        space_id: fx.spaceId,
+        request_id: title,
+        actor: fx.human,
+        command: "tasks.add",
+        input: { tasks: [{ title }] },
+      });
+    }
+    const times = fx.conn
+      .prepare("SELECT at FROM commits ORDER BY seq")
+      .all()
+      .map((r) => Number(r["at"]));
+    expect(times).toEqual([...times].sort((a, b) => a - b));
   });
 
   test("the history check sees a row the history made that went missing", () => {

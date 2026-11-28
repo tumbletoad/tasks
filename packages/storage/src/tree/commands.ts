@@ -99,11 +99,12 @@ function findNode(tx: Tx, key: unknown): Row | undefined {
   return at;
 }
 
-function liveTask(tx: Tx, key: unknown, field = "task", deleted = false): Row {
+/** A task by its key: live, in the Trash (`deleted` true), or either. */
+function liveTask(tx: Tx, key: unknown, field = "task", deleted: boolean | "either" = false): Row {
   const found = findNode(tx, key);
   if (found?.["kind"] !== "task") return problem("NOT_FOUND", "The space has no such task", field);
   const task = tx.get(SQL.task, { id: String(found["id"]) }) as Row;
-  if ((task["deleted_at"] !== null) !== deleted) {
+  if (deleted !== "either" && (task["deleted_at"] !== null) !== deleted) {
     problem(
       deleted ? "INVALID_TRANSITION" : "DELETED",
       deleted ? "The task is not in the Trash" : "The task is in the Trash",
@@ -328,7 +329,10 @@ const taskReopen: Command = (tx, input) => {
 };
 
 const nodesTrash: Command = (tx, input) => {
-  const task = liveTask(tx, input["task"]);
+  const task = liveTask(tx, input["task"], "task", "either");
+  // A task in the Trash already is no change: two tabs that both asked get the same answer.
+  if (task["deleted_at"] !== null)
+    return { task: { id: task["id"], ref: refText(tx, task["ref"]) }, tasks: 0 };
   const ids = [
     String(task["id"]),
     ...tx.all(SQL.subtree, { id: String(task["id"]) }).map((t) => String(t["id"])),
@@ -344,8 +348,9 @@ const nodesTrash: Command = (tx, input) => {
 };
 
 const nodesRestore: Command = (tx, input) => {
-  const task = liveTask(tx, input["task"], "task", true);
+  const task = liveTask(tx, input["task"], "task", "either");
   const id = String(task["id"]);
+  if (task["deleted_at"] === null) return { task: { id, ref: refText(tx, task["ref"]) }, tasks: 0 };
   const parent = tx.get(SQL.node, { id: String(task["parent_id"]) });
   if (parent?.["deleted_at"] !== null) {
     problem("INVALID_TRANSITION", "The task above it is in the Trash: restore that one", "task");
