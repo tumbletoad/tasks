@@ -3,8 +3,8 @@
 // depth with its crumbs, brief, status line and groups, Today and the lists, a task's card with its
 // notes and Knowledge, a capture on a screen at the first and the third level, a move to the fourth,
 // a check-off and its Undo, search, the Library and a page. What the space cannot do yet stays out
-// of the way: no Open, Run or Copy, no folder line, and a quiet word on Activity, the Trash and
-// the effort levels. Then the screens at 1,440 and 390 px. Made-up text only.
+// of the way: no Open, Run or Copy, no folder line, and a quiet word on Activity and the Trash.
+// Its effort levels are its own to change. Then the screens at 1,440 and 390 px. Made-up text only.
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
 import { axeFound, picture, signIn, themes } from "./page.ts";
@@ -239,11 +239,11 @@ test.describe("[S2.tree.e2e] a space on the new storage, four levels deep, as a 
     await menu(page).getByRole("link", { name: "Trash" }).click();
     await expect(main(page)).toContainText("This space does not show its Trash yet.");
     await expect(main(page).getByRole("button", { name: "Try again" })).toHaveCount(0);
+    // Its effort levels are its own to change: one more is offered, with how many it has.
     await page.goto(`${world.origin}/s/${tree.id}/settings`);
-    await expect(page.locator('[data-part="levels-fixed"]')).toHaveText(
-      "This space cannot change its levels yet, so the page only shows them.",
-      { timeout: SLOW_MS },
-    );
+    await expect(page.locator('[data-part="level-add"]')).toBeEnabled({ timeout: SLOW_MS });
+    await expect(page.locator('[data-part="level-count"]')).toContainText("5");
+    await expect(page.locator('[data-part="levels-fixed"]')).toHaveCount(0);
   });
 
   test("the side menu, the fourth level's screen and Today at 1,440 and 390 px: nothing sideways, no violation", async ({
