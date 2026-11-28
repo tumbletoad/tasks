@@ -1993,6 +1993,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.5.routes.continue",
+      "title": "Continue through the service with a real shim and a fake Claude Code and Codex: an ended run's own conversation opens in its instance's terminal with the app's resume command, the instance's permission and no brief, in the task's folder with the launch's ticket, and the launch records the conversation; a run that works is stopped and ended before anything opens; a run without a conversation, another task's run and words are refused",
+      "source": "A4 3.4.2, A4 3.4.3, A4 3.11",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.5.routes.chosen",
       "title": "Open starts the agent as its instance is set up: the first usable route that carries its permission, arguments, environment and home, so a prefill instance with any of them opens in a terminal with the brief to paste; without one it opens on a route that leaves the prompt unsent and the receipt names what it left out, recorded with the launch so every later answer about it says it, and no route that sends a prompt leaves anything out; a terminal counts only where one of its chain can start; a TTASKS_* variable is no setting to carry; where no terminal opens, an instance keeps its tile for what it can do; an instance for some spaces is offered and opened only there; a home of its own opens only on a route that carries it, never in the default account, and gets no account variable of the person's, by prefix, while its own env wins and the program is told its home; a folder replaced after its marker check opens nothing",
       "source": "A4 3.4, A4 3.8, A4 3.3",
@@ -2752,6 +2760,13 @@
     {
       "id": "M6.page.run-words",
       "title": "A run's thread entry says in plain words that it waits and why, works, stops, is done, needs the person with its question, did not start, was interrupted by a restart, failed with the agent's error or ran past its limit, and how its processes ended; Stop is offered only while it may still work",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "M6.page.run-continue",
+      "title": "A run that holds its agent's conversation offers Continue, which opens it in the run's instance: a run that may still work offers Stop and continue; one with no conversation, and one whose instance this machine no longer has, offer none",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

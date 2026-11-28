@@ -173,6 +173,8 @@ export interface UiRun {
   readonly error?: string;
   /** How many of the agent's requests its permission refused, when any were. */
   readonly refused?: number;
+  /** The run holds its agent's own conversation, which Continue opens again. */
+  readonly resumable?: true;
   /** Grows with every change of the run. */
   readonly version: number;
 }
@@ -183,6 +185,7 @@ export function uiRun(run: RunRecord, live: UiRunLive = {}): UiRun {
   const { waiting, quietSince, said } = live;
   const refused = result === null ? 0 : result.declined + result.permissionDenials;
   const asked = run.request === null || run.request === WORK_ON_IT ? null : run.request;
+  const conversation = result?.nativeId ?? run.evidence.native_id ?? null;
   return {
     id: run.id,
     instance: run.instance,
@@ -203,6 +206,8 @@ export function uiRun(run: RunRecord, live: UiRunLive = {}): UiRun {
         }),
     ...runAnswer(run, said),
     ...(refused === 0 ? {} : { refused }),
+    // A restored copy's run is only a record here: nothing of its conversation is this copy's.
+    ...(conversation === null || live.recorded === true ? {} : { resumable: true as const }),
     version: run.version,
   };
 }

@@ -38,6 +38,7 @@ import {
   type SpawnedProcess,
 } from "@ttasks/launch";
 import { FAKE_CLI_AGENT, testEnv, type CliAgentReport } from "@ttasks/testkit";
+import type { OpenDriver, Work } from "@ttasks/runs";
 import type { Logger } from "../src/hub/log.ts";
 import { briefNames, chooseRoute, codexEntryOf, LaunchUnavailable } from "../src/launch/open.ts";
 import { LaunchService } from "../src/launch/service.ts";
@@ -1480,6 +1481,153 @@ describe("[A4.5.routes.markers] a launch reads its folder's marker before an age
       expect(missing).toMatchObject({ data: { reason: "marker_missing", of: "task" } });
       expect(r.lab.folders.size).toBe(started);
       expect(opened).toHaveLength(0);
+    },
+  );
+});
+
+/** A run's driver that hears the agent's conversation ID, and settles at once or at the agent's end. */
+const conversation =
+  (id: string, holds: boolean): OpenDriver =>
+  (_pipes, report) => {
+    report({ kind: "native-id", id });
+    const work: Work = {
+      ok: true,
+      outcome: "success",
+      nativeId: id,
+      text: "Found it in the export.",
+      textCut: false,
+      textFinal: true,
+      error: null,
+      usage: null,
+      appTools: null,
+      declined: 0,
+      permissionDenials: 0,
+    };
+    let settle: (done: Work) => void = () => undefined;
+    const settled = new Promise<Work>((resolve) => {
+      settle = resolve;
+    });
+    if (!holds) settle(work);
+    return {
+      settled,
+      interrupt: () => false,
+      close: () => undefined,
+      ended: () => {
+        settle(work);
+      },
+    };
+  };
+
+/** A background run of `task` in `instance`, its agent a Node that ends at once or waits. */
+async function runOf(
+  r: Rig,
+  task: string,
+  instance: "claude" | "codex",
+  id: string | null,
+  holds = false,
+): Promise<string> {
+  const queued = await r.lab.running.runs.start(
+    r.lab.spaceId,
+    {
+      task,
+      routine: null,
+      instance,
+      adapter: instance === "claude" ? "claude-print" : "codex",
+      place: null,
+      request: "Look into the export.",
+      briefHash: "0a1b2c3d".repeat(8),
+      permission: "read-only",
+    },
+    rid(),
+    () => ({
+      command: process.execPath,
+      args: ["-e", holds ? "setInterval(() => {}, 1e6)" : ""],
+      cwd: r.lab.root,
+      env: Object.fromEntries(
+        Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
+      ),
+      ...(id === null ? {} : { open: conversation(id, holds) }),
+    }),
+  );
+  return queued.id;
+}
+
+describe("[A4.5.routes.continue] Continue opens a background run's own conversation in its app's terminal, as Open starts it", () => {
+  test(
+    "an ended Claude Code run opens with --resume in the task's folder with the ticket; a working Codex run is stopped first and opens with codex resume; a run without a conversation is refused",
+    { timeout: 300_000 },
+    async () => {
+      const r = await rig("continue");
+      const task = await addTask(r, "Look into the export", "portal-continue");
+      const folder = realpathSync.native(join(r.lab.work, "portal-continue"));
+
+      const claudeId = "4f1d2c3b-5a69-4e7d-8c0b-1a2b3c4d5e6f";
+      const ended = await runOf(r, task.id, "claude", claudeId);
+      expect(await r.lab.running.runs.ended(r.lab.spaceId, ended)).toMatchObject({
+        state: "succeeded",
+      });
+      const { result } = await open(r, { task: task.ref, run: ended });
+      expect(result.launch).toMatchObject({ route: "terminal", instance: "claude" });
+      expect(result.text).toBe("none");
+      const report = await reportAt(r.report("claude"));
+      expect(report.argv).toEqual(["--resume", claudeId, "--permission-mode", "bypassPermissions"]);
+      const id = statSync(folder, { bigint: true });
+      expect(report.cwdId).toBe(`${id.dev.toString()}:${id.ino.toString()}`);
+      // The session binds as an Open's does: by the launch's ticket, and its conversation is the run's.
+      expect(report.envNames).toContain(envVar("TICKET"));
+      const confirmed = await r.lab.waitIntent(
+        result.launch.id,
+        (i) => i.state === "confirmed",
+        "Confirmed",
+      );
+      expect(confirmed.evidence.preset).toBe(claudeId);
+
+      const codexId = "019a3f2c-7c41-7d20-9b6e-3f1c2a4b5d6e";
+      const working = await runOf(r, task.id, "codex", codexId, true);
+      await waitFor(
+        async () =>
+          (await r.lab.running.runs.read(r.lab.spaceId, working))?.state === "running"
+            ? true
+            : undefined,
+        LONG_MS,
+        "the run works",
+      );
+      const second = await open(r, { task: task.ref, instance: "codex", run: working });
+      // The answer comes once nothing of the run runs: it was stopped, never two writers.
+      expect((await r.lab.running.runs.read(r.lab.spaceId, working))?.state).toBe("cancelled");
+      const codex = await reportAt(r.report("codex"));
+      expect(codex.argv).toEqual([
+        "resume",
+        codexId,
+        "-C",
+        folder,
+        "--no-daemon",
+        "-c",
+        `mcp_servers.${MCP_SERVER_KEY}.env_vars=["${envVar("TICKET")}"]`,
+        "--dangerously-bypass-approvals-and-sandbox",
+      ]);
+      const codexLaunch = await r.lab.waitIntent(
+        second.result.launch.id,
+        (i) => i.state === "confirmed",
+        "Confirmed",
+      );
+      expect(codexLaunch.evidence.thread).toBe(codexId);
+
+      // A run whose agent never said its conversation, or another task's run, opens nothing.
+      const none = await runOf(r, task.id, "claude", null);
+      await r.lab.running.runs.ended(r.lab.spaceId, none);
+      const other = await addTask(r, "Another task");
+      for (const [asked, code] of [
+        [{ task: task.ref, run: none }, "invalid_input"],
+        [{ task: other.ref, run: ended }, "not_found"],
+        [{ task: task.ref, run: ended, text: "Go on." }, "invalid_input"],
+      ] as const) {
+        const refused = await open(r, asked).then(
+          () => undefined,
+          (error: unknown) => errorOf(error),
+        );
+        expect(refused?.code).toBe(code);
+      }
     },
   );
 });

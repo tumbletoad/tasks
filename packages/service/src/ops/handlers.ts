@@ -85,8 +85,10 @@ import {
 } from "./caller.ts";
 import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
+import { isOpenRun, type RunRecord } from "@ttasks/contracts/runs";
 import {
   ExecutionRefused,
+  isConversationId,
   isLaunchRef,
   MANUAL_INSTANCE,
   PACK_LOG,
@@ -289,6 +291,11 @@ export interface OpsHost {
 /** What the request path needs of the launch service (launch/service.ts). */
 export interface LaunchPort {
   openTask(request: OpenTaskRequest): Promise<OpenTaskResult>;
+  /**
+   * The background run a Continue opens again, once nothing of it runs: one that still works is
+   * stopped first and waited for. Undefined when the space has no such run.
+   */
+  endedRun(space: string, run: string): Promise<RunRecord | undefined>;
   /**
    * Marks a link or Copy launch Connected after an agent read its task through `writer`, the open
    * writable copy the read used: nothing when that writer no longer serves the space. A
@@ -3467,9 +3474,37 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     }
     const requestId = String(input["request_id"]);
     let text = typeof input["text"] === "string" ? input["text"] : undefined;
-    const instance = typeof input["instance"] === "string" ? input["instance"] : undefined;
+    let instance = typeof input["instance"] === "string" ? input["instance"] : undefined;
     // Open again with a request already on the task: a note the person wrote, as it is now.
     const requestNote = typeof input["request"] === "string" ? input["request"] : undefined;
+    // Continue: the run's own conversation in the run's app, never a new one under that name.
+    let resume: OpenTaskRequest["resume"];
+    if (typeof input["run"] === "string") {
+      if (text !== undefined || requestNote !== undefined || input["pack"] === true) {
+        throw invalid("run", "Continue takes no words", "Type them in the agent app.");
+      }
+      const run = await launches.endedRun(space, input["run"]);
+      if (run?.task !== read.id) {
+        throw new AppError({
+          code: "not_found",
+          message: "This task has no run with this ID.",
+          data: { field: "run" },
+        });
+      }
+      if (instance !== undefined && instance !== run.instance) {
+        throw invalid("instance", "The run was another instance's", "Leave out instance.");
+      }
+      const id = run.result?.nativeId ?? run.evidence.native_id ?? null;
+      if (id === null || !isConversationId(id)) {
+        throw invalid("run", "The run holds no conversation of its agent to continue");
+      }
+      // Two writers on one conversation: a run whose processes may still live is not continued.
+      if (isOpenRun(run)) {
+        throw invalid("run", "The run has not ended", "Stop it, then continue.");
+      }
+      instance = run.instance;
+      resume = { id, adapter: run.adapter };
+    }
     if (requestNote !== undefined) {
       if (instance === undefined)
         throw invalid("request", "Copy takes no request note", "Pass instance.");
@@ -3523,6 +3558,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         ...(pack === undefined ? {} : { pack }),
         ...(input["mark_folder"] === true ? { markFolder: true } : {}),
         ...(input["another"] === true ? { another: true } : {}),
+        ...(resume === undefined ? {} : { resume }),
         // The person's words as a note of theirs: the note entry's own request path, under a
         // request ID the click's derives. Its writer scope is the click's
         // as the launch's replay is, not the sign-in's: a click repeated from any page or shell

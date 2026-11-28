@@ -673,6 +673,17 @@ export class RunService {
     return (await this.#required(space)).machine.read(run);
   }
 
+  /**
+   * The run once nothing of it runs, for Continue: one that may still work is stopped first and
+   * waited for. Undefined when the space has no such run.
+   */
+  async stopped(space: string, run: string): Promise<RunRecord | undefined> {
+    const now = await this.read(space, run);
+    if (now === undefined || !isOpenRun(now)) return now;
+    await this.stop(space, run);
+    return this.ended(space, run);
+  }
+
   /** The run once it is final: started and ended, refused, or stopped. */
   async ended(space: string, run: string): Promise<RunRecord | undefined> {
     const { host, machine } = await this.#required(space);

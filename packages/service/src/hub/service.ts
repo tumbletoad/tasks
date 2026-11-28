@@ -870,6 +870,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
             }
             return service.openTask(request);
           },
+          endedRun: (space: string, run: string) => runs.stopped(space, run),
           connected: (
             space: string,
             writer: SpaceWriterHandle,

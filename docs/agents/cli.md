@@ -91,6 +91,7 @@ Usage: `ttasks brief <task> [flags]`
 | `--pack` | `pack` | boolean | Copy the context pack: the task's text, for an app without the tools |
 | `--mark-folder` | `mark_folder` | boolean | Open although the folder's marker is gone or another's, and mark it |
 | `--another` | `another` | boolean | Start a second session although this app already runs the task here |
+| `--run` | `run` | string | Continue this background run's own conversation; a working run is stopped first |
 
 ## `ttasks delete`
 

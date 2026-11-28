@@ -10,6 +10,7 @@
 // Each connection that claimed or attached holds its attachment (a WeakMap on the connection the
 // library hands every handler), so a report is accepted only on the connection that presented the
 // ticket or the credential, and never names its launch itself.
+import { createHash } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, win32 } from "node:path";
 import { PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
@@ -58,7 +59,9 @@ import {
   renderBrief,
   renderContextPack,
   resolveLaunchFolder,
+  resumeArgv,
   routeOf,
+  targetDef,
   servesSpace,
   sanitiseComposer,
   instanceHome,
@@ -773,6 +776,14 @@ export class LaunchService {
     if (choice.route !== "clipboard" && task.folder.kind === "other_machine") {
       throw this.#unavailable("other_machine");
     }
+    // Continue opens the run's own conversation in a terminal, or not at all: never a new one.
+    const resume = request.resume;
+    if (resume !== undefined) {
+      if (choice.route !== "terminal") throw this.#unavailable("no_terminal");
+      if (instance === undefined || !resumes(instance, resume.adapter)) {
+        throw this.#unavailable("not_set_up");
+      }
+    }
     if (choice.route === "t3-mcp" && instance !== undefined) {
       return this.#openT3(space, hosted, request, instance, choice);
     }
@@ -810,17 +821,22 @@ export class LaunchService {
         : await this.#checkMarker(space, task.folder, request.markFolder === true);
     const folder: PlanFolder | null = set === null || at === undefined ? set : { ...set, at };
 
-    const brief = await this.#briefOf(space, request, choice);
+    // A conversation that opens again holds its task already: it gets no brief.
+    const brief = resume === undefined ? await this.#briefOf(space, request, choice) : noBrief;
     // Decided on a reference of the real one's length: the real brief has the same length, so
     // the same lines and the same hash (the hash holds the reference as a slot).
     const probe = brief(REFERENCE_LENGTH_STAND_IN);
     if (probe.status !== "ok") throw this.#unavailable("too_long");
+    const briefSent = resume === undefined && choice.briefSent === true;
 
-    // The terminal route's plan: the agent's argv with the brief, kept in machine state.
+    // The terminal route's plan: the agent's argv with the brief, kept in machine state. Claude
+    // Code's session ID is the click's preset, or the one it opens again.
     const session =
       choice.route === "terminal" && instance?.target === "claude-cli"
-        ? presetSession(space, requestId)
+        ? (resume?.id ?? presetSession(space, requestId))
         : undefined;
+    // Codex's thread is the one it opens again; a new one is found in its session files.
+    const thread = instance?.target === "codex-cli" ? resume?.id : undefined;
     let planFor: ((reference: string) => SpawnPlan) | undefined;
     let given: ClickGiven = {};
     // The home the app keeps this launch's session in, as the link to the monitor's agents reads
@@ -847,18 +863,21 @@ export class LaunchService {
       const title = sanitiseTitle(task.title);
       planFor = (reference) => {
         const text = brief(reference);
-        const built = cliArgv(
-          chosen,
-          {
-            task: task.ref,
-            title,
-            reference,
-            toolEnv,
-            ...(session === undefined ? {} : { session }),
-            ...(text.status !== "ok" ? {} : { brief: text.text }),
-          },
-          choice.kind === "sent" ? "sent" : "prefilled",
-        );
+        const built =
+          resume === undefined
+            ? cliArgv(
+                chosen,
+                {
+                  task: task.ref,
+                  title,
+                  reference,
+                  toolEnv,
+                  ...(session === undefined ? {} : { session }),
+                  ...(text.status !== "ok" ? {} : { brief: text.text }),
+                },
+                choice.kind === "sent" ? "sent" : "prefilled",
+              )
+            : resumeArgv(chosen, { task: task.ref, title, toolEnv, resume: resume.id });
         return {
           argv: built.argv,
           folder,
@@ -868,8 +887,10 @@ export class LaunchService {
           afterExit: this.terminals.settings.afterExit,
           ...(chosen.viaLoginShell && platform !== "win32" ? { loginShell: true } : {}),
           ...(built.folderArgs.length === 0 ? {} : { folderArgs: built.folderArgs }),
-          ...(codexHome === undefined ? {} : { match: { home: codexHome } }),
-          ...(choice.briefSent === true ? { notice: "brief_sent" as const } : {}),
+          ...(codexHome === undefined || thread !== undefined
+            ? {}
+            : { match: { home: codexHome } }),
+          ...(briefSent ? { notice: "brief_sent" as const } : {}),
         };
       };
       if (checkPlan(planFor(REFERENCE_LENGTH_STAND_IN)) === undefined) {
@@ -885,6 +906,7 @@ export class LaunchService {
     const leftOut = leftOutEvidence(choice.leftOut);
     const evidence = {
       ...(session === undefined ? {} : { preset: session }),
+      ...(thread === undefined ? {} : { thread }),
       ...(leftOut === undefined ? {} : { left_out: leftOut }),
       ...(sessionHome === undefined
         ? {}
@@ -946,7 +968,7 @@ export class LaunchService {
       composer,
       ...(note === undefined ? {} : { note }),
       removed: probe.removed,
-      ...(choice.briefSent === true ? { briefSent: true as const } : {}),
+      ...(briefSent ? { briefSent: true as const } : {}),
     };
   }
 
@@ -2215,6 +2237,23 @@ function composerOf(
   if (note === undefined) return "none";
   return intent.evidence.request === note ? "request" : "note";
 }
+
+/** The brief of a conversation that opens again: none, which the launch records by its hash. */
+const NO_BRIEF: Brief = {
+  status: "ok",
+  text: "",
+  hash: createHash("sha256").update("", "utf8").digest("hex"),
+  composer: "none",
+  composerText: undefined,
+  removed: false,
+};
+const noBrief = (): Brief => NO_BRIEF;
+
+/** Whether the instance's app keeps the conversations of the run adapter, and opens them again. */
+const resumes = (instance: Instance, adapter: string): boolean =>
+  isBuiltInTarget(instance.target) &&
+  targetDef(instance.target).run === adapter &&
+  targetDef(instance.target).resume !== undefined;
 
 const isOpen = (space: ServedSpace): boolean =>
   space.state === "open" && space.writer !== undefined && space.id !== undefined;
