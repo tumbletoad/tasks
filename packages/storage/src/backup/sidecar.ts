@@ -14,11 +14,8 @@ import { isId, type Id } from "../ids.ts";
 import { isAppVersion } from "../manifest.ts";
 import { inRange } from "../rows.ts";
 
-/**
- * Why a backup was taken. Each kind has its own retention (retention.ts). `pre-import` is no longer
- * taken: an earlier build took it before an import, and such a backup in a space still reads.
- */
-export const BACKUP_KINDS = ["daily", "manual", "pre-migrate", "pre-import"] as const;
+/** Why a backup was taken. Each kind has its own retention (retention.ts). */
+export const BACKUP_KINDS = ["daily", "manual", "pre-migrate"] as const;
 export type BackupKind = (typeof BACKUP_KINDS)[number];
 
 /** The marker of a sidecar, and its version. A format constant, like space.json's marker. */

@@ -15,8 +15,7 @@
 //   one, the newest daily backup of each of the 4 most recent local weeks (Monday to Sunday) that
 //   have one, and always the newest complete backup, whatever its date. So a history no copy writes
 //   any more keeps what the rules kept when it ended. Only daily backups are ever removed: a manual
-//   backup is the person's, and a pre-migration or pre-import backup may be the last one an older
-//   build reads.
+//   backup is the person's, and a pre-migration backup may be the last one an older build reads.
 // - Only complete backups (state "ok") of THIS space take part. A backups folder can hold another
 //   space's backups (a machine-local backup.dir set to one folder twice): those are neither kept,
 //   removed nor counted. A backup the listing could not verify is never removed here: a person

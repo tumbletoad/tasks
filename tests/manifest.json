@@ -424,7 +424,7 @@
     },
     {
       "id": "A1.5.backup.retention",
-      "title": "Daily backups are due after 03:00 local time or at start after 24 hours, a future-dated one aside; retention of one space's backups keeps 7 daily, 4 weekly, every backup that is not a daily one (manual, pre-migration, pre-import), the newest complete backup, and never the newest that passes every check a restore makes; it removes only the regular files it listed",
+      "title": "Daily backups are due after 03:00 local time or at start after 24 hours, a future-dated one aside; retention of one space's backups keeps 7 daily, 4 weekly, every backup that is not a daily one (manual, pre-migration), the newest complete backup, and never the newest that passes every check a restore makes; it removes only the regular files it listed",
       "source": "A1 3.18",
       "owner": "M1",
       "kind": "ci",
