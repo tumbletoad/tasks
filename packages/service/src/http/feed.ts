@@ -119,8 +119,8 @@ export interface SnapshotMessage {
   /**
    * A tree space's routines that are not finished, each with its schedule, its open time and its
    * newest entry (ops/routines.ts compactRoutine). A batch carries a changed routine's row as an
-   * entity of type `routine`, also when it went to the Trash or was finished. Absent on today's
-   * storage, which has none.
+   * entity of type `routine`, also when it went to the Trash or was finished. Absent when the space
+   * has none, as on today's storage.
    */
   readonly routines?: readonly CompactRow[];
   readonly preferences: readonly PreferenceRead[];
@@ -397,6 +397,9 @@ export async function readSnapshot(
     (await taskRows(finished as Row[], head.ref_prefix, here)).map((row) => [row["id"], row]),
   );
   const [livePages, liveRoutines] = withPages ? rest : [undefined, ...rest];
+  const routines = ((liveRoutines ?? []) as Row[]).map((row) =>
+    compactRoutine(row, head.ref_prefix),
+  );
   const pages = withPages
     ? ((livePages ?? []) as Row[]).map((row) => compactPage(head.ref_prefix, row))
     : undefined;
@@ -426,13 +429,7 @@ export async function readSnapshot(
           ]),
     ],
     ...(pages === undefined ? {} : { pages }),
-    ...(tree
-      ? {
-          routines: ((liveRoutines ?? []) as Row[]).map((row) =>
-            compactRoutine(row, head.ref_prefix),
-          ),
-        }
-      : {}),
+    ...(routines.length === 0 ? {} : { routines }),
     preferences: spacePreferencesOf(preferences as Row[]),
   };
 }
