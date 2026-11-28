@@ -15,6 +15,7 @@ const styles = classes(css, [
   "item",
   "box",
   "main",
+  "still",
   "title",
   "open",
   "line",
@@ -54,20 +55,28 @@ export function RoutineItem({
   const line = lineOf(routine, t, { t, list, locale });
   const when = whenOf(routine, clock);
   const last = lastOf(routine, clock);
-  const due = !routine.paused && routine.due_date <= clock.today;
+  const finished = routine.lifecycle !== "active";
+  const due = !finished && !routine.paused && routine.due_date <= clock.today;
   return (
     <div className={styles.item} data-part="routine" data-ref={routine.ref}>
-      <button
-        type="button"
-        className={styles.box}
-        data-part="routine-check"
-        aria-label={t("routine.done", { title: routine.title })}
-        onClick={() => {
-          actions.done(routine);
-        }}
-      >
-        <LoopIcon />
-      </button>
+      {/* A finished routine comes back no more: its box is its mark, and checks nothing off. */}
+      {finished ? (
+        <span className={`${styles.box} ${styles.still}`} aria-hidden="true">
+          <LoopIcon />
+        </span>
+      ) : (
+        <button
+          type="button"
+          className={styles.box}
+          data-part="routine-check"
+          aria-label={t("routine.done", { title: routine.title })}
+          onClick={() => {
+            actions.done(routine);
+          }}
+        >
+          <LoopIcon />
+        </button>
+      )}
       <div className={styles.main}>
         {onOpen === undefined ? (
           <div className={styles.title}>{routine.title}</div>

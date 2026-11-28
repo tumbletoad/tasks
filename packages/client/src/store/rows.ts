@@ -603,6 +603,8 @@ export interface RoutineRow {
   readonly last_state?: "done" | "skipped";
   readonly last_at?: number;
   readonly last_due?: string;
+  /** When it was finished for good, for Completed. */
+  readonly completed_at?: number;
 }
 
 export function routineRow(value: unknown): RoutineRow | undefined {
@@ -647,13 +649,12 @@ export const isRowType = (type: string): type is RowType =>
 
 /**
  * Whether a row belongs to the open working set, exactly as the service's snapshot chooses it:
- * active tasks and routines that are not deleted, and live nodes and pages.
+ * active tasks that are not deleted, routines out of the Trash (a finished one is in Completed), and
+ * live nodes and pages.
  */
 export function inWorkingSet(type: RowType, row: AnyRow): boolean {
   if (row.deleted_at !== undefined) return false;
-  return (
-    (type !== "task" && type !== "routine") || (row as TaskRow | RoutineRow).lifecycle === "active"
-  );
+  return type !== "task" || (row as TaskRow).lifecycle === "active";
 }
 
 export function cursorOf(value: unknown): Cursor | undefined {

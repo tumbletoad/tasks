@@ -293,7 +293,9 @@ describe("[A5.routines.capture] a capture that says a schedule is a routine you 
     const kept = routine("water the plants every saturday", {
       kept: new Set([routine("water the plants every saturday").chips[0]?.key ?? ""]),
     });
-    expect(kept.chips.find((c) => c.kind === "repeat")).toBeUndefined();
+    // The whole schedule stays text: no date takes "saturday" out of the title.
+    expect(kept.chips).toEqual([]);
+    expect(kept.title).toBe("water the plants every saturday");
     expect(routine("every now and then I water").draft?.repeat).toBeUndefined();
   });
 });

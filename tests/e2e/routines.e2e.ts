@@ -73,15 +73,25 @@ test.describe("[A5.routines.e2e] a routine a person does, through three weeks on
     const first = day(2);
     const weekday = WEEKDAYS[new Date(first.start).getDay()] ?? "saturday";
     await main(page).locator('[data-part="routine-new"]').click();
-    await main(page).locator('[data-part="routine-new-title"]').fill(TITLE);
+    // Made with a typo, which its card corrects below.
+    await main(page).locator('[data-part="routine-new-title"]').fill("Water the plnts");
     await main(page).locator('[data-part="routine-new-schedule"]').fill(`every ${weekday}`);
     await expect(main(page).locator('[data-part="routine-new-preview"]')).toHaveText(
       `Every ${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}`,
     );
     await main(page).locator('[data-part="routine-new-save"]').click();
-    await expect(section(page, "coming").locator('[data-part="routine"]')).toContainText(TITLE, {
-      timeout: SLOW_MS,
-    });
+    await expect(section(page, "coming").locator('[data-part="routine"]')).toContainText(
+      "Water the plnts",
+      { timeout: SLOW_MS },
+    );
+    // Its title corrected in its card, in place.
+    await main(page).locator('[data-part="routine-open"]').click();
+    const title = main(page).locator('[data-part="routine-title"]');
+    await title.fill(TITLE);
+    await title.press("Enter");
+    await expect(item(page)).toHaveCount(1, { timeout: SLOW_MS });
+    await main(page).locator('[data-part="routine-open"]').click();
+    await expect(main(page).locator('[data-part="routine-card"]')).toHaveCount(0);
     await expect(item(page)).toContainText("next ");
 
     // Watered early: that time is done, and the next one shows, a week on.
@@ -128,8 +138,55 @@ test.describe("[A5.routines.e2e] a routine a person does, through three weeks on
     await dialog.locator('[data-part="routine-finish-confirm"]').click();
     await expect(item(page)).toHaveCount(0, { timeout: SLOW_MS });
     await expect(toast(page)).toHaveText(`${TITLE} is finished for good`);
-    await toastAction(page).click();
+    // Completed holds it, marked as a routine, its card with its times done.
+    // Through the side menu: the tab keeps its Undo.
+    const nav = page.getByRole("navigation", { name: "Views and projects" });
+    await nav.getByRole("link", { name: "Completed", exact: true }).click();
+    const finished = main(page).locator('[data-part="routines-finished"]');
+    await expect(finished).toContainText(TITLE, { timeout: SLOW_MS });
+    await finished.locator('[data-part="routine-open"]').click();
+    await expect(finished.locator('[data-part="routine-entry"]')).toHaveCount(2);
+    // Undo brings it back from Completed to the Routines page.
+    await main(page).focus();
+    await page.keyboard.press("Control+z");
+    await expect(finished).toHaveCount(0, { timeout: SLOW_MS });
+    await nav.getByRole("link", { name: "Routines", exact: true }).click();
     await expect(section(page, "coming")).toContainText(TITLE, { timeout: SLOW_MS });
+
+    // Its schedule corrected in its card, in the words its row shows.
+    const opened = await card(page);
+    const schedule = opened.locator('[data-part="routine-schedule"]');
+    await schedule.fill("every day");
+    await expect(opened.locator('[data-part="routine-schedule-preview"]')).toHaveText("Every day");
+    await schedule.press("Enter");
+    await expect(item(page)).toContainText("Every day", { timeout: SLOW_MS });
+  });
+
+  test("Repeat… in a task's date turns it into a routine: its card closes and the routine is on the Routines page", async ({
+    page,
+    routines: world,
+  }) => {
+    const tree = treeOf(world);
+    await openRoutines(page, world, 16);
+    await page.goto(
+      `${world.origin}/s/${tree.id}/project/${tree.kitchen.id}?task=${tree.handles.ref}`,
+    );
+    const body = main(page).locator('[data-part="expanded"]');
+    await body.locator('[data-part="due"]').click({ timeout: SLOW_MS });
+    await page.locator('[data-part="due-repeat"]').click();
+    const field = page.locator('[data-part="due-field"]');
+    await field.pressSequentially("friday");
+    await expect(page.locator('[data-part="due-preview"]')).toHaveText("Repeats every Friday");
+    await field.press("Enter");
+    await expect(body).toHaveCount(0, { timeout: SLOW_MS });
+    await expect(
+      main(page).locator("li[data-task]").filter({ hasText: tree.handles.title }),
+    ).toHaveCount(0);
+    await expect(
+      main(page).locator('[data-part="project-routines"]').filter({ hasText: tree.handles.title }),
+    ).toBeVisible();
+    await page.goto(`${world.origin}/s/${tree.id}/routines`);
+    await expect(main(page)).toContainText(tree.handles.title, { timeout: SLOW_MS });
   });
 
   test("the Routines page, its card, its dialog and Today at 1,440 and 390 px: nothing sideways, no violation", async ({
@@ -141,6 +198,19 @@ test.describe("[A5.routines.e2e] a routine a person does, through three weeks on
     // A month on: the routine is late, on the Routines page and on Today.
     const days = 40;
     world.clock(days * DAY_MS);
+    // The routine Repeat… made is finished for good, for Completed's picture.
+    {
+      const page = await browser.newPage();
+      await openRoutines(page, world, days);
+      const handles = main(page)
+        .locator('[data-part="routine"]')
+        .filter({ hasText: tree.handles.title });
+      await handles.locator('[data-part="routine-open"]').click();
+      await main(page).locator('[data-part="routine-finish"]').click();
+      await page.locator('[data-part="routine-finish-confirm"]').click();
+      await expect(handles).toHaveCount(0, { timeout: SLOW_MS });
+      await page.close();
+    }
     for (const theme of themes()) {
       await world.machine("ui.theme", theme);
       for (const width of [1440, 390]) {
@@ -170,6 +240,14 @@ test.describe("[A5.routines.e2e] a routine a person does, through three weeks on
           });
           await picture(page, name("today"), { fullPage: true });
           expect(await sideways(page)).toBe(0);
+          await page.goto(`${world.origin}/s/${tree.id}/completed`);
+          await expect(main(page).locator('[data-part="routines-finished"]')).toContainText(
+            tree.handles.title,
+            { timeout: SLOW_MS },
+          );
+          await picture(page, name("completed"), { fullPage: true });
+          expect(await sideways(page)).toBe(0);
+          expect(await axeFound(page, ["main"])).toEqual([]);
         } finally {
           await context.close();
         }

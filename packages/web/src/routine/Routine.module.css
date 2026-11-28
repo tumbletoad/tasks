@@ -177,3 +177,25 @@
   display: flex;
   gap: 12px;
 }
+
+/* A finished routine's box: its mark, quieter, and no control. */
+.still {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* The card's title and schedule, corrected in place. */
+.edit {
+  display: grid;
+  gap: 6px;
+  max-width: 32rem;
+}
+
+/* The Finish dialog's buttons, with room above them at every width. */
+.finishActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+}

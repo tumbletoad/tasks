@@ -76,7 +76,7 @@ export function DuePicker({
    * Offered on a task with no task above or below it, on a space that keeps routines: a schedule
    * typed in the field ("every saturday") makes the task a routine you do, by its stored rule.
    */
-  readonly onRepeat?: ((rule: string, base: string | undefined) => void) | undefined;
+  readonly onRepeat?: ((rule: string, base: string | undefined) => Promise<boolean>) | undefined;
 }) {
   const t = useT();
   const edits = useEdits();
@@ -134,10 +134,12 @@ export function DuePicker({
             {...(onRepeat === undefined
               ? {}
               : {
-                  onRepeat: (rule: string) => {
-                    onRepeat(rule, opened.current?.base);
-                    setOpen(false);
-                  },
+                  // The words stay in the field until the routine is saved: a refusal keeps them.
+                  onRepeat: (rule: string) =>
+                    onRepeat(rule, opened.current?.base).then((saved) => {
+                      if (saved) setOpen(false);
+                      return saved;
+                    }),
                 })}
           />
         </Dialog>
@@ -158,12 +160,14 @@ function DueBody({
   /** Who changed the due date since the popover opened, if anyone did. */
   readonly changed: string | undefined;
   readonly onPick: (date: string | undefined) => void;
-  readonly onRepeat?: (rule: string) => void;
+  readonly onRepeat?: (rule: string) => Promise<boolean>;
 }) {
   const t = useT();
   const list = useList();
   const field = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
+  // One save of a routine at a time: Enter again while it is on its way does nothing.
+  const [saving, setSaving] = useState(false);
   const reading = readDue(text, clock.today);
   // A schedule in the field, where a routine is offered: it is read only when no date is.
   const repeat =
@@ -219,7 +223,12 @@ function DueBody({
           event.preventDefault();
           if (reading.kind === "date") onPick(reading.date);
           else if (reading.kind === "clear") onPick(undefined);
-          else if (repeat !== undefined) onRepeat?.(formatRule(repeat));
+          else if (repeat !== undefined && onRepeat !== undefined && !saving) {
+            setSaving(true);
+            void onRepeat(formatRule(repeat)).finally(() => {
+              setSaving(false);
+            });
+          }
         }}
       />
       <p

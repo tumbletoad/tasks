@@ -29,6 +29,28 @@ export function useRoutineActions(): RoutineActions & RoutineCardActions {
   const { api, live } = useContext(Session);
   const edits = useEdits();
   return useMemo(() => {
+    // A new title or schedule; true once it is saved, so the card keeps what was typed until then.
+    const change: RoutineCardActions["change"] = (routine, changed) =>
+      edits
+        .write(
+          (request, base) =>
+            api.client.routine.manage({
+              action: "change",
+              routine: routine.ref,
+              ...changed,
+              request_id: request,
+              ...(base === undefined ? {} : { base }),
+            }),
+          () => ({ id: "routine.saidChange", values: { title: routine.title } }),
+          { undo: true },
+        )
+        .then(
+          () => true,
+          (failed: unknown) => {
+            if (!live.failed(failed)) say(refusalText(failed, t("routine.notSaved")));
+            return false;
+          },
+        );
     const act = (action: Action) => (routine: RoutineRow) => {
       void edits
         .write(
@@ -52,6 +74,7 @@ export function useRoutineActions(): RoutineActions & RoutineCardActions {
       pause: act("pause"),
       resume: act("resume"),
       finish: act("finish"),
+      change,
     };
   }, [api, edits, live, say, t]);
 }

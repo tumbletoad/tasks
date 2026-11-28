@@ -1,6 +1,7 @@
 // What the page shows of a routine, as plain data: the Routines page's groups (Due, Coming, Paused)
 // and the words of its line, its schedule and who does it, when its open time is, and its newest
 // entry. A routine's schedule words come from the calculator's (row/schedule.ts).
+import { localDate } from "@ttasks/contracts/day";
 import { parseRule } from "@ttasks/contracts/schedule";
 import type { RoutineRow } from "@ttasks/client/store";
 import { formatDay, type Clock } from "@ttasks/client/today";
@@ -47,8 +48,16 @@ export interface Said {
 const day = (date: string, clock: Clock): string =>
   formatDay(date, clock.locale, { weekday: "short", day: "numeric", month: "short" });
 
-/** When its open time is: late since a day, today, or next on a day. */
+/** When its open time is: late since a day, today, or next on a day; or when it was finished. */
 export function whenOf(row: RoutineRow, clock: Clock): Said {
+  if (row.lifecycle !== "active") {
+    return row.completed_at === undefined
+      ? { id: "routine.finished" }
+      : {
+          id: "routine.finishedOn",
+          values: { date: day(localDate(row.completed_at, clock.timeZone), clock) },
+        };
+  }
   if (row.due_date < clock.today) {
     return { id: "routine.late", values: { date: day(row.due_date, clock) } };
   }
@@ -56,10 +65,10 @@ export function whenOf(row: RoutineRow, clock: Clock): Said {
   return { id: "routine.next", values: { date: day(row.due_date, clock) } };
 }
 
-/** Its newest entry, when it has one: last done or skipped on a day. */
+/** Its newest entry, when it has one: last done or skipped on the day it was, not its scheduled day. */
 export function lastOf(row: RoutineRow, clock: Clock): Said | undefined {
   if (row.last_state === undefined || row.last_at === undefined) return undefined;
-  const date = row.last_due ?? new Date(row.last_at).toISOString().slice(0, 10);
+  const date = localDate(row.last_at, clock.timeZone);
   return {
     id: row.last_state === "done" ? "routine.lastDone" : "routine.lastSkipped",
     values: { date: day(date, clock) },

@@ -329,13 +329,16 @@ export function parseCapture(text: string, ctx: CaptureContext): Capture {
       const said = repeatAt(words, i, ctx.today);
       if (said !== undefined) {
         const s = span(i, said.count);
-        if (!kept.has(keyOf("repeat", s.text))) {
-          found.push({ kind: "repeat", key: keyOf("repeat", s.text), ...s, rule: said.rule });
-          seen.add("repeat");
-          take(i, said.count);
+        // Kept as text, the whole schedule stays text: none of its words becomes a date.
+        if (kept.has(keyOf("repeat", s.text))) {
           i += said.count - 1;
           continue;
         }
+        found.push({ kind: "repeat", key: keyOf("repeat", s.text), ...s, rule: said.rule });
+        seen.add("repeat");
+        take(i, said.count);
+        i += said.count - 1;
+        continue;
       }
     }
     if (!seen.has("due")) {

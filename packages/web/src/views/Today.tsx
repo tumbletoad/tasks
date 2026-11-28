@@ -40,7 +40,17 @@ import { PageChanges } from "../library/PageChanges.tsx";
 import { useRoutineActions } from "../routine/actions.ts";
 import { RoutineItem } from "../routine/Routine.tsx";
 
-const styles = classes(css, ["day", "date", "numbers", "number", "value", "label", "sub"]);
+const styles = classes(css, [
+  "day",
+  "date",
+  "numbers",
+  "number",
+  "value",
+  "label",
+  "sub",
+  "routines",
+  "routinesHead",
+]);
 
 /** Agents' changes may touch any task, so Today announces and fades in every agent's row. */
 const ANY = (): boolean => true;
@@ -120,19 +130,26 @@ export function TodayPage({ task, onExpand }: TodayProps) {
 }
 
 /**
- * The routines you do that Today holds, above its tasks: those due today or late, then this week's,
- * each its own row with the round box. Its line says when; it takes no section of the tasks.
+ * The routines you do that Today holds, above its tasks under a quiet "Routines" line as Focus and
+ * Next have theirs, aligned with the task rows: due today or late, then this week's. Each line says
+ * when; a routine takes no section of the tasks.
  */
 function TodayRoutines({ today, clock }: { readonly today: Today; readonly clock: Clock }) {
+  const t = useT();
   const actions = useRoutineActions();
   const routines = today.sections.flatMap((s) => s.routines ?? []);
   if (routines.length === 0) return null;
   return (
-    <div data-part="today-routines">
+    <section
+      data-part="today-routines"
+      className={styles.routines}
+      aria-label={t("today.routines")}
+    >
+      <h2 className={styles.routinesHead}>{t("today.routines")}</h2>
       {routines.map((routine) => (
         <RoutineItem key={routine.id} routine={routine} clock={clock} actions={actions} />
       ))}
-    </div>
+    </section>
   );
 }
 

@@ -94,7 +94,8 @@ describe("[A5.routines.web.lists] a routine's row and the Routines page's lists"
         title: "Water the plants",
         due_date: "2026-12-05",
         last_state: "done",
-        last_at: Date.UTC(2026, 10, 27),
+        // Done on Friday for its Saturday: the line says the day it was done.
+        last_at: Date.UTC(2026, 10, 27, 9),
         last_due: "2026-11-28",
       }),
       routine({ title: "Take out the bins", rule: "FREQ=WEEKLY;BYDAY=WE", due_date: "2026-12-09" }),
@@ -103,7 +104,7 @@ describe("[A5.routines.web.lists] a routine's row and the Routines page's lists"
       routine({ title: "Done for good", lifecycle: "completed" }),
     ]);
     expect(lines("routines-due")).toEqual([
-      "Water the plants · Every Saturday · you · late since Sat 5 Dec · last done Sat 28 Nov",
+      "Water the plants · Every Saturday · you · late since Sat 5 Dec · last done Fri 27 Nov",
       "Take out the bins · Every Wednesday · you · today",
     ]);
     expect(lines("routines-coming")).toEqual([
@@ -132,13 +133,19 @@ describe("[A5.routines.web.lists] a routine's row and the Routines page's lists"
   });
 });
 
-describe("[A5.routines.web.card] a routine's card: its times done, Pause, and Finish behind its dialog", () => {
+describe("[A5.routines.web.card] a routine's card: its title and schedule corrected in place, its times done, Pause, and Finish behind its dialog", () => {
   const paused: string[] = [];
   const finished: string[] = [];
+  const changed: string[] = [];
+  let answer = true;
   const cardActions: RoutineCardActions = {
     pause: (r) => paused.push(`pause ${r.title}`),
     resume: (r) => paused.push(`resume ${r.title}`),
     finish: (r) => finished.push(r.title),
+    change: (_r, change) => {
+      changed.push(JSON.stringify(change));
+      return Promise.resolve(answer);
+    },
   };
   const card = (r: RoutineRow, entries: RoutineEntryView[]) => {
     act(() => {
@@ -153,8 +160,23 @@ describe("[A5.routines.web.card] a routine's card: its times done, Pause, and Fi
     [...container.querySelectorAll('[data-part="routine-entry"]')].map((li) =>
       [...li.querySelectorAll("span")].map((s) => s.textContent).join(" · "),
     );
+  const field = (part: string) =>
+    container.querySelector<HTMLInputElement>(`[data-part="${part}"]`);
+  const type = (input: HTMLInputElement | null, value: string) => {
+    if (input === null) throw new Error("no field");
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  const enter = async (input: HTMLInputElement | null) => {
+    await act(async () => {
+      input?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      await Promise.resolve();
+    });
+  };
 
-  test("the times done, newest first: a skip, an extra time and a note", () => {
+  test("the times done, newest first, each on the day it was done and for its own day when another", () => {
     card(routine({ title: "Water the plants", entries: 3 }), [
       {
         due: { date: "2026-12-05" },
@@ -175,11 +197,32 @@ describe("[A5.routines.web.card] a routine's card: its times done, Pause, and Fi
     expect(entryLines()).toEqual([
       "Sat 5 Dec · skipped",
       "Wed 2 Dec · an extra time",
-      "Sat 28 Nov · The fern too",
+      "Fri 27 Nov · for Sat 28 Nov · The fern too",
     ]);
-    expect(container.querySelector('[data-part="routine-card"]')?.textContent).toContain(
-      "Every Saturday",
+    // What the row above says is not said again: the card holds its fields instead.
+    expect(container.querySelector('[data-part="routine-card"]')?.textContent).not.toContain("you");
+  });
+
+  test("its title and its schedule are corrected in place; words that are no schedule save nothing, and a refusal keeps them", async () => {
+    changed.length = 0;
+    card(routine({ title: "Water the plants" }), []);
+    expect(field("routine-schedule")?.value).toBe("Every Saturday");
+    type(field("routine-title"), "Water the ferns");
+    await enter(field("routine-title"));
+    type(field("routine-schedule"), "now and then");
+    expect(container.querySelector('[data-part="routine-schedule-preview"]')?.textContent).toBe(
+      "Not a schedule: try every saturday or weekdays at 7",
     );
+    await enter(field("routine-schedule"));
+    answer = false;
+    type(field("routine-schedule"), "every sunday");
+    expect(container.querySelector('[data-part="routine-schedule-preview"]')?.textContent).toBe(
+      "Every Sunday",
+    );
+    await enter(field("routine-schedule"));
+    answer = true;
+    expect(changed).toEqual(['{"title":"Water the ferns"}', '{"rule":"FREQ=WEEKLY;BYDAY=SU"}']);
+    expect(field("routine-schedule")?.value).toBe("every sunday");
   });
 
   test("Pause, then Finish routine… asks first, and Cancel finishes nothing", () => {
@@ -204,6 +247,15 @@ describe("[A5.routines.web.card] a routine's card: its times done, Pause, and Fi
     });
     expect(finished).toEqual(["Weekly review"]);
     expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+  });
+
+  test("a finished routine's card shows its times done only", () => {
+    card(routine({ title: "Weekly review", lifecycle: "completed" }), [
+      { due: { date: "2026-12-04" }, state: "done", at: "2026-12-04T15:00:00.000Z", by: "user" },
+    ]);
+    expect(entryLines()).toEqual(["Fri 4 Dec"]);
+    expect(field("routine-title")).toBeNull();
+    expect(container.querySelector('[data-part="routine-finish"]')).toBeNull();
   });
 });
 
@@ -250,5 +302,46 @@ describe("[A5.routines.web.new] + New routine reads its schedule as the person t
     });
     expect(made).toEqual(["Water the plants FREQ=WEEKLY;BYDAY=SA"]);
     expect(container.querySelector('[data-part="routine-new-form"]')).toBeNull();
+  });
+
+  test("Make pressed twice while the first is on its way makes one routine, and a refusal keeps the words", async () => {
+    const made: string[] = [];
+    let settle: (saved: boolean) => void = () => undefined;
+    act(() => {
+      root.render(
+        <I18n>
+          <NewRoutine
+            clock={CLOCK}
+            onMake={(title) => {
+              made.push(title);
+              return new Promise<boolean>((resolve) => {
+                settle = resolve;
+              });
+            }}
+          />
+        </I18n>,
+      );
+    });
+    act(() => {
+      container.querySelector<HTMLButtonElement>('[data-part="routine-new"]')?.click();
+    });
+    const field = (part: string) =>
+      container.querySelector<HTMLInputElement>(`[data-part="${part}"]`);
+    type(field("routine-new-title"), "Water the plants");
+    type(field("routine-new-schedule"), "every saturday");
+    const save = () => container.querySelector<HTMLButtonElement>('[data-part="routine-new-save"]');
+    act(() => {
+      save()?.click();
+    });
+    act(() => {
+      save()?.click();
+    });
+    expect(made).toEqual(["Water the plants"]);
+    await act(async () => {
+      settle(false);
+      await Promise.resolve();
+    });
+    expect(field("routine-new-title")?.value).toBe("Water the plants");
+    expect(field("routine-new-schedule")?.value).toBe("every saturday");
   });
 });

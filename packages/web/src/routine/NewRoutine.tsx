@@ -25,6 +25,8 @@ export function NewRoutine({
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [words, setWords] = useState("");
+  // One save at a time: a second press while it is on its way does nothing.
+  const [saving, setSaving] = useState(false);
   const rule = parseRepeat(words, clock.today);
   if (!open) {
     return (
@@ -48,8 +50,10 @@ export function NewRoutine({
       data-part="routine-new-form"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!ready) return;
+        if (!ready || saving) return;
+        setSaving(true);
         void onMake(title.trim(), formatRule(rule)).then((made) => {
+          setSaving(false);
           if (!made) return;
           setOpen(false);
           setTitle("");
@@ -102,7 +106,7 @@ export function NewRoutine({
         >
           {t("routine.newCancel")}
         </button>
-        <button type="submit" data-part="routine-new-save" disabled={!ready}>
+        <button type="submit" data-part="routine-new-save" disabled={!ready || saving}>
           {t("routine.newSave")}
         </button>
       </div>

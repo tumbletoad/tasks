@@ -433,11 +433,13 @@ export function TopBar({
     sending.current.add(submitted);
     const area = capture.chips.find((chip) => chip.kind === "area");
     const where =
-      area === undefined
-        ? draft.status === "waiting"
-          ? t("nav.waiting")
-          : t("capture.inbox")
-        : chipLabel(t, area, clock.locale);
+      draft.repeat !== undefined
+        ? t("nav.routines")
+        : area === undefined
+          ? draft.status === "waiting"
+            ? t("nav.waiting")
+            : t("capture.inbox")
+          : chipLabel(t, area, clock.locale);
     // Through the live store: no optimistic row, and the text goes when the feed confirms the
     // add, so the new row is on screen when it does. Only the text that was added goes: whatever
     // the person typed meanwhile stays, here and in the space's kept draft.

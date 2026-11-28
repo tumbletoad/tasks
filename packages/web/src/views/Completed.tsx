@@ -9,11 +9,12 @@ import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useClock } from "../row/useClock.ts";
-import { usePagedQuery } from "../store/hooks.ts";
+import { useLive, usePagedQuery } from "../store/hooks.ts";
 import type { TaskRow } from "@ttasks/client/store";
 import { completedGroups, completedSource } from "./completed.ts";
 import css from "./TaskList.module.css";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
+import { FinishedRoutines } from "../routine/RoutinesPage.tsx";
 
 const styles = classes(css, ["line", "more"]);
 
@@ -35,6 +36,7 @@ export function CompletedPage({ task, onExpand }: CompletedProps) {
   const clock = useClock(false);
   const source = useMemo(() => completedSource((input) => api.client.task.finished(input)), [api]);
   const { state, query } = usePagedQuery(QUERY, source);
+  const anyFinished = [...useLive().routines.values()].some((r) => r.lifecycle !== "active");
   const groups = useCallback<GroupsOf>(
     (_tasks, held) => completedGroups(state.rows, clock, held),
     [state.rows, clock],
@@ -59,6 +61,7 @@ export function CompletedPage({ task, onExpand }: CompletedProps) {
   }, [next, state.rows, query]);
   return (
     <>
+      <FinishedRoutines />
       <TaskList
         key="completed"
         view="completed"
@@ -66,7 +69,8 @@ export function CompletedPage({ task, onExpand }: CompletedProps) {
         filter={NONE}
         groups={groups}
         clock={clock}
-        empty={state.phase === "ready" ? t("view.empty.completed") : undefined}
+        // A routine finished for good is something completed too: no line says nothing is.
+        empty={state.phase === "ready" && !anyFinished ? t("view.empty.completed") : undefined}
         expand={task}
         onExpand={onExpand}
       />

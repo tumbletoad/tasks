@@ -651,9 +651,7 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
           shortOf={(date) => shortDate(date, clock, t)}
           onRepeat={
             repeatable(task, state)
-              ? (rule, base) => {
-                  void makeRoutine({ task: task.ref }, rule, clock.timeZone, base);
-                }
+              ? (rule, base) => makeRoutine({ task: task.ref }, rule, clock.timeZone, base)
               : undefined
           }
         />
