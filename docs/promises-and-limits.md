@@ -24,13 +24,16 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Undo and Redo take back what is a nuisance to put back by hand: checking off and reopening,
   moving to the Trash and restoring, a whole change from the Trash too, removing a note and putting
   it back, the words of a title, a summary, a context, a note or a log entry, a move out of the
-  Inbox, a task's first area, a new project or area, and an unarchive. Anything else you change back
-  by doing it again, and Undo passes over it, in the page and at the command line alike.
-- Undo and Redo never replace someone else's work that came in between, also when that work set a
-  value and set it back. One that meets such work changes nothing and says who changed what, and
-  that change of yours leaves your Undo and Redo, so the next one reaches the change before it.
-  Your own changes never hold it back, a run you queued or stopped and a session you opened
-  included; what a run did since, from its start on, is the run's work.
+  Inbox, a task's first area, setting questions aside, a new project or area, and an unarchive.
+  Anything else you change back by doing it again, and Undo passes over it, in the page and at the
+  command line alike.
+- Undo and Redo never write over a change made since: not where what your change wrote was changed
+  again, by anyone, you included, and never by taking a task or a note out of sight that someone
+  else worked on since. Then nothing changes, you are told who changed what, and that change of
+  yours leaves your Undo and Redo, so the next one reaches the change before it. So does one that
+  can no longer be applied, such as to a task in the Trash, which says why. A run you queued or
+  stopped and a session you opened are yours; what a run did since, from its start on, is the
+  run's work.
 - Your undo history survives a restart and is shared by your windows and the command line.
 - In the page, a change Undo is not for saves without Undo, and from then on that tab offers no
   Undo or Redo of what came before it, so Undo never takes back something you did not expect. An
@@ -246,7 +249,7 @@ the behaviour it describes, and keep each one to a sentence or two.
   after it or dismiss it. A run's question is also answered by a run you start after it that gets
   to work; a logged one is not. A note you take back answers nothing. Dismiss sets aside every
   question up to the newest one the row shows, also those past the ten it shows; one asked after
-  that still waits. A task in the Trash whose run asks shows there with
+  that still waits, and Undo brings them back. A task in the Trash whose run asks shows there with
   its question and no Dismiss: Restore brings it back to answer.
 - Your skills, the files in `skills/` of TTasks's folder, are your instructions to every agent that
   uses TTasks, as a note for agents is. No agent tool creates or changes one. A file over 16 KB, an
@@ -503,7 +506,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   a new one of the same name in the same place finds it.
 - Undo of a task's first area puts it back without an area at the end of that list, not at its
   earlier place.
-- Undoing the reopen of a dropped task drops it again at the time of the Undo.
+- Undoing a reopen finishes the task again as yours, and its wrap-up dates from its finish; a
+  dropped task's drop dates from the Undo.
 - One copy of a space at a time holds for one TTasks service. Two services with homes of their own
   on one machine each keep their own list of spaces, and each can open a copy of the same space.
 - Two copies of one space that both take changes, such as a restored copy and its original used

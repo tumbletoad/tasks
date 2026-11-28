@@ -9,8 +9,8 @@
 //   by Codex just now · Apply mine") and after a failed call ("Not saved · Try again"). Nothing is
 //   overwritten silently: "Apply mine" is the person's explicit choice.
 // - Undo is for what is a nuisance to put back by hand: a check-off or a reopen, a move to the
-//   Trash or out of it, a removed note, a text, out of the Inbox, a first filing, a new group or an
-//   unarchive (`#stepped`, STEP_FIELDS, `write`'s `undo`): the steps the service takes back
+//   Trash or out of it, a removed note, a text, out of the Inbox, a first filing, questions set
+//   aside, a new group or an unarchive (`#stepped`, STEP_FIELDS, `write`'s `undo`): the steps the service takes back
 //   (storage's steps.ts). Every other change saves without Undo. The history is one line, so a
 //   change without Undo made in this tab ends the Undo and Redo of what came before it (`#moved`). A
 //   change made elsewhere ends nothing here: each Undo names its own commit, and the service keeps a
@@ -341,6 +341,7 @@ function historyOf(kind: "undo" | "redo", found: Found): Decision<HistoryResult>
     task_count: 0,
     as_of: found.as_of,
     ...(found.newer_work === undefined ? {} : { newer_work: found.newer_work }),
+    ...(found.why === undefined ? {} : { why: found.why }),
     ...(op.lifecycles === undefined ? {} : { lifecycles: op.lifecycles }),
   };
   return { ok: true, value: value as HistoryResult };
@@ -469,11 +470,12 @@ function listText({ shown, more }: ShortList, name: (item: string) => string | M
 /**
  * The toast of an undo or redo that someone's newer work kept (A5 3.12): who changed which tasks
  * since, the tasks by their numbers and the authors by their names, as the command line says it
- * (newerSaid). The step stays as they left it and is gone from Undo.
+ * (newerSaid), or that it cannot be put back now. The step stays as it is and is gone from Undo.
  */
 function keptToast(
   kind: "undo" | "redo",
   newer: readonly { by: string; at: string; task?: string | undefined }[] | undefined,
+  why: string | undefined,
 ): Omit<Toast, "key"> {
   const work = (newer ?? []).map(({ by, at, task }): NewerWorkEntry => ({
     by,
@@ -481,7 +483,8 @@ function keptToast(
     ...(task === undefined ? {} : { task }),
   }));
   if (work.length === 0) {
-    return { kind: "error", text: { id: "toast.notDoneOwn", values: { kind } } };
+    const id = why === undefined ? "toast.notDoneOwn" : "toast.notApplied";
+    return { kind: "error", text: { id, values: { kind } } };
   }
   const { who, tasks } = newerSaid(work);
   const it: Msg = { id: "toast.it" };
@@ -1012,7 +1015,7 @@ export class Edits {
 
   /**
    * The person sets aside the questions agents asked on a task without answering them: one
-   * action, gone from the row at once, with no Undo. It names `newest`, the
+   * action, gone from the row at once, and an Undo that brings them back. It names `newest`, the
    * newest question the row showed: one asked after it still waits. The service decides the mark
    * from its own read and never moves it back, so it needs no base: another tab's dismissal in
    * between is no conflict.
@@ -1044,11 +1047,10 @@ export class Edits {
         ],
       },
     );
-    // Saved without Undo, as every change Undo is not for.
-    this.#moved();
     const dismissed: Omit<Toast, "key"> = {
-      kind: "info",
+      kind: "undo",
       text: { id: "toast.questionDismissed", values: { count } },
+      action: this.#stepped(sent),
     };
     const toast = this.#toast(dismissed);
     void this.#outcome(
@@ -1147,7 +1149,7 @@ export class Edits {
       // Done after all, when no answer had come at first.
       this.#undoable = this.#undoable.filter((step) => step !== named);
       if (result.result === "kept") {
-        say(keptToast("undo", result.newer_work));
+        say(keptToast("undo", result.newer_work, result.why));
         return;
       }
       // Only a row whose check-off this undid comes back unchecked.
@@ -1191,7 +1193,7 @@ export class Edits {
       const result = decision.value;
       if (result.result === "kept") {
         this.#redoable = this.#redoable.filter((step) => step !== named);
-        say(keptToast("redo", result.newer_work));
+        say(keptToast("redo", result.newer_work, result.why));
         return;
       }
       // A checked row's box undoes only the commit that checked that task off: a redo of anything

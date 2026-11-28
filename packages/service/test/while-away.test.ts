@@ -194,7 +194,7 @@ describe("[A5.while-away.service.question] the questions agents asked wait on th
     expect(await refs()).toEqual([]);
   });
 
-  test("Dismiss sets aside the question it names and those before it; one asked after it still waits, and the answer names the field", async () => {
+  test("Dismiss sets aside the question it names and those before it; one asked after it still waits, an Undo brings them back, and the answer names the field", async () => {
     const { task, ask, refs } = asking();
     ask(fx.codex, "Fixture first?");
     ask(fx.codex, "Fixture second?");
@@ -211,6 +211,8 @@ describe("[A5.while-away.service.question] the questions agents asked wait on th
     expect(await refs()).toEqual(["l2"]);
     await call("task.update", { task, set: { reviewed: "l2" }, request_id: rid() });
     expect(await refs()).toEqual([]);
+    await call("history.undo", { request_id: rid() });
+    expect(await refs()).toEqual(["l2"]);
     // An entry that is no question of the task is refused and changes nothing.
     const refused: unknown = await call("task.update", {
       task,
@@ -222,7 +224,7 @@ describe("[A5.while-away.service.question] the questions agents asked wait on th
     );
     expect(refused).toBeInstanceOf(AppError);
     expect((refused as AppError).toBody().code).toBe("invalid_input");
-    expect(await refs()).toEqual([]);
+    expect(await refs()).toEqual(["l2"]);
   });
 
   test("a log reference names its question with leading zeros too", async () => {
@@ -435,7 +437,7 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
     expect(await row()).not.toHaveProperty("run");
   });
 
-  test("the person's note answers it, and Dismiss sets it aside, on a finished task too", async () => {
+  test("the person's note answers it, Dismiss sets it aside and Undo brings it back, on a finished task too", async () => {
     const { task: id, row } = task();
     const run = queue(id);
     asks(run);
@@ -455,6 +457,11 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
       call("task.update", { task: id, set: { reviewed: later }, request_id: rid() }),
     ).resolves.toMatchObject({ result: "updated", fields: ["reviewed"] });
     expect(await asking()).toBeUndefined();
+    await call("history.undo", { request_id: rid() });
+    expect(await asking()).toMatchObject({
+      questions: [{ ref: later }],
+      run: { id: later, state: "needs_you" },
+    });
   });
 
   test("[A4.3.11.run.reply-brief] the run that carries the reply is given the question it answers, as the agent asked it, before the person's words", async () => {
@@ -529,11 +536,12 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
     submit(fx.human, [{ kind: "note.restore", task: id, ordinal: 1 }], (clock += 60_000));
     expect(await replied(kept)).toEqual([one]);
     move(kept, "cancelled");
-    // None: the question was dismissed before the reply was queued.
+    // None stays none: a Dismiss undone after the reply was queued.
     const asked = queue(id);
     asks(asked, two);
     await call("task.update", { task: id, set: { reviewed: asked }, request_id: rid() });
     const none = queue(id, "Fixture go on");
+    await call("history.undo", { request_id: rid() });
     expect(await replied(none)).toEqual([]);
     // None stays none: an earlier queued reply carried the question, and is cancelled.
     const later = queue(id, "Fixture also");

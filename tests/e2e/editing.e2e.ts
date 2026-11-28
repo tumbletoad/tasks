@@ -293,7 +293,7 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Undo and Apply mine: an agent change
     await page.keyboard.press("Control+z");
     await expect(toast(page)).toContainText("Not undone: ");
     await expect(toast(page)).toHaveText(
-      new RegExp(`.+ changed ${ref} since, so it stays as they left it$`, "u"),
+      new RegExp(`.+ changed ${ref} since, so it stays as it is$`, "u"),
     );
     await expect(toastAction(page)).toHaveCount(0);
     await bothWidths(page, "undo-refused");
@@ -362,7 +362,7 @@ test.describe("[A5.3.12.e2e.redo-passed-over] Redo of a step an agent added to s
 
     // Redo would move the task, note and all, to the Trash: kept, naming who changed which task,
     // with nothing to choose.
-    const changed = new RegExp(`.+ changed ${removed} since, so it stays as they left it$`, "u");
+    const changed = new RegExp(`.+ changed ${removed} since, so it stays as it is$`, "u");
     await page.keyboard.press("Control+Shift+z");
     await expect(toast(page)).toContainText("Not redone: ");
     await expect(toast(page)).toHaveText(changed);

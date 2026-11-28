@@ -1219,9 +1219,7 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
     await w.edits.undo(STEP);
     const sent = w.calls.length;
     const shown = w.lastToast();
-    expect(said(shown?.text)).toBe(
-      "Not undone: Codex changed M-1 since, so it stays as they left it",
-    );
+    expect(said(shown?.text)).toBe("Not undone: Codex changed M-1 since, so it stays as it is");
     expect(shown?.kind).toBe("error");
     expect(shown?.action).toBeUndefined();
     await flush();
@@ -1320,18 +1318,16 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
     w.answer("history.redo", kept(11, newer));
     await w.edits.redo(STEP);
     const shown = w.lastToast();
+    expect(said(shown?.text)).toBe(`Not redone: ${String(newerText(newer))}, so it stays as it is`);
     expect(said(shown?.text)).toBe(
-      `Not redone: ${String(newerText(newer))}, so it stays as they left it`,
-    );
-    expect(said(shown?.text)).toBe(
-      "Not redone: Codex · work, a run and 2 more changed M-1, M-2 and 2 more since, so it stays as they left it",
+      "Not redone: Codex · work, a run and 2 more changed M-1, M-2 and 2 more since, so it stays as it is",
     );
     expect(shown?.action).toBeUndefined();
     // A group's change names no task.
     w.answer("history.undo", kept(12, [work(undefined, "import")]));
     await w.edits.undo(STEP);
     expect(said(w.lastToast()?.text)).toBe(
-      "Not undone: the import changed it since, so it stays as they left it",
+      "Not undone: the import changed it since, so it stays as it is",
     );
   });
 
