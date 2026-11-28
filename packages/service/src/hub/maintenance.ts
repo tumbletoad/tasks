@@ -33,7 +33,8 @@ export interface MaintenanceJob {
   /**
    * The folder the space's backups are written to, and the only one the run cleans. The space's
    * own `backups/`, where backups went before, is read with it, and at a start its backups move
-   * here (storage's moveOldBackups); retention never removes anything there.
+   * here (storage's moveOldBackups). Retention removes only here, so nothing there, unless this
+   * folder is that one.
    */
   readonly backupDir: string;
   /** Whether retention may remove old daily backups (default PRUNE_OLD_DAILIES). */
