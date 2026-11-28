@@ -33,6 +33,7 @@ import {
   parseCapture,
   type Chip,
 } from "@ttasks/client/capture";
+import { parseRule } from "@ttasks/contracts/schedule";
 import { joinRest, splitPaste } from "../capture/paste.ts";
 import { requestId } from "../api.ts";
 import { Session } from "../context.ts";
@@ -44,6 +45,7 @@ import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
 import { searchQueryOf } from "../route.ts";
 import { CopyIcon } from "../row/icons.tsx";
 import { sayMsg } from "../row/say.ts";
+import { scheduleWords } from "../row/schedule.ts";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
 import { actionOf, ariaKeys, isMac, keysOf } from "../keys/keymap.ts";
@@ -191,6 +193,16 @@ function chipLabel(t: Translate, chip: Chip, locale: string): string {
       return t("capture.waiting", { who: chip.who });
     case "star":
       return t("capture.star");
+    case "repeat": {
+      const rule = parseRule(chip.rule);
+      const list = (items: readonly string[]) =>
+        new Intl.ListFormat(locale, { type: "conjunction" }).format(items);
+      const words = rule === undefined ? chip.text : scheduleWords(rule, { t, list, locale });
+      // The schedule's words begin a sentence of their own; here they go on one.
+      return t("capture.repeat", {
+        schedule: words.charAt(0).toLocaleLowerCase(locale) + words.slice(1),
+      });
+    }
   }
 }
 

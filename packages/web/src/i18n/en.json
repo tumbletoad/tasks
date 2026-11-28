@@ -85,6 +85,7 @@
   "capture.project": "{area} › {project}",
   "capture.waiting": "Waiting on {who}",
   "capture.star": "Starred",
+  "capture.repeat": "Repeats {schedule}",
   "capture.inbox": "Inbox",
   "capture.archived": "{name} is archived",
 
