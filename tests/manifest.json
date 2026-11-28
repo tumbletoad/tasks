@@ -832,7 +832,7 @@
     },
     {
       "id": "A3.3.4.folders.cli",
-      "title": "Folders at the command line: ttasks add and ttasks set give a task its folder with --folder, a folder relative to the working one, folder= and --here, and --clear folder takes it away; --here beside --folder is a usage error; ttasks area create --folder --create makes a folder that is not there and binds it, one undo takes the project, its new area and its folder back and leaves the folder on disk; --folder . --create binds an existing folder; a refused call removes the folder --create made; ttasks area list and ttasks show print the folders; the old --place and place= name --folder",
+      "title": "Folders at the command line: ttasks add and ttasks set give a task its folder with --folder, a folder relative to the working one, folder= and --here, and --clear folder takes it away; --here beside --folder is a usage error; ttasks area create --folder --create makes a folder that is not there and binds it, one undo takes the project, its new area and its folder back and leaves the folder on disk; --folder . --create binds an existing folder; a refused call removes the folder --create made; ttasks area list and ttasks show print the folders",
       "source": "A2 3.10, A3 3.4.13",
       "owner": "M4",
       "kind": "ci",
@@ -3889,7 +3889,7 @@
     },
     {
       "id": "A2.3.2.4.hub.spaces",
-      "title": "The hub hosts the enabled [[spaces]] of machine.toml, takes [log] level from it, names a retired [roots] section once and leaves it and the old roots' revisions as they are, and refuses an invalid machine.toml with 64 and a line that names the key and code but no value",
+      "title": "The hub hosts the enabled [[spaces]] of machine.toml, takes [log] level from it, names a section it does not read and leaves it as it is, and refuses an invalid machine.toml with 64 and a line that names the key and code but no value",
       "source": "A2 3.2.4, A2 3.3.1, A7 3.9 M2.06",
       "owner": "M2",
       "kind": "ci",
