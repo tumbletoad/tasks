@@ -120,6 +120,11 @@ export interface TargetDef {
   >;
   readonly run?: "claude-print" | "codex";
   /**
+   * The terminal command line that opens one of the app's own conversations again by its ID
+   * (`{resume}`): how Continue goes on with a background run's conversation.
+   */
+  readonly resume?: readonly Template[];
+  /**
    * The app's own login commands, given after its program, and its vendor's install page. Only
    * `status`'s exit code is read: 0 a login was found, 1 none was confirmed; its output is never
    * read. `since`: the first version that has `status`.
@@ -281,6 +286,7 @@ export const CATALOGUE: readonly TargetDef[] = [
       },
     },
     run: "claude-print",
+    resume: ["{exec}", "--resume", "{resume}", "{permission}", "{extra_args}"],
     signIn: {
       status: ["auth", "status"],
       login: ["auth", "login"],
@@ -338,6 +344,17 @@ export const CATALOGUE: readonly TargetDef[] = [
       "read-only": { open: ["-s", "read-only", "-a", "on-request"], run: null },
     },
     run: "codex",
+    resume: [
+      "{exec}",
+      "resume",
+      "{resume}",
+      "-C",
+      "{cwd}",
+      "--no-daemon",
+      "{tool_env}",
+      "{permission}",
+      "{extra_args}",
+    ],
     signIn: {
       status: ["login", "status"],
       login: ["login"],
@@ -477,6 +494,7 @@ export const PLACEHOLDERS: Readonly<Record<string, { argv: boolean; url: boolean
   cwd: { argv: true, url: true },
   brief: { argv: true, url: true },
   session: { argv: true, url: true },
+  resume: { argv: true, url: false },
   "task.id": { argv: true, url: true },
   "task.title": { argv: true, url: false },
   "launch.ref": { argv: true, url: true },

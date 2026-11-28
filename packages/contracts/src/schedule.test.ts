@@ -96,7 +96,9 @@ function falls(value: Rule, start: number, d: number): boolean {
 }
 
 function walkNext(value: Rule, start: number, after: number): number | undefined {
-  for (let d = after + 1; d <= after + 366 * 5; d += 1) if (falls(value, start, d)) return d;
+  // Counted from the start when asked before it: the first date can lie a whole interval past it.
+  const end = Math.max(after, start) + 366 * 5;
+  for (let d = after + 1; d <= end; d += 1) if (falls(value, start, d)) return d;
   return undefined;
 }
 
@@ -240,6 +242,18 @@ describe("[A4.routines.schedule.dates] the dates a schedule falls on", () => {
     expect(nextDate(quarter, "2026-01-15")).toBe("2026-04-15");
     expect(previousDate(quarter, "2026-07-14")).toBe("2026-04-15");
     expect(previousDate(quarter, "2026-01-14")).toBeUndefined();
+  });
+
+  test("every fourth year, from a start just past its own year's date, asked a year before", () => {
+    // The last working day of January 2027 is Friday the 29th, the day before this start.
+    const value: Rule = {
+      pattern: { freq: "YEARLY", month: 1, on: { kind: "working", position: -1 } },
+      interval: 4,
+      time: null,
+    };
+    const s = schedule(value, "2027-01-30");
+    expect(nextDate(s, "2026-01-26")).toBe("2031-01-31");
+    expect(previousDate(s, "2031-01-30")).toBeUndefined();
   });
 
   test("the next and the previous date are the walk's, in any period and interval", () => {

@@ -300,7 +300,7 @@ test.describe("[A2.3.10.5.copies.e2e-recorded] a restored copy shows a run its b
       `${CODEX_INSTANCE.label} was working on it when this backup was made.`,
       { timeout: SLOW_MS },
     );
-    await expect(recorded.getByRole("button", { name: /^Stop/u })).toHaveCount(0);
+    await expect(recorded.getByRole("button", { name: /^Stop .*'s run$/u })).toHaveCount(0);
     await expect(copied).not.toContainText("It goes on if you close this page");
     await pictures(page, "copy-recorded-run", () => recorded.scrollIntoViewIfNeeded());
 

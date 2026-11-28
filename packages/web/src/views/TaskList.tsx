@@ -39,6 +39,7 @@ import {
   busyByTask,
   folderRefusal,
   homeRefusal,
+  continueRefusal,
   instanceRefusal,
   MARKER_REASONS,
   markerWords,
@@ -912,11 +913,11 @@ export function TaskList({
       open: (
         task: TaskRow,
         instance: Instance,
-        { text, draft, request, another = false }: OpenWith = {},
+        { text, draft, request, another = false, run }: OpenWith = {},
       ) => {
         const key = `open\n${task.id}\n${instance.key}`;
         const name = openName(live.spaceId ?? "", task.id, instance.key);
-        const asked = openAsked(another, text, request);
+        const asked = openAsked(another, text, request, run);
         const launch = (markFolder: boolean): Promise<Receipt | undefined> => {
           watched.current.add(task.id);
           const id = unansweredOpens.idFor(name, asked);
@@ -926,6 +927,7 @@ export function TaskList({
               another,
               ...(text === undefined ? {} : { text }),
               ...(request === undefined ? {} : { request }),
+              ...(run === undefined ? {} : { run }),
             })
             .then(async (opened) => {
               const { receipt, copy } = opened;
@@ -1024,6 +1026,13 @@ export function TaskList({
                   t("row.openT3", { why: t3Why, label: instance.label }),
                   t3Next(t3Why, instance.key),
                 );
+                return undefined;
+              }
+              // A Continue that could not open says why: nothing was stopped unless it says so.
+              const notContinued = continueRefusal(error);
+              if (notContinued !== undefined) {
+                refuse(task.id, undefined);
+                say(t("run.continueRefused", { why: notContinued }));
                 return undefined;
               }
               const cannot = instanceRefusal(error);

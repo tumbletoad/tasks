@@ -10,11 +10,13 @@
 // Each connection that claimed or attached holds its attachment (a WeakMap on the connection the
 // library hands every handler), so a report is accepted only on the connection that presented the
 // ticket or the credential, and never names its launch itself.
+import { createHash } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, win32 } from "node:path";
 import { PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError } from "@ttasks/contracts";
+import { isOpenRun, type RunRecord } from "@ttasks/contracts/runs";
 import {
   agentSetup,
   appName,
@@ -58,6 +60,7 @@ import {
   renderBrief,
   renderContextPack,
   resolveLaunchFolder,
+  resumeArgv,
   routeOf,
   servesSpace,
   sanitiseComposer,
@@ -132,6 +135,7 @@ import {
   LaunchUnavailable,
   LaunchWriterGone,
   type Choice,
+  type Continuable,
   type RegisteredElsewhere,
   type OpenTaskRequest,
   type OpenTaskResult,
@@ -168,7 +172,11 @@ export interface LaunchInstance {
  * marker that says it may be another folder. `folder` is the folder as the space stores it.
  */
 export type RunFolderFound =
-  | { readonly path: string }
+  | {
+      readonly path: string;
+      /** The folder's identity (`identityKey`), which the run records in place of its path. */
+      readonly identity: string;
+    }
   | {
       readonly refused: "folder_missing" | "marker_missing" | "marker_other";
       readonly folder?: string;
@@ -316,6 +324,8 @@ export interface LaunchServiceOptions extends LaunchOptions {
   readonly markers?: FolderMarkers;
   /** Where a terminal click's agent home is registered, when not for its space. None: nowhere. */
   readonly registeredElsewhere?: RegisteredElsewhere;
+  /** The background runs a Continue opens again (runs/service.ts). None: no run continues. */
+  readonly runs?: ContinueRuns;
   /** T3 Code's paired route (A4 3.4.1). None: a T3 instance opens nothing. */
   readonly t3?: T3Route;
 }
@@ -743,23 +753,35 @@ export class LaunchService {
     return run;
   }
 
-  async #openTask(request: OpenTaskRequest): Promise<OpenTaskResult> {
-    const { space, task, requestId } = request;
+  async #openTask(clicked: OpenTaskRequest): Promise<OpenTaskResult> {
+    const { space, task, requestId } = clicked;
     // The writer the call checked, also after its turn in the queue: another one serving the space
     // now holds another copy, whose task the call never read.
-    const hosted = await this.#space(space, request.writer);
+    const hosted = await this.#space(space, clicked.writer);
     if (hosted === undefined) throw new LaunchWriterGone();
+    // Continue opens the run's own conversation in the run's instance. Everything it needs is
+    // checked before the run is stopped, which comes last before the launch is recorded.
+    const continued =
+      clicked.continues === undefined ? undefined : await this.#continued(space, clicked);
+    const request =
+      continued === undefined ? clicked : { ...clicked, instance: continued.run.instance };
     // A repeated request (A1 3.8) replays the intent it made, read from its receipt before the
     // task or machine.toml is read again: an edit to the task since the click never turns a retry
     // into a conflict, and a retry saves, prepares and dispatches nothing.
     const replayed = await hosted.store.replayed(requestId);
     if (replayed !== undefined) return this.#replay(space, replayed, request);
     // An Open of an app that runs this task here is that session, whatever the page showed when
-    // it was clicked: only "Open another" starts a second agent in the same folder. One still
-    // opening is the writer's to join (launch.create).
-    if (request.instance !== undefined && request.another !== true) {
+    // it was clicked: only "Open another" starts a second agent in the same folder. A Continue is
+    // the session that continues the same conversation, if one runs: never a second writer on it.
+    // One still opening is the writer's to join (launch.create).
+    if (request.instance !== undefined && (request.another !== true || continued !== undefined)) {
       const runs = await this.#sessions(space, hosted);
-      const session = runs.find((i) => i.task === task.id && i.instance === request.instance);
+      const session = runs.find(
+        (i) =>
+          i.task === task.id &&
+          i.instance === request.instance &&
+          (continued === undefined || i.evidence.resumes === continued.conversation),
+      );
       if (session !== undefined) {
         // That agent never gets this click's words: they stay on the task, a note of the person's,
         // saved as typed like a new launch's request, since they never stand in a brief.
@@ -793,6 +815,10 @@ export class LaunchService {
     // A folder only on another machine opens there, never in this machine's work folder.
     if (choice.route !== "clipboard" && task.folder.kind === "other_machine") {
       throw this.#unavailable("other_machine");
+    }
+    // Continue opens the run's own conversation in a terminal, or not at all: never a new one.
+    if (continued !== undefined && choice.route !== "terminal") {
+      throw this.#unavailable("no_terminal");
     }
     if (choice.route === "t3-mcp" && instance !== undefined) {
       return this.#openT3(space, hosted, request, instance, choice);
@@ -829,19 +855,30 @@ export class LaunchService {
       choice.route === "clipboard"
         ? undefined
         : await this.#checkMarker(space, task.folder, request.markFolder === true);
-    const folder: PlanFolder | null = set === null || at === undefined ? set : { ...set, at };
+    // A run's conversation opens only in the folder the run worked in, and the dispatch opens
+    // nothing in another one found at the path later.
+    if (continued !== undefined) await this.#sameFolder(space, set, continued);
+    const pinned = continued?.folder ?? at;
+    const folder: PlanFolder | null =
+      set === null || pinned === undefined ? set : { ...set, at: pinned };
+    const resume = continued?.conversation;
 
-    const brief = await this.#briefOf(space, request, choice);
+    // A conversation that opens again holds its task already: it gets no brief.
+    const brief = resume === undefined ? await this.#briefOf(space, request, choice) : noBrief;
     // Decided on a reference of the real one's length: the real brief has the same length, so
     // the same lines and the same hash (the hash holds the reference as a slot).
     const probe = brief(REFERENCE_LENGTH_STAND_IN);
     if (probe.status !== "ok") throw this.#unavailable("too_long");
+    const briefSent = resume === undefined && choice.briefSent === true;
 
-    // The terminal route's plan: the agent's argv with the brief, kept in machine state.
+    // The terminal route's plan: the agent's argv with the brief, kept in machine state. Claude
+    // Code's session ID is the click's preset, or the one it opens again.
     const session =
       choice.route === "terminal" && instance?.target === "claude-cli"
-        ? presetSession(space, requestId)
+        ? (resume ?? presetSession(space, requestId))
         : undefined;
+    // Codex's thread is the one it opens again; a new one is found in its session files.
+    const thread = instance?.target === "codex-cli" ? resume : undefined;
     let planFor: ((reference: string) => SpawnPlan) | undefined;
     let given: ClickGiven = {};
     // The home the app keeps this launch's session in, as the link to the monitor's agents reads
@@ -868,18 +905,21 @@ export class LaunchService {
       const title = sanitiseTitle(task.title);
       planFor = (reference) => {
         const text = brief(reference);
-        const built = cliArgv(
-          chosen,
-          {
-            task: task.ref,
-            title,
-            reference,
-            toolEnv,
-            ...(session === undefined ? {} : { session }),
-            ...(text.status !== "ok" ? {} : { brief: text.text }),
-          },
-          choice.kind === "sent" ? "sent" : "prefilled",
-        );
+        const built =
+          resume === undefined
+            ? cliArgv(
+                chosen,
+                {
+                  task: task.ref,
+                  title,
+                  reference,
+                  toolEnv,
+                  ...(session === undefined ? {} : { session }),
+                  ...(text.status !== "ok" ? {} : { brief: text.text }),
+                },
+                choice.kind === "sent" ? "sent" : "prefilled",
+              )
+            : resumeArgv(chosen, { task: task.ref, title, toolEnv, resume });
         return {
           argv: built.argv,
           folder,
@@ -889,8 +929,10 @@ export class LaunchService {
           afterExit: this.terminals.settings.afterExit,
           ...(chosen.viaLoginShell && platform !== "win32" ? { loginShell: true } : {}),
           ...(built.folderArgs.length === 0 ? {} : { folderArgs: built.folderArgs }),
-          ...(codexHome === undefined ? {} : { match: { home: codexHome } }),
-          ...(choice.briefSent === true ? { notice: "brief_sent" as const } : {}),
+          ...(codexHome === undefined || thread !== undefined
+            ? {}
+            : { match: { home: codexHome } }),
+          ...(briefSent ? { notice: "brief_sent" as const } : {}),
         };
       };
       if (checkPlan(planFor(REFERENCE_LENGTH_STAND_IN)) === undefined) {
@@ -899,6 +941,8 @@ export class LaunchService {
       // The terminal's folder is the last check of a new click: a refused click saves nothing.
       await this.#preflight(space, hosted, requestId, folder);
     }
+    // Last before the launch is recorded: the run is stopped, and nothing opens until it ended.
+    if (continued !== undefined) await this.#stopRun(space, continued);
 
     // The person's words are on the task before the launch is recorded, so a launch that fails, a
     // service that stops, or a page that closes never loses them.
@@ -906,6 +950,8 @@ export class LaunchService {
     const leftOut = leftOutEvidence(choice.leftOut);
     const evidence = {
       ...(session === undefined ? {} : { preset: session }),
+      ...(thread === undefined ? {} : { thread }),
+      ...(resume === undefined ? {} : { resumes: resume }),
       ...(leftOut === undefined ? {} : { left_out: leftOut }),
       ...(sessionHome === undefined
         ? {}
@@ -967,7 +1013,7 @@ export class LaunchService {
       composer,
       ...(note === undefined ? {} : { note }),
       removed: probe.removed,
-      ...(choice.briefSent === true ? { briefSent: true as const } : {}),
+      ...(briefSent ? { briefSent: true as const } : {}),
     };
   }
 
@@ -1352,7 +1398,7 @@ ${instance}`;
         ? { refused: error.reason, folder: error.folder }
         : missing;
     }
-    return { path: found.folder };
+    return { path: found.folder, identity: identityKey(found.identity) };
   }
 
   /** Whether the folder a task opens in here resolves now and is the one set (`runFolder`). */
@@ -1576,6 +1622,42 @@ ${instance}`;
    * or dispatched: the click that made the intent did that, or its intent expires. The words' note
    * is the one the click saved, which the same request finds again.
    */
+  /**
+   * The run a Continue opens again, read and checked before anything is stopped or opened: a run
+   * of this task, in the instance the click names if it names one, whose conversation can open
+   * here.
+   */
+  async #continued(space: string, request: OpenTaskRequest): Promise<Continued> {
+    const runs = this.#options.runs;
+    const run = runs === undefined ? undefined : await runs.read(space, request.continues ?? "");
+    if (runs === undefined || run === undefined || run.task !== request.task.id) {
+      throw new AppError({
+        code: "not_found",
+        message: "This task has no run with this ID.",
+        data: { field: "run" },
+      });
+    }
+    if (request.instance !== undefined && request.instance !== run.instance) {
+      throw continueRefused("instance");
+    }
+    const can = await runs.continuable(run);
+    if (!can.ok) throw continueRefused(can.why);
+    return { run, conversation: can.conversation, folder: can.folder };
+  }
+
+  /** The task's folder here is the one the run worked in, by its identity, or Continue refuses. */
+  async #sameFolder(space: string, set: PlanFolder | null, continued: Continued): Promise<void> {
+    const where = await this.resolveFolder(space, set);
+    if (where.status === "ok" && identityKey(where.identity) === continued.folder) return;
+    throw continueRefused("folder_moved");
+  }
+
+  /** Stops the run and waits for its end: a run that did not end opens nothing. */
+  async #stopRun(space: string, continued: Continued): Promise<void> {
+    const after = await this.#options.runs?.stopped(space, continued.run.id);
+    if (after === undefined || isOpenRun(after)) throw continueRefused("not_stopped");
+  }
+
   async #replay(
     space: string,
     intent: LaunchIntent,
@@ -2363,6 +2445,52 @@ function composerOf(
   if (note === undefined) return "none";
   return intent.evidence.request === note ? "request" : "note";
 }
+
+/** A run a Continue opens again, as checked before anything stops: its conversation and folder. */
+interface Continued {
+  readonly run: RunRecord;
+  readonly conversation: string;
+  /** The identity of the folder it worked in (`identityKey`). */
+  readonly folder: string;
+}
+
+/** What Continue needs of the background runs (RunService). */
+export interface ContinueRuns {
+  read(space: string, run: string): Promise<RunRecord | undefined>;
+  continuable(run: RunRecord): Promise<Continuable>;
+  stopped(space: string, run: string): Promise<RunRecord | undefined>;
+}
+
+/** Why a Continue opened nothing, in the person's words. Nothing was stopped, unless it says so. */
+const CONTINUE_REFUSED = {
+  instance: "This run was another agent app's. Nothing was stopped or opened.",
+  conversation: "This run's agent did not name its conversation, so there is none to continue.",
+  machine: "This run worked on another computer: its conversation is there.",
+  folder: "This run did not record the folder it worked in, so its conversation is not opened.",
+  home: "This agent app uses another account now than the run did, and the run's conversation is kept in the other. Nothing was stopped or opened.",
+  folder_moved:
+    "This task's folder is not the one the run worked in, so its conversation is not opened there. Nothing was stopped or opened.",
+  not_stopped: "The run did not end, so its conversation was not opened. Stop it, then continue.",
+} as const;
+
+function continueRefused(why: keyof typeof CONTINUE_REFUSED): AppError {
+  return new AppError({
+    code: "invalid_input",
+    message: CONTINUE_REFUSED[why],
+    data: { field: "run", reason: why },
+  });
+}
+
+/** The brief of a conversation that opens again: none, which the launch records by its hash. */
+const NO_BRIEF: Brief = {
+  status: "ok",
+  text: "",
+  hash: createHash("sha256").update("", "utf8").digest("hex"),
+  composer: "none",
+  composerText: undefined,
+  removed: false,
+};
+const noBrief = (): Brief => NO_BRIEF;
 
 const isOpen = (space: ServedSpace): boolean =>
   space.state === "open" && space.writer !== undefined && space.id !== undefined;

@@ -20,6 +20,7 @@ import {
 } from "@ttasks/contracts/runs";
 import {
   decodeRun,
+  isConversationId,
   newTicket,
   RunRefused,
   servesSpace,
@@ -52,7 +53,7 @@ import {
 } from "@ttasks/runs";
 import { DEFAULT_RUN_SETTINGS, type RunSettings } from "../config/machine-toml.ts";
 import { errorCode, errorType } from "../hub/crash.ts";
-import { NOT_FOR_SPACE } from "../launch/open.ts";
+import { NOT_FOR_SPACE, type Continuable } from "../launch/open.ts";
 import type { Logger } from "../hub/log.ts";
 import type { OpeningSpace } from "../hub/spaces.ts";
 import type { ServedSpace } from "../ops/index.ts";
@@ -66,6 +67,7 @@ import {
 } from "../ops/read.ts";
 import {
   buildRun,
+  homeEvidence,
   runBriefHash,
   runFolder,
   runPermission,
@@ -74,6 +76,9 @@ import {
   type RunAgents,
 } from "./agent.ts";
 import { runAdapter, runsWith } from "./drivers.ts";
+
+/** How long Continue waits for a run it stopped to end before it gives up and opens nothing. */
+export const CONTINUE_STOP_MS = 120_000;
 
 /** What a start of the service may set for runs. Tests pass their process groups or times. */
 export interface RunOptions {
@@ -671,6 +676,63 @@ export class RunService {
   /** The run as the space holds it now. */
   async read(space: string, run: string): Promise<RunRecord | undefined> {
     return (await this.#required(space)).machine.read(run);
+  }
+
+  /**
+   * Whether Continue can open the run's own conversation here, and its ID: its agent named it,
+   * the run started on this machine in a folder it recorded, and its instance still runs the same
+   * app in the same home, where that conversation is kept. Reads only: nothing is stopped.
+   */
+  async continuable(run: RunRecord): Promise<Continuable> {
+    const conversation = run.result?.nativeId ?? run.evidence.native_id ?? null;
+    if (conversation === null || !isConversationId(conversation)) {
+      return { ok: false, why: "conversation" };
+    }
+    if (run.machine !== this.#options.machine) return { ok: false, why: "machine" };
+    const folder = run.evidence.folder_id;
+    if (folder === undefined) return { ok: false, why: "folder" };
+    const agents = this.#options.agents;
+    const instance = agents?.instances().find((i) => i.id === run.instance);
+    if (
+      agents === undefined ||
+      instance === undefined ||
+      !runsWith(instance) ||
+      runAdapter(instance) !== run.adapter
+    ) {
+      return { ok: false, why: "instance" };
+    }
+    const home = await homeEvidence(instance, agents.home, agents.platform);
+    if (home !== run.evidence.home) return { ok: false, why: "home" };
+    return { ok: true, conversation, folder };
+  }
+
+  /**
+   * The run once nothing of it runs, for Continue: one that may still work is stopped first and
+   * waited for, at most `withinMs`. Undefined when the space has no such run; the run as it is
+   * then when it did not end in time.
+   */
+  async stopped(
+    space: string,
+    run: string,
+    withinMs = CONTINUE_STOP_MS,
+  ): Promise<RunRecord | undefined> {
+    const now = await this.read(space, run);
+    if (now === undefined || !isOpenRun(now)) return now;
+    let timer: NodeJS.Timeout | undefined;
+    const late = new Promise<"late">((resolve) => {
+      timer = setTimeout(() => {
+        resolve("late");
+      }, withinMs);
+    });
+    try {
+      const ended = await Promise.race([
+        this.stop(space, run).then(() => this.ended(space, run)),
+        late,
+      ]);
+      return ended === "late" ? await this.read(space, run).catch(() => now) : ended;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** The run once it is final: started and ended, refused, or stopped. */
