@@ -14,6 +14,7 @@ import {
   showsSpace,
   signIn,
   themes,
+  threadDrawn,
   violations,
   watchViolations,
 } from "./page.ts";
@@ -450,5 +451,63 @@ test.describe("[A7.3.12.m5-06.e2e.screens] The expanded task in both themes: scr
     }
     // The tests of a worker share its service: the theme goes back to its default.
     await world.machine("ui.theme", null);
+  });
+});
+
+test.describe("[A7.3.12.m5-06.e2e.settled] An expanded card stays put when its detail arrives", () => {
+  test("after a reload and after a click on the row, at 1,440 px and 390 px, with the list's end in view: the card's star and the page's scroll stay where they were", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    await world.op(world.mira.id, "task.add", {
+      tasks: Array.from({ length: 15 }, (_, i) => ({
+        title: `Water the plants, round ${String(i)} (${tag})`,
+        area: "home",
+      })),
+    });
+    const ref = await addTask(world, { title: `Book the hall (${tag})`, area: "home" });
+    const row = page.locator(`main li[data-task="${ref}"]`);
+    const title = row.locator('[data-part="title"]');
+    const star = row.locator('[data-part="star"]');
+    const where = async () => ({
+      scroll: await page.evaluate(() => window.scrollY),
+      star: (await star.boundingBox())?.y,
+    });
+    for (const width of [1440, 390]) {
+      for (const how of ["reload", "click"] as const) {
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);
+        await showsSpace(page, world.mira.name);
+        await page.setViewportSize({ width, height: 900 });
+        await expect(title).toHaveAttribute("aria-expanded", "true", { timeout: SLOW_MS });
+        if (how === "click") {
+          await row.locator('[data-part="collapse"]').click();
+          await expect(title).toHaveAttribute("aria-expanded", "false");
+        }
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        await page.route("**/api/v1/op/task.get", async (route) => {
+          await gate;
+          await route.continue();
+        });
+        if (how === "reload") await page.reload();
+        else await title.click();
+        await expect(title).toHaveAttribute("aria-expanded", "true", { timeout: SLOW_MS });
+        await expect(star).toBeVisible();
+        // The list's end in view: what follows the list is on screen too.
+        await page.evaluate(() => {
+          window.scrollTo(0, document.documentElement.scrollHeight);
+        });
+        const before = await where();
+        expect(before.scroll, `the page scrolls at ${String(width)} px`).toBeGreaterThan(0);
+        release();
+        await threadDrawn(row);
+        await page.unroute("**/api/v1/op/task.get");
+        expect(await where(), `${how} at ${String(width)} px`).toEqual(before);
+      }
+    }
   });
 });

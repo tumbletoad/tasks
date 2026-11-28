@@ -3,6 +3,7 @@
 // {"error": {code, message, hint, data}} with the status of its code (src/errors.ts).
 
 export const httpRoutes = [
+  { entry: "activity.list", method: "POST", path: "/api/v1/op/activity.list" },
   { entry: "entry.add", method: "POST", path: "/api/v1/op/entry.add" },
   { entry: "entry.edit", method: "POST", path: "/api/v1/op/entry.edit" },
   { entry: "folder.manage", method: "POST", path: "/api/v1/op/folder.manage" },
