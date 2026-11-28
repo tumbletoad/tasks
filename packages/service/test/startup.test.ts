@@ -16,7 +16,6 @@ import {
 import { join } from "node:path";
 import {
   backupSpace,
-  backupsFolder,
   createSpace,
   encodeRevision,
   listBackups,
@@ -28,6 +27,7 @@ import {
 } from "@ttasks/storage";
 import { createSpaceAt, STEPS_0_1 } from "@ttasks/storage/revisions";
 import { checkedDriver } from "@ttasks/testkit";
+import { backupsBeside } from "../../storage/test/backup-helpers.ts";
 import { afterEach, describe, expect, test } from "vitest";
 import { workerWithSteps } from "../../storage/test/worker-helpers.ts";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
@@ -190,7 +190,10 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
     const { home, spaces } = setUp("copy", machine);
     const original = await fixtureSpace(join(spaces, "work"), machine);
     const checked = await checkedDriver();
-    const backup = await backupSpace(checked, original.folder, { kind: "manual" });
+    const backup = await backupSpace(checked, original.folder, {
+      kind: "manual",
+      backupDir: backupsBeside(original.folder),
+    });
     const copy = join(spaces, "copy");
     await restoreBackup(checked, backup.file, copy);
     // This machine has seen the space at epoch 7.
@@ -235,7 +238,7 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
       expect.objectContaining({ entry: 0, reason: "not_authority" }),
     ]);
     // No backups are taken of another machine's space, and no epoch is recorded for it.
-    expect(existsSync(backupsFolder(other.folder))).toBe(false);
+    expect(existsSync(join(other.folder, "backups"))).toBe(false);
     expect(readSpaceSettings(stateOf(home), other.space.spaceId).seen).toBeUndefined();
   }, 120_000);
 
@@ -273,8 +276,8 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
     };
     const oldOwn = leftover(backupsOf(home, own.space.spaceId), "0123456789abcdef", 2);
     const freshOwn = leftover(backupsOf(home, own.space.spaceId), "fedcba9876543210", 0);
-    // Where backups went before: only read now.
-    const oldBefore = leftover(backupsFolder(own.folder), "0123456789abcdee", 2);
+    // The space's own folder, which nothing cleans.
+    const oldBefore = leftover(join(own.folder, "backups"), "0123456789abcdee", 2);
     // The second space keeps its backups in a machine-local folder, shared or not: never cleaned.
     const shared = join(root, "shared-backups");
     const oldShared = leftover(shared, "00112233445566aa", 2);
@@ -305,16 +308,19 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
     const daily = (dir: string) =>
       listBackups(dir).backups.filter((b) => b.sidecar?.kind === "daily" && b.state === "ok");
     expect(daily(backupsOf(home, own.space.spaceId))).toHaveLength(1);
-    expect(daily(backupsFolder(own.folder))).toHaveLength(0);
+    expect(daily(join(own.folder, "backups"))).toHaveLength(0);
     expect(daily(shared).map((b) => b.sidecar?.space_id)).toEqual([elsewhere.space.spaceId]);
-    expect(existsSync(backupsFolder(elsewhere.folder))).toBe(false);
+    expect(existsSync(join(elsewhere.folder, "backups"))).toBe(false);
   }, 120_000);
 
   test("a restore in place through the space manager closes the space, goes above the epochs this machine has seen, and opens it again", async () => {
     const machine = newId("m");
     const { home, spaces } = setUp("rip", machine);
     const space = await fixtureSpace(join(spaces, "work"), machine);
-    const backup = await backupSpace(await checkedDriver(), space.folder, { kind: "manual" });
+    const backup = await backupSpace(await checkedDriver(), space.folder, {
+      kind: "manual",
+      backupDir: backupsBeside(space.folder),
+    });
     const service = await start(home, [space.folder], { maintenance: false });
     expect(service.spaces()).toEqual([{ entry: 0, state: "open", id: space.space.spaceId }]);
     const seen = readSpaceSettings(stateOf(home), space.space.spaceId).seen;
@@ -465,7 +471,10 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
     const machine = newId("m");
     const { home, spaces } = setUp("busy", machine);
     const space = await fixtureSpace(join(spaces, "work"), machine);
-    const backup = await backupSpace(await checkedDriver(), space.folder, { kind: "manual" });
+    const backup = await backupSpace(await checkedDriver(), space.folder, {
+      kind: "manual",
+      backupDir: backupsBeside(space.folder),
+    });
     // A worker that never starts: the open waits for it past the close's bound.
     registerSpaces(home, [space.folder]);
     const service = await startService({
@@ -479,6 +488,6 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
     await expect(service.spaceManager.restoreInPlace(0, backup.file)).rejects.toMatchObject({
       code: "SPACE_WRITER_TAKEN",
     });
-    expect(readdirSync(spaces)).toEqual(["work"]);
+    expect(readdirSync(spaces)).toEqual(["work", "work.backups"]);
   }, 120_000);
 });

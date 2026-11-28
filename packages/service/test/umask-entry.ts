@@ -31,7 +31,7 @@ import { join, relative } from "node:path";
 import { PRODUCT_ID } from "@ttasks/brand";
 import type { LaunchIntent, SpawnPlan } from "@ttasks/launch";
 import { fakeAgentCommand } from "@ttasks/runs/fake-agents";
-import { backupsFolder, listBackups, type Id } from "@ttasks/storage";
+import { listBackups, type Id } from "@ttasks/storage";
 import { FakeT3 } from "@ttasks/testkit/fake-t3";
 import { editMachineToml } from "../src/config/edit.ts";
 import { writeCrashFile } from "../src/hub/crash.ts";
@@ -51,6 +51,7 @@ import {
 import { openSession, serviceEnv, within } from "./harness.ts";
 import { classSession } from "./ops-helpers.ts";
 import { CLI_BIN, shimEnv, SUCCESS_FIXTURE, track, type Child } from "./shim-harness.ts";
+import { backupsBeside } from "../../storage/test/backup-helpers.ts";
 
 const root = process.argv[2];
 if (root === undefined) throw new Error("usage: umask-entry.ts <root>");
@@ -164,7 +165,7 @@ try {
     { op: "append", array: "spaces", entries: { id: spaceId, path: folder } },
   ]);
   if (!edited.ok) throw new Error(`machine.toml not written: ${edited.reason}`);
-  await runAdmin({ kind: "backup", folder });
+  await runAdmin({ kind: "backup", folder, backupDir: backupsBeside(folder) });
 
   const first = await start();
   await first.spacesSettled;
@@ -296,7 +297,7 @@ try {
   const secondSpaces = second.spaces().map((s) => s.state);
   const portAgain = second.http?.status().port ?? null;
   await second.stop();
-  const backups = listBackups(backupsFolder(folder)).backups.length;
+  const backups = listBackups(backupsBeside(folder)).backups.length;
 
   process.stdout.write(
     `${JSON.stringify({

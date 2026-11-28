@@ -18,7 +18,7 @@ export type AdminJob =
       /** The label of the space's human, the `user` of A3 3.7.4. */
       readonly ownerLabel: string;
     }
-  | { readonly kind: "backup"; readonly folder: string; readonly backupDir?: string }
+  | { readonly kind: "backup"; readonly folder: string; readonly backupDir: string }
   | {
       readonly kind: "export";
       readonly folder: string;

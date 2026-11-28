@@ -200,7 +200,6 @@ export {
 export { NODE_IO, type FileIo } from "./files.ts";
 export {
   backupSpace,
-  backupsFolder,
   makeDurableFolder,
   type BackupRecord,
   type BackupSeams,
@@ -230,7 +229,6 @@ export {
 } from "./backup/retention.ts";
 export {
   BACKUP_KINDS,
-  BACKUPS_FOLDER,
   type BackupKind,
   type BackupSidecar,
 } from "./backup/sidecar.ts";

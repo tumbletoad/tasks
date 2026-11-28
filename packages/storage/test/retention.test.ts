@@ -39,7 +39,7 @@ import type { Id } from "../src/ids.ts";
 import { restoreLatest } from "../src/restore/rescue.ts";
 import { restoreBackup, restoreBackupWith, restoreInPlace } from "../src/restore/restore.ts";
 import { unpackBackup } from "../src/restore/unpack.ts";
-import { rawWriter, readFacts, writeCommits } from "./backup-helpers.ts";
+import { backupsBeside, rawWriter, readFacts, writeCommits } from "./backup-helpers.ts";
 import { checkedDriver, createFixtureSpace, tempFolders, TEST_MACHINE } from "./space-helpers.ts";
 import { STEPS_MARK_GUARD } from "./stand-in-steps.ts";
 
@@ -241,10 +241,14 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
   test("applying a plan removes each removed backup's two files and nothing else", async () => {
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const now = WED + 12 * HOUR;
     for (let i = 0; i < 10; i += 1) {
-      await backupSpace(checked, folder, { kind: "daily", now: () => now - i * DAY });
+      await backupSpace(checked, folder, {
+        backupDir: backupsBeside(folder),
+        kind: "daily",
+        now: () => now - i * DAY,
+      });
     }
     const before = listBackups(dir);
     const plan = planRetention(before, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
@@ -263,14 +267,16 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
   test("the newest backup that verifies in full is never removed; a damaged newer one stays for a person", async () => {
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const now = WED + 12 * HOUR;
     // Two daily backups, under rules that keep only the newest.
     const older = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => now - 90 * DAY,
     });
     const newer = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => now - 80 * DAY,
     });
@@ -310,13 +316,15 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
   test("verified means a restore would pass: a sidecar that no longer matches its database does not count", async () => {
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const now = WED + 12 * HOUR;
     const older = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => now - 90 * DAY,
     });
     const newer = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => now - 80 * DAY,
     });
@@ -350,13 +358,15 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
   test("retention removes only the regular files it listed, never a folder in their place", async () => {
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const now = WED + 12 * HOUR;
     const older = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => now - 90 * DAY,
     });
     const newer = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => now - 80 * DAY,
     });
@@ -379,17 +389,20 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
   test("retention removes a backup only while it is still the one it listed", async () => {
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const now = WED + 12 * HOUR;
     const oldest = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => now - 100 * DAY,
     });
     const older = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => now - 90 * DAY,
     });
     const newer = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => now - 80 * DAY,
     });
@@ -417,13 +430,18 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
   test("a pair replaced while retention reads it stays: removal acts on the files it checked", async () => {
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const now = WED + 12 * HOUR;
     const older = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => now - 90 * DAY,
     });
-    await backupSpace(checked, folder, { kind: "daily", now: () => now - 80 * DAY });
+    await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "daily",
+      now: () => now - 80 * DAY,
+    });
     const listing = listBackups(dir);
     const plan = planRetention(
       listing,
@@ -546,11 +564,19 @@ describe("[A1.5.backup.newest-work] the newest backup is the one that holds the 
   test("on real files, the backup with the later commit is the newest that restores, and retention keeps it", async () => {
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const noon = WED + 12 * HOUR;
-    const first = await backupSpace(checked, folder, { kind: "daily", now: () => noon });
+    const first = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "daily",
+      now: () => noon,
+    });
     await writeCommits(folder, 3);
-    const later = await backupSpace(checked, folder, { kind: "daily", now: () => noon - HOUR });
+    const later = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "daily",
+      now: () => noon - HOUR,
+    });
     expect(later.sidecar.seq).toBeGreaterThan(first.sidecar.seq);
     const listed = listBackups(dir);
     expect(listed.backups.map((b) => b.name)).toEqual([later.name, first.name]);
@@ -579,7 +605,7 @@ describe("[A1.5.backup.outside-home] a backups folder that cannot be read", () =
     async () => {
       const checked = await checkedDriver();
       const { folder } = await createFixtureSpace(folders.make());
-      await backupSpace(checked, folder, { kind: "daily" });
+      await backupSpace(checked, folder, { backupDir: backupsBeside(folder), kind: "daily" });
       const unreadable = folders.make();
       chmodSync(unreadable, 0o000);
       try {
@@ -785,17 +811,20 @@ describe("[A1.5.backup.rotation] rotation removes only what A1's retention allow
   test("applied: the newest verified backup is looked for among those dated at or before now", async () => {
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const now = WED + 12 * HOUR;
     const older = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => now - 60 * DAY,
     });
     const newer = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => now - 40 * DAY,
     });
     const future = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => now + 365 * DAY,
     });
@@ -818,18 +847,26 @@ describe("[A1.5.backup.rotation] rotation removes only what A1's retention allow
   test("applied to real files: manual backups and the newest verified one stay, a damaged newer one too", async () => {
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const now = WED + 12 * HOUR;
     const manual = [];
     for (const days of [400, 200, 60]) {
       manual.push(
-        await backupSpace(checked, folder, { kind: "manual", now: () => now - days * DAY }),
+        await backupSpace(checked, folder, {
+          backupDir: backupsBeside(folder),
+          kind: "manual",
+          now: () => now - days * DAY,
+        }),
       );
     }
     const dailies = [];
     for (let i = 0; i < 12; i += 1) {
       dailies.push(
-        await backupSpace(checked, folder, { kind: "daily", now: () => now - i * DAY - HOUR }),
+        await backupSpace(checked, folder, {
+          backupDir: backupsBeside(folder),
+          kind: "daily",
+          now: () => now - i * DAY - HOUR,
+        }),
       );
     }
     // The newest backup no longer verifies, though its size is right.
@@ -870,12 +907,24 @@ describe("[A1.5.restore.not-the-backup] a trial restore the surroundings stop is
   test("with no room to trial restore the newest backup, retention names it unchecked, calls no older one the newest, and removes nothing", async () => {
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const now = WED + 12 * HOUR;
-    const oldest = await backupSpace(checked, folder, { kind: "daily", now: () => now - 3 * DAY });
-    const older = await backupSpace(checked, folder, { kind: "daily", now: () => now - 2 * DAY });
+    const oldest = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "daily",
+      now: () => now - 3 * DAY,
+    });
+    const older = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "daily",
+      now: () => now - 2 * DAY,
+    });
     await writeCommits(folder, 60);
-    const newer = await backupSpace(checked, folder, { kind: "daily", now: () => now - DAY });
+    const newer = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "daily",
+      now: () => now - DAY,
+    });
     expect(newer.sidecar.size).toBeGreaterThan(older.sidecar.size);
     const listing = listBackups(dir);
     const plan = planRetention(
@@ -909,20 +958,20 @@ describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran
     // exact-schema rule passes it, since its own steps made it (stand-in-steps.ts).
     const steps = STEPS_MARK_GUARD;
     const { folder, space } = await createFixtureSpace(folders.make(), "mira", {}, steps);
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const now = WED + 12 * HOUR;
     await writeCommits(folder, 1, "s", steps);
     const older = await backupSpaceWith(
       checked,
       folder,
-      { kind: "daily", now: () => now - 90 * DAY },
+      { backupDir: backupsBeside(folder), kind: "daily", now: () => now - 90 * DAY },
       { steps },
     );
     await writeCommits(folder, 2, "t", steps);
     const newer = await backupSpaceWith(
       checked,
       folder,
-      { kind: "daily", now: () => now - 80 * DAY },
+      { backupDir: backupsBeside(folder), kind: "daily", now: () => now - 80 * DAY },
       { steps },
     );
     expect(newer.sidecar.seq).toBeGreaterThanOrEqual(3);
@@ -982,10 +1031,11 @@ describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran
   test("a backup whose copy refuses a claim is never verified: the mark's transaction runs the claim and takes it back", async () => {
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const now = WED + 12 * HOUR;
     await writeCommits(folder, 2);
     const older = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => now - 90 * DAY,
     });
@@ -997,6 +1047,7 @@ describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran
       conn.close();
     }
     const newer = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => now - 80 * DAY,
     });
@@ -1033,15 +1084,17 @@ describe("[A1.5.backup.held-files] a reader opens both files of a backup before 
   test("retention removing a backup after a verification opened both of its files does not fail the verification", async () => {
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const now = WED + 12 * HOUR;
     await writeCommits(folder, 1);
     const old = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => now - 90 * DAY,
     });
     await writeCommits(folder, 1, "t");
     const kept = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => now - 80 * DAY,
     });
@@ -1071,7 +1124,10 @@ describe("[A1.5.backup.held-files] a reader opens both files of a backup before 
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
     await writeCommits(folder, 3);
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     const restored = await restoreBackupWith(
       checked,
       backup.file,

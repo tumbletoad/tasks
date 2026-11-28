@@ -1,17 +1,11 @@
-import { existsSync, mkdirSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import {
-  backupSpace,
-  backupsFolder,
-  createSpace,
-  listBackups,
-  newId,
-  restoreBackup,
-} from "@ttasks/storage";
+import { backupSpace, createSpace, listBackups, newId, restoreBackup } from "@ttasks/storage";
 import { checkedDriver } from "@ttasks/testkit";
 import { tempRoot } from "../../test/harness.ts";
 import { Maintenance } from "./maintenance.ts";
+import { backupsBeside } from "../../../storage/test/backup-helpers.ts";
 
 const cleanups: (() => void)[] = [];
 const runners: Maintenance[] = [];
@@ -42,7 +36,6 @@ describe("[A1.5.backup.failure-shown] the upkeep's verdict on a space's newest b
       machineId: newId("m"),
     });
     // The service makes the write folder before a run (space-settings.ts readyBackupsFolder).
-    mkdirSync(backupsFolder(space.folder));
     const runner = new Maintenance();
     runners.push(runner);
     // A job is made a moment before its worker takes the backup.
@@ -52,7 +45,7 @@ describe("[A1.5.backup.failure-shown] the upkeep's verdict on a space's newest b
       folder: space.folder,
       spaceId: space.space.spaceId,
       incarnation: space.space.authority.incarnation,
-      backupDir: backupsFolder(space.folder),
+      backupDir: backupsBeside(space.folder),
       cleanup: true,
       atStart: true,
       utcOffsetMinutes,
@@ -60,7 +53,7 @@ describe("[A1.5.backup.failure-shown] the upkeep's verdict on a space's newest b
 
     const first = await runner.run({ ...job, now: start });
     expect(first.backup).toBe("taken");
-    const daily = listBackups(backupsFolder(space.folder)).backups.find(
+    const daily = listBackups(backupsBeside(space.folder)).backups.find(
       (b) => b.sidecar?.kind === "daily",
     );
     expect(daily?.sidecar?.created_at).toBeGreaterThan(start);
@@ -70,6 +63,7 @@ describe("[A1.5.backup.failure-shown] the upkeep's verdict on a space's newest b
     // A backup made after it loses part of its data.
     const dailyAt = daily?.sidecar?.created_at ?? 0;
     const later = await backupSpace(checked, space.folder, {
+      backupDir: backupsBeside(space.folder),
       kind: "manual",
       now: () => dailyAt + 2000,
     });
@@ -88,7 +82,6 @@ describe("[A1.5.backup.failure-shown] the upkeep's verdict on a space's newest b
       ownerLabel: "Mira Okafor",
       machineId: newId("m"),
     });
-    mkdirSync(backupsFolder(space.folder));
     const runner = new Maintenance();
     runners.push(runner);
     const start = Date.now() - 1000;
@@ -96,7 +89,7 @@ describe("[A1.5.backup.failure-shown] the upkeep's verdict on a space's newest b
       folder: space.folder,
       spaceId: space.space.spaceId,
       incarnation: space.space.authority.incarnation,
-      backupDir: backupsFolder(space.folder),
+      backupDir: backupsBeside(space.folder),
       cleanup: true,
       atStart: true,
       utcOffsetMinutes: noonAt(start),
@@ -106,11 +99,12 @@ describe("[A1.5.backup.failure-shown] the upkeep's verdict on a space's newest b
     expect(first).toMatchObject({ backup: "taken", checked: true, unverified: 0 });
 
     const cut = await backupSpace(checked, space.folder, {
+      backupDir: backupsBeside(space.folder),
       kind: "manual",
       now: () => dailyAt + 2000,
     });
     const state = () =>
-      listBackups(backupsFolder(space.folder)).backups.find((b) => b.name === cut.name)?.state;
+      listBackups(backupsBeside(space.folder)).backups.find((b) => b.name === cut.name)?.state;
     writeFileSync(cut.sidecarFile, "{");
     const second = await runner.run({ ...job, now: dailyAt + 5000 });
     expect(second).toMatchObject({ checked: true, unverified: 0, verifiedAt: dailyAt });
@@ -134,6 +128,7 @@ describe("[A1.5.backup.kept-unknown] the upkeep removes only files it knows to b
       machineId: newId("m"),
     });
     const manual = await backupSpace(checked, space.folder, {
+      backupDir: backupsBeside(space.folder),
       kind: "manual",
       now: () => Date.now() - 3 * HOUR,
     });
@@ -149,7 +144,7 @@ describe("[A1.5.backup.kept-unknown] the upkeep removes only files it knows to b
       folder: space.folder,
       spaceId: space.space.spaceId,
       incarnation: space.space.authority.incarnation,
-      backupDir: backupsFolder(space.folder),
+      backupDir: backupsBeside(space.folder),
       cleanup: true,
       atStart: true,
       now,
@@ -157,7 +152,7 @@ describe("[A1.5.backup.kept-unknown] the upkeep removes only files it knows to b
     });
     expect(report.leftovers).toBe(0);
     expect(existsSync(manual.file)).toBe(true);
-    const listed = listBackups(backupsFolder(space.folder));
+    const listed = listBackups(backupsBeside(space.folder));
     expect(listed.backups.find((b) => b.name === manual.name)?.state).toBe("missing_sidecar");
 
     renameSync(aside, manual.sidecarFile);
@@ -176,6 +171,7 @@ describe("[A1.5.backup.kept-unknown] the upkeep removes only files it knows to b
     });
     const now = Date.now();
     const barrier = await backupSpace(checked, space.folder, {
+      backupDir: backupsBeside(space.folder),
       kind: "pre-migrate",
       now: () => now - 31 * DAY,
     });
@@ -185,7 +181,7 @@ describe("[A1.5.backup.kept-unknown] the upkeep removes only files it knows to b
       folder: space.folder,
       spaceId: space.space.spaceId,
       incarnation: space.space.authority.incarnation,
-      backupDir: backupsFolder(space.folder),
+      backupDir: backupsBeside(space.folder),
       cleanup: true,
       atStart: true,
       now,

@@ -63,9 +63,8 @@ export interface MigrateOptions {
   appVersion?: string;
   busyTimeoutMs?: number;
   /**
-   * The space's backups folder, where the barrier backup goes. When it is not there (a drive away,
-   * or a folder that could not be made), nothing is migrated. Default: the space's own backups
-   * folder.
+   * The space's backups folder, where the barrier backup goes. Without one, or when it is not
+   * there (a drive away, or a folder that could not be made), nothing is migrated.
    */
   backupDir?: string;
   /** Milliseconds since 1970. Default: Date.now. */
@@ -207,18 +206,22 @@ export async function migrateOpened(
   // Another connection's commit after this point changes data_version (checked inside BEGIN).
   const dataVersion = conn.pragma("data_version");
   const barrier = (backupDir: string | undefined): Promise<BackupRecord> =>
-    provenBackup(
-      checked,
-      opened.folder,
-      {
-        kind: "pre-migrate",
-        appVersion,
-        now,
-        ...(backupDir === undefined ? {} : { backupDir }),
-        ...(options.busyTimeoutMs === undefined ? {} : { busyTimeoutMs: options.busyTimeoutMs }),
-      },
-      { ...seams.backup, steps },
-    );
+    backupDir === undefined
+      ? Promise.reject(new BackupsFolderAway())
+      : provenBackup(
+          checked,
+          opened.folder,
+          {
+            kind: "pre-migrate",
+            appVersion,
+            now,
+            backupDir,
+            ...(options.busyTimeoutMs === undefined
+              ? {}
+              : { busyTimeoutMs: options.busyTimeoutMs }),
+          },
+          { ...seams.backup, steps },
+        );
   let backup: BackupRecord;
   try {
     backup = await barrier(options.backupDir);

@@ -7,7 +7,7 @@ import { backupSpace } from "../src/backup/backup.ts";
 import { DATABASE_FILE } from "../src/manifest.ts";
 import { openReader } from "../src/open.ts";
 import { restoreInPlace } from "../src/restore/restore.ts";
-import { copyTree, rawWriter, readFacts, writeCommits } from "./backup-helpers.ts";
+import { backupsBeside, copyTree, rawWriter, readFacts, writeCommits } from "./backup-helpers.ts";
 import { checkedDriver, createFixtureSpace, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
 
 const folders = tempFolders("refs-restore");
@@ -97,7 +97,10 @@ describe("[A1.5.refs.across-restore] a restore over a space never gives a refere
     const elsewhere = join(parent, "elsewhere");
     copyTree(folder, elsewhere);
     await writeCommits(elsewhere, 5, "b");
-    const later = await backupSpace(checked, elsewhere, { kind: "manual" });
+    const later = await backupSpace(checked, elsewhere, {
+      backupDir: backupsBeside(elsewhere),
+      kind: "manual",
+    });
     const restored = await restoreInPlace(checked, later.file, folder, { machineId: TEST_MACHINE });
     expect((await readFacts(folder)).space.nextRef).toBe(
       (await readFacts(elsewhere)).space.nextRef,

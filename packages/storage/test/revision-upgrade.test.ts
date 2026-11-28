@@ -16,7 +16,7 @@ import { DATABASE_FILE } from "../src/manifest.ts";
 import { encodeRevision } from "../src/schema.ts";
 import { openSpace } from "../src/space.ts";
 import type { SchemaStep } from "../src/schema.ts";
-import { writeCommits } from "./backup-helpers.ts";
+import { backupsBeside, writeCommits } from "./backup-helpers.ts";
 import { STEPS_0_4, STEPS_0_5, STEPS_0_6 } from "./revisions.ts";
 import { checkedDriver, createFixtureSpace, tempFolders } from "./space-helpers.ts";
 
@@ -77,11 +77,14 @@ describe("[A1.5.restore.every-revision] a backup of every revision with a search
       const revision = steps.at(-1)?.revision ?? { major: 0, minor: 0 };
       const before = await read(folder, kept);
 
-      const backup = await backupSpaceWith(checked, folder, { kind: "manual" }, { steps });
-      expect(backup.sidecar.user_version).toBe(encodeRevision(revision));
-      const listed = listBackups(join(folder, "backups")).backups.find(
-        (b) => b.name === backup.name,
+      const backup = await backupSpaceWith(
+        checked,
+        folder,
+        { backupDir: backupsBeside(folder), kind: "manual" },
+        { steps },
       );
+      expect(backup.sidecar.user_version).toBe(encodeRevision(revision));
+      const listed = listBackups(backupsBeside(folder)).backups.find((b) => b.name === backup.name);
       if (listed === undefined) throw new Error("the backup is listed");
       expect(await verifyBackup(checked, listed)).toEqual({
         state: "verified",
@@ -94,7 +97,7 @@ describe("[A1.5.restore.every-revision] a backup of every revision with a search
       });
 
       // The upgrade's barrier backup is trial-restored by this build before any step runs.
-      const outcome = await migrateSpace(checked, folder);
+      const outcome = await migrateSpace(checked, folder, { backupDir: backupsBeside(folder) });
       expect(outcome.state).toBe(name === "0.6" ? "current" : "migrated");
       await read(folder, (conn) => {
         expect(Number(conn.pragma("user_version"))).toBe(encodeRevision({ major: 0, minor: 6 }));

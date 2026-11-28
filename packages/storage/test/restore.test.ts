@@ -29,7 +29,14 @@ import {
 import type { LineageEntry } from "../src/rows.ts";
 import { openSpace, openSpaceWith } from "../src/space.ts";
 import { StorageWorker } from "../src/worker/client.ts";
-import { copyTree, rawWriter, readFacts, treeDigest, writeCommits } from "./backup-helpers.ts";
+import {
+  backupsBeside,
+  copyTree,
+  rawWriter,
+  readFacts,
+  treeDigest,
+  writeCommits,
+} from "./backup-helpers.ts";
 import { createRequest, FIXTURE_MACHINE, ownerCredential } from "./fixture-requests.ts";
 import { checkedDriver, createFixtureSpace, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
 import { STEPS_0_7 } from "./stand-in-steps.ts";
@@ -84,7 +91,10 @@ async function spaceWithBackup(
   const checked = await checkedDriver();
   const { folder } = await createFixtureSpace(folders.make());
   await writeCommits(folder, before, "a");
-  const backup = await backupSpace(checked, folder, { kind: "manual" });
+  const backup = await backupSpace(checked, folder, {
+    backupDir: backupsBeside(folder),
+    kind: "manual",
+  });
   await writeCommits(folder, after, "b");
   return { folder, backup };
 }
@@ -175,9 +185,17 @@ describe("[A1.5.restore.new-folder] restore into a new folder", () => {
   test("a backup of a newer revision than this build is refused; an older one restores", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
-    const outcome = await migrateSpaceWith(checked, folder, {}, { steps: STEPS_0_7 });
+    const outcome = await migrateSpaceWith(
+      checked,
+      folder,
+      { backupDir: backupsBeside(folder) },
+      { steps: STEPS_0_7 },
+    );
     if (outcome.state !== "migrated") throw new Error("the stand-in migration failed");
-    const newer = await backupSpace(checked, folder, { kind: "manual" });
+    const newer = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     expect(newer.sidecar.user_version).toBe(7);
     const parent = folders.make();
     await expectCode(
@@ -209,7 +227,9 @@ describe("[A1.5.restore.read-only-copy] a backup restored into a new folder is a
     // Every writer is refused with the reason's own code: in the calling thread and in a worker.
     await expectCode(() => openSpace(checked, target, { role: "writer" }), "SPACE_READ_ONLY_COPY");
     const w = await worker();
-    const refused = await rejection(w.openSpaceWriter(target, { machine: FIXTURE_MACHINE }));
+    const refused = await rejection(
+      w.openSpaceWriter(target, { backupDir: backupsBeside(target), machine: FIXTURE_MACHINE }),
+    );
     expect(refused.code).toBe("SPACE_READ_ONLY_COPY");
     expect(refused.message).toBe(
       "This space is a restored copy and opens read-only until it is claimed",
@@ -277,7 +297,10 @@ describe("[A1.5.restore.read-only-copy] a backup restored into a new folder is a
     expect(manifest.state === "present" && manifest.manifest?.transfer).toBeNull();
 
     // Now it opens for writing, under its new incarnation.
-    const writer = await w.openSpaceWriter(target, { machine: FIXTURE_MACHINE });
+    const writer = await w.openSpaceWriter(target, {
+      backupDir: backupsBeside(target),
+      machine: FIXTURE_MACHINE,
+    });
     const result = await writer.submit(
       createRequest(writer.spaceId, ownerCredential(await ownerOf(target)), "In the claimed copy"),
     );
@@ -332,7 +355,10 @@ describe("[A1.5.restore.read-only-copy] a backup restored into a new folder is a
     await expectCode(() => openSpace(checked, copied, { role: "writer" }), "SPACE_READ_ONLY_COPY");
     // A restore in place claims what it restores, so a backup of a read-only copy comes back
     // writable there.
-    const copyBackup = await backupSpace(checked, copied, { kind: "manual" });
+    const copyBackup = await backupSpace(checked, copied, {
+      backupDir: backupsBeside(copied),
+      kind: "manual",
+    });
     const inPlace = await restoreInPlace(checked, copyBackup.file, target, {
       machineId: TEST_MACHINE,
     });
@@ -399,7 +425,10 @@ describe("[A1.5.restore.one-writer] restore in place, recovery and a claim hold 
   test("each is refused while the space's writer is open in the process", async () => {
     const { folder, backup } = await spaceWithBackup(2, 1);
     const w = await worker();
-    const writer = await w.openSpaceWriter(folder, { machine: FIXTURE_MACHINE });
+    const writer = await w.openSpaceWriter(folder, {
+      backupDir: backupsBeside(folder),
+      machine: FIXTURE_MACHINE,
+    });
     expect(
       (await rejection(w.restoreInPlace(backup.file, folder, { machineId: TEST_MACHINE }))).code,
     ).toBe("SPACE_WRITER_TAKEN");
@@ -420,7 +449,7 @@ describe("[A1.5.restore.one-writer] restore in place, recovery and a claim hold 
     );
     expect(result.status).toBe("applied");
     await writer.close();
-    expect(readdirSync(dirname(folder))).toEqual(["mira"]);
+    expect(readdirSync(dirname(folder))).toEqual(["mira", "mira.backups"]);
   });
 
   test("a restore in place or a recovery through a link to the space folder is refused, and nothing moves", async () => {
@@ -439,7 +468,7 @@ describe("[A1.5.restore.one-writer] restore in place, recovery and a claim hold 
     const w = await worker();
     expect((await rejection(w.recoverSpace(alias))).code).toBe("SPACE_PATH_INVALID");
     // The link and the space are where they were: the swap would have renamed the link.
-    expect(readdirSync(dirname(folder)).sort()).toEqual(["alias", "mira"]);
+    expect(readdirSync(dirname(folder)).sort()).toEqual(["alias", "mira", "mira.backups"]);
     expect(treeDigest(folder)).toEqual(before);
     // On the folder itself, both work.
     recoverSpace(checked, folder);
@@ -455,13 +484,23 @@ describe("[A1.5.restore.one-writer] restore in place, recovery and a claim hold 
     const queued = sent(w1, "restoreInPlace");
     const restoring = w1.restoreInPlace(backup.file, folder, { machineId: TEST_MACHINE });
     await queued;
-    expect((await rejection(w2.openSpaceWriter(folder, { machine: FIXTURE_MACHINE }))).code).toBe(
-      "SPACE_WRITER_TAKEN",
-    );
+    expect(
+      (
+        await rejection(
+          w2.openSpaceWriter(folder, {
+            backupDir: backupsBeside(folder),
+            machine: FIXTURE_MACHINE,
+          }),
+        )
+      ).code,
+    ).toBe("SPACE_WRITER_TAKEN");
     await hold.release();
     const restored = await restoring;
     expect(restored.space.lastSeq).toBe(3);
-    const writer = await w2.openSpaceWriter(folder, { machine: FIXTURE_MACHINE });
+    const writer = await w2.openSpaceWriter(folder, {
+      backupDir: backupsBeside(folder),
+      machine: FIXTURE_MACHINE,
+    });
     expect(writer.spaceId).toBe(restored.space.spaceId);
     await writer.close();
   });
@@ -553,9 +592,8 @@ describe("[A1.5.restore.claim] restore in place claims the copy", () => {
       machineId: TEST_MACHINE,
       now: () => Date.UTC(2026, 10, 13, 12, 0, 0, 1),
     });
-    // The backup stayed in the replaced folder: restore it again in place.
-    const again = join(first.replaced, "backups", basename(backup.file));
-    const second = await restoreInPlace(checked, again, folder, {
+    // The same backup again, in place.
+    const second = await restoreInPlace(checked, backup.file, folder, {
       machineId: TEST_MACHINE,
       now: () => Date.UTC(2026, 10, 13, 12, 0, 0, 2),
       knownEpochs: [7],
@@ -566,6 +604,7 @@ describe("[A1.5.restore.claim] restore in place claims the copy", () => {
     expect(second.claim.parent.incarnation).toBe(backup.sidecar.incarnation);
     expect(readdirSync(dirname(folder)).sort()).toEqual([
       "mira",
+      "mira.backups",
       "mira.replaced-20261113T120000.001Z",
       "mira.replaced-20261113T120000.002Z",
     ]);
@@ -879,7 +918,10 @@ describe("[A1.5.space.lineage-bound] the lineage against space.json's 64 KiB", (
     expect((await readFacts(folder)).space.lineage.incarnations).toHaveLength(1000);
 
     // One more claim at the bound: restore in place still works, and the file stays bounded.
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     const restored = await restoreInPlace(checked, backup.file, folder, {
       machineId: TEST_MACHINE,
     });

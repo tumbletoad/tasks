@@ -16,7 +16,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import type { RpcSession } from "@ttasks/bridge/protocol";
-import { backupsFolder, listBackups, StorageWorker, type Id } from "@ttasks/storage";
+import { listBackups, StorageWorker, type Id } from "@ttasks/storage";
 import { createSpaceAt, STEPS_0_1, STEPS_0_3, STEPS_LATEST } from "@ttasks/storage/revisions";
 import { checkedDriver, digestSpace } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
@@ -566,7 +566,7 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
         backup,
         backup_folder: backupsOf(home, id),
       });
-      expect(existsSync(backupsFolder(space.folder))).toBe(false);
+      expect(existsSync(join(space.folder, "backups"))).toBe(false);
       const user = await session(home, service, "cli-interactive");
       const added = await call(user, "op/call", {
         op: "task.add",
@@ -701,7 +701,7 @@ describe("[A1.5.backup.folder-away] an upgrade whose backups folder set for the 
       expect(service.spaces()).toEqual([awayNow(id)]);
       expect(readSpaceSettings(stateOf(home), id).failedMigrations).toBeUndefined();
       expect(existsSync(drive)).toBe(false);
-      expect(existsSync(backupsFolder(space.folder))).toBe(false);
+      expect(existsSync(join(space.folder, "backups"))).toBe(false);
       await stop(service);
       expect(digestSpace(await checkedDriver(), space.folder)).toBe(fixture);
 
@@ -713,7 +713,7 @@ describe("[A1.5.backup.folder-away] an upgrade whose backups folder set for the 
         (b) => b.state === "ok" && b.sidecar?.kind === "pre-migrate",
       );
       expect(barriers).toHaveLength(1);
-      expect(existsSync(backupsFolder(space.folder))).toBe(false);
+      expect(existsSync(join(space.folder, "backups"))).toBe(false);
     },
     LONG,
   );
@@ -730,7 +730,7 @@ describe("[A1.5.backup.outside-home] an upgrade whose backups folder beside the 
       writeFileSync(`${home}-backups`, "not a folder");
       const service = await start(home, space.folder);
       expect(service.spaces()).toEqual([awayNow(id)]);
-      expect(existsSync(backupsFolder(space.folder))).toBe(false);
+      expect(existsSync(join(space.folder, "backups"))).toBe(false);
     },
     LONG,
   );

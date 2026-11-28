@@ -36,7 +36,7 @@ import {
   WRITER_HOLDER_FILE,
   WRITER_LOCK_FILE,
 } from "../src/writer-lock.ts";
-import { readFacts, writeCommits } from "./backup-helpers.ts";
+import { backupsBeside, readFacts, writeCommits } from "./backup-helpers.ts";
 import { createRequest, FIXTURE_MACHINE, ownerCredential } from "./fixture-requests.ts";
 import { checkedDriver, createFixtureSpace, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
 import { rejection } from "./worker-helpers.ts";
@@ -464,7 +464,10 @@ describe("[A1.5.writer.cross-process] one writer per space across processes: wri
     }
     // A claim of a read-only copy whose database has a second name is refused the same way.
     const copy = join(folders.make(), "copy");
-    const again = await backupSpace(await checkedDriver(), folder, { kind: "manual" });
+    const again = await backupSpace(await checkedDriver(), folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     await restoreBackup(await checkedDriver(), again.file, copy);
     linkSync(join(copy, DATABASE_FILE), join(parent, "copy.db"));
     expect((await rejection(w.claimSpace(copy, { machine: FIXTURE_MACHINE }))).code).toBe(

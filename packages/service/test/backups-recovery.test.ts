@@ -8,7 +8,6 @@ import { basename, dirname, join } from "node:path";
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import {
   backupSpace,
-  backupsFolder,
   createSpace,
   listBackups,
   newId,
@@ -238,7 +237,7 @@ describe("[A1.5.backup.own-folder] the daily backup goes to the folder this mach
       expect(existsSync(join(work.folder, "space.json"))).toBe(true);
       const daily = listBackups(elsewhere).backups.filter((b) => b.sidecar?.kind === "daily");
       expect(daily.map((b) => b.sidecar?.space_id)).toEqual([work.space.spaceId]);
-      expect(existsSync(backupsFolder(work.folder))).toBe(false);
+      expect(existsSync(join(work.folder, "backups"))).toBe(false);
     },
     SLOW,
   );
@@ -508,11 +507,13 @@ describe("[A1.5.backup.outside-home] a space's backups are beside the TTasks hom
       const work = await fixtureSpace(join(spaces, "work"), machine);
       const id = work.space.spaceId;
       // A backup an older build made into the space's own folder.
+      const own = join(work.folder, "backups");
+      mkdirSync(own);
       const old = await backupSpace(await checkedDriver(), work.folder, {
         kind: "daily",
+        backupDir: own,
         now: () => Date.now() - 48 * HOUR,
       });
-      const own = backupsFolder(work.folder);
       const files = readdirSync(own).sort();
       const { user } = await start(home, [work.folder], true);
       await waitFor(
@@ -584,7 +585,7 @@ describe("[A1.5.backup.outside-home] a space's backups are beside the TTasks hom
       expect(upkeep).toMatchObject({ backup: "away", removed: 0, leftovers: 0 });
       const now = await refused(call(user, "space/backup", { space: work.folder }));
       expect(now).toMatchObject({ data: { reason: "backups_folder_missing", folder: blocked } });
-      expect(existsSync(backupsFolder(work.folder))).toBe(false);
+      expect(existsSync(join(work.folder, "backups"))).toBe(false);
     },
     SLOW,
   );

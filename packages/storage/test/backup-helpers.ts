@@ -10,6 +10,7 @@ import { isId } from "../src/ids.ts";
 import { DATABASE_FILE } from "../src/manifest.ts";
 import { openReader, openWriter } from "../src/open.ts";
 import { decodeSpaceRow, type SpaceRow } from "../src/rows.ts";
+import { makeDurableFolder } from "../src/backup/backup.ts";
 import { tableCounts } from "../src/backup/snapshot.ts";
 import type { SchemaStep } from "../src/schema.ts";
 import { openSpace } from "../src/space.ts";
@@ -103,4 +104,11 @@ export function treeDigest(folder: string): Record<string, string> {
   };
   if (statSync(folder, { throwIfNoEntry: false })?.isDirectory() === true) walk(folder);
   return out;
+}
+
+/** A backups folder for the space at `folder`: beside it, never inside it, made when missing. */
+export function backupsBeside(folder: string): string {
+  const dir = `${folder}.backups`;
+  makeDurableFolder(dir);
+  return dir;
 }

@@ -25,9 +25,6 @@ export const SIDECAR_VERSION = 1;
 export const DATA_SUFFIX = ".db.gz";
 export const SIDECAR_SUFFIX = ".json";
 
-/** The default backups folder of a space (A1 3.1). Machine-local `backup.dir` can move it. */
-export const BACKUPS_FOLDER = "backups";
-
 /** What a sidecar holds. */
 export interface BackupSidecar {
   [SIDECAR_MARKER]: typeof SIDECAR_VERSION;

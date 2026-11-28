@@ -43,7 +43,7 @@ async function run(job: AdminJob): Promise<AdminResult> {
       // restores.
       const record = await provenBackup(checked, job.folder, {
         kind: "manual",
-        ...(job.backupDir === undefined ? {} : { backupDir: job.backupDir }),
+        backupDir: job.backupDir,
       });
       const { sidecar } = record;
       return {
