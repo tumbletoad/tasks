@@ -28,15 +28,13 @@ import type { NodeRow, TaskRow } from "@ttasks/client/store";
 import { formatDay, todayOf, type Clock } from "@ttasks/client/today";
 import { localDate } from "@ttasks/contracts/day";
 import { Card, PageView } from "./Card.tsx";
-import { connectSocket, native } from "./link/socket.ts";
+import { connectSocket, keep, native } from "./link/socket.ts";
 import { Button, shared, type Colors } from "./ui.tsx";
 import { ago } from "./time.ts";
 import { WORDS } from "./words.ts";
 
 /** How long a checked-off row stays at its place, with Undo. */
 const HOLD_MS = 5_000;
-
-const keep = { read: (name: string) => native.kept(name), write: native.keep.bind(native) };
 
 /** Now, today and the phone's own zone and language: read again every minute. */
 function useClock(): Clock {
@@ -87,6 +85,10 @@ export function Today(props: {
   const session = useRef<SpaceSession | undefined>(undefined);
   /** The card open over Today, and the page open over the card. Today stays where it was. */
   const [open, setOpen] = useState<TaskRow | undefined>(undefined);
+  /** Why a card closed by itself: its task was finished or trashed on the computer. */
+  const [closed, setClosed] = useState<string | undefined>(undefined);
+  /** The tasks this phone checked off: their card closes without a word. */
+  const checkedHere = useRef(new Set<string>());
   const [reading, setReading] = useState<PageLink | undefined>(undefined);
   useEffect(() => {
     if (open === undefined) return undefined;
@@ -152,6 +154,7 @@ export function Today(props: {
     const live = session.current;
     if (live === undefined || held.has(task.id)) return;
     const request = live.finish(task);
+    checkedHere.current.add(task.id);
     setHeld((now) => new Map(now).set(task.id, { task, request }));
     setTimeout(() => {
       setHeld((now) => {
@@ -164,6 +167,7 @@ export function Today(props: {
   };
   const undo = (hold: Held) => {
     session.current?.undo(hold.request);
+    checkedHere.current.delete(hold.task.id);
     setHeld((now) => {
       const next = new Map(now);
       next.delete(hold.task.id);
@@ -205,7 +209,26 @@ export function Today(props: {
           : undefined;
 
   const live = view?.link.kind === "connected";
-  const shownCard = open === undefined ? undefined : (view?.tasks.get(open.id) ?? open);
+  const openHeld = open === undefined ? undefined : held.get(open.id);
+  const shownCard = open === undefined ? undefined : (view?.tasks.get(open.id) ?? openHeld?.task);
+  // A card whose task is no longer open closes to Today, saying what happened on the computer.
+  useEffect(() => {
+    if (open === undefined || shownCard !== undefined || view?.loaded !== true) return undefined;
+    const why = view.left.get(open.id);
+    setOpen(undefined);
+    setReading(undefined);
+    if (checkedHere.current.has(open.id)) return undefined;
+    setClosed(
+      why === "trash" ? WORDS.movedToTrash : why === "done" ? WORDS.doneThere : WORDS.noLongerOpen,
+    );
+    const timer = setTimeout(() => {
+      setClosed(undefined);
+    }, 6_000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [open, shownCard, view]);
+
   return (
     <View style={shared.fill}>
       {shownCard !== undefined && session.current !== undefined ? (
@@ -223,6 +246,14 @@ export function Today(props: {
         ) : (
           <Card
             task={shownCard}
+            done={openHeld !== undefined}
+            {...(openHeld === undefined
+              ? {}
+              : {
+                  onUndo: () => {
+                    undo(openHeld);
+                  },
+                })}
             nodes={view?.nodes ?? new Map()}
             clock={clock}
             colors={colors}
@@ -244,6 +275,9 @@ export function Today(props: {
           <Text style={[styles.space, { color: colors.text }]}>
             {space === "" ? PRODUCT_NAME : space}
           </Text>
+          {closed === undefined ? null : (
+            <Text style={[shared.small, { color: colors.text }]}>{closed}</Text>
+          )}
           <Text style={[shared.small, { color: colors.muted }]}>
             {state}
             {view?.live !== true && view?.asOf !== undefined && view.loaded

@@ -59,3 +59,24 @@ export function formatWhen(ms: number, clock: Clock): string {
   if (localDate(ms, clock.timeZone) === clock.today) return time;
   return `${formatInstant(ms, clock, { day: "numeric", month: "short" })}, ${time}`;
 }
+
+/**
+ * When a task is due, as its card shows it: the day, or for a due time the day and the time in the
+ * viewer's zone, as the page's row reads them. Undefined when it has no due date.
+ */
+export function dueWhen(
+  task: { readonly due_date?: string; readonly due_at?: number },
+  clock: Clock,
+): string | undefined {
+  const day = { weekday: "short", day: "numeric", month: "short" } as const;
+  if (task.due_at !== undefined) {
+    const date = formatDay(localDate(task.due_at, clock.timeZone), clock.locale, day);
+    const time = formatInstant(task.due_at, clock, {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    });
+    return `${date}, ${time}`;
+  }
+  return task.due_date === undefined ? undefined : formatDay(task.due_date, clock.locale, day);
+}

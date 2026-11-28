@@ -7350,7 +7350,21 @@
     },
     {
       "id": "S5.phone.card",
-      "title": "A task's card on the phone, against the real service: the Description, notes and log newest first with who wrote each, the task's pages and those known above it, a page opened from it; a note the computer adds while it is open moves the row and the next read has it; with the computer away the phone's last read and its age, none for a card never read, also after a restart of the app",
+      "title": "A task's card on the phone, against the real service: the Description, notes and log newest first with who wrote each, the task's pages and those known above it, a page opened from it; a note the computer adds while it is open moves the row and the next read has it; with the computer away the phone's last read and its age, none for a card never read, also after a restart of the app; a long Description, many notes and a long page are read to their end; a task finished or moved to the Trash on the computer is told as such; a page in the Trash reads as gone and its copy goes; a new pairing forgets what was read under the old one and keeps what waits",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.library.trash-listed",
+      "title": "A task in the Trash lists none of its pages in task.get, digest or sections, as page.read opens none of them",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.phone.due-when",
+      "title": "A card shows a due date as its day, a due time as its day and time in the viewer's zone, and nothing without one",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

@@ -4,10 +4,10 @@
 // when the row moves). A page opens from the Knowledge to read. Without the computer the card shows
 // the phone's last read with its age, or says it has not been loaded.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { CardDetail, PageLink, PageText, Read, SpaceSession } from "@ttasks/client/link";
 import { trail, type NodeRow, type TaskRow } from "@ttasks/client/store";
-import { formatDay, formatWhen, type Clock } from "@ttasks/client/today";
+import { dueWhen, formatDay, formatWhen, type Clock } from "@ttasks/client/today";
 import { ago } from "./time.ts";
 import { Button, shared, type Colors } from "./ui.tsx";
 import { WORDS } from "./words.ts";
@@ -41,9 +41,11 @@ function Age(props: { read: Read<unknown> | undefined; clock: Clock; colors: Col
       ? WORDS.loading
       : read.kind === "none"
         ? WORDS.notLoaded
-        : read.live
-          ? undefined
-          : WORDS.updated(ago(read.at, clock.now));
+        : read.kind === "gone"
+          ? WORDS.pageGone
+          : read.live
+            ? undefined
+            : WORDS.updated(ago(read.at, clock.now));
   return words === undefined ? null : (
     <Text style={[shared.small, { color: colors.muted }]}>{words}</Text>
   );
@@ -51,6 +53,9 @@ function Age(props: { read: Read<unknown> | undefined; clock: Clock; colors: Col
 
 export function Card(props: {
   task: TaskRow;
+  /** Checked off on this phone, in its moment for Undo. */
+  done: boolean;
+  onUndo?: () => void;
   nodes: ReadonlyMap<string, NodeRow>;
   clock: Clock;
   colors: Colors;
@@ -61,16 +66,15 @@ export function Card(props: {
   onCheck: (task: TaskRow) => void;
   onPage: (page: PageLink) => void;
 }) {
-  const { task, nodes, clock, colors, session, live, onBack, onCheck, onPage } = props;
+  const { task, done, onUndo, nodes, clock, colors, session, live, onBack, onCheck, onPage } =
+    props;
   const read = useRead<CardDetail>(
     () => session.card(task.id),
     `${task.id} ${String(task.version)} ${String(task.touched)} ${String(live)}`,
   );
   const crumbs = trail(nodes, task.parent).map((node) => node.title);
   const facts = [
-    task.due_date === undefined
-      ? undefined
-      : WORDS.due(formatDay(task.due_date, clock.locale, DAY)),
+    ((due) => (due === undefined ? undefined : WORDS.due(due)))(dueWhen(task, clock)),
     task.planned_for === undefined
       ? undefined
       : WORDS.planned(formatDay(task.planned_for, clock.locale, DAY)),
@@ -92,16 +96,33 @@ export function Card(props: {
         <View style={styles.title}>
           <Pressable
             accessibilityRole="checkbox"
-            accessibilityState={{ checked: false }}
+            accessibilityState={{ checked: done, disabled: done }}
             accessibilityLabel={WORDS.finish(task.title)}
+            disabled={done}
             onPress={() => {
               onCheck(task);
             }}
             hitSlop={10}
-            style={[styles.box, { borderColor: colors.muted }]}
+            style={[
+              styles.box,
+              { borderColor: colors.muted },
+              done ? { backgroundColor: colors.accent, borderColor: colors.accent } : null,
+            ]}
           />
-          <Text style={[shared.title, styles.grow, { color: colors.text }]}>{task.title}</Text>
+          <Text
+            style={[
+              shared.title,
+              styles.grow,
+              { color: done ? colors.muted : colors.text },
+              done ? styles.struck : null,
+            ]}
+          >
+            {task.title}
+          </Text>
         </View>
+        {onUndo === undefined ? null : (
+          <Button label={WORDS.undo} onPress={onUndo} colors={colors} quiet />
+        )}
         {(task.questions ?? []).map((q) => (
           <View key={q.ref} style={[styles.question, { borderColor: colors.accent }]}>
             <Text style={[shared.small, { color: colors.accent }]}>
@@ -119,6 +140,9 @@ export function Card(props: {
           <Text style={[shared.small, { color: colors.muted }]}>{facts.join(" · ")}</Text>
         )}
         <Age read={read} clock={clock} colors={colors} />
+        {detail?.partial === true ? (
+          <Text style={[shared.small, { color: colors.muted }]}>{WORDS.partial}</Text>
+        ) : null}
         {detail === undefined || detail.description === "" ? null : (
           <Section label={WORDS.description} colors={colors}>
             <Text style={[shared.body, { color: colors.text }]}>{detail.description}</Text>
@@ -126,7 +150,7 @@ export function Card(props: {
         )}
         {detail === undefined ? null : (
           <Section label={WORDS.thread} colors={colors}>
-            {detail.entries.length === 0 ? (
+            {detail.entries.length === 0 && !detail.partial ? (
               <Text style={[shared.small, { color: colors.muted }]}>{WORDS.nothingYet}</Text>
             ) : (
               detail.entries.map((entry) => (
@@ -202,7 +226,19 @@ export function PageView(props: {
   onBack: () => void;
 }) {
   const { page, clock, colors, session, live, onBack } = props;
-  const read = useRead<PageText>(() => session.page(page.ref), `${page.ref} ${String(live)}`);
+  const [front, setFront] = useState(0);
+  useEffect(() => {
+    const app = AppState.addEventListener("change", (now) => {
+      if (now === "active") setFront((n) => n + 1);
+    });
+    return () => {
+      app.remove();
+    };
+  }, []);
+  const read = useRead<PageText>(
+    () => session.page(page.ref),
+    `${page.ref} ${String(live)} ${String(front)}`,
+  );
   const text = read?.kind === "read" ? read.value : undefined;
   return (
     <View style={shared.fill}>
@@ -215,6 +251,9 @@ export function PageView(props: {
           <Text style={[shared.small, { color: colors.muted }]}>{text?.brief ?? page.brief}</Text>
         )}
         <Age read={read} clock={clock} colors={colors} />
+        {text?.partial === true ? (
+          <Text style={[shared.small, { color: colors.muted }]}>{WORDS.partial}</Text>
+        ) : null}
         {text === undefined ? null : (
           <Text style={[shared.body, { color: colors.text }]}>{text.body}</Text>
         )}
@@ -229,6 +268,7 @@ const styles = StyleSheet.create({
   title: { flexDirection: "row", alignItems: "flex-start", gap: 14 },
   box: { width: 24, height: 24, borderWidth: 2, borderRadius: 6, marginTop: 6 },
   grow: { flex: 1 },
+  struck: { textDecorationLine: "line-through" },
   question: { borderLeftWidth: 3, paddingLeft: 12, gap: 4 },
   section: { gap: 8, paddingTop: 8 },
   label: { fontSize: 13, fontWeight: "600" },

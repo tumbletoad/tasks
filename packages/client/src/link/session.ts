@@ -28,11 +28,15 @@ import type { Connect, Saved } from "./open.ts";
 import {
   CARD_READ,
   cardOf,
+  joinCards,
+  joinPages,
   PAGE_READ,
   pageOf,
+  PARTS,
   Reads,
   type CardDetail,
   type PageText,
+  type Part,
   type Read,
 } from "./card.ts";
 import { answerOf, Outbox, type Entry, type Keep, type Refused } from "./outbox.ts";
@@ -55,6 +59,8 @@ export interface SpaceView {
   readonly settling: boolean;
   /** The last capture the computer took: its request ID and what it asked for. */
   readonly added: { readonly request: string; readonly draft: CaptureDraft } | undefined;
+  /** How each task that left lately went, as the feed showed it: finished, or to the Trash. */
+  readonly left: ReadonlyMap<string, "done" | "trash">;
 }
 
 export interface SpaceSession {
@@ -138,6 +144,18 @@ const asOfOf = (cursor: Cursor | undefined): string =>
     ? ""
     : `${String(cursor.epoch)}.${String(cursor.seq)}.${incarnationTag(cursor.incarnation)}`;
 
+/**
+ * A new pairing replaced `saved` (another computer, or another space): what the phone read there
+ * goes, its rows, cards and pages. What waits to be sent stays, under that computer and space.
+ */
+export function forgetReads(keep: Keep, saved: Saved): void {
+  new Reads(keep, saved.pin, saved.space.id).forget();
+  const rows = parsed(keep.read(ROWS));
+  if (!isRecord(rows)) return;
+  Reflect.deleteProperty(rows, `${saved.pin} ${saved.space.id}`);
+  keep.write(ROWS, JSON.stringify(rows));
+}
+
 export function spaceSession(options: SessionOptions): SpaceSession {
   const { connect, keep, newId, report } = options;
   const now = options.now ?? Date.now;
@@ -151,21 +169,39 @@ export function spaceSession(options: SessionOptions): SpaceSession {
   const outbox = new Outbox(keep, pairing.pin, space);
   const reads = new Reads(keep, pairing.pin, space);
 
-  /** One read: the computer's answer when it gives one, else the phone's last, else none. */
+  /**
+   * One read, in as many parts as the computer gives (at most PARTS): the computer's answer when it
+   * gives one, else the phone's last, else none. A confirmed not_found is `gone`, and its copy goes.
+   */
   const read = async <T>(
-    path: string,
-    body: Record<string, unknown>,
-    parse: (body: unknown) => T | undefined,
+    ask: (next: string | undefined) => { path: string; body: Record<string, unknown> },
+    parse: (body: unknown) => Part<T> | undefined,
+    join: (first: T, later: T) => T,
     last: () => { readonly at: number; readonly value: T } | undefined,
     keepIt: (value: T, at: number) => void,
+    drop?: () => void,
   ): Promise<Read<T>> => {
     if (link.kind === "connected") {
-      const reply = await call(path, body);
-      const value = reply?.status === 200 ? parse(reply.body) : undefined;
-      if (value !== undefined) {
+      let whole: T | undefined;
+      let next: string | undefined;
+      for (let part = 0; part < PARTS; part += 1) {
+        const { path, body } = ask(next);
+        const reply = await call(path, body);
+        if (reply?.status === 404 && part === 0 && drop !== undefined) {
+          drop();
+          return { kind: "gone" };
+        }
+        const got = reply?.status === 200 ? parse(reply.body) : undefined;
+        // A part that did not come: what came is a part of the whole, and says so.
+        if (got === undefined) break;
+        whole = whole === undefined ? got.value : join(whole, got.value);
+        next = got.next;
+        if (next === undefined) break;
+      }
+      if (whole !== undefined) {
         const at = now();
-        keepIt(value, at);
-        return { kind: "read", value, at, live: true };
+        keepIt(whole, at);
+        return { kind: "read", value: whole, at, live: true };
       }
     }
     const kept = last();
@@ -185,6 +221,7 @@ export function spaceSession(options: SessionOptions): SpaceSession {
   /** When the feed last applied something: the rows were current then. */
   let fresh: number | undefined;
   let added: SpaceView["added"];
+  const left = new Map<string, "done" | "trash">();
   /** This run's check-offs, for their Undo. */
   const taps = new Map<string, { task: string; title: string }>();
 
@@ -215,6 +252,7 @@ export function spaceSession(options: SessionOptions): SpaceSession {
       refused: outbox.refused,
       settling: outbox.settling,
       added,
+      left,
     };
   };
   const tell = () => {
@@ -279,6 +317,16 @@ export function spaceSession(options: SessionOptions): SpaceSession {
       subscribe(true);
     }
     if (outcome.kind === "snapshot") subscribed = true;
+    if (outcome.kind === "applied") {
+      for (const change of outcome.changes) {
+        const after = change.after as TaskRow | undefined;
+        if (change.type !== "task" || change.before === undefined || after === undefined) continue;
+        if (after.deleted_at !== undefined) left.set(change.id, "trash");
+        else if (after.lifecycle !== "active") left.set(change.id, "done");
+      }
+      // The last few are enough: a card open on one of them hears it at once.
+      for (const id of [...left.keys()].slice(0, Math.max(0, left.size - 50))) left.delete(id);
+    }
     if (outcome.kind === "snapshot" || outcome.kind === "applied") fresh = now();
     const next = core.publish();
     if (next !== undefined) {
@@ -422,9 +470,9 @@ export function spaceSession(options: SessionOptions): SpaceSession {
     },
     card: (task) =>
       read(
-        CARD_READ.path,
-        CARD_READ.body(task),
+        (before) => ({ path: CARD_READ.path, body: CARD_READ.body(task, before) }),
         cardOf,
+        joinCards,
         () => reads.card(task),
         (value, at) => {
           reads.keepCard(task, value, at);
@@ -432,12 +480,15 @@ export function spaceSession(options: SessionOptions): SpaceSession {
       ),
     page: (ref) =>
       read(
-        PAGE_READ.path,
-        PAGE_READ.body(ref),
+        (cursor) => ({ path: PAGE_READ.path, body: PAGE_READ.body(ref, cursor) }),
         pageOf,
+        joinPages,
         () => reads.page(ref),
         (value, at) => {
           reads.keepPage(ref, value, at);
+        },
+        () => {
+          reads.dropPage(ref);
         },
       ),
     dismiss: (request) => {

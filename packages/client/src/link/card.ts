@@ -39,6 +39,8 @@ export interface CardDetail {
   readonly entries: readonly CardEntry[];
   readonly pages: readonly PageLink[];
   readonly above: readonly Level[];
+  /** More of it is on the computer than the phone read: what it shows is a part. */
+  readonly partial: boolean;
 }
 
 export interface PageText {
@@ -47,13 +49,24 @@ export interface PageText {
   readonly brief: string;
   /** Markdown. */
   readonly body: string;
+  /** More of it is on the computer than the phone read: what it shows is a part. */
+  readonly partial: boolean;
+}
+
+/** One answer of a read that may go on: its part, and how to ask for the next. */
+export interface Part<T> {
+  readonly value: T;
+  /** `before` of task.get, `cursor` of page.read: undefined when this was the last part. */
+  readonly next: string | undefined;
 }
 
 /** A read as the card shows it: the computer's now, or the phone's last with its age. */
 export type Read<T> =
   | { readonly kind: "read"; readonly value: T; readonly at: number; readonly live: boolean }
   /** Never read on this phone, and the computer cannot be asked now. */
-  | { readonly kind: "none" };
+  | { readonly kind: "none" }
+  /** The computer says it is not there any more. */
+  | { readonly kind: "gone" };
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -81,14 +94,17 @@ function entries(kind: CardEntry["kind"], value: unknown): CardEntry[] {
     }));
 }
 
-/** The card's detail from `task.get`'s answer with its sections, or undefined. */
-export function cardOf(body: unknown): CardDetail | undefined {
+const newestFirst = (a: CardEntry, b: CardEntry) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0);
+
+/** One part of a card from `task.get`'s answer with its sections, or undefined. */
+export function cardOf(body: unknown): Part<CardDetail> | undefined {
   const result = isRecord(body) ? body["result"] : undefined;
   if (!isRecord(result) || result["view"] !== "sections") return undefined;
   const sections = isRecord(result["sections"]) ? result["sections"] : {};
   const merged = [...entries("note", sections["notes"]), ...entries("log", sections["log"])];
-  merged.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
-  return {
+  merged.sort(newestFirst);
+  const next = typeof result["before"] === "string" ? result["before"] : undefined;
+  const value: CardDetail = {
     description: text(sections["context"]),
     entries: merged,
     pages: pageLinks(result["pages"]),
@@ -100,30 +116,65 @@ export function cardOf(body: unknown): CardDetail | undefined {
         pages: pageLinks(level["pages"]),
       }))
       .filter((level) => level.pages.length > 0),
+    partial: next !== undefined,
+  };
+  return { value, next };
+}
+
+/** A card read in parts, as one: the Description goes on, entries join, newest first. */
+export function joinCards(first: CardDetail, later: CardDetail): CardDetail {
+  return {
+    ...first,
+    description: first.description + later.description,
+    entries: [...first.entries, ...later.entries].sort(newestFirst),
+    partial: later.partial,
   };
 }
 
-/** A page from `page.read`'s answer, or undefined. */
-export function pageOf(body: unknown): PageText | undefined {
+/** A page read in parts, as one. */
+export function joinPages(first: PageText, later: PageText): PageText {
+  return { ...first, body: first.body + later.body, partial: later.partial };
+}
+
+/** One part of a page from `page.read`'s answer, or undefined. */
+export function pageOf(body: unknown): Part<PageText> | undefined {
   const result = isRecord(body) ? body["result"] : undefined;
   if (!isRecord(result) || result["view"] !== "page") return undefined;
+  const next = typeof result["cursor"] === "string" ? result["cursor"] : undefined;
   return {
-    ref: text(result["ref"]),
-    title: text(result["title"]),
-    brief: text(result["brief"]),
-    body: text(result["body"]),
+    value: {
+      ref: text(result["ref"]),
+      title: text(result["title"]),
+      brief: text(result["brief"]),
+      body: text(result["body"]),
+      partial: next !== undefined,
+    },
+    next,
   };
 }
 
 /** What the card asks the computer for. */
 export const CARD_READ = {
   path: "/api/v1/op/task.get",
-  body: (task: string) => ({ task, sections: ["context", "notes", "log"], log_limit: 50 }),
+  body: (task: string, before?: string) => ({
+    task,
+    sections: ["context", "notes", "log"],
+    log_limit: 50,
+    ...(before === undefined ? {} : { before }),
+  }),
 } as const;
 export const PAGE_READ = {
   path: "/api/v1/op/page.read",
-  body: (ref: string) => ({ target: ref }),
+  body: (ref: string, cursor?: string) => ({
+    target: ref,
+    ...(cursor === undefined ? {} : { cursor }),
+  }),
 } as const;
+/**
+ * A read goes on for at most this many parts: an answer holds about 4,000 characters, so this
+ * reaches the end of a Description of 64 KiB with its notes and log, and of a long page.
+ */
+export const PARTS = 40;
 
 const FILE = "reads";
 /** The most cards and pages kept of one space: the newest reads. */
@@ -201,7 +252,15 @@ export class Reads {
     this.#save({ ...box, pages: newest({ ...box.pages, [ref]: { at, value } }) });
   }
 
-  /** The phone was removed: what it read goes. */
+  /** The computer says the page is gone: the phone's copy goes too. */
+  dropPage(ref: string): void {
+    const box = this.#box();
+    const pages = { ...box.pages };
+    Reflect.deleteProperty(pages, ref);
+    this.#save({ ...box, pages });
+  }
+
+  /** The phone was removed, or paired with another computer or space: what it read goes. */
   forget(): void {
     const all = this.#all();
     Reflect.deleteProperty(all, this.#key);

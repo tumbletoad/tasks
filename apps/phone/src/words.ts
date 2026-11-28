@@ -69,6 +69,11 @@ export const WORDS = {
   who: (by: string) =>
     by === "user" ? "You" : by === "import" ? "Imported" : by === "agent" ? "An agent" : by,
   notLoaded: "Not loaded yet. It loads when the computer can be reached.",
+  partial: "More of it is on the computer than this phone read.",
+  pageGone: "This page is no longer there: it was moved to the Trash or removed.",
+  doneThere: "Done on the computer.",
+  movedToTrash: "Moved to the Trash on the computer.",
+  noLongerOpen: "That task is no longer open.",
   nothingYet: "Nothing written yet.",
 
   newTask: "New task",
