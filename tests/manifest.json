@@ -183,6 +183,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.pages.trail-sections",
+      "title": "get_task with sections carries what is known above the task too: the user's texts for agents above it outside the data block, and the levels and pages below the sections, which a full page loses before any line of a section",
+      "source": "Step 1's trial",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.pages.render",
       "title": "read is sized before its cursor, so following the cursor gives a whole body in any script and every row of a node once, in order; a section read on names no stored heading; write_page's acknowledgement names the page by its reference only",
       "source": "Step 1 design, pull request 228; review of pull request 251",
