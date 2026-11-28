@@ -81,6 +81,16 @@ const QUIET_MS = 2_000;
  * what it would have brought may never be announced again.
  */
 const WORKING_REREAD_MS = 60_000;
+/**
+ * A T3 Code thread the task may still have: its state is read again each minute while the card is
+ * open, also while T3 Code did not answer, so it shows once T3 Code is back.
+ */
+const t3Open = (receipt: Receipt): boolean =>
+  receipt.route === "t3-mcp" &&
+  receipt.state === "confirmed" &&
+  receipt.session !== "ended" &&
+  receipt.session !== "restored";
+
 /** The waits before a failed read of busy is tried again, the last one repeating. */
 const BUSY_RETRY_MS = [1_000, 2_000, 5_000, 15_000] as const;
 
@@ -471,8 +481,7 @@ export function TaskList({
         ...(unresolved?.failed === true && unresolved.id === expanded
           ? [`task:${unresolved.id}`]
           : []),
-        ...(expanded !== undefined &&
-        receipts.get(expanded)?.some((receipt) => receipt.activity !== undefined) === true
+        ...(expanded !== undefined && receipts.get(expanded)?.some(t3Open) === true
           ? [`receipts:${expanded}`]
           : []),
       ]
