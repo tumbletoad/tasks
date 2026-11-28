@@ -40,6 +40,20 @@ class TTasksLinkModule : Module() {
     Function("pairing") {
       appContext.reactContext?.let { LinkStore.read(it) }
     }
+
+    Function("clearPairing") {
+      appContext.reactContext?.let { LinkStore.clear(it) }
+      Unit
+    }
+
+    // A module destroyed while the process lives (a reload) must not leave an authenticated
+    // connection behind with nobody to hear it.
+    OnDestroy {
+      // Forgotten first, so their endings send no event to a module that is gone.
+      val open = sockets.values.toList()
+      sockets.clear()
+      open.forEach { it.cancel() }
+    }
   }
 
   private fun ended(id: Int, code: Int, reason: String) {

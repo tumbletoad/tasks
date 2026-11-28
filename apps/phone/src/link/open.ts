@@ -1,8 +1,32 @@
-// Opening the link to the paired computer: each of its addresses in turn, each attempt bounded
-// through the hello. A connection that closes or never comes leaves the pairing as it is: only the
-// computer's explicit `removed` ends it.
+// Opening the link to the computer: with a pairing code the first time, without one after. Each of
+// the computer's addresses in turn, each attempt bounded through the hello. A connection that
+// closes or never comes leaves the pairing as it is: only the computer's explicit `removed` ends it.
+//
+// Plain TypeScript over a socket it is handed (`Connect`): the app hands it the native link
+// (socket.ts), the tests a Node one against the real service.
 import { LINK_PATH, LINK_PROTOCOL, type Pairing } from "@ttasks/contracts/link";
-import { connectSocket, type LinkSocket } from "./socket.ts";
+
+/** Why a socket ended before it opened: the computer's key is another, TLS failed, or no route. */
+export type Failure = "pin" | "tls" | "network";
+
+export interface SocketEvents {
+  open(): void;
+  message(text: string): void;
+  /** Comes before `close` when the socket failed. */
+  error(kind: Failure): void;
+  close(code: number): void;
+}
+
+/** A WebSocket to the computer. After `close`, none of its events reach anyone. */
+export interface LinkSocket {
+  /** What its events do: replaced when the socket changes hands. */
+  events: SocketEvents;
+  send(text: string): void;
+  close(): void;
+}
+
+/** A socket to `url` that trusts the computer by `pin` alone and presents the phone's key. */
+export type Connect = (url: string, pin: string, events: SocketEvents) => LinkSocket;
 
 /** What the phone keeps of a pairing to open the link again. */
 export type Saved = Pick<Pairing, "addrs" | "pin" | "space">;
@@ -13,7 +37,13 @@ export interface Hello {
 }
 
 export type Opened =
-  | { readonly kind: "served"; readonly hello: Hello; readonly socket: LinkSocket }
+  | {
+      readonly kind: "served";
+      readonly hello: Hello;
+      readonly socket: LinkSocket;
+      /** The pairing to keep: the address that served first, and the space as the hello names it. */
+      readonly saved: Saved;
+    }
   | { readonly kind: "removed" }
   /** `pin`: an address answered with another key. */
   | { readonly kind: "offline"; readonly pin: boolean };
@@ -54,23 +84,36 @@ export function helloFor(message: unknown, space: string): message is Hello {
   );
 }
 
-type Attempt = Opened | { readonly kind: "failed"; readonly pin: boolean };
+/** What the phone sends with its first `open` to the computer. */
+interface Pair {
+  readonly code: string;
+  readonly name: string;
+  readonly platform: "android";
+}
 
-function attempt(addr: string, saved: Saved): Promise<Attempt> {
+/** `sent`: the `open` went out, so the computer may have acted on it. */
+type Attempt =
+  | { readonly kind: "served"; readonly hello: Hello; readonly socket: LinkSocket }
+  | { readonly kind: "removed" }
+  | { readonly kind: "failed"; readonly pin: boolean; readonly sent: boolean };
+
+function attempt(connect: Connect, addr: string, saved: Saved, pair?: Pair): Promise<Attempt> {
   return new Promise((resolve) => {
     let pin = false;
+    let sent = false;
     let done = false;
     const finish = (outcome: Attempt) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
+      if (outcome.kind !== "served") socket.close();
       resolve(outcome);
     };
-    const socket = connectSocket(`wss://${addr}${LINK_PATH}`, saved.pin, {
+    const socket = connect(`wss://${addr}${LINK_PATH}`, saved.pin, {
       open: () => {
-        socket.send(
-          JSON.stringify({ type: "open", protocol: LINK_PROTOCOL, space: saved.space.id }),
-        );
+        sent = true;
+        const open = { type: "open", protocol: LINK_PROTOCOL, space: saved.space.id };
+        socket.send(JSON.stringify(pair === undefined ? open : { ...open, pair }));
       },
       message: (text) => {
         // After the hello the socket is its new owner's.
@@ -81,38 +124,65 @@ function attempt(addr: string, saved: Saved): Promise<Attempt> {
         } catch {
           message = undefined;
         }
-        if (helloFor(message, saved.space.id)) {
-          finish({ kind: "served", hello: message, socket });
-          return;
-        }
-        socket.close();
-        finish(
-          isRecord(message) && message["type"] === "removed"
-            ? { kind: "removed" }
-            : { kind: "failed", pin },
-        );
+        if (helloFor(message, saved.space.id)) finish({ kind: "served", hello: message, socket });
+        else if (isRecord(message) && message["type"] === "removed") finish({ kind: "removed" });
+        else finish({ kind: "failed", pin, sent });
       },
       error: (kind) => {
         pin = kind === "pin";
       },
       close: () => {
-        finish({ kind: "failed", pin });
+        finish({ kind: "failed", pin, sent });
       },
     });
     const timer = setTimeout(() => {
-      socket.close();
-      finish({ kind: "failed", pin });
+      finish({ kind: "failed", pin, sent });
     }, ATTEMPT_MS);
   });
 }
 
+function served(outcome: Attempt & { kind: "served" }, addr: string, saved: Saved): Opened {
+  const { hello, socket } = outcome;
+  const addrs = [addr, ...saved.addrs.filter((a) => a !== addr)];
+  return {
+    kind: "served",
+    hello,
+    socket,
+    saved: { addrs, pin: saved.pin, space: hello.link.space },
+  };
+}
+
 /** The link to the paired computer, at the first of its addresses that serves the phone. */
-export async function openLink(saved: Saved): Promise<Opened> {
+export async function openLink(connect: Connect, saved: Saved): Promise<Opened> {
   let pin = false;
   for (const addr of saved.addrs) {
-    const outcome = await attempt(addr, saved);
-    if (outcome.kind !== "failed") return outcome;
+    const outcome = await attempt(connect, addr, saved);
+    if (outcome.kind === "served") return served(outcome, addr, saved);
+    if (outcome.kind === "removed") return outcome;
     pin ||= outcome.pin;
+  }
+  return { kind: "offline", pin };
+}
+
+/**
+ * Pairs with the computer a QR code names, as the phone called `name`. An address that never got
+ * the `open` leaves the code unspent for the next. Once it went out, the computer may have used the
+ * code and saved the phone before its answer was lost: the phone asks once more, without the code,
+ * with the same key and space, and stops there.
+ */
+export async function pairWith(connect: Connect, qr: Pairing, name: string): Promise<Opened> {
+  const pair: Pair = { code: qr.code, name, platform: "android" };
+  let pin = false;
+  for (const addr of qr.addrs) {
+    const first = await attempt(connect, addr, qr, pair);
+    if (first.kind === "served") return served(first, addr, qr);
+    if (first.kind === "removed") return first;
+    if (first.sent) {
+      const again = await attempt(connect, addr, qr);
+      if (again.kind === "served") return served(again, addr, qr);
+      return again.kind === "removed" ? again : { kind: "offline", pin: false };
+    }
+    pin ||= first.pin;
   }
   return { kind: "offline", pin };
 }

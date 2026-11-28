@@ -1,11 +1,11 @@
 // The app's one screen in this first step: the space this phone was paired for and whether the
 // link to the computer is up. A cold start shows the saved space at once, with Connecting until
-// a fresh hello.
+// a fresh hello. Only the computer's `removed` forgets the pairing; a lost connection keeps it.
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { PRODUCT_NAME } from "@ttasks/brand";
 import { openLink, readSaved } from "./link/open.ts";
-import { native } from "./link/socket.ts";
+import { connectSocket, native } from "./link/socket.ts";
 
 type State = "unpaired" | "connecting" | "connected" | "offline" | "removed";
 
@@ -26,10 +26,14 @@ export function App() {
     if (saved === undefined) return;
     let close: (() => void) | undefined;
     let live = true;
-    void openLink(saved).then((opened) => {
+    void openLink(connectSocket, saved).then((opened) => {
       if (!live) {
         if (opened.kind === "served") opened.socket.close();
         return;
+      }
+      if (opened.kind === "removed") {
+        native.clearPairing();
+        setName(undefined);
       }
       if (opened.kind !== "served") {
         setState(opened.kind);

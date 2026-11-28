@@ -18,4 +18,8 @@ object LinkStore {
   fun save(context: Context, json: String) {
     prefs(context).edit().putString(KEY, json).commit()
   }
+
+  fun clear(context: Context) {
+    prefs(context).edit().remove(KEY).commit()
+  }
 }

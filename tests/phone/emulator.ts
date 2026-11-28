@@ -7,6 +7,8 @@
 // 3. The right pin and the code: one upgrade, one paired phone, and the app keeps the pairing.
 // 4. The app is force-stopped and started as a person starts it: it opens the link again without a
 //    code, the computer serves it, and the screen shows the space and Connected.
+// 5. The phone is removed on the computer. Started again, the app is told so and forgets the
+//    pairing; started once more, it shows it is not paired and opens no connection.
 //
 // The emulator reaches this computer's loopback as 10.0.2.2, so that is the code's address. Fixture
 // data only. It exits with 0 when every step held and 1 at the first that did not.
@@ -95,7 +97,22 @@ try {
     return (JSON.parse(reply.body) as { result: Record<string, unknown> }).result;
   };
   const phones = async () =>
-    (await machine("phones", {}))["phones"] as { name: string; last_used_at: string | null }[];
+    (await machine("phones", {}))["phones"] as {
+      id: string;
+      name: string;
+      last_used_at: string | null;
+    }[];
+  const restart = async () => {
+    await adb("shell", "am", "force-stop", ANDROID_APP_ID);
+    reset();
+    await adb("shell", "am", "start", "-W", "-n", `${ANDROID_APP_ID}/.MainActivity`);
+  };
+  const shows = (...texts: string[]) =>
+    until(async () => {
+      await adb("shell", "uiautomator", "dump", "/sdcard/ttasks-ui.xml");
+      const xml = await adb("shell", "cat", "/sdcard/ttasks-ui.xml");
+      return texts.every((text) => xml.includes(`text="${text}"`));
+    }, 60_000);
 
   await adb("install", "-r", app);
   await adb("install", "-r", test);
@@ -117,23 +134,26 @@ try {
   check(paired.length === 1 && paired[0]?.name === "Emulator", "one phone is paired, by its name");
   const before = paired[0]?.last_used_at;
 
-  await adb("shell", "am", "force-stop", ANDROID_APP_ID);
-  reset();
-  await adb("shell", "am", "start", "-W", "-n", `${ANDROID_APP_ID}/.MainActivity`);
+  await restart();
   // The computer touches a phone it serves.
   check(
     await until(async () => (await phones())[0]?.last_used_at !== before, 120_000),
     `the started app was served again without a code (${String(seen.upgrades)} upgrade)`,
   );
-  check(
-    await until(async () => {
-      await adb("shell", "uiautomator", "dump", "/sdcard/ttasks-ui.xml");
-      const xml = await adb("shell", "cat", "/sdcard/ttasks-ui.xml");
-      return xml.includes('text="Mira"') && xml.includes('text="Connected"');
-    }, 60_000),
-    "the screen shows the space and Connected",
-  );
+  check(await shows("Mira", "Connected"), "the screen shows the space and Connected");
   check((await phones()).length === 1, "still one paired phone");
+
+  // A code that waits keeps the listener open after the last phone is removed, so the app hears it.
+  await machine("phone_pair", { space: "Mira" });
+  await machine("phone_remove", { phone: paired[0]?.id });
+  await restart();
+  check(
+    await shows("This phone was removed on the computer."),
+    `the started app is told it was removed (${String(seen.upgrades)} upgrade)`,
+  );
+  await restart();
+  check(await shows("Not paired with a computer."), "started again, it is not paired");
+  check(seen.connections === 0, `and opens no connection (${String(seen.connections)} TCP)`);
 } catch (error) {
   failed = true;
   console.error(error instanceof Error ? error.message : error);

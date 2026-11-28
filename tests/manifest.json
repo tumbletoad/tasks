@@ -7165,6 +7165,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "S5.phone.pairing",
+      "title": "The phone app's pairing against the real service: a code pairs the phone by its name and the pairing reopens without the code; an answer lost after the computer saved the phone gets one more open without the code and one phone; another key at the address gets nothing sent and leaves the code unspent; a removed phone is told so when it opens the link again",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "S5.phones.web",
       "title": "Settings > Phones: the list with each phone's space and last use; the Run switch shows on only once its save answered; a Remove that never reached the service changes nothing on screen and Remove is there again; a Remove or a Run off the service holds but did not save shows from the service's own answer, also after a reload, and saving it again clears it; Remove after a confirmation; the pairing dialog with its code, its warning, its end on close and the phone it paired",
       "owner": "M6",

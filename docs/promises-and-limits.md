@@ -499,7 +499,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   and nothing it asks is kept to run later.
 - Remove ends the phone's access at once and closes its connection. When that could not be saved,
   Settings says so and offers Remove again. A removed phone is told so when it next reaches this
-  computer while it listens for a phone.
+  computer while it listens for a phone, and then forgets the pairing. A phone that only lost its
+  connection keeps it.
 - A capture the phone sends again after its answer was lost, also after you removed and paired
   the same phone again, makes one task.
 

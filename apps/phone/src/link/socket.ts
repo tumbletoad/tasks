@@ -2,9 +2,7 @@
 // trusts the computer by the pin of its key and presents the phone's own key from the Keystore.
 // Events of a socket that was closed here, or replaced, reach nobody.
 import { requireNativeModule, type NativeModule } from "expo";
-
-/** Why a socket ended before it opened: the computer's key is another, TLS failed, or no route. */
-export type Failure = "pin" | "tls" | "network";
+import type { Connect, Failure, LinkSocket } from "./open.ts";
 
 type Events = {
   open(event: { id: number }): void;
@@ -19,24 +17,11 @@ declare class TTasksLink extends NativeModule<Events> {
   close(id: number, code: number, reason: string): void;
   /** The saved pairing's JSON, or null. */
   pairing(): string | null;
+  /** Forgets the saved pairing. The phone's key stays: the computer knows it again by it. */
+  clearPairing(): void;
 }
 
 export const native = requireNativeModule<TTasksLink>("TTasksLink");
-
-export interface SocketEvents {
-  open(): void;
-  message(text: string): void;
-  /** Comes before `close` when the socket failed. */
-  error(kind: Failure): void;
-  close(code: number): void;
-}
-
-export interface LinkSocket {
-  /** What its events do: replaced when the socket changes hands. */
-  events: SocketEvents;
-  send(text: string): void;
-  close(): void;
-}
 
 const sockets = new Map<number, LinkSocket>();
 
@@ -49,7 +34,7 @@ native.addListener("close", ({ id, code }) => {
   socket?.events.close(code);
 });
 
-export function connectSocket(url: string, pin: string, events: SocketEvents): LinkSocket {
+export const connectSocket: Connect = (url, pin, events) => {
   const id = native.connect(url, pin);
   const socket: LinkSocket = {
     events,
@@ -63,4 +48,4 @@ export function connectSocket(url: string, pin: string, events: SocketEvents): L
   };
   sockets.set(id, socket);
   return socket;
-}
+};
