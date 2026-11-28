@@ -1,6 +1,5 @@
 // A space's preferences on the tree, by today's writer's rules (write/writer.ts `pref.set`): who may
-// change a key, a value a newer build wrote kept as it is, a status that active tasks hold never
-// dropped, and a change of the effort levels that names where the tasks on a dropped level go
+// change a key, a status that active tasks hold never dropped, and a change of the effort levels that names where the tasks on a dropped level go
 // (contracts' `checkEffortMoves`, the writer's and a preview's alike). Its input is read by today's
 // check (write/request.ts `prefSet`). A request may ask for a preview: decided whole and rolled
 // back, with no receipt (core.ts).
@@ -48,6 +47,7 @@ const run: Command["run"] = (tx, input) => {
     { key, value, ...(moves === undefined ? {} : { moves }) },
     tx.request.actor.actor_kind,
     tx.request.base !== undefined,
+    false,
   );
   if (rule.refused !== undefined) {
     problem(rule.refused.code, rule.refused.message, rule.refused.field);

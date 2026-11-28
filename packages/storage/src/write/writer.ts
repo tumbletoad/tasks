@@ -2455,6 +2455,7 @@ export class SpaceWriter {
             op,
             request.actor.actor_kind,
             request.base !== undefined,
+            true,
           );
           if (rule.refused !== undefined) {
             problem(rule.refused.code, rule.refused.message, i, rule.refused.field);

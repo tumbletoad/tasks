@@ -36,7 +36,6 @@ const SQL = {
     "SELECT t.id, t.ref, t.lifecycle, t.completed_at FROM tasks t JOIN nodes n ON n.id = t.id " +
     "WHERE t.origin_source_id = $source AND n.deleted_at IS NULL ORDER BY n.created_seq DESC LIMIT 1",
   node: "SELECT * FROM nodes WHERE id = $id",
-  alias: "SELECT entity_id FROM aliases WHERE namespace = 'planning' AND alias = $alias",
   taskByRef: "SELECT id FROM tasks WHERE ref = $ref",
   child:
     "SELECT * FROM nodes WHERE parent_id = $parent AND kind = 'project' AND (slug = $slug OR lower(title) = $title)",
@@ -94,9 +93,6 @@ export function findNode(tx: Tx, key: unknown): Row | undefined {
   if (key === "space") return tx.get(SQL.node, { id: tx.space.spaceId });
   const byId = tx.get(SQL.node, { id: key });
   if (byId !== undefined) return byId;
-  // A task's ID from the prototype the space was imported from, which text written then holds.
-  const alias = tx.get(SQL.alias, { alias: key })?.["entity_id"];
-  if (typeof alias === "string") return tx.get(SQL.node, { id: alias });
   // A project path: each part is a project's slug or title, ignoring case.
   let at: Row | undefined = tx.get(SQL.node, { id: tx.space.spaceId });
   for (const part of key.split("/")) {

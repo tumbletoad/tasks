@@ -90,6 +90,8 @@ export function prefSetRule(
   op: { key: string; value: unknown; moves?: readonly unknown[] },
   actorKind: string,
   based: boolean,
+  /** Today's writer keeps a newer build's value as it is; the tree reads no other build's rows. */
+  newerBuilds: boolean,
 ): { fills: boolean; held: boolean; refused?: PrefRefusal } {
   const fills =
     actorKind === "system" &&
@@ -106,7 +108,7 @@ export function prefSetRule(
       field: "key",
     });
   }
-  if (row !== undefined && Number(row["schema_ver"]) > spec.schemaVer) {
+  if (newerBuilds && row !== undefined && Number(row["schema_ver"]) > spec.schemaVer) {
     return refuse({
       code: "VALIDATION_FAILED",
       message: "A newer build wrote this preference: it is read-only here",

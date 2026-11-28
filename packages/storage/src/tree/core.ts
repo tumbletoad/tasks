@@ -197,9 +197,7 @@ export class TreeWriter {
       missing: PREFERENCES.filter((p) => {
         if (p.scope !== "space" || p.stored !== true) return false;
         const row = this.#conn.prepare(SQL.preferenceRow).get({ key: p.key });
-        if (row === undefined) return true;
-        // A newer build's row is read-only here, its reset included: that build fills it.
-        return row["value"] === "null" && Number(row["schema_ver"]) <= p.schemaVer;
+        return row === undefined || row["value"] === "null";
       }),
       system: this.#conn.prepare(SQL.system).get()?.["id"] as Id<"ac">,
       space: this.#space(),

@@ -1,5 +1,5 @@
 // A space's preferences on the tree writer, by today's writer's rules: who may change a key; a
-// value a newer build wrote kept as it is; a status active tasks hold never dropped; a change of
+// status active tasks hold never dropped; a change of
 // the effort levels that moves the tasks on a dropped level; a preview decided whole and rolled
 // back, with no receipt; and the tasks' statuses, sizes and the capture window read from the space's
 // own preferences. Fixture text only.
@@ -81,19 +81,6 @@ describe("[S2.tree.prefs] a space's preferences on the tree", () => {
     // The levels changed nothing since the read: the move goes ahead.
     expect(moved.status).toBe("applied");
     expect(fx.conn.prepare("SELECT effort FROM tasks").get()?.["effort"]).toBe("M");
-  });
-
-  test("a value a newer build wrote stays as it is here", () => {
-    fx.conn
-      .prepare(
-        "INSERT INTO preferences (key, value, schema_ver, created_seq, version) " +
-          "VALUES ('tasks.dedupe_window_days', '9', 999, 1, 1)",
-      )
-      .run();
-    const refused = fx.send("pref.set", { key: "tasks.dedupe_window_days", value: 7 });
-    expect(refused.error?.code).toBe("VALIDATION_FAILED");
-    // Made by hand for the test: it has no history of its own.
-    fx.conn.prepare("DELETE FROM preferences").run();
   });
 
   test("a preview is decided whole and rolled back: no commit, no receipt, the version it would change", () => {

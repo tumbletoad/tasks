@@ -359,18 +359,6 @@ describe("[S2.tree.boundary] the tree writer keeps today's guarantees at the req
     expect(active.error?.code).toBe("TASK_NOT_ACTIVE");
   });
 
-  test("a task is found by its legacy alias from the prototype import", () => {
-    add("Renew the passport");
-    const id = fx.conn.prepare("SELECT id FROM tasks").get()?.["id"];
-    fx.conn
-      .prepare(
-        "INSERT INTO aliases (namespace, alias, entity_id, created_at) VALUES ('planning', 't-c71c0065', $id, 0)",
-      )
-      .run({ id: String(id) });
-    ok(fx.send("note.add", { on: "t-c71c0065", body: "Found by its old name" }));
-    expect(count("SELECT count(*) AS n FROM notes")).toBe(1);
-  });
-
   test("a base from another copy of the space is refused; a kept Undo's answer replays on a resend", () => {
     add("Renew the passport");
     const now = fx.send("note.add", { on: "M-1", body: "Booked" }).as_of;
