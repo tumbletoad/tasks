@@ -10,7 +10,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { EFFORT_LEVELS, type EffortHeld, type EffortLevel } from "@ttasks/contracts/preferences";
-import type { Api } from "../api.ts";
+import { Unserved, type Api } from "../api.ts";
 import { Session } from "../context.ts";
 import { editsOf } from "../edit/useEdits.ts";
 import type { Toast } from "../edit/edits.ts";
@@ -81,6 +81,7 @@ beforeEach(async () => {
     },
     busy: () => Promise.resolve({ busy: [], last: {} }),
     receipts: () => Promise.resolve([]),
+    unserved: new Unserved(),
   } as unknown as Api;
   live = new Live({
     api,

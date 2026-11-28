@@ -63,6 +63,7 @@ import { useTextWrites, type TextWrites } from "./textWrites.ts";
 import { TEXT_MAX } from "../unsent.ts";
 import { actorOf, Thread } from "./Thread.tsx";
 import { useDetail } from "./useDetail.ts";
+import { useServes } from "../store/hooks.ts";
 import { Knowledge } from "../library/Knowledge.tsx";
 
 const styles = classes(css, [
@@ -426,6 +427,7 @@ function PlaceLine({
 }) {
   const t = useT();
   const say = useToast();
+  const launches = useServes("launch/busy");
   const [choosing, setChoosing] = useState(false);
   // The toast's "Choose another folder" opens the chooser, once for each time it is asked.
   const [asked, setAsked] = useState<FolderRefusal>();
@@ -605,8 +607,8 @@ function PlaceLine({
       </li>
     );
   }
-  // No folder for this task here: Open and Run use the space's work folder.
-  if (detail === undefined || task.place !== undefined) return null;
+  // No folder for this task here: Open and Run use the space's work folder, on a space that has them.
+  if (detail === undefined || task.place !== undefined || !launches) return null;
   return (
     <li className={styles.link} data-part="place" data-state="work_folder">
       {lead(<FolderIcon />, "folder.choose")}

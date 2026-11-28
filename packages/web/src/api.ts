@@ -314,6 +314,51 @@ function changes(path: string): boolean {
   return op !== undefined && !READ_ENTRIES.has(op);
 }
 
+/**
+ * What the service answered it does not do for this space (`op_unknown`), by entry (`task.trash`)
+ * or by route (`launch/busy`): a control that needs one steps aside while the space cannot do it,
+ * and comes back with the next session once the service does.
+ */
+export class Unserved {
+  readonly #names = new Set<string>();
+  readonly #listeners = new Set<() => void>();
+  #version = 0;
+
+  has(name: string): boolean {
+    return this.#names.has(name);
+  }
+
+  add(name: string): void {
+    if (this.#names.has(name)) return;
+    this.#names.add(name);
+    this.#version += 1;
+    for (const listener of this.#listeners) listener();
+  }
+
+  readonly subscribe = (listener: () => void): (() => void) => {
+    this.#listeners.add(listener);
+    return () => {
+      this.#listeners.delete(listener);
+    };
+  };
+
+  readonly version = (): number => this.#version;
+}
+
+/** The entry or route a call's path names: `task.trash` for an entry, `launch/busy` for a route. */
+const calledName = (path: string): string =>
+  path.replace(/^\/api\/v1\//u, "").replace(/^op\//u, "");
+
+/** Whether an answer says the service does not do this call for the space. */
+function unknownOp(reply: { status: number; body: string }): boolean {
+  if (reply.status !== 404) return false;
+  try {
+    return (JSON.parse(reply.body) as { error?: { code?: unknown } }).error?.code === "op_unknown";
+  } catch {
+    return false;
+  }
+}
+
 /** A session's calls: its token, the page's build, the tab's space and the copy it loaded. */
 export class Api {
   readonly #token: string;
@@ -322,6 +367,7 @@ export class Api {
   readonly #copy: () => string | undefined;
   readonly #ended: () => boolean;
   readonly client: Client;
+  readonly unserved = new Unserved();
 
   /**
    * `ended`: the tab says nothing more is saved from it (its copy of the space is gone). From then
@@ -355,6 +401,7 @@ export class Api {
     const reply = await postJson(path, body, headers);
     if (reply.status === 401) throw new SignedOut();
     if (reply.status === 409 && reply.body.includes('"reason":"build"')) throw new StaleBuild();
+    if (unknownOp(reply)) this.unserved.add(calledName(path));
     return reply;
   }
 

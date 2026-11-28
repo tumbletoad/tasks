@@ -10,6 +10,16 @@ import {
 } from "./queries.ts";
 import type { LiveState } from "./store.ts";
 
+/**
+ * Whether the service does each of these calls for the tab's space: false once it answered one of
+ * them that it does not (api.ts `Unserved`).
+ */
+export function useServes(...names: readonly string[]): boolean {
+  const { api } = useContext(Session);
+  useSyncExternalStore(api.unserved.subscribe, api.unserved.version);
+  return names.every((name) => !api.unserved.has(name));
+}
+
 /** The tab's live state: open rows, the tree, instances and the feed's phase. */
 export function useLive(): LiveState {
   const { live } = useContext(Session);

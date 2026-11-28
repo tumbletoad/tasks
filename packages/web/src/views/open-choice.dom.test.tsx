@@ -9,7 +9,7 @@ import { act } from "react";
 import { areaNode, nodesOf } from "@ttasks/client/test/nodes";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { Refused, type Api, type Busy, type Receipt, type Run } from "../api.ts";
+import { Unserved, Refused, type Api, type Busy, type Receipt, type Run } from "../api.ts";
 import type { Instance, LastUsed } from "@ttasks/contracts/runs";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
@@ -174,6 +174,7 @@ beforeEach(() => {
       used(task, { run: instance });
       return Promise.resolve(runOf(instance));
     },
+    unserved: new Unserved(),
   } as unknown as Api;
   live = new Live({
     api,
