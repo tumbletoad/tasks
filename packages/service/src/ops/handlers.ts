@@ -2382,7 +2382,10 @@ async function addRoutine(call: Call): Promise<Record<string, unknown>> {
   }
   const draft = list[0] ?? {};
   const kept = ["title", "summary", "context", "area", "project", "priority", "repeat"];
-  const other = Object.keys(draft).find((k) => !kept.includes(k));
+  // A routine is never in the Inbox: a capture that says `inbox: false` asks nothing more.
+  const other = Object.keys(draft).find(
+    (k) => !kept.includes(k) && !(k === "inbox" && draft[k] === false),
+  );
   if (other !== undefined) {
     throw invalid(`tasks.0.${other}`, `A routine takes no ${other}`, "Leave it out.");
   }

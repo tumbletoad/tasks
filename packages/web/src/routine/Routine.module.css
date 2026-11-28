@@ -1,0 +1,201 @@
+/* A routine's row: the round box with its loop, the title, and one quiet line of its schedule, who
+   does it and when. A task's box has no loop, so the two are told apart at a glance. */
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.box {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 1.25px solid var(--k-control);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--k-muted);
+  cursor: pointer;
+}
+
+.box:hover {
+  border-color: var(--k-accent);
+  color: var(--k-accent);
+}
+
+.box:focus-visible {
+  outline: 2px solid var(--k-ring);
+  outline-offset: 2px;
+}
+
+.box svg {
+  width: 14px;
+  height: 14px;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  overflow-wrap: anywhere;
+}
+
+.line {
+  color: var(--k-muted);
+  font-size: 0.875em;
+}
+
+.late {
+  color: var(--k-late);
+}
+
+.skip {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--k-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.skip:hover {
+  color: var(--k-text);
+}
+
+.group {
+  margin: 16px 0 4px;
+  color: var(--k-muted);
+  font-size: 0.875em;
+  font-weight: 600;
+}
+
+/* The parts of a routine's line, one quiet dot between each. */
+.part + .part::before {
+  content: " · ";
+}
+
+/* A routine's card: its kind and line, its times done, and its two actions. */
+.card {
+  display: grid;
+  gap: 8px;
+  padding: 8px 0 12px;
+}
+
+.kind {
+  color: var(--k-muted);
+}
+
+.entries {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  padding: 2px 0;
+  color: var(--k-muted);
+  font-size: 0.875em;
+}
+
+.menu {
+  display: flex;
+  gap: 12px;
+}
+
+.menu button {
+  border: 0;
+  background: transparent;
+  color: var(--k-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.menu button:hover {
+  color: var(--k-text);
+}
+
+/* A routine's title opens its card, and reads as a title. */
+.open {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/* "+ New routine" and its form: a title, the schedule in words, and what the words read as. */
+.add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--k-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.add:hover {
+  color: var(--k-text);
+}
+
+.form {
+  display: grid;
+  gap: 8px;
+  max-width: 32rem;
+  margin-top: 16px;
+}
+
+.field {
+  padding: 6px 8px;
+  border: 1px solid var(--k-control);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--k-text);
+  font: inherit;
+}
+
+.preview {
+  min-height: 1.4em;
+  margin: 0;
+  color: var(--k-muted);
+  font-size: 0.875em;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+}
+
+/* A finished routine's box: its mark, quieter, and no control. */
+.still {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* The card's title and schedule, corrected in place. */
+.edit {
+  display: grid;
+  gap: 6px;
+  max-width: 32rem;
+}
+
+/* The Finish dialog's buttons, with room above them at every width. */
+.finishActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+}

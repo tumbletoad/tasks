@@ -65,6 +65,7 @@ describe("[A5.3.3.web.views] the sidebar's views and counts", () => {
 
   test("Today has sections, not a filter; Completed, Agents, Activity, the Library and the Trash read what the live rows do not hold", () => {
     expect(viewFilter("today")).toBeUndefined();
+    expect(viewFilter("routines")).toBeUndefined();
     expect(viewFilter("completed")).toBeUndefined();
     expect(viewFilter("agents")).toBeUndefined();
     expect(viewFilter("activity")).toBeUndefined();
@@ -77,6 +78,7 @@ describe("[A5.3.3.web.views] the sidebar's views and counts", () => {
       "waiting",
       "review",
       "backlog",
+      "routines",
       "completed",
       "agents",
       "activity",
@@ -119,6 +121,7 @@ describe("[A5.3.3.web.views] the sidebar's views and counts", () => {
       waiting: { count: 1, empty: false },
       review: { count: 0, empty: true },
       backlog: { count: 1, empty: false },
+      routines: { empty: false },
       completed: { empty: false },
       agents: { empty: false },
       activity: { empty: false },

@@ -69,7 +69,7 @@ const batch = (seq: number, row: RoutineRow): BatchMessage => ({
 });
 
 describe("[A5.routines.store] the live store holds a tree space's routines", () => {
-  test("from the snapshot, on by each batch, gone once finished or in the Trash", () => {
+  test("from the snapshot, on by each batch, kept once finished for Completed, gone in the Trash", () => {
     const core = new LiveCore();
     core.receive(snapshot([routine()]));
     expect([...(core.publish()?.routines.values() ?? [])]).toEqual([routine()]);
@@ -78,8 +78,8 @@ describe("[A5.routines.store] the live store holds a tree space's routines", () 
       due_date: "2026-12-12",
       entries: 1,
     });
-    core.receive(batch(12, routine({ lifecycle: "completed" })));
-    expect(core.publish()?.routines.size).toBe(0);
+    core.receive(batch(12, routine({ lifecycle: "completed", completed_at: 5 })));
+    expect(core.publish()?.routines.get(routine().id)).toMatchObject({ lifecycle: "completed" });
     core.receive(batch(13, routine()));
     core.receive(batch(14, routine({ deleted_at: 1, paused: true })));
     expect(core.publish()?.routines.size).toBe(0);

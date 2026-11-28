@@ -130,3 +130,11 @@
     display: block;
   }
 }
+
+/* The quiet line above a project's routines, after its open tasks. */
+.routines {
+  margin: 20px 0 4px;
+  color: var(--k-muted);
+  font-size: 0.875em;
+  font-weight: 600;
+}

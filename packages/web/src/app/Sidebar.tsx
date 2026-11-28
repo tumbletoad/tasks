@@ -320,42 +320,45 @@ export function Sidebar({
     <div className={styles.sidebar}>
       <SpaceSwitcher space={space} name={state.space?.name} />
       <ul className={styles.list}>
-        {[...entries].map(([view, { count, empty }]) => {
-          const label = t(VIEW_LABEL[view]);
-          // The Trash counts only what agents moved there since the person last had it open.
-          const mark = view === "trash" && moved > 0 ? moved : undefined;
-          return (
-            <li key={view}>
-              <Link
-                to="/s/$space/$view"
-                params={{ space, view }}
-                className={styles.item}
-                activeProps={{ "aria-current": "page" }}
-                activeOptions={IGNORE_TASK}
-                data-view={view}
-                data-empty={empty || undefined}
-                {...(mark !== undefined
-                  ? { "aria-label": t("nav.trashMoved", { view: label, count: mark }) }
-                  : count === undefined
-                    ? {}
-                    : { "aria-label": t("nav.counted", { view: label, count }) })}
-              >
-                <ViewIcon view={view} />
-                <span className={styles.label}>{label}</span>
-                {count === undefined || empty ? null : (
-                  <span className={styles.count} aria-hidden="true">
-                    {intl.formatNumber(count)}
-                  </span>
-                )}
-                {mark === undefined ? null : (
-                  <span className={styles.count} data-mark aria-hidden="true">
-                    {intl.formatNumber(mark)}
-                  </span>
-                )}
-              </Link>
-            </li>
-          );
-        })}
+        {[...entries]
+          // Routines are a tree space's: a space on today's storage has none to list.
+          .filter(([view]) => view !== "routines" || state.space?.tree === true)
+          .map(([view, { count, empty }]) => {
+            const label = t(VIEW_LABEL[view]);
+            // The Trash counts only what agents moved there since the person last had it open.
+            const mark = view === "trash" && moved > 0 ? moved : undefined;
+            return (
+              <li key={view}>
+                <Link
+                  to="/s/$space/$view"
+                  params={{ space, view }}
+                  className={styles.item}
+                  activeProps={{ "aria-current": "page" }}
+                  activeOptions={IGNORE_TASK}
+                  data-view={view}
+                  data-empty={empty || undefined}
+                  {...(mark !== undefined
+                    ? { "aria-label": t("nav.trashMoved", { view: label, count: mark }) }
+                    : count === undefined
+                      ? {}
+                      : { "aria-label": t("nav.counted", { view: label, count }) })}
+                >
+                  <ViewIcon view={view} />
+                  <span className={styles.label}>{label}</span>
+                  {count === undefined || empty ? null : (
+                    <span className={styles.count} aria-hidden="true">
+                      {intl.formatNumber(count)}
+                    </span>
+                  )}
+                  {mark === undefined ? null : (
+                    <span className={styles.count} data-mark aria-hidden="true">
+                      {intl.formatNumber(mark)}
+                    </span>
+                  )}
+                </Link>
+              </li>
+            );
+          })}
       </ul>
       {groups.live.length === 0 ? null : (
         <ul className={styles.list} data-group="projects">

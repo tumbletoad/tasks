@@ -255,3 +255,47 @@ describe("[A5.3.13.web.capture] a quick capture reads its shortcuts and leaves t
     });
   });
 });
+
+describe("[A5.routines.capture] a capture that says a schedule is a routine you do", () => {
+  const routine = (text: string, more: Partial<Parameters<typeof parseCapture>[1]> = {}) =>
+    read(text, { tree: true, ...more });
+
+  test("water the plants every saturday: its chip, its title and its draft", () => {
+    const said = routine("water the plants every saturday");
+    expect(said.title).toBe("water the plants");
+    expect(said.chips).toMatchObject([
+      { kind: "repeat", text: "every saturday", rule: "FREQ=WEEKLY;BYDAY=SA" },
+    ]);
+    expect(said.draft).toEqual({
+      title: "water the plants",
+      inbox: false,
+      repeat: "every saturday",
+    });
+    expect(routine("stand-up weekdays at 9 p2 #home").draft).toEqual({
+      title: "stand-up",
+      inbox: false,
+      repeat: "weekdays at 9",
+      area: "Home",
+      priority: 2,
+    });
+  });
+
+  test("a schedule takes the place of a date, a star and the Inbox", () => {
+    expect(routine("call mum every sunday tomorrow *").draft).toEqual({
+      title: "call mum",
+      inbox: false,
+      repeat: "every sunday",
+    });
+  });
+
+  test("on a space without routines, or kept as text, the words stay the title", () => {
+    expect(read("water the plants every saturday").chips.map((c) => c.kind)).toEqual(["due"]);
+    const kept = routine("water the plants every saturday", {
+      kept: new Set([routine("water the plants every saturday").chips[0]?.key ?? ""]),
+    });
+    // The whole schedule stays text: no date takes "saturday" out of the title.
+    expect(kept.chips).toEqual([]);
+    expect(kept.title).toBe("water the plants every saturday");
+    expect(routine("every now and then I water").draft?.repeat).toBeUndefined();
+  });
+});

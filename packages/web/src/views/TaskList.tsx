@@ -592,6 +592,14 @@ export function TaskList({
           readAgain(id);
           return;
         }
+        // A task that became a routine is gone from the tasks: its card closes, as the routine's row
+        // draws it now.
+        if (changes.some((change) => change.type === "routine" && change.id === id)) {
+          setExpanded(undefined);
+          setInjected(undefined);
+          changed.current?.(undefined, true);
+          return;
+        }
         let named = reset;
         let left: TaskRow | undefined;
         for (const change of changes) {

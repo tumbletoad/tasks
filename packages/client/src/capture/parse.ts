@@ -9,6 +9,8 @@
 // read either, so no date is a guess. Only the first shortcut of each kind applies: a second
 // "p2" stays in the title.
 import { filedAs } from "../store/tree.ts";
+import { parseRepeat } from "@ttasks/contracts/repeat";
+import { formatRule } from "@ttasks/contracts/schedule";
 import { addDays, isDate, weekdayOf } from "./due.ts";
 
 export interface CaptureArea {
@@ -36,7 +38,10 @@ export interface CaptureContext {
     readonly areas: readonly CaptureArea[];
     readonly projects: readonly CaptureProject[];
   };
-  /** The space is a tree: its projects are filed as filedAs takes them there. */
+  /**
+   * The space is a tree: its projects are filed as filedAs takes them there, and a capture that
+   * says a schedule ("every saturday") is a routine you do.
+   */
   readonly tree?: boolean;
   /** The area (and project) of the view the person is in: a capture lands there by default. */
   readonly here?: { readonly area: string; readonly project?: string } | undefined;
@@ -65,7 +70,9 @@ export type Chip =
       readonly fromView?: true;
     })
   | (Span & { readonly kind: "waiting"; readonly who: string })
-  | (Span & { readonly kind: "star" });
+  | (Span & { readonly kind: "star" })
+  /** A schedule in words: the capture is a routine you do. `rule` is its stored form. */
+  | (Span & { readonly kind: "repeat"; readonly rule: string });
 
 export type ChipKind = Chip["kind"];
 
@@ -80,6 +87,8 @@ export interface CaptureDraft {
   readonly status?: string;
   readonly waiting_on?: string;
   readonly focus?: true;
+  /** A routine's schedule in the words typed: `task.add`'s `repeat`. */
+  readonly repeat?: string;
 }
 
 export interface Capture {
@@ -140,6 +149,26 @@ const MONTHS: readonly (readonly string[])[] = [
 
 /** Words directly before a date that belong to it: "pay rent by fri". */
 const LEADS = new Set(["on", "by", "due"]);
+
+/** The words a schedule starts with in a capture: "every saturday", "daily at 7", "weekdays". */
+const REPEAT_LEADS = new Set(["every", "each", "daily", "weekly", "monthly", "yearly", "weekdays"]);
+
+/** The longest run of words from `i` that says a schedule, with its stored rule. */
+function repeatAt(
+  words: readonly Word[],
+  i: number,
+  today: string,
+): { count: number; rule: string } | undefined {
+  for (let n = Math.min(10, words.length - i); n >= 1; n -= 1) {
+    const said = words
+      .slice(i, i + n)
+      .map((w) => w.text)
+      .join(" ");
+    const rule = parseRepeat(said, today);
+    if (rule !== undefined) return { count: n, rule: formatRule(rule) };
+  }
+  return undefined;
+}
 
 const weekday = (word: string): number => WEEKDAYS.findIndex((names) => names.includes(word));
 const month = (word: string): number => MONTHS.findIndex((names) => names.includes(word));
@@ -296,6 +325,22 @@ export function parseCapture(text: string, ctx: CaptureContext): Capture {
   for (let i = 0; i < words.length; i += 1) {
     if (taken.has(i)) continue;
     const word = words[i] as Word;
+    if (ctx.tree === true && !seen.has("repeat") && REPEAT_LEADS.has(word.lower)) {
+      const said = repeatAt(words, i, ctx.today);
+      if (said !== undefined) {
+        const s = span(i, said.count);
+        // Kept as text, the whole schedule stays text: none of its words becomes a date.
+        if (kept.has(keyOf("repeat", s.text))) {
+          i += said.count - 1;
+          continue;
+        }
+        found.push({ kind: "repeat", key: keyOf("repeat", s.text), ...s, rule: said.rule });
+        seen.add("repeat");
+        take(i, said.count);
+        i += said.count - 1;
+        continue;
+      }
+    }
     if (!seen.has("due")) {
       // A lead word ("by fri") goes with its date; the date alone when the lead is kept as text.
       const lead = LEADS.has(word.lower) ? dateAt(words, i + 1, ctx.today) : undefined;
@@ -397,6 +442,9 @@ function draftOf(title: string, chips: readonly Chip[], tree: boolean): CaptureD
       case "waiting":
         draft = { ...draft, status: "waiting", waiting_on: chip.who, inbox: false };
         break;
+      case "repeat":
+        draft.repeat = chip.text;
+        break;
       case "area": {
         const filed = filedAs(chip.area, chip.project, tree);
         draft = {
@@ -411,6 +459,18 @@ function draftOf(title: string, chips: readonly Chip[], tree: boolean): CaptureD
         break;
       }
     }
+  }
+  // A routine you do keeps its title, words, place and priority; its schedule takes the place of a
+  // date, a star, a status and the Inbox.
+  if (draft.repeat !== undefined) {
+    return {
+      title: draft.title,
+      inbox: false,
+      repeat: draft.repeat,
+      ...(draft.area === undefined ? {} : { area: draft.area }),
+      ...(draft.project === undefined ? {} : { project: draft.project }),
+      ...(draft.priority === undefined ? {} : { priority: draft.priority }),
+    };
   }
   return draft;
 }

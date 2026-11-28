@@ -6,7 +6,8 @@
 // another word is the fake's mode (packages/testkit/src/fakes/ttam.ts), and the file beside it
 // with `.agents` added holds the homes and agents it reports besides. Without it, as in every
 // test, there is no TTAM. The page opens through the service's own `launch.open` and launch
-// machines, as `ttasks serve` does. The listener takes a port the OS assigns, and machine.toml's
+// machines, as `ttasks serve` does. With E2E_CLOCK, a tree space's writer decides by the time the file moves
+// on to (clock-worker.ts). The listener takes a port the OS assigns, and machine.toml's
 // port is never written. Tests only.
 //
 // A line `stop` on stdin stops it gracefully, on every OS.
@@ -17,6 +18,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { packageIdentity } from "../../packages/service/src/hub/identity.ts";
 import { runServe } from "../../packages/service/src/hub/serve.ts";
+import { DEFAULT_DRIVER, StorageWorker } from "../../packages/storage/src/index.ts";
 import { twoTerminalsHost } from "../../packages/service/test/harness.ts";
 import { fakeTtam } from "../../packages/testkit/src/index.ts";
 import type { TerminalReply, TerminalRequest } from "./fake-terminal.ts";
@@ -52,7 +54,21 @@ process.on("message", (reply: TerminalReply) => {
   pending.delete(reply.launch);
 });
 
+const clock = process.env["E2E_CLOCK"];
+
 const code = await runServe({
+  // With E2E_CLOCK, the tree spaces' writer decides by the time the world moves on (clock-worker.ts).
+  ...(clock === undefined
+    ? {}
+    : {
+        spaceOptions: {
+          startWorker: () =>
+            StorageWorker.start({
+              driver: DEFAULT_DRIVER,
+              entry: new URL("./clock-worker.ts", import.meta.url),
+            }),
+        },
+      }),
   identity: () => ({ root: false, elevated: false, package: packageIdentity(process.env) }),
   // A worker's tests sign in by code many times a minute. The service's own limit of 10 a minute
   // is proven by packages/service/src/http/listener.test.ts. The phone's link listens on loopback,

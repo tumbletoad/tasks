@@ -66,6 +66,10 @@ const VIEW_SHAPES: Readonly<Record<View, ReactNode>> = {
       <path d="m3.5 12 8.5 4.5 8.5-4.5M3.5 16 12 20.5l8.5-4.5" />
     </>
   ),
+  // A loop: work that comes back, as a routine's box shows it.
+  routines: (
+    <path d="M19 12a7 7 0 0 1-12 4.9M5 12a7 7 0 0 1 12-4.9M17 3.5v3.6h-3.6M7 20.5v-3.6h3.6" />
+  ),
   // Check in a circle.
   completed: (
     <>

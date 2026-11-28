@@ -98,3 +98,17 @@
     outline: 1px solid Highlight;
   }
 }
+
+/* Today's routines: their rows line up with the tasks' below, under a quiet line like Focus's. */
+.routines {
+  padding-inline-start: 20px;
+}
+
+.routinesHead {
+  margin: 0;
+  padding: 8px 0 6px 20px;
+  font-size: 0.78125rem;
+  font-weight: 500;
+  line-height: 1.125rem;
+  color: var(--k-muted);
+}

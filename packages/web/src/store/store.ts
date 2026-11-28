@@ -26,6 +26,7 @@ import {
   type Cursor,
   type Nodes,
   type PageRow,
+  type RoutineRow,
   type Scales,
   type SnapshotMessage,
   type SpaceHead,
@@ -84,6 +85,8 @@ export interface LiveState {
   readonly nodes: Nodes;
   /** The pages shown, without their bodies. */
   readonly pages: ReadonlyMap<string, PageRow>;
+  /** The routines that come back, by ID; none on a space without them. */
+  readonly routines: ReadonlyMap<string, RoutineRow>;
   readonly instances: readonly Instance[];
   /** The space's statuses and effort scale. */
   readonly scales: Scales;
@@ -179,6 +182,7 @@ export class LiveStore {
     asking: new Map(),
     nodes: new Map(),
     pages: new Map(),
+    routines: new Map(),
     instances: [],
     scales: DEFAULT_SCALES,
   };
@@ -432,6 +436,7 @@ export class LiveStore {
         asking: this.#pending.view(held.asking),
         nodes: held.nodes,
         pages: held.pages,
+        routines: held.routines,
         instances: held.instances,
         scales: this.#pending.scales(held.scales),
       };

@@ -117,9 +117,9 @@ export interface SnapshotMessage {
    * `preference` without a row: the page takes a snapshot for its new value.
    */
   /**
-   * A tree space's routines that are not finished, each with its schedule, its open time and its
-   * newest entry (ops/routines.ts compactRoutine). A batch carries a changed routine's row as an
-   * entity of type `routine`, also when it went to the Trash or was finished. Absent when the space
+   * A tree space's routines out of the Trash, finished ones too, each with its schedule, its open
+   * time and its newest entry (ops/routines.ts compactRoutine). A batch carries a changed routine's
+   * row as an entity of type `routine`, also when it went to the Trash. Absent when the space
    * has none, as on today's storage.
    */
   readonly routines?: readonly CompactRow[];

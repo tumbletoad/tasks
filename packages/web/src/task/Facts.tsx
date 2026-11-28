@@ -32,6 +32,7 @@ import { useLive } from "../store/hooks.ts";
 import { effortOptions, placeOf, type TaskRow } from "@ttasks/client/store";
 import { AreaPicker } from "./AreaPicker.tsx";
 import { DuePicker } from "./DuePicker.tsx";
+import { useMakeRoutine } from "../routine/actions.ts";
 import css from "./Expanded.module.css";
 
 const styles = classes(css, [
@@ -405,10 +406,28 @@ function WaitingOn({
     </>
   );
 }
+/**
+ * Whether "Repeat…" is offered on a task: on a space that keeps routines, an open task with no task
+ * above it and none below.
+ */
+function repeatable(
+  task: TaskRow,
+  state: {
+    readonly space?: { readonly tree?: true } | undefined;
+    readonly tasks: ReadonlyMap<string, TaskRow>;
+  },
+): boolean {
+  if (state.space?.tree !== true || task.lifecycle !== "active") return false;
+  if (state.tasks.has(task.parent)) return false;
+  for (const other of state.tasks.values()) if (other.parent === task.id) return false;
+  return true;
+}
+
 export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock: Clock }) {
   const t = useT();
   const state = useLive();
   const edits = useEdits();
+  const makeRoutine = useMakeRoutine();
   const { live } = useContext(Session);
   const waitingKept =
     useUnsaved(task.id, "waiting_on").length > 0 ||
@@ -630,6 +649,11 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
           shown={due?.text}
           tip={due?.tip}
           shortOf={(date) => shortDate(date, clock, t)}
+          onRepeat={
+            repeatable(task, state)
+              ? (rule, base) => makeRoutine({ task: task.ref }, rule, clock.timeZone, base)
+              : undefined
+          }
         />
         <Unsaved task={task.id} field="due" />
       </Fact>

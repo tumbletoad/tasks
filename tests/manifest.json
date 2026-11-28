@@ -7294,7 +7294,47 @@
     },
     {
       "id": "A5.routines.store",
-      "title": "The live store holds a tree space's routines as the feed sends them: from the snapshot, moved on by each batch's routine row, gone once finished or in the Trash, and a task that became a routine leaves the tasks",
+      "title": "The live store holds a tree space's routines as the feed sends them: from the snapshot, moved on by each batch's routine row, kept once finished (Completed lists it), gone in the Trash, and a task that became a routine leaves the tasks",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.routines.web.card",
+      "title": "A routine's card: its title and schedule corrected in place (words that are no schedule save nothing, a refusal keeps what was typed), its times done newest first on the day each was done and for its own day when another (a skip, an extra time, a note), Pause, Finish routine… behind its dialog that finishes only on its own button, and a finished routine's card with its times only",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.routines.capture",
+      "title": "On a space that keeps routines, a capture that says a schedule (water the plants every saturday, stand-up weekdays at 9) shows it as a chip and is a routine you do, its schedule taking the place of a date, a star and the Inbox; elsewhere, kept as text (the whole schedule, no date taken from it), or no schedule, the words stay the title",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.routines.web.new",
+      "title": "+ New routine reads its schedule in words as the person types (Every Saturday), says when words are no schedule and keeps Make off, and makes it with its title and stored rule, then closes; Make pressed twice while the first is on its way makes one, and a refusal keeps the words",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.routines.e2e",
+      "title": "A routine a person does on a tree space against the real service, its clock and the page's moved on together through three weeks: made from the Routines page with a typo its card corrects, checked off early, a missed week shown as one late time, Skip and its Undo, a Done, Pause and Resume from its card, Finish for good behind its dialog, listed in Completed with its times done and brought back by Undo, its schedule corrected in its card; Repeat… in a task's date making it a routine whose task card closes; the Routines page, its card, its dialog, Today and Completed at 1,440 and 390 px in both themes, nothing sideways, no violation",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.routines.web.lists",
+      "title": "A routine's row and the Routines page's lists: Due (late since a day, or today, with Skip), Coming (next on a day) and Paused with its count, each line its schedule in words, who does it and its newest entry; a finished routine in none; the round box with its loop checks off this time, and no box is a task's checkbox",
       "source": "Routines design, pull request 235",
       "owner": "M6",
       "kind": "ci",

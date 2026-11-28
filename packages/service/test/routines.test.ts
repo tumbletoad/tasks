@@ -284,9 +284,13 @@ describe("[S2.tree.routines.service] a routine a person does, through the reques
     });
     expect((await said("extra", { routine: ref })).last?.["due"]).toBeUndefined();
 
-    // Finished for good: it leaves the feed's routines, and Undo brings it back.
+    // Finished for good: its row says so, with when, for Completed, and Undo brings it back.
     expect(await said("finish", { routine: ref })).toMatchObject({ state: "finished" });
-    expect(await feed.caughtUp()).toEqual([]);
+    expect((await feed.caughtUp())[0]).toMatchObject({
+      ref,
+      lifecycle: "completed",
+      completed_at: now[0],
+    });
     expect(await said("done", { routine: ref }).catch((e: unknown) => e)).toMatchObject({
       code: "conflict",
     });
@@ -323,7 +327,9 @@ describe("[S2.tree.routines.service] a routine a person does, through the reques
     await feed.start();
     const added = (await call(
       "task.add",
-      { tasks: [{ title: "Fixture send the weekly report", repeat: "every friday" }] },
+      {
+        tasks: [{ title: "Fixture send the weekly report", repeat: "every friday", inbox: false }],
+      },
       AGENT,
     )) as { tasks: Json[] };
     expect(findEntry("task.add")?.output.safeParse(added).success).toBe(true);

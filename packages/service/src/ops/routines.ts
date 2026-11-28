@@ -12,7 +12,7 @@ const ENTRIES = 10;
 /** A routine's columns, from the tree's own tables: `main.tasks`, as a served reader names them. */
 const COLUMNS =
   "n.id, n.title, n.brief, n.description, n.parent_id, n.position, n.deleted_at, t.ref, " +
-  "t.lifecycle, t.priority, max(n.version, t.version, r.version) AS version, r.rule, r.start, " +
+  "t.lifecycle, t.completed_at, t.priority, max(n.version, t.version, r.version) AS version, r.rule, r.start, " +
   "r.tz, r.due_date, r.due_at, r.paused, r.instance, (SELECT count(*) FROM occurrences o " +
   "WHERE o.routine_id = n.id AND o.deleted_at IS NULL) AS entries";
 const FROM =
@@ -40,8 +40,8 @@ const SQL = {
     "WHERE o.routine_id = $id AND o.deleted_at IS NULL ORDER BY o.at DESC, o.id DESC LIMIT $n",
 } as const;
 
-/** Every live routine that is not finished, as the feed's snapshot sends it. */
-export const LIVE_ROUTINES = `SELECT ${COLUMNS}, ${LAST} ${FROM} AND n.deleted_at IS NULL AND t.lifecycle = 'active' ORDER BY n.position, n.id`;
+/** Every routine out of the Trash, finished ones too (Completed lists them), as the snapshot sends it. */
+export const LIVE_ROUTINES = `SELECT ${COLUMNS}, ${LAST} ${FROM} AND n.deleted_at IS NULL ORDER BY n.position, n.id`;
 
 /** The routines a batch's commits changed, also those gone to the Trash or finished. */
 export const ROUTINE_ROWS =
@@ -237,6 +237,7 @@ export function compactRoutine(
   };
   if (typeof row["due_at"] === "number") out["due_at"] = row["due_at"];
   if (typeof row["deleted_at"] === "number") out["deleted_at"] = row["deleted_at"];
+  if (typeof row["completed_at"] === "number") out["completed_at"] = row["completed_at"];
   if (typeof row["brief"] === "string" && row["brief"] !== "") out["summary"] = row["brief"];
   if (typeof last["state"] === "string") {
     out["last_state"] = last["state"];

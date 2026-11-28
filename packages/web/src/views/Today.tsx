@@ -22,6 +22,7 @@ import {
   todayOf,
   weekStartOf,
   type DayNumbers,
+  type Today,
   formatDay,
   type Clock,
 } from "@ttasks/client/today";
@@ -36,8 +37,20 @@ import { countFinished, type FinishedCounts } from "./finished.ts";
 import css from "./Today.module.css";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
 import { PageChanges } from "../library/PageChanges.tsx";
+import { useRoutineActions } from "../routine/actions.ts";
+import { RoutineItem } from "../routine/Routine.tsx";
 
-const styles = classes(css, ["day", "date", "numbers", "number", "value", "label", "sub"]);
+const styles = classes(css, [
+  "day",
+  "date",
+  "numbers",
+  "number",
+  "value",
+  "label",
+  "sub",
+  "routines",
+  "routinesHead",
+]);
 
 /** Agents' changes may touch any task, so Today announces and fades in every agent's row. */
 const ANY = (): boolean => true;
@@ -62,8 +75,8 @@ export function TodayPage({ task, onExpand }: TodayProps) {
   );
   const clock = useClock(timed);
   const today = useMemo(
-    () => todayOf(state.tasks.values(), clock, { changes }),
-    [state.tasks, clock, changes],
+    () => todayOf(state.tasks.values(), clock, { changes, routines: state.routines.values() }),
+    [state.tasks, state.routines, clock, changes],
   );
   const numbers = useMemo(() => dayNumbersOf(state.tasks.values(), clock), [state.tasks, clock]);
   const finished = useFinished(clock);
@@ -99,6 +112,7 @@ export function TodayPage({ task, onExpand }: TodayProps) {
   return (
     <div>
       <Day clock={clock} numbers={numbers} finished={finished} />
+      <TodayRoutines today={today} clock={clock} />
       <TaskList
         key="today"
         view="today"
@@ -112,6 +126,30 @@ export function TodayPage({ task, onExpand }: TodayProps) {
       />
       <PageChanges />
     </div>
+  );
+}
+
+/**
+ * The routines you do that Today holds, above its tasks under a quiet "Routines" line as Focus and
+ * Next have theirs, aligned with the task rows: due today or late, then this week's. Each line says
+ * when; a routine takes no section of the tasks.
+ */
+function TodayRoutines({ today, clock }: { readonly today: Today; readonly clock: Clock }) {
+  const t = useT();
+  const actions = useRoutineActions();
+  const routines = today.sections.flatMap((s) => s.routines ?? []);
+  if (routines.length === 0) return null;
+  return (
+    <section
+      data-part="today-routines"
+      className={styles.routines}
+      aria-label={t("today.routines")}
+    >
+      <h2 className={styles.routinesHead}>{t("today.routines")}</h2>
+      {routines.map((routine) => (
+        <RoutineItem key={routine.id} routine={routine} clock={clock} actions={actions} />
+      ))}
+    </section>
   );
 }
 

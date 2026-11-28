@@ -17,6 +17,7 @@
 import { defaultRangeExtractor, useWindowVirtualizer, type Range } from "@tanstack/react-virtual";
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -201,6 +202,14 @@ export function List({
   const [focused, setFocused] = useState<string | undefined>(undefined);
   const shownBefore = useRef<Items | undefined>(undefined);
   const shown = useMemo(() => withHeld(given, shownBefore.current, focused), [given, focused]);
+  // Focus that went with its element (a card closed under it) has left the list, though Firefox
+  // says nothing of it: a row is held only while focus is in the list.
+  useEffect(() => {
+    const list = root.current;
+    if (focused !== undefined && list !== null && !list.contains(document.activeElement)) {
+      setFocused(undefined);
+    }
+  }, [given, focused]);
   const { items, index } = shown;
   // A held row (focused, out of the view) stays the current row: it keeps the tab order and the
   // keys move on from it. The view's own current row cannot be it, since the view no longer has it.
