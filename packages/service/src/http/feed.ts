@@ -32,6 +32,7 @@ import { hasFolderTable, hasPageTable } from "../ops/read.ts";
 import { COMPACT_PAGE, compactPage, LIVE_PAGES } from "../ops/library.ts";
 import { taskColumns, taskRows, type CompactRow, type FeedHere } from "../ops/task-rows.ts";
 import { PREFERENCE_ROWS, spacePreferencesOf } from "../ops/preferences.ts";
+import { compactRoutine, LIVE_ROUTINES, ROUTINE_ROWS } from "../ops/routines.ts";
 
 export type { FeedHere } from "../ops/task-rows.ts";
 
@@ -115,6 +116,13 @@ export interface SnapshotMessage {
    * its state (A1 3.16, A5 3.15 step 1). A batch names a changed preference as an entity of type
    * `preference` without a row: the page takes a snapshot for its new value.
    */
+  /**
+   * A tree space's routines that are not finished, each with its schedule, its open time and its
+   * newest entry (ops/routines.ts compactRoutine). A batch carries a changed routine's row as an
+   * entity of type `routine`, also when it went to the Trash or was finished. Absent on today's
+   * storage, which has none.
+   */
+  readonly routines?: readonly CompactRow[];
   readonly preferences: readonly PreferenceRead[];
   /** Why a subscriber with a cursor got a snapshot instead of batches. */
   readonly reason?: "epoch" | "cursor_ahead";
@@ -371,7 +379,7 @@ export async function readSnapshot(
   const since = { since: now - AGENT_CHANGE_DAYS * 86_400_000 };
   const withPages = await hasPageTable(reader);
   const tree = reader.backend === "tree";
-  const [space, tasks, areas, projects, preferences, changed, finished, asking, livePages] =
+  const [space, tasks, areas, projects, preferences, changed, finished, asking, ...rest] =
     await reader.transaction("deferred", [
       { sql: SPACE_SQL, mode: "get" },
       { sql: openTasks(folders), mode: "all" },
@@ -382,11 +390,13 @@ export async function readSnapshot(
       { sql: agentChangedRows(folders), mode: "all", params: since },
       { sql: askingRows(folders), mode: "all" },
       ...(withPages ? [{ sql: LIVE_PAGES, mode: "all" as const }] : []),
+      ...(tree ? [{ sql: LIVE_ROUTINES, mode: "all" as const }] : []),
     ]);
   const head = headOf(space);
   const rows = new Map(
     (await taskRows(finished as Row[], head.ref_prefix, here)).map((row) => [row["id"], row]),
   );
+  const [livePages, liveRoutines] = withPages ? rest : [undefined, ...rest];
   const pages = withPages
     ? ((livePages ?? []) as Row[]).map((row) => compactPage(head.ref_prefix, row))
     : undefined;
@@ -416,6 +426,13 @@ export async function readSnapshot(
           ]),
     ],
     ...(pages === undefined ? {} : { pages }),
+    ...(tree
+      ? {
+          routines: ((liveRoutines ?? []) as Row[]).map((row) =>
+            compactRoutine(row, head.ref_prefix),
+          ),
+        }
+      : {}),
     preferences: spacePreferencesOf(preferences as Row[]),
   };
 }
@@ -453,6 +470,7 @@ export async function readBatch(
     projects,
     launches,
     later,
+    routineRows,
     projectFolders,
     runs,
     pageRows,
@@ -467,6 +485,7 @@ export async function readBatch(
     { sql: tree ? NO_ROWS : PROJECT_ROWS, mode: "all", params },
     { sql: LAUNCH_TASKS, mode: "all", params: { after } },
     { sql: LATER, mode: "all", params: { upto: params.upto } },
+    { sql: tree ? ROUTINE_ROWS : NO_ROWS, mode: "all", params },
     ...(folders
       ? [
           { sql: PROJECT_FOLDERS_CHANGED, mode: "all" as const, params: { after } },
@@ -502,6 +521,13 @@ export async function readBatch(
         rows.set(`${table}:${String(row["id"])}`, nodeOf(table, row, head.id));
       }
     }
+  }
+  // A routine's changes, of any of its rows, carry its one row: the page draws it from that alone.
+  const routineIds = new Set<string>();
+  for (const row of routineRows as Row[]) {
+    const id = String(row["id"]);
+    routineIds.add(id);
+    rows.set(`routines:${id}`, compactRoutine(row, head.ref_prefix));
   }
   /** The pages of each task, project or area a batch moved to the Trash, back or elsewhere. */
   const pagesOn = new Map<string, string[]>();
@@ -555,7 +581,10 @@ export async function readBatch(
   const withhold = (change: Row) => {
     withheld.add(`${String(change["entity"])}:${String(change["entity_id"])}`);
     const task = taskOf(change);
-    if (task !== undefined) withheld.add(`tasks:${task}`);
+    if (task !== undefined) {
+      withheld.add(`tasks:${task}`);
+      withheld.add(`routines:${task}`);
+    }
     if (change["entity"] === "folders") {
       for (const key of tasksOf(folderOwner.get(String(change["entity_id"])))) withheld.add(key);
     }
@@ -580,6 +609,28 @@ export async function readBatch(
       bySeq.set(seq, entities);
     }
     const task = taskOf(change);
+    if (task !== undefined && routineIds.has(task)) {
+      const own = `routines:${task}`;
+      let routine = entities.get(own);
+      if (routine === undefined) {
+        const changed: string[] = [];
+        routine = {
+          changed,
+          entity: {
+            type: "routine",
+            id: task,
+            task,
+            row: withheld.has(own) ? null : (rows.get(own) ?? null),
+            changed,
+          },
+        };
+        entities.set(own, routine);
+      }
+      const field = change["field"];
+      if (typeof field === "string" && !routine.changed.includes(field))
+        routine.changed.push(field);
+      continue;
+    }
     let found = entities.get(key);
     if (found === undefined) {
       const changed: string[] = [];
