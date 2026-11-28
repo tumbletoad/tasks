@@ -616,7 +616,7 @@ function EntryLine({
           <div className={styles.text}>
             <TextEditor
               space={edit.space}
-              task={edit.task}
+              owner={edit.task}
               part={words.ref}
               label={words.box}
               text={text}
@@ -639,7 +639,7 @@ function EntryLine({
           </p>
         )}
         {edit === undefined || words === undefined ? null : (
-          <NotSaved space={edit.space} task={edit.task} part={words.ref} />
+          <NotSaved space={edit.space} owner={edit.task} part={words.ref} />
         )}
         {item.again === undefined ? null : (
           <button

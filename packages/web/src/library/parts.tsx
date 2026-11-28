@@ -109,13 +109,13 @@ export function Penned({
     if (opening) setEditing(true);
   }, [opening, setEditing]);
   const [shown, saved] = useSaved(text);
-  const notSaved = save === undefined ? null : <NotSaved space={space} task={owner} part={part} />;
+  const notSaved = save === undefined ? null : <NotSaved space={space} owner={owner} part={part} />;
   if (editing && save !== undefined) {
     return (
       <>
         <TextEditor
           space={space}
-          task={owner}
+          owner={owner}
           part={part}
           label={label}
           text={shown}

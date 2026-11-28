@@ -705,13 +705,13 @@ function Context({
   }, [text, open, editing]);
   // The person's refused words, kept in sight while the box is open again to put them in.
   const notSaved =
-    write === undefined ? null : <NotSaved space={space} task={task.id} part="context" />;
+    write === undefined ? null : <NotSaved space={space} owner={task.id} part="context" />;
   if (editing && write !== undefined) {
     return (
       <div className={styles.context} data-part="context">
         <TextEditor
           space={space}
-          task={task.id}
+          owner={task.id}
           part="context"
           label={t("task.context")}
           text={text}
