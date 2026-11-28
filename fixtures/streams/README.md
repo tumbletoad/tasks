@@ -1,8 +1,8 @@
 # Stream fixtures
 
-Recorded output streams of `claude -p` (A4 3.11.3, 3.11.4), turned into fixture text. They are the only part of the M0 lab that survives M0 (A7 3.7 lab rules). The print-mode stream parser is built on them and its fake agents replay them. The `codex exec --json` recordings this lab also made went with their parser: Codex runs speak its app server, recorded in `fixtures/codex-app-server/`.
+Recorded output streams of `claude -p`, turned into fixture text. The print-mode stream parser is built on them and its fake agents replay them. Codex runs speak its app server, recorded in `fixtures/codex-app-server/`.
 
-Recorded on 2026-11-12 in lab run N (step M0.11, rows N01, N02, N03, N05) with Claude Code 2.1.322 and codex-cli 0.167.2:
+Recorded on 2026-11-12 by a lab that is now removed, with Claude Code 2.1.322 and codex-cli 0.167.2:
 
 - `windows-*`: Windows 11. `claude -p` and `codex exec --json` with full access, both CLIs.
 - `linux-*`: Ubuntu 24.04 without sudo rights. `codex exec --json` only, in the default sandbox with the probe's tools on `default_tools_approval_mode = "approve"` (no full access and no Claude Code sessions there in this step).
@@ -36,7 +36,7 @@ Cases (each CLI has the ones its row covers):
 
 The Linux `success-tool-call` and `resume` fixtures are **not a recorded pair**: the success fixture comes from an ephemeral run (`--ephemeral`), and the resume fixture continues a later persisted run of the same case (`n02l-persisted`), which is not committed. Their equal fixture thread ID only means that each is the first ID of its stream; the index says so in a `note`. On Windows both CLIs' `resume` fixtures continue the session or thread of their `success-tool-call` fixture.
 
-No run in lab run N ended inside a line: both CLIs wrote whole lines, also when killed. The truncated fixtures are therefore cut by the sanitiser, to give parsers a kill in mid-write (`final_line: "cut-by-sanitiser"` in the index). A real partial line would be kept as `partial-from-run`.
+No recorded run ended inside a line: both CLIs wrote whole lines, also when killed. The truncated fixtures are therefore cut by the sanitiser, to give parsers a kill in mid-write (`final_line: "cut-by-sanitiser"` in the index). A real partial line would be kept as `partial-from-run`.
 
 ## How the sanitiser made them
 
@@ -64,7 +64,7 @@ The inventory (`fields-<os>.json`) records, per event key and field path, the JS
 
 The event order, the number of lines, the field names, their order and JSON types are the run's own. The session or thread ID is the first ID of each stream, so every fixture's session or thread ID is `…000000000001`.
 
-On 2026-11-12 the committed fixtures were run through this sanitiser again (`lab.ts resanitise`, from their committed form: the raw streams were already removed with their scratch folder). That replaced what the first sanitiser had kept: the observed built-in tool and capability lists, setting values, exact model strings, inference metadata, exact usage and cost numbers and the rate-limit window name. The CLI version strings stay, so M6.05 knows which version a shape came from. Line structure, field names and JSON types were compared before and after and are unchanged; the inventories list the same event keys, paths, types and counts. The rebuilt `tools` list names only invented entries and the probe's tools, so it no longer lists `ToolSearch`, which the Claude streams still call.
+The CLI version strings stay, so a parser knows which version a shape came from.
 
 ## Content check
 
@@ -73,7 +73,7 @@ On 2026-11-12 the committed fixtures were run through this sanitiser again (`lab
 1. **A scan** of each fixture line, parsed: every key and every string value, decoded, is checked separately for a home path (`/home/<name>`, `/Users/<name>`, `/root`, `C:\Users`), an e-mail address, a token or key shape, an IPv4 or IPv6 address, or the user name, host name or home folder of the machine it runs on (a deny-list built at run time and never written down). A cut final line is scanned raw and with its JSON escapes decoded. The inventories and indexes get the same scan.
 2. **Structural assertions** (`tests/stream-schema.ts`): every value in a fixture event must be one its treatment can produce (an ID of the fixture pattern, a time of the fixed series, a fixture text, a vocabulary value, a fixture number, a rebuilt list); every field must be on the allow-list; every inventory path must be a schema path or a placeholder; every index field must be a known kind of value. A truncated fixture must be its source stream with the last line cut.
 
-The scan cannot recognise an arbitrary private name (a person, a customer, a project) in a field whose values the structure does not constrain: it knows shapes and this machine's names only. The structural assertions are the guarantee: in the stream fixtures no string field is free. The index's `case` and `note` texts are written by the lab's own code.
+The scan cannot recognise an arbitrary private name (a person, a customer, a project) in a field whose values the structure does not constrain: it knows shapes and this machine's names only. The structural assertions are the guarantee: in the stream fixtures no string field is free. The index's `case` and `note` texts were written by the lab's own code.
 
 The lab ran both layers before it published anything: every output was built and checked in the run's scratch folder, and only when all passed were they copied here. Raw streams never left their scratch folder, and the Linux recordings were sanitised on the machine that made them.
 
