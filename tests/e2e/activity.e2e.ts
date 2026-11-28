@@ -82,7 +82,7 @@ test.describe("[A5.activity.e2e] the Activity screen", () => {
     // The person's own change makes no line: the agent's next one lands right on top of the last.
     await update(world, ref, { title: `${title}, renamed` }, "user");
     await update(world, ref, { summary: "Fixture words of a summary" }, "agent");
-    await expect(first).toContainText("summary changed", { timeout: SLOW_MS });
+    await expect(first).toContainText("brief changed", { timeout: SLOW_MS });
     await expect(lines(page).nth(1)).toContainText("priority P2 to P1");
     await expect(page.locator("main")).not.toContainText("Fixture words of a summary");
 

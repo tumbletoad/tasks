@@ -95,7 +95,7 @@ describe("[A5.activity.web] the Activity screen's words and lines", () => {
     expect(words([{ op: "task.move", field: "grouping", from: "Home", to: "Portal" }])).toBe(
       "moved to Portal",
     );
-    expect(words([{ op: "task.patch", field: "summary" }])).toBe("summary changed");
+    expect(words([{ op: "task.patch", field: "summary" }])).toBe("brief changed");
     expect(words([{ op: "task.patch", field: "waiting_on" }])).toBe("waiting details changed");
     expect(
       words([

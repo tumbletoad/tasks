@@ -627,6 +627,7 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
             max={TEXT_MAX}
             paragraphs
             clears
+            preview={(typed) => <Markdown text={typed} className={styles.md} headings />}
             partial={whole ? undefined : t("text.partial")}
             save={
               editable ? (words, from) => writes.page(view.ref, { body: words }, from) : undefined

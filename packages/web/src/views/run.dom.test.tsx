@@ -629,7 +629,7 @@ describe("[A5.3.8.web.open-once] an Open that got no answer is the same Open whe
     await open();
     expect(toasts).toEqual([
       "Codex already had this task open or opening. What you typed is saved on the task as a note.",
-      "Copied",
+      "Prompt copied",
       "Codex already had this task open or opening. What you typed is saved on the task as a note.",
     ]);
   });
@@ -677,7 +677,7 @@ describe("[A5.3.8.web.open-once] an Open that got no answer is the same Open whe
     });
     type("And the receipts");
     await open();
-    expect(toasts.slice(1)).toEqual(["Copied", without]);
+    expect(toasts.slice(1)).toEqual(["Prompt copied", without]);
   });
 });
 

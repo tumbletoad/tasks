@@ -828,7 +828,7 @@ export function TaskList({
     (text: string, pack = false, then?: string): Promise<boolean> =>
       navigator.clipboard.writeText(text).then(
         () => {
-          say(t(pack ? "row.packCopied" : "row.copied"));
+          say(t(pack ? "row.packCopied" : "row.promptCopied"));
           if (then !== undefined) say(then);
           return true;
         },

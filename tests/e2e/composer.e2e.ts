@@ -357,23 +357,23 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     // Ask from the header's summary, and type on at once.
     await row.locator('[data-part="summary"]').click();
     await page.keyboard.type("before Friday");
-    await expect(composer).toHaveValue("Change the summary: before Friday");
+    await expect(composer).toHaveValue("Change the brief: before Friday");
     await expect(composer).toBeFocused();
     release();
     // The thread comes in below: the words and the focus stay.
     await expect(row.getByText("Nothing logged yet.")).toBeVisible({ timeout: SLOW_MS });
-    await expect(composer).toHaveValue("Change the summary: before Friday");
+    await expect(composer).toHaveValue("Change the brief: before Friday");
     await expect(composer).toBeFocused();
     await page.unrouteAll({ behavior: "wait" });
 
     // A reload with the reads held: the kept draft shows, and a click into it types on.
     release = await holdReads(page);
     await page.reload();
-    await expect(composer).toHaveValue("Change the summary: before Friday", { timeout: SLOW_MS });
+    await expect(composer).toHaveValue("Change the brief: before Friday", { timeout: SLOW_MS });
     await composer.click();
     await page.keyboard.press("End");
     await page.keyboard.type(" please");
-    await expect(composer).toHaveValue("Change the summary: before Friday please");
+    await expect(composer).toHaveValue("Change the brief: before Friday please");
 
     // From the title, Tab reaches the composer.
     await row.locator('[data-part="title"]').focus();
@@ -385,7 +385,7 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     expect(reached).toBe(true);
     await page.keyboard.press("End");
     await page.keyboard.type("!");
-    await expect(composer).toHaveValue("Change the summary: before Friday please!");
+    await expect(composer).toHaveValue("Change the brief: before Friday please!");
     release();
     await page.unrouteAll({ behavior: "wait" });
   });

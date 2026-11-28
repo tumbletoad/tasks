@@ -63,8 +63,8 @@ const said =
 /** The fields of a task, a project or an area, by the name the service gives them. */
 const FIELDS: Readonly<Record<string, Words>> = {
   title: said("activity.renamed"),
-  summary: said("activity.summary"),
-  context: said("activity.context"),
+  summary: said("activity.brief"),
+  context: said("activity.description"),
   brief: said("activity.brief"),
   color: said("activity.color"),
   owner: said("activity.owner"),
