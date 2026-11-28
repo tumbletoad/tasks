@@ -208,7 +208,8 @@ test.describe("[A5.3.12.e2e.checkoff-reload] A check-off waiting behind an edit 
     page.on("request", (request) => {
       if (request.url().endsWith("/api/v1/op/task.finish")) finishes += 1;
     });
-    // The rename never reaches the service.
+    // The rename never reaches the service while this page lives: the page sends it again with its
+    // request ID while its outcome is unknown, so the block stays until the next page is open.
     await page.route("**/api/v1/op/task.update", (route) => route.abort());
     await title.focus();
     await page.keyboard.press("F2");
@@ -218,7 +219,6 @@ test.describe("[A5.3.12.e2e.checkoff-reload] A check-off waiting behind an edit 
     await row.locator('[data-part="check"]').first().click();
     await page.clock.runFor(1_000);
     expect(finishes).toBe(0);
-    await page.unroute("**/api/v1/op/task.update");
 
     // The page goes, and the task's link opens it again in the same tab.
     await page.goto(`${world.origin}/s/${world.mira.id}/task/${ref}`);
@@ -238,6 +238,7 @@ test.describe("[A5.3.12.e2e.checkoff-reload] A check-off waiting behind an edit 
     await picture(page, "kept-action-390.png");
     if (wide !== null) await page.setViewportSize(wide);
 
+    await page.unroute("**/api/v1/op/task.update");
     await editor.focus();
     await page.keyboard.press("Enter");
     await expect.poll(async () => (await read()).title).toBe("Sweep the porch today");

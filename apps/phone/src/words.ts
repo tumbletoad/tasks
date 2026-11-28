@@ -76,6 +76,23 @@ export const WORDS = {
   noLongerOpen: "That task is no longer open.",
   nothingYet: "Nothing written yet.",
 
+  pagesChanged: "Pages agents changed",
+  needsYou: "Needs you",
+  needing: (n: number) => (n === 1 ? "1 task needs you." : `${String(n)} tasks need you.`),
+  run: {
+    waiting: "An agent's run waits to start.",
+    working: "An agent is working on it.",
+    stopping: "The agent's run is stopping.",
+    done: "The agent finished.",
+    needs_you: "The agent needs you.",
+    failed: "The agent's run failed.",
+    stopped: "The agent's run was stopped.",
+    unknown: "An agent ran on it.",
+  },
+  said: { answer: "Answer", question: "Question", last: "Last said" },
+  runSection: "Agent's run",
+  cut: "It goes on, on the computer.",
+
   newTask: "New task",
   addTask: "Add a task",
   addedTo: (where: string) => `Added to ${where}`,

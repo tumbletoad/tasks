@@ -12,7 +12,7 @@
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { MessageId, Translate } from "../i18n/intl.tsx";
 import { formatDay, formatInstant, type Clock } from "@ttasks/client/today";
-import { AGENT_KINDS } from "../app/changes.ts";
+import { AGENT_KINDS } from "@ttasks/client/today";
 import type { Changes } from "../store/store.ts";
 
 type List = Client["activity"]["list"];

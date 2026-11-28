@@ -4,7 +4,8 @@ import { PAGE_FEED_EXAMPLES } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
 import type { PageRow } from "@ttasks/client/store";
 import { areaNode, nodesOf, projectNode } from "@ttasks/client/test/nodes";
-import { agentPages, taskLists } from "./lists.ts";
+import { agentPages } from "@ttasks/client/today";
+import { taskLists } from "./lists.ts";
 
 const SPACE = "sp_0123456789abcdefghjkmnpqrs";
 const [onProject, onTask] = PAGE_FEED_EXAMPLES.snapshotPages as unknown as [PageRow, PageRow];
