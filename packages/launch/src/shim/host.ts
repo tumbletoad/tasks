@@ -126,7 +126,6 @@ export function sessionOf(of: { readonly id: string; readonly session?: string |
 export interface LiveLaunch {
   readonly launch: string;
   readonly space: string;
-  /** Null for a routine's launch. */
   readonly task: string | null;
   readonly session: string;
   /** The agent's app and home folder as the click recorded them; a launch can lack either. */
@@ -145,8 +144,8 @@ export interface ShimHostOptions {
   readonly platform: NodeJS.Platform;
   /**
    * The space's launch machine, while the space is open as this machine's from the copy `copy`
-   * (a launch's record names the copy its click was made in; none for an earlier build's record):
-   * a launch is never reported into another copy of its space.
+   * (a launch's record names the copy its click was made in): a launch is never reported into
+   * another copy of its space.
    */
   readonly machine: (
     space: string,
@@ -636,16 +635,10 @@ export class ShimHost {
 
   /**
    * Whether the launch was made in the copy `copy` of its space, the one served now: a copy shows
-   * only its own launches' sessions as live. None served: none. A record an earlier build wrote
-   * names no copy, and counts for any.
+   * only its own launches' sessions as live. None served: none.
    */
   madeIn(launch: string, copy: string | undefined): boolean {
-    const record = this.#records.get(launch);
-    return (
-      record !== undefined &&
-      copy !== undefined &&
-      (record.copy === undefined || record.copy === copy)
-    );
+    return copy !== undefined && this.#records.get(launch)?.copy === copy;
   }
 
   /**

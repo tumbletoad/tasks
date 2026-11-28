@@ -193,9 +193,9 @@ export const RUN_SQL = {
   run: "SELECT * FROM runs WHERE id = $id",
   place: "SELECT machine_id, deleted_at FROM places WHERE id = $id",
   insert:
-    "INSERT INTO runs (id, task_id, routine_id, session_id, instance_id, machine_id, adapter, " +
-    "place_id, request, spec, state, reason, attempt, detail, result, queued_at, started_at, " +
-    "ended_at, created_seq, version, fv, fp) VALUES ($id, $task, $routine, $session, $instance, " +
+    "INSERT INTO runs (id, task_id, session_id, instance_id, machine_id, adapter, place_id, " +
+    "request, spec, state, reason, attempt, detail, result, queued_at, started_at, ended_at, " +
+    "created_seq, version, fv, fp) VALUES ($id, $task, $session, $instance, " +
     "$machine, $adapter, $place, $request, $spec, 'queued', NULL, 1, $detail, '{}', $at, NULL, " +
     "NULL, $seq, $seq, '{}', '{}')",
   update:
@@ -232,7 +232,6 @@ export function runDetailText(detail: RunDetail): string {
 export interface RunRow {
   id: Id<"ru">;
   task_id: Id<"t"> | null;
-  routine_id: Id<"ro"> | null;
   session_id: Id<"se"> | null;
   instance_id: string;
   machine_id: Id<"m">;
@@ -258,17 +257,6 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 /**
- * A run's evidence with the key that once named its process group, `container`, read as
- * `process_group`, so the next write of the run keeps only the new key. Kept until step 2's
- * tables, into which the spaces made before it are moved by hand.
- */
-function renamed(evidence: Record<string, unknown>): Record<string, unknown> {
-  if (!Object.hasOwn(evidence, "container")) return evidence;
-  const { container, ...rest } = evidence;
-  return { process_group: container, ...rest };
-}
-
-/**
  * Decodes a run row, or SPACE_INVALID naming the column (never the value). The JSON columns are
  * checked for their shape; the execution store checks each key against A4's lists.
  */
@@ -292,7 +280,6 @@ export function decodeRun(row: Row): RunRow {
   return {
     id: r.id("id", "ru"),
     task_id: r.optText("task_id", (v) => isId(v, "t")) as Id<"t"> | null,
-    routine_id: r.optText("routine_id", (v) => isId(v, "ro")) as Id<"ro"> | null,
     session_id: r.optText("session_id", (v) => isId(v, "se")) as Id<"se"> | null,
     instance_id: r.text("instance_id"),
     machine_id: r.id("machine_id", "m"),
@@ -303,7 +290,7 @@ export function decodeRun(row: Row): RunRow {
     state: r.oneOf("state", RUN_STATES),
     reason: r.optText("reason"),
     attempt: r.int("attempt", "count"),
-    evidence: renamed(detail["evidence"]) as RunEvidence,
+    evidence: detail["evidence"] as RunEvidence,
     at,
     result: Object.keys(result).length === 0 ? null : (result as unknown as RunResultRow),
     queued_at: r.int("queued_at", "instant"),

@@ -464,7 +464,7 @@ describe("[A2.3.12.6.update.runs] an update holds new runs back, waits for the r
       expect.arrayContaining([
         "The restart would cut short 2 runs:",
         "  WORK-12 in Work: running",
-        "  A routine's run in Work: not confirmed ended",
+        "  A run in Work: not confirmed ended",
         "The runs finished.",
       ]),
     );

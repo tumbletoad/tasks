@@ -104,7 +104,6 @@ async function queue(request: Request): Promise<string> {
   const queued = await machine.queue(
     {
       task: await space.task(),
-      routine: null,
       instance: "claude-work",
       adapter: "claude-print",
       place: null,

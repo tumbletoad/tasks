@@ -177,10 +177,10 @@ export const TREE_STATEMENTS: readonly string[] = [
   "CREATE INDEX launches_task ON launches(task_id, created_at)",
   "CREATE INDEX launches_open ON launches(machine_id, created_at) " +
     "WHERE state IN ('prepared','dispatching','dispatched')",
-  // What Run records: as today's, on a task or a routine. A routine's run holds its due time in
-  // `spec`.
+  // What Run records. A run outlives the redaction of its task, which leaves it without one. A
+  // routine's run holds its due time in `spec`.
   `CREATE TABLE runs (
-  id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id), session_id TEXT,
+  id TEXT PRIMARY KEY, task_id TEXT REFERENCES tasks(id), session_id TEXT,
   instance_id TEXT NOT NULL, machine_id TEXT NOT NULL REFERENCES machines(id),
   adapter TEXT NOT NULL, folder_id TEXT REFERENCES folders(id), request TEXT,
   spec TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(spec)),

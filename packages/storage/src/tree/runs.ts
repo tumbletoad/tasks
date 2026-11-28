@@ -74,11 +74,8 @@ function folderOn(tx: Tx, id: unknown, machine: string): string | null {
   return id;
 }
 
-/**
- * A launch or a run row as today's decoders read one: the tree names a folder, not a place, and
- * its runs are all on a task.
- */
-export const asToday = (row: Row): Row => ({ ...row, place_id: null, routine_id: null });
+/** A launch or a run row as today's decoders read one: the tree names a folder, not a place. */
+export const asToday = (row: Row): Row => ({ ...row, place_id: null });
 
 const launchCreate: Run = (tx, input) => {
   const task = liveTask(tx, input["task"]);
@@ -161,7 +158,7 @@ const runCreate: Run = (tx, input) => {
       machine_id: machine,
       adapter: String(input["adapter"]),
       folder_id: folder,
-      request: str(input, "request") ?? null,
+      request: String(input["request"]),
       spec: sortedJson({
         brief_hash: input["brief_hash"],
         permission: input["permission"],
