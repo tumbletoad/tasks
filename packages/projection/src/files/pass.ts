@@ -103,6 +103,11 @@ export class FilesProjector {
     this.#record.save(this.#options.record);
   }
 
+  /** How many files the record holds as placed or meant to be. */
+  get size(): number {
+    return this.#record.files.size;
+  }
+
   /** The space's latest commit, the one a pass would show. */
   seq(): number {
     return Number(

@@ -2241,7 +2241,15 @@
     },
     {
       "id": "S3.files.loop",
-      "title": "When a pass of the readable files runs, on a moved clock: the first right after the start; then once commits stood still for 500 ms, and at most 5 s after the first unshown commit while commits keep coming; a pass that could not place everything again without a commit, after pauses of 500, 1,000 and 2,000 ms; while nothing changes, a sweep that finds a missing file brings a pass",
+      "title": "When a pass of the readable files runs, on a moved clock: the first right after the start; then once commits stood still for 500 ms, and at most 5 s after the first unshown commit while commits keep coming; a pass that could not place everything again without a commit, after pauses of 500, 1,000 and 2,000 ms; while nothing changes, a sweep that finds a missing file brings a pass; a rebuild is a request to the loop, so one that meets a held file is retried once the file is let go, with no commit and no second rebuild",
+      "source": "PLAN step 3",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S3.files.service",
+      "title": "The service keeps a tree space's readable files in the tree's layout: open as this machine's it gets README.md and _index.md and nothing of today's layout, with its record beside the space's settings; a task added through the request path shows; view/rebuild reads every file, puts back a person's edit after rescuing it to rescued/ and answers in files; one that cannot run, with a file where the files' folder goes, answers as a failure",
       "source": "PLAN step 3",
       "owner": "M3",
       "kind": "ci",

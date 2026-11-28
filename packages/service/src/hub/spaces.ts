@@ -117,10 +117,12 @@ import { BackupWatch, type BackupTroubleView } from "./backup-health.ts";
 import { MaintenanceFailed, type Maintenance, type MaintenanceReport } from "./maintenance.ts";
 import { BUILD } from "./build.ts";
 import { ProjectionRunner } from "./projection.ts";
+import { FilesRunner, type FilesRebuilt } from "./view-files.ts";
 import {
   clearFailedMigrations,
   failedOn,
   knownEpochs,
+  filesRecordOf,
   projectionStateOf,
   readSpaceSettings,
   recordFailedMigration,
@@ -148,7 +150,7 @@ import { OtherCopyOpen, restoredOf, type Restored } from "./restored.ts";
 import { wayOutOf } from "./space-ways.ts";
 import { realSyncHost } from "./sync-host.ts";
 import { readOnly, type ServedSpace } from "../ops/index.ts";
-import { servedReader } from "../ops/tree.ts";
+import { isTree, servedReader } from "../ops/tree.ts";
 import { bounded, Timeout, within } from "./wait.ts";
 
 export {
@@ -454,7 +456,7 @@ class Hosted {
   /** Where the space's backups are written (space-settings.ts backupsFolderOf), once it opens. */
   backupFolder: { readonly dir: string; readonly set: boolean } | undefined;
   /** The projection's worker while the space is open as this machine's. */
-  projection: ProjectionRunner | undefined;
+  projection: ProjectionRunner | FilesRunner | undefined;
   /** The hourly check whether the next daily backup is due. */
   daily: NodeJS.Timeout | undefined;
   /** The next look at a folder the check could not see (#recheck). */
@@ -1070,7 +1072,7 @@ export class SpaceManager {
    * reconciliation found, or undefined while the space has no projection running (it is not open
    * as this machine's).
    */
-  rebuildView(entry: number): Promise<Reconciled> | undefined {
+  rebuildView(entry: number): Promise<Reconciled | FilesRebuilt> | undefined {
     return this.#space(entry).projection?.rebuild();
   }
 
@@ -1490,6 +1492,10 @@ export class SpaceManager {
     const writer = space.writer;
     if (this.#options.projection !== true || spaceId === undefined || writer === undefined) return;
     const entry = space.index;
+    if (isTree(space)) {
+      this.#projectFiles(space, spaceId);
+      return;
+    }
     // The record is per folder: two folders that hold one space never share one (space-settings.ts).
     const state = projectionStateOf(this.#options.settingsDir, spaceId, space.folder);
     space.projection = new ProjectionRunner({ folder: space.folder, ...state }, writer, {
@@ -1558,6 +1564,59 @@ export class SpaceManager {
         });
       },
     });
+  }
+
+  /**
+   * A tree space's readable files, into its `view/`, in a worker of its own while the space is open
+   * as this machine's: started only where this service holds the space's writer, as today's
+   * projection. They write nothing to the space. Logged as counts and codes; never fails the space.
+   */
+  #projectFiles(space: Hosted, spaceId: Id<"sp">): void {
+    const { log } = this.#options;
+    const entry = space.index;
+    const record = filesRecordOf(this.#options.settingsDir, spaceId, space.folder);
+    space.projection = new FilesRunner(
+      { folder: space.folder, machine: this.#options.machine.id, record },
+      {
+        started: (report) => {
+          log.log("space.files_started", { entry, space: spaceId, ...report });
+        },
+        pass: (report, ms) => {
+          log.log("space.files_passed", {
+            entry,
+            space: spaceId,
+            seq: report.seq,
+            written: report.written,
+            removed: report.removed,
+            rescued: report.rescued,
+            failed: report.failed,
+            stamped: report.stamped,
+            ms,
+          });
+          if (report.rescueFolder !== undefined) {
+            log.log("space.projection_rescued", { entry, space: spaceId, files: report.rescued });
+            try {
+              recordProjectionRescue(this.#options.settingsDir, spaceId, {
+                stem: report.rescueFolder,
+                files: report.rescued,
+              });
+            } catch {
+              // The rescue folder stays whatever is recorded: the person's bytes are in it.
+            }
+          }
+          if (report.code !== undefined) {
+            log.log("space.projection_failed", { entry, space: spaceId, code: report.code });
+          }
+        },
+        failed: (code) => {
+          log.log("space.projection_failed", {
+            entry,
+            space: spaceId,
+            ...(code === undefined ? {} : { code }),
+          });
+        },
+      },
+    );
   }
 
   /**

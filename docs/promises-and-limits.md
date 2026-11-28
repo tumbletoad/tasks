@@ -479,6 +479,12 @@ the behaviour it describes, and keep each one to a sentence or two.
 - The generated folder of readable files is not where tasks are stored. A file you edit or add
   there is kept or moved to a rescue folder, never deleted. A generated file that goes missing,
   removed by hand or by a sync, is written again within seconds while TTasks runs.
+- A space made as one tree (only test and trial spaces, until the switch) has its readable files
+  in the tree's shape: a folder per project, a file per task, and `_pages/`, `_sources/` and
+  `_done/` beside them. A file or folder of yours there, a generated file you changed included,
+  stays where it is while the files have no use for its name, and is moved whole to the space's
+  `rescued/` when they do. A file that another program holds open is written once it is let go.
+  The README says which change the files show, and only once every file shows it.
 
 ## Your phone
 
@@ -576,6 +582,10 @@ the behaviour it describes, and keep each one to a sentence or two.
 - An agent with a shell can edit your skill files, and every agent then follows the change.
 - TTasks cannot make an agent ignore instructions hidden in a task, a mail or another source it
   reads.
+- In a tree space's readable files, an empty folder you made at a name the files later use (your
+  own `_done/`) is removed when it is empty again. After a power cut a file being written may be
+  left half-written: beside its place, named like `.M-214-fix.md.<hex>.<hex>.tmp`, which you may
+  delete, or at its place, which the next start moves to `rescued/` as if you had changed it.
 - Undo and Restore do not unsend a mail, reverse a commit or undo anything done outside TTasks.
 - Undo steps back through your own changes. A change by an agent or a script is not on it, and
   nothing from before the last upgrade that changed the data format can be undone.
