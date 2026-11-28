@@ -55,8 +55,15 @@ process.on("message", (reply: TerminalReply) => {
 const code = await runServe({
   identity: () => ({ root: false, elevated: false, package: packageIdentity(process.env) }),
   // A worker's tests sign in by code many times a minute. The service's own limit of 10 a minute
-  // is proven by packages/service/src/http/listener.test.ts.
-  http: { ports: [0], persist: false, ui, limits: { redeemPerMinute: 10_000 } },
+  // is proven by packages/service/src/http/listener.test.ts. The phone's link listens on loopback,
+  // so a pairing in a test reaches nothing beyond this machine.
+  http: {
+    ports: [0],
+    persist: false,
+    ui,
+    limits: { redeemPerMinute: 10_000 },
+    link: { host: "127.0.0.1", ports: [0], addresses: () => ["127.0.0.1"] },
+  },
   // Settings lists the terminals detection finds: the same two on every OS the tests run on.
   launch: {
     terminal: ({ intent, ticket, folder }) =>

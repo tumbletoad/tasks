@@ -94,8 +94,11 @@ export interface PhoneView {
   readonly paired_at: string;
   readonly last_used_at: string | null;
   readonly run: boolean;
-  /** Removed, but the removal was not saved: Remove again saves it. */
-  readonly removing: boolean;
+  /**
+   * A change that holds now but was not saved, so a restart could undo it: a removal (Remove
+   * again saves it) or Run switched off (switching it off again saves it).
+   */
+  readonly unsaved: "remove" | "run_off" | null;
 }
 
 /** What became of a pairing code the page shows. */
@@ -174,6 +177,8 @@ export class LinkService {
   readonly #unsaved = new Set<string>();
   /** Phones whose Run on is not saved yet: it does not count for them until it is. */
   readonly #runPending = new Set<string>();
+  /** Phones whose Run off holds but was not saved: Settings says so until it is. */
+  readonly #runOffUnsaved = new Set<string>();
   readonly #wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
   readonly #unrevoke: () => void;
   #conn = 0;
@@ -242,7 +247,8 @@ export class LinkService {
       paired_at: g.created_at,
       last_used_at: g.last_used_at,
       run: this.#runs(g),
-      removing: g.revoked_at !== null,
+      unsaved:
+        g.revoked_at !== null ? "remove" : this.#runOffUnsaved.has(g.grant_id) ? "run_off" : null,
     }));
     const ticket = input["ticket"];
     if (typeof ticket !== "string") return { phones };
@@ -331,10 +337,13 @@ export class LinkService {
       await grants.flush();
     } catch {
       if (run) grants.setScopes(id, [...EDIT_SCOPES]);
+      else this.#runOffUnsaved.add(id);
       throw notSaved(run ? "Run stays off for this phone." : "Run is off for this phone now.");
     } finally {
       this.#runPending.delete(id);
     }
+    // A save of either kind carries the scopes as they are now, so an earlier Run off is saved.
+    this.#runOffUnsaved.delete(id);
     return { run };
   }
 

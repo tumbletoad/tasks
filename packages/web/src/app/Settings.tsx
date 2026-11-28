@@ -27,6 +27,7 @@ import { EffortLevels } from "./EffortLevels.tsx";
 import { useTitle, useToast } from "./frame.ts";
 import { useMachine } from "./machine.ts";
 import { Turns } from "./turns.ts";
+import { Phones } from "./Phones.tsx";
 import css from "./Settings.module.css";
 import { classes } from "./css.ts";
 
@@ -78,6 +79,7 @@ export function SettingsPage() {
       <Keyboard />
       <Terminal />
       <Apps />
+      <PhonesHere />
       <EffortLevels headingClass={styles.heading} />
     </div>
   );
@@ -100,6 +102,13 @@ function Apps() {
       headingClass={styles.heading}
     />
   );
+}
+
+/** The paired phones; a new one pairs with the tab's space. */
+function PhonesHere() {
+  const { space } = useParams({ strict: false });
+  if (space === undefined) return null;
+  return <Phones space={space} />;
 }
 
 function Appearance() {

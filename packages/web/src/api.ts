@@ -446,6 +446,14 @@ export class Api {
     return this.#result("/api/v1/machine/apps_apply", { space, changes });
   }
 
+  /** Settings > Phones (`phones`, `phone_pair`, `phone_rights`, `phone_remove`). */
+  async machineCall(
+    action: "phones" | "phone_pair" | "phone_rights" | "phone_remove",
+    input: Record<string, unknown>,
+  ): Promise<unknown> {
+    return this.#result(`/api/v1/machine/${action}`, input);
+  }
+
   /** The folder chooser: the folders in the folder `path` names, or where to begin. */
   async folders(path: string): Promise<FolderListing> {
     return this.#result("/api/v1/machine/folders", { path });
