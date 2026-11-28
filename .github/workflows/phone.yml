@@ -21,7 +21,7 @@ on:
       - pnpm-lock.yaml
       - .github/workflows/phone.yml
   push:
-    branches: [main, t3/phone-connection]
+    branches: [main]
     paths: *paths
 
 permissions:
