@@ -1198,7 +1198,7 @@ When `view` is `"node"`:
 | `last.at` | string | yes | When, ISO date and time |
 | `last.why` | string | no | Its one line of what changed and why |
 | `version` | integer, 1 to 9007199254740991 | no | Its texts' version: the base to set them |
-| `above` | object[], max 2 items | yes | The levels above it, nearest first |
+| `above` | object[], max 32 items | yes | The levels above it, nearest first |
 | `above[].kind` | "space" \| "area" \| "project" | yes | What the level is |
 | `above[].id` | string | yes | The space's, an area's or a project's ID |
 | `above[].title` | string | yes | Its name |
@@ -3254,7 +3254,7 @@ When `view` is `"digest"`:
 | `task.cut.context` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task.cut.outcome` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task.version` | integer, 0 to 9007199254740991 | yes | Row version |
-| `trail` | object[], max 3 items | no | The levels above the task, nearest first: their pages |
+| `trail` | object[], max 32 items | no | The levels above the task, nearest first: their pages |
 | `trail[].kind` | "space" \| "area" \| "project" | yes | What the level is |
 | `trail[].id` | string | yes | The space's, an area's or a project's ID |
 | `trail[].title` | string | yes | Its name |
@@ -3429,7 +3429,7 @@ When `view` is `"sections"`:
 | `pages[].by` | string | yes | Who changed it last |
 | `pages[].at` | string | yes | When it was changed last |
 | `pages_more` | integer, 0 to 9007199254740991 | no | Pages on this task not here |
-| `trail` | object[], max 3 items | no | The levels above the task, nearest first: their pages |
+| `trail` | object[], max 32 items | no | The levels above the task, nearest first: their pages |
 | `trail[].kind` | "space" \| "area" \| "project" | yes | What the level is |
 | `trail[].id` | string | yes | The space's, an area's or a project's ID |
 | `trail[].title` | string | yes | Its name |
