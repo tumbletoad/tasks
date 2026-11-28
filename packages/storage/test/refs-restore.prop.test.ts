@@ -2,7 +2,7 @@
 // place, no reference that was given out in the space on this machine is given to another task.
 import { basename, join } from "node:path";
 import fc from "fast-check";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, onTestFailed, test } from "vitest";
 import { backupSpace } from "../src/backup/backup.ts";
 import { DATABASE_FILE } from "../src/manifest.ts";
 import { openReader } from "../src/open.ts";
@@ -39,6 +39,12 @@ async function tasksByRef(folder: string): Promise<Map<number, string>> {
 describe("[A1.5.refs.across-restore] a restore over a space never gives a reference twice", () => {
   test("over random sequences of creates, backups and restores in place, each reference names one task", async () => {
     const checked = await checkedDriver();
+    // fast-check names the seed only for a failure inside the property; one outside it (the time
+    // limit, a hook, a crash) is replayed from the line printed here.
+    const seed = Number(process.env["FC_SEED"] ?? Math.floor(Math.random() * 2 ** 31));
+    onTestFailed(() => {
+      console.error(`Replay with FC_SEED=${String(seed)}`);
+    });
     await fc.assert(
       fc.asyncProperty(fc.array(step, { minLength: 1, maxLength: 10 }), async (steps) => {
         const { folder } = await createFixtureSpace(folders.make());
@@ -82,7 +88,7 @@ describe("[A1.5.refs.across-restore] a restore over a space never gives a refere
         await writeCommits(folder, 2, "q");
         await record();
       }),
-      { numRuns: 12 },
+      { numRuns: 12, seed },
     );
   });
 

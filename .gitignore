@@ -14,3 +14,7 @@ coverage/
 # Playwright output of pnpm e2e: screenshots and failure artefacts.
 tests/e2e/results/
 tests/e2e/report/
+
+# The phone app's native project, which `expo prebuild` makes from app.config.ts, and Expo's cache.
+apps/phone/android/
+apps/phone/.expo/

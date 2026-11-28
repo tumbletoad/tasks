@@ -28,7 +28,6 @@ export {
   catalogText,
   FORMAT,
   indexText,
-  mdLine,
   projectionJson,
   README_TEXT,
   renderTask,
@@ -36,7 +35,6 @@ export {
   SLUG_MAX,
   sortEntries,
   taskPath,
-  yamlValue,
   type CatalogEntry,
   type Groups,
   type RenderedTask,
@@ -44,6 +42,7 @@ export {
   type TaskInput,
   type Watermark,
 } from "./render.ts";
+export { mdLine, yamlValue } from "./text.ts";
 export {
   TrustedState,
   type FileRecord,
@@ -65,3 +64,7 @@ export {
   type Hook,
   type Look,
 } from "./tree.ts";
+// The readable files of a tree space: its snapshot, the one calculation of a path, and the files.
+export { layoutOf, nodePath, type Layout, type Level, type Place } from "./files/layout.ts";
+export { renderTree } from "./files/render.ts";
+export { readSnapshot, type Snapshot } from "./files/snapshot.ts";

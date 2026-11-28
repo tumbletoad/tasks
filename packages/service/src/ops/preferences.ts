@@ -25,7 +25,6 @@ export interface PreferenceView extends PreferenceRead {
   readonly writers: PreferenceSpec["writers"];
   readonly default: PrefValue | null;
   readonly summary: string;
-  readonly flag?: PreferenceSpec["flag"];
 }
 
 function viewOf(spec: PreferenceSpec, read: PreferenceRead): PreferenceView {
@@ -36,7 +35,6 @@ function viewOf(spec: PreferenceSpec, read: PreferenceRead): PreferenceView {
     writers: spec.writers,
     default: spec.default,
     summary: spec.summary,
-    ...(spec.flag === undefined ? {} : { flag: spec.flag }),
   };
 }
 

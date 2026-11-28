@@ -21,7 +21,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { FOLDER_MARKER } from "@ttasks/brand";
 import {
   FolderMarkers,
@@ -66,6 +66,14 @@ const elsewhere: MarkerOwner = {
 
 vi.mock("@ttasks/files", async () => (await import("../../test/slow-marker.ts")).slowFiles());
 
+// The clock moves only when a test moves it: a disk slowed by load never passes a marker's bound.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 /**
  * Marks while the owners file's write is held past the bound (slow-marker.ts): the mark answers
  * false, and `land` lets the write go on.
@@ -76,15 +84,10 @@ async function markSlowly(
   folder: string,
 ): Promise<{ answered: boolean; land: HeldWrite["land"] }> {
   const held = holdNextWrite();
-  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
-  try {
-    const marking = markers.mark(owner, folder);
-    await held.reached;
-    await vi.advanceTimersByTimeAsync(60_000);
-    return { answered: await marking, land: held.land };
-  } finally {
-    vi.useRealTimers();
-  }
+  const marking = markers.mark(owner, folder);
+  await held.reached;
+  await vi.advanceTimersByTimeAsync(60_000);
+  return { answered: await marking, land: held.land };
 }
 
 const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" }).status === 0;

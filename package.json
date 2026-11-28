@@ -24,6 +24,7 @@
     "release": "node scripts/release/main.ts",
     "smoke": "node scripts/install/smoke.ts",
     "crash": "node tests/crash/cli.ts",
+    "phone-emulator": "node tests/phone/emulator.ts",
     "trial": "node tests/trial/run.ts",
     "node-version": "node -p process.version"
   },

@@ -1757,12 +1757,6 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `prefs[].writable` | boolean | yes | Whether this caller may change it |
 | `prefs[].policy` | true | no | Policy: the user's own |
 | `prefs[].fixed` | true | no | Fixed in this build: nobody changes it |
-| `prefs[].in_force` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| object[] \| null | no | What this build does whatever the key says: it does not act on the key yet |
-| `prefs[].in_force[].key` | string, max 20 | yes | The level's name, at most 10 characters; a longer one the space holds stays |
-| `prefs[].in_force[].time` | object | no | A typical amount of the user's own time on it |
-| `prefs[].in_force[].time.amount` | integer, 1 to 999 | yes | How many units |
-| `prefs[].in_force[].time.unit` | "minutes" \| "hours" \| "days" \| "weeks" | yes | The unit |
-| `prefs[].in_force[].about` | string, max 280 | no | One line on what belongs on it, in the user's words |
 | `prefs[].held` | object[] | no | tasks.effort_scale (get): the tasks on each size, by state |
 | `prefs[].held[].effort` | string, max 20 | yes | The size |
 | `prefs[].held[].active` | integer, 0 to 9999999999 | yes | Open tasks |

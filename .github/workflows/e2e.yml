@@ -39,7 +39,8 @@ jobs:
         with:
           cache: true
 
-      - run: pnpm install --frozen-lockfile
+      # Without the phone app (apps/phone): this job never builds, checks or tests it.
+      - run: pnpm install --frozen-lockfile --filter '!@ttasks/phone'
 
       # The browsers belong to the Playwright version in the lockfile: a new version is a new key.
       - id: playwright

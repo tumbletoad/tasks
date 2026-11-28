@@ -188,9 +188,10 @@ test.describe("[A4.3.4.1.t3.e2e] Open in T3 Code from the page", () => {
     await openTask(page, world, ref);
     await p.open();
     await expect(p.opened).toHaveCount(2, { timeout: SLOW_MS });
-    const remade = [...fake.threads.values()].filter((t) => t.title.startsWith(`${ref} `));
-    expect(remade.map((t) => t.id)).not.toContain(made.id);
-    expect(remade).toHaveLength(1);
+    // The new entry shows while the launch still opens: its thread comes with T3's answer.
+    const remade = () => [...fake.threads.values()].filter((t) => t.title.startsWith(`${ref} `));
+    await expect.poll(() => remade().length, { timeout: SLOW_MS }).toBe(1);
+    expect(remade().map((t) => t.id)).not.toContain(made.id);
     // The deleted thread's entry says it ended and offers no way back to it.
     const ended = p.opened.and(page.locator('[data-state="ended"]'));
     await expect(ended).toHaveCount(1, { timeout: SLOW_MS });
