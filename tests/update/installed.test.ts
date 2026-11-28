@@ -13,7 +13,8 @@
 //             first, and the data folders are byte-identical before and after an update and after
 //             a rollback.
 //   spaces    An update that restarts the service reads its real status before and after, and
-//             finds a space it serves opened again as before.
+//             finds a space it serves opened again as before. The service, once ready, removes
+//             an old version the install recorded.
 //
 // Nothing here touches a real install, autostart place, PATH or shell profile, and every process
 // it stops is one it started: the services this install's service.json names, the children.
@@ -21,10 +22,15 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe as suite, expect, test } from "vitest";
-import { currentVersion, readInstallRecord } from "../../packages/service/src/version/switch.ts";
+import {
+  currentVersion,
+  readInstallRecord,
+  writeInstallRecord,
+} from "../../packages/service/src/version/switch.ts";
 import { createSpace, newId } from "../../packages/storage/src/index.ts";
 import { checkedDriver } from "../../packages/testkit/src/index.ts";
 import { runProgram, runsElevated, snapshot } from "../../scripts/install/test/kit.ts";
+import { fixtureFiles, writeFolder } from "./fixture.ts";
 import { installedForFile, SLOW } from "./installed.ts";
 
 /**
@@ -246,11 +252,19 @@ describe("[A2.3.12.6.update.spaces] an update reads how the real service's space
         config,
         `[[spaces]]\nid = "${made.space.spaceId}"\npath = ${JSON.stringify(spaceDir)}\n`,
       );
+      // An old version the install recorded, which the service removes once it is ready.
+      const old = join(w.root, "versions", "0.0.1");
+      writeFolder(old, "0.0.1", process.platform, fixtureFiles("0.0.1", process.platform));
+      writeInstallRecord(w.state, w.root, process.platform, { installed: "0.0.1" });
       try {
         // Started again, so it serves the space.
         await w.stopService();
         await w.startService();
         const from = currentVersion(w.root, process.platform) ?? "";
+        for (const end = Date.now() + 30_000; existsSync(old) && Date.now() < end;) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        expect(existsSync(old), "the service removed the old version").toBe(false);
         // Once ready, the service notes that its version works: the way back keeps it.
         const noted = () => {
           const seen = readInstallRecord(w.state)?.["seen_working"];
