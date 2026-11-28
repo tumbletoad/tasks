@@ -3,7 +3,7 @@
 // they fire on a fixture tree.
 
 // Repository code outside node_modules. A package may always import its own files.
-const REPO = "^(packages|scripts|tests|fixtures)/";
+const REPO = "^(apps|packages|scripts|tests|fixtures)/";
 
 // Node built-ins that do I/O. `core` is pure domain logic and imports none of them (A7 3.2).
 const IO_BUILTINS =
@@ -126,6 +126,15 @@ module.exports = {
       severity: "error",
       from: { path: "^packages/web/", pathNot: TEST_FILE },
       to: { path: REPO, pathNot: "^packages/(web|client|contracts|brand)/" },
+    },
+    {
+      name: "phone-only-contracts",
+      comment:
+        "The phone app imports contracts, brand and client, the code it shares with the page, " +
+        "and nothing else from the repository: it reaches the computer only through the link.",
+      severity: "error",
+      from: { path: "^apps/phone/", pathNot: TEST_FILE },
+      to: { path: REPO, pathNot: "^(apps/phone|packages/(client|contracts|brand))/" },
     },
     {
       name: "client-only-contracts",

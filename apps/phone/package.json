@@ -1,0 +1,19 @@
+{
+  "name": "@ttasks/phone",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The phone app: Android first, talking to the service on the person's computer through the link for paired phones.",
+  "main": "index.ts",
+  "dependencies": {
+    "@ttasks/brand": "workspace:*",
+    "@ttasks/contracts": "workspace:*",
+    "expo": "58.0.26",
+    "react": "19.3.0",
+    "react-native": "0.88.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.3",
+    "babel-preset-expo": "58.0.27"
+  }
+}

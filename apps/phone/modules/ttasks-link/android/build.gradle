@@ -1,0 +1,23 @@
+// The phone's link: a WebSocket over TLS 1.3 that trusts the computer by its pin and presents the
+// phone's own key from the Android Keystore. OkHttp is the copy React Native ships, through
+// react-android: this module adds none of its own.
+apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+group = 'com.tumbletoad.ttasks'
+version = '0.0.0'
+
+android {
+  namespace 'expo.modules.ttaskslink'
+  compileSdk rootProject.ext.compileSdkVersion
+
+  defaultConfig {
+    minSdkVersion rootProject.ext.minSdkVersion
+    targetSdkVersion rootProject.ext.targetSdkVersion
+  }
+}
+
+dependencies {
+  implementation project(':expo-modules-core')
+  implementation 'com.facebook.react:react-android'
+}
