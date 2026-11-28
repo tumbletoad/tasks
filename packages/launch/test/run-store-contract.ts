@@ -38,7 +38,6 @@ import type { ContractBackend } from "./execution-store-contract.ts";
 
 const HASH = "5e0b7d13".repeat(8);
 const OTHER_MACHINE = "m_0000000000000000000000000z";
-const ROUTINE = "ro_0000000000000000000000000r";
 
 /** A path through the run machine from `queued` to `state`, with the patches each step needs. */
 const PATHS: Record<RunState, { next: RunState; patch?: RunPatch }[]> = {
@@ -338,7 +337,6 @@ export function runStoreContract(
 
     const runInput = async (extra: Partial<NewRun> = {}): Promise<NewRun> => ({
       task: await backend.task(),
-      routine: null,
       machine: backend.machine,
       instance: "codex-work",
       adapter: "codex",
@@ -365,7 +363,6 @@ export function runStoreContract(
       const run = await store.createRun(input, id);
       expect(run).toMatchObject({
         task: input.task,
-        routine: null,
         session: null,
         machine: backend.machine,
         instance: "codex-work",
@@ -397,16 +394,10 @@ export function runStoreContract(
       // A request's run is found by its ID alone, as it is now, without its input built again.
       expect(await store.replayedRun(id)).toEqual(run);
       expect(await store.replayedRun(requestId())).toBeUndefined();
-      // A routine's run has no task, and a run takes exactly one of them.
-      const routine = await store.createRun(
-        await runInput({ task: null, routine: ROUTINE, request: null }),
-        requestId(),
+      const taskless = await refusal(
+        store.createRun({ ...input, task: null as unknown as string }, requestId()),
       );
-      expect(routine).toMatchObject({ task: null, routine: ROUTINE, request: null });
-      const both = await refusal(
-        store.createRun(await runInput({ routine: ROUTINE }), requestId()),
-      );
-      expect(both).toMatchObject({ code: "invalid", field: "task" });
+      expect(taskless).toMatchObject({ code: "invalid", field: "task" });
       const inherit = await refusal(
         store.createRun(
           { ...(await runInput()), permission: "inherit" as NewRun["permission"] },
@@ -414,7 +405,9 @@ export function runStoreContract(
         ),
       );
       expect(inherit).toMatchObject({ code: "invalid", field: "permission" });
-      const silent = await refusal(store.createRun(await runInput({ request: null }), requestId()));
+      const silent = await refusal(
+        store.createRun(await runInput({ request: null as unknown as string }), requestId()),
+      );
       expect(silent).toMatchObject({ code: "invalid", field: "request" });
     });
 

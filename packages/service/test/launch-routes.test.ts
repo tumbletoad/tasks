@@ -1536,7 +1536,6 @@ async function runOf(
     r.lab.spaceId,
     {
       task,
-      routine: null,
       instance,
       adapter: instance === "codex" ? "codex" : "claude-print",
       place: null,

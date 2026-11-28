@@ -1722,12 +1722,11 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
     });
 
     test("an agent-allowed entry cannot declare an operation R7 keeps for the user", () => {
-      // The review's probe: ops ["run.start"] with scope space:write and remote write passed.
-      expect(check(defineEntry({ ...entryAdd, ops: ["run.start"] }))).toEqual([
-        'entry.add: operation kind "run.start" needs scope "launch:run", not "space:write"',
-        'entry.add: an agent-allowed entry cannot emit "run.start" (R7: launches, runs and routines are the user\'s)',
+      expect(check(defineEntry({ ...entryAdd, ops: ["run.create"] }))).toEqual([
+        'entry.add: operation kind "run.create" needs scope "launch:run", not "space:write"',
+        'entry.add: an agent-allowed entry cannot emit "run.create" (R7: launches, runs and routines are the user\'s)',
       ]);
-      for (const op of ["launch.create", "routine.patch"]) {
+      for (const op of ["launch.create", "run.transition"]) {
         rejects(
           defineEntry({ ...entryAdd, ops: [op] }),
           new RegExp(
@@ -1764,15 +1763,10 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
           examples: [{ ...example, actor: "user", input: { ...example.input, base: AS_OF } }],
         });
 
-      test("editing a routine needs admin, running one launch:run (A6 3.6.3)", () => {
-        // The review's probe: routine.patch passed with the execution scope.
-        expect(check(userEntry(["routine.patch"], "launch:run"))).toEqual([
-          'fixture.note: operation kind "routine.patch" needs scope "admin", not "launch:run"',
-        ]);
-        expect(check(userEntry(["routine.create", "routine.patch"], "admin"))).toEqual([]);
-        expect(check(userEntry(["routine.run"], "launch:run"))).toEqual([]);
-        expect(check(userEntry(["routine.run"], "admin"))).toEqual([
-          'fixture.note: operation kind "routine.run" needs scope "launch:run", not "admin"',
+      test("a run needs launch:run, and pref.set may need admin (A6 3.6.3)", () => {
+        expect(check(userEntry(["run.create"], "launch:run"))).toEqual([]);
+        expect(check(userEntry(["run.create"], "admin"))).toEqual([
+          'fixture.note: operation kind "run.create" needs scope "launch:run", not "admin"',
         ]);
         // Policy keys travel in pref.set, so an entry for them may need admin. The handler
         // refuses a policy key without it (A1 3.16, A6 3.6.3).

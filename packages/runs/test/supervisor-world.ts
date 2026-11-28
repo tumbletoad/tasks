@@ -353,8 +353,7 @@ export class SupervisorWorld {
         if (lane === undefined) return;
         const run = await lane.machine.queue(
           {
-            task: TASKS[event.task % TASKS.length] ?? null,
-            routine: null,
+            task: TASKS[event.task % TASKS.length] ?? "t_0000000000000000000000000a",
             instance: INSTANCES[event.instance % INSTANCES.length] ?? "claude-work",
             adapter: "claude-print",
             place: null,

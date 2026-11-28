@@ -219,7 +219,6 @@ describe("[M6.page.run-feed] a run's change carries its task's row, which shows 
     };
     const input = {
       task,
-      routine: null,
       machine,
       instance: "codex-work",
       adapter: "codex" as const,
@@ -341,7 +340,6 @@ describe("[M6.page.last-agents] a task's row names the agents it was last opened
     await store.createRun(
       {
         task,
-        routine: null,
         machine,
         instance: "codex-personal",
         adapter: "codex",

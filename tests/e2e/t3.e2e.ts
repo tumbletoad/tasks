@@ -207,10 +207,14 @@ test.describe("[A4.3.4.1.t3.e2e] Open in T3 Code from the page", () => {
     const q = parts(page, inside);
     await q.open();
     await expect(q.opened).toHaveCount(1, { timeout: SLOW_MS });
-    const own = [...fake.projects.values()].find((project) =>
-      here(project.workspaceRoot).endsWith("appointments"),
-    );
-    const nested = [...fake.threads.values()].find((t) => t.title.startsWith(`${inside} `));
-    expect(nested?.projectId).toBe(own?.id);
+    // The entry shows while the launch still opens: its project and thread come with T3's answer.
+    const where = () => {
+      const own = [...fake.projects.values()].find((project) =>
+        here(project.workspaceRoot).endsWith("appointments"),
+      );
+      const nested = [...fake.threads.values()].find((t) => t.title.startsWith(`${inside} `));
+      return nested === undefined ? "no thread yet" : nested.projectId === own?.id;
+    };
+    await expect.poll(where, { timeout: SLOW_MS }).toBe(true);
   });
 });

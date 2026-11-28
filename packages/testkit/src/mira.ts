@@ -898,8 +898,8 @@ function generate(
 
   // Runs, as the execution store writes them, only once the schema has their table
   // (0.3), so a sample built by an older chain draws exactly what it drew before. Mira runs the
-  // opened task in Codex · work in its place, which succeeds, and queues a Refresh that she
-  // removes from the queue.
+  // opened task in Codex · work in its place, which succeeds, and queues a second run of it that
+  // she removes from the queue.
   const hasRuns =
     conn
       .prepare("SELECT 1 AS found FROM sqlite_schema WHERE type = 'table' AND name = 'runs'")
@@ -962,13 +962,14 @@ function generate(
   );
   const refresh = launch({
     kind: "run.create",
-    routine: id("ro"),
+    task: opened,
     instance: "codex-work",
     adapter: "codex",
     place: null,
+    request: "Check the other exports for the same time zone.",
     brief_hash: "3b8d0f62".repeat(8),
     permission: "read-only",
-    limits: { ...limits, max_turns: 150, wall_ms: 3_600_000 },
+    limits,
   });
   launch({
     kind: "run.transition",

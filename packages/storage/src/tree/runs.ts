@@ -138,7 +138,7 @@ const launchTransition: Run = (tx, input) => {
 };
 
 const runCreate: Run = (tx, input) => {
-  const task = input["task"] === undefined ? null : liveTask(tx, input["task"]);
+  const task = liveTask(tx, input["task"]);
   const machine = machineOf(tx);
   const folder = folderOn(tx, input["folder"], machine);
   const id = tx.newId("ru");
@@ -147,13 +147,12 @@ const runCreate: Run = (tx, input) => {
     {
       id,
       task_id: task,
-      routine_id: str(input, "routine") ?? null,
       session_id: str(input, "session") ?? null,
       instance_id: String(input["instance"]),
       machine_id: machine,
       adapter: String(input["adapter"]),
       folder_id: folder,
-      request: str(input, "request") ?? null,
+      request: String(input["request"]),
       spec: sortedJson({
         brief_hash: input["brief_hash"],
         permission: input["permission"],

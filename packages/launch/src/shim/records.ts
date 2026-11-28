@@ -12,15 +12,7 @@
 //
 // Folders are named after the launch ID, not its reference: a reference is unique within one space
 // only, and one machine's launch root holds the launches of all its spaces.
-import {
-  lstatSync,
-  readdirSync,
-  readFileSync,
-  rmdirSync,
-  rmSync,
-  statSync,
-  unlinkSync,
-} from "node:fs";
+import { readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWrite, makeDir } from "@ttasks/files";
 import { isBuiltInTarget, type BuiltInTargetId } from "../catalogue.ts";
@@ -137,7 +129,7 @@ export interface LaunchFile {
   readonly preset?: string;
   /**
    * The copy of the space the click was made in (the service's copy token): the launch's session
-   * and reports belong to that copy only. Absent in a record an earlier build wrote.
+   * and reports belong to that copy only.
    */
   readonly copy?: string;
 }
@@ -250,26 +242,11 @@ export function checkPlan(value: unknown): SpawnPlan | undefined {
   return Buffer.byteLength(JSON.stringify(plan), "utf8") <= PLAN_MAX_BYTES ? plan : undefined;
 }
 
-/**
- * A plan as a build before folders wrote it, with a `place` where a plan now has its `folder`: an
- * agent started by that build may still be running after an update, and its shim reattaches to
- * its launch. Its place was resolved at dispatch into `resolved`, the folder its terminal started
- * in. No place is the work folder, as no folder is now. A place never dispatched names no folder
- * this build can find, so that launch is left out and never starts.
- */
-function withFolder(plan: unknown, resolved: unknown): unknown {
-  if (!isObject(plan) || "folder" in plan || !("place" in plan)) return plan;
-  const { place, ...rest } = plan;
-  if (place === null) return { ...rest, folder: null };
-  const path = isObject(resolved) ? resolved["path"] : undefined;
-  return typeof path === "string" ? { ...rest, folder: { stored: path, path } } : undefined;
-}
-
 /** A launch file as read from disk, checked field by field; undefined when it is not one. */
 export function checkLaunchFile(value: unknown): LaunchFile | undefined {
   if (!isObject(value) || value["format"] !== 1) return undefined;
   const { space, launch, reference, task, createdAt, folder, ticket, attachment, agent } = value;
-  const plan = checkPlan(withFolder(value["plan"], folder));
+  const plan = checkPlan(value["plan"]);
   if (plan === undefined) return undefined;
   if (typeof space !== "string" || !SPACE_ID.test(space)) return undefined;
   if (typeof launch !== "string" || !LAUNCH_ID.test(launch) || !isLaunchRef(reference)) {
@@ -446,8 +423,6 @@ function pause(ms: number): void {
 
 export const LAUNCH_FILE = "launch.json";
 export const EXIT_FILE = "exit.json";
-/** Where earlier builds kept a record of each ended launch, in the launch root. */
-const ENDED_FOLDER = "ended";
 
 /**
  * The launch root and each launch folder, and the files in them: set on each
@@ -456,47 +431,6 @@ const ENDED_FOLDER = "ended";
  */
 export const LAUNCH_FOLDER_MODE = 0o700;
 export const LAUNCH_FILE_MODE = 0o600;
-
-/**
- * A launch file as written. The builds before refuse a ticket without `bridgeUsed`, so it is
- * written, always false, for as long as an update can be rolled back to one of them; nothing reads
- * it.
- */
-function onDisk(file: LaunchFile): string {
-  const written =
-    file.ticket === undefined ? file : { ...file, ticket: { ...file.ticket, bridgeUsed: false } };
-  return `${JSON.stringify(written)}\n`;
-}
-
-/**
- * Removes the records earlier builds kept of ended launches, which nothing reads, and then their
- * folder when it is empty. Only a file named `<launch ID>.json` is one: anything else in the
- * folder, or a link in its place, is not the product's and stays.
- */
-function removeEndedRecords(root: string): void {
-  const folder = join(root, ENDED_FOLDER);
-  let names: string[];
-  try {
-    if (!lstatSync(folder).isDirectory()) return;
-    names = readdirSync(folder);
-  } catch {
-    return; // None there.
-  }
-  for (const name of names) {
-    if (!name.endsWith(".json") || !LAUNCH_ID.test(name.slice(0, -".json".length))) continue;
-    const path = join(folder, name);
-    try {
-      if (lstatSync(path).isFile()) unlinkSync(path);
-    } catch {
-      // Held by another program, or not removable now: it stays, with no wait, for a later start.
-    }
-  }
-  try {
-    rmdirSync(folder);
-  } catch {
-    // Not empty, or not removable now: it stays.
-  }
-}
 
 /** The machine state in folders under the install's launch root. */
 export class FolderRecords implements RecordStore {
@@ -524,7 +458,6 @@ export class FolderRecords implements RecordStore {
       for (const [name] of passing) this.#load(name, failed);
     }
     for (const [name, code] of failed) options.unreadable?.(name, code);
-    removeEndedRecords(root);
   }
 
   /** Reads a launch's file into the records, or notes the error that kept it from being read. */
@@ -549,7 +482,8 @@ export class FolderRecords implements RecordStore {
 
   put(file: LaunchFile): void {
     if (!LAUNCH_ID.test(file.launch)) throw new Error("Not a launch ID");
-    const text = onDisk(file);
+    const text = `${JSON.stringify(file)}
+`;
     // Never a file the reader would leave out after a restart.
     if (Buffer.byteLength(text, "utf8") > MAX_FILE) throw new Error("The launch file is too large");
     const folder = join(this.root, file.launch);
