@@ -931,10 +931,14 @@ const FOLDERS: Sequence<Step> = [
   // A folder that is not there, and a project the space lacks.
   manage({ action: "set", project: "Second", folder: "{dir:held}/missing" }, { base: true }),
   manage({ action: "set", project: "Nowhere", folder: "{dir:held}" }, { base: true }),
-  // A project made for a folder is one step: its Undo, and its Redo.
+  // A project made for a folder is one step: its Undo, and its Redo. Undone, the project is
+  // archived and keeps its folder, which another project made for that folder then names.
   manage({ action: "add_project", project: "Tried", area: "Home", folder: "{dir:tried}" }),
   { op: "history.undo", input: {}, user: true },
   { op: "history.redo", input: {}, user: true },
+  { op: "history.undo", input: {}, user: true },
+  manage({ action: "add_project", project: "Again", area: "Home", folder: "{dir:tried}" }),
+  { op: "task.add", input: { tasks: [{ title: "Tried here", folder: "{dir:tried}" }] } },
 ];
 
 describe("[S2.replay.folders] today's service requests through both backends: folders", () => {
