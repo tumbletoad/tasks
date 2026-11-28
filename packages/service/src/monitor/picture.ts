@@ -9,7 +9,6 @@ import type {
   AgentsNested,
   AgentsPicture,
   AgentsSession,
-  AgentsThread,
   MonitorAgent,
   MonitorSnapshot,
 } from "@ttasks/contracts/monitor";
@@ -36,14 +35,13 @@ function topOf(agent: MonitorAgent, byRow: ReadonlyMap<string, MonitorAgent>): M
 
 /**
  * `snapshot` as the page shows it, `ageMs` after its capture, with each agent's task by its row ID
- * (links.ts), the agents TTasks holds that TTAM has not seen, and the tasks' T3 threads.
+ * (links.ts) and the agents TTasks holds that TTAM has not seen.
  */
 export function pictureOf(
   snapshot: MonitorSnapshot,
   ageMs: number,
   links: ReadonlyMap<string, AgentsTask> = new Map(),
   unseen: readonly AgentsTask[] = [],
-  threads: readonly AgentsThread[] = [],
 ): AgentsPicture {
   const byRow = new Map(snapshot.agents.map((a) => [a.rowId, a]));
   const nested = new Map<string, AgentsNested[]>();
@@ -96,5 +94,5 @@ export function pictureOf(
     retryInMs: a.retryInMs,
     unavailable: a.unavailable,
   }));
-  return { ageMs, settling: snapshot.settling, sessions, unseen, threads, accounts };
+  return { ageMs, settling: snapshot.settling, sessions, unseen, accounts };
 }

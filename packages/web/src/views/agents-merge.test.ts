@@ -38,7 +38,7 @@ describe("[A5.while-away.web.question-placed] an agent's question places its tas
         row("7", { questions, deleted_at: 2 }),
       ].map((r) => [r.id, r]),
     );
-    const { tasks } = mergeAgents(null, "sp_1", rows);
+    const { tasks } = mergeAgents(null, [], "sp_1", rows);
     expect(tasks.get("1")).toMatchObject({ state: "waiting", own: true, agents: [] });
     expect(tasks.get("2")).toMatchObject({ state: "waiting", own: true });
     expect(tasks.get("3")).toMatchObject({ state: "working", own: true });
@@ -88,16 +88,11 @@ const session = (n: number, space = SPACE, started: "run" | "terminal" = "run"):
   nested: [],
 });
 
-const picture = (
-  sessions: AgentsSession[],
-  unseen: AgentsTask[] = [],
-  threads: AgentsThread[] = [],
-): AgentsPicture => ({
+const picture = (sessions: AgentsSession[], unseen: AgentsTask[] = []): AgentsPicture => ({
   ageMs: 0,
   settling: false,
   sessions,
   unseen,
-  threads,
   accounts: [],
 });
 
@@ -108,12 +103,12 @@ describe("[A5.trash.web.agents] a task in the Trash on the Agents page", () => {
       [session(1), session(3), session(2), session(2), session(9, OTHER)],
       [task(4, SPACE, "terminal")],
     );
-    expect(linkedOutside(shown, SPACE, live)).toEqual([
+    expect(linkedOutside(shown, [], SPACE, live)).toEqual([
       numbered(2).id,
       numbered(3).id,
       numbered(4).id,
     ]);
-    expect(linkedOutside(null, SPACE, live)).toEqual([]);
+    expect(linkedOutside(null, [], SPACE, live)).toEqual([]);
   });
 
   test("a removed task whose run ended is placed where a live one is, and so is one that runs; only the mark differs", () => {
@@ -124,48 +119,46 @@ describe("[A5.trash.web.agents] a task in the Trash on the Agents page", () => {
       run: { id: "r_3", state: "working", instance: "c" },
     });
     const rows = new Map([live, removed, working].map((r) => [r.id, r]));
-    const merged = mergeAgents(picture([session(1), session(2)]), SPACE, rows);
+    const merged = mergeAgents(picture([session(1), session(2)]), [], SPACE, rows);
     expect(merged.tasks.get(removed.id)?.state).toBe(merged.tasks.get(live.id)?.state);
     expect(merged.tasks.get(working.id)?.state).toBe("working");
     // Restored, the same row without its mark: the same place.
     const restored = numbered(2);
     const back = new Map<string, TaskRow>([...rows, [restored.id, restored]]);
     expect(
-      mergeAgents(picture([session(1), session(2)]), SPACE, back).tasks.get(removed.id),
+      mergeAgents(picture([session(1), session(2)]), [], SPACE, back).tasks.get(removed.id),
     ).toEqual(merged.tasks.get(removed.id));
   });
 
   test("a removed task whose agent in a terminal TTasks holds open is placed with no monitor at all, once, and not twice when the monitor sees it", () => {
     const held = numbered(5, { deleted_at: 1, terminals: 1 });
     const rows = new Map([[held.id, held]]);
-    const alone = mergeAgents(null, SPACE, rows).tasks.get(held.id);
+    const alone = mergeAgents(null, [], SPACE, rows).tasks.get(held.id);
     expect(alone?.agents.map((a) => [a.started, a.state])).toEqual([["terminal", "unseen"]]);
     // The monitor links its session: that one agent, in the monitor's state.
-    const seen = mergeAgents(picture([session(5, SPACE, "terminal")]), SPACE, rows);
+    const seen = mergeAgents(picture([session(5, SPACE, "terminal")]), [], SPACE, rows);
     expect(seen.tasks.get(held.id)?.agents.map((a) => [a.started, a.state])).toEqual([
       ["terminal", "idle"],
     ]);
     // Its end recorded, the row read again holds none: nothing places it.
     const ended = numbered(5, { deleted_at: 1 });
-    expect(mergeAgents(null, SPACE, new Map([[ended.id, ended]])).tasks.has(ended.id)).toBe(false);
+    expect(mergeAgents(null, [], SPACE, new Map([[ended.id, ended]])).tasks.has(ended.id)).toBe(
+      false,
+    );
   });
 });
 
 describe("[A4.3.4.1.t3.thread] a task's T3 Code thread on the Agents page", () => {
-  test("is an agent of its task in the state T3 Code tells, which places the task, in this space only", () => {
+  test("is an agent of its task in the state T3 Code tells, which places the task, in this space only, with or without the monitor", () => {
     const one = numbered(1);
     const two = numbered(2);
     const rows = new Map([one, two].map((r) => [r.id, r]));
-    const shown = picture(
-      [session(1)],
-      [],
-      [
-        { task: task(1, SPACE, "t3"), activity: "working" },
-        { task: task(2, SPACE, "t3"), activity: "waiting" },
-        { task: task(3, OTHER, "t3"), activity: "waiting" },
-      ],
-    );
-    const merged = mergeAgents(shown, SPACE, rows);
+    const threads: AgentsThread[] = [
+      { task: task(1, SPACE, "t3"), activity: "working" },
+      { task: task(2, SPACE, "t3"), activity: "waiting" },
+      { task: task(3, OTHER, "t3"), activity: "waiting" },
+    ];
+    const merged = mergeAgents(picture([session(1)]), threads, SPACE, rows);
     expect(merged.tasks.get(one.id)?.agents.map((a) => [a.started, a.state])).toEqual([
       ["run", "idle"],
       ["t3", "working"],
@@ -174,6 +167,12 @@ describe("[A4.3.4.1.t3.thread] a task's T3 Code thread on the Agents page", () =
     expect(merged.tasks.get(two.id)?.state).toBe("waiting");
     expect(merged.tasks.size).toBe(2);
     // A task in the Trash with a thread is read like one the monitor links.
-    expect(linkedOutside(shown, SPACE, new Map([[one.id, one]]))).toEqual([two.id]);
+    expect(linkedOutside(null, threads, SPACE, new Map([[one.id, one]]))).toEqual([two.id]);
+    // Without the monitor the thread still places its task, in T3 Code's state, never muted.
+    const alone = mergeAgents(null, threads, SPACE, rows);
+    expect(alone.tasks.get(two.id)).toMatchObject({ state: "waiting", own: true });
+    expect(alone.tasks.get(one.id)?.agents.map((a) => [a.started, a.state])).toEqual([
+      ["t3", "working"],
+    ]);
   });
 });

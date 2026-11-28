@@ -171,10 +171,10 @@ export function parseAgents(message: Obj): AgentsView | undefined {
           settling: p["settling"] === true,
           sessions: list(p["sessions"], sessionOf),
           unseen: list(p["unseen"], (o) => taskOf(o)).filter((t) => t !== null),
-          threads: list(p["threads"], threadOf).filter((t) => t !== null),
           accounts: list(p["accounts"], accountOf),
         };
-  return { picture, trouble };
+  const threads = list(message["threads"], threadOf).filter((t) => t !== null);
+  return { picture, trouble, threads };
 }
 
 export interface AgentsState {

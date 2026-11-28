@@ -273,18 +273,18 @@ export interface AgentsPicture {
    * complete answers, by their task.
    */
   readonly unseen: readonly AgentsTask[];
-  /** The tasks' T3 Code threads, which the monitor does not know as theirs. */
-  readonly threads: readonly AgentsThread[];
   readonly accounts: readonly AgentsAccount[];
 }
 
 /**
  * The Agents page's part from the monitor. `picture` null: none yet, or the monitor is missing or
- * does not fit. `trouble`: why the picture is not updating, null while it updates.
+ * does not fit. `trouble`: why the picture is not updating, null while it updates. `threads`: the
+ * tasks' T3 Code threads as T3 Code tells them, whatever the monitor says.
  */
 export interface AgentsView {
   readonly picture: AgentsPicture | null;
   readonly trouble: { readonly kind: "slow" } | MonitorProblem | null;
+  readonly threads: readonly AgentsThread[];
 }
 
 /** What a tab tells the service about itself, on every change and after every reconnect. */
