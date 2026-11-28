@@ -3867,6 +3867,7 @@ MCP tool `search`, "Search tasks and learnings": Use to find tasks before you ad
 | `rows[].id` | string | yes | Task or learning ID |
 | `rows[].ref` | string | yes | Task reference |
 | `cursor` | string | no | Pass it for the next page |
+| `some_words` | true | no | No row holds every word: these hold some of them, more of them first |
 | `try_scope` | "all" | no | library: no row holds every word; all also searches finished tasks' logs |
 
 ### Examples

@@ -808,7 +808,9 @@ export async function searchLibrary(
     first: rows.length === 0 ? 0 : 1,
     rows,
     // A decision may stand only in a finished task's log or outcome, which scope all searches.
-    ...(hits.some((hit) => hit["every"] === 1) ? {} : { try_scope: "all" }),
+    ...(hits.some((hit) => hit["every"] === 1)
+      ? {}
+      : { ...(rows.length === 0 ? {} : { some_words: true }), try_scope: "all" }),
   };
 }
 
