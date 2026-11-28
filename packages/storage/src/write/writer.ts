@@ -38,6 +38,7 @@ import {
 } from "@ttasks/contracts/preferences";
 import type { Connection, Row, SqlValue } from "../driver.ts";
 import { misuse, StorageError } from "../errors.ts";
+import { agentLabel, notTheAuthority, spaceHuman } from "./actors.ts";
 import { isId, newId, osRandom, type Id, type RandomSource } from "../ids.ts";
 import {
   formatEntryRef,
@@ -1203,21 +1204,14 @@ export class SpaceWriter {
     const conn = this.#usable();
     if (kind === "human") {
       const found = conn.transaction("deferred", () => conn.prepare(SQL.firstHuman).get());
-      const id = found?.["id"];
-      if (!isId(id, "ac")) throw new StorageError("SPACE_INVALID", "The space has no human actor");
-      return id;
+      return spaceHuman(found?.["id"]);
     }
-    const name = normaliseStored(label);
-    if (!isSpaceName(name) || name !== label) {
-      throw misuse("An actor label is one line of 1 to 100 characters");
-    }
+    const name = agentLabel(label);
     return conn.transaction("immediate", () => {
       const found = conn.prepare(SQL.actorByLabel).get({ kind, label: name })?.["id"];
       if (isId(found, "ac")) return found;
       const space = decodeSpaceRow(conn.prepare(SQL.space).get());
-      if (space.authority.machineId !== this.#machine.id) {
-        throw new StorageError("STORAGE_READ_ONLY", "Another machine is this space's authority");
-      }
+      if (space.authority.machineId !== this.#machine.id) throw notTheAuthority();
       const id = newId("ac", this.#random);
       const { at } = writeSystemCommit(conn, {
         kind: "ops",
