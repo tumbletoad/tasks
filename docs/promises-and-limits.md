@@ -317,6 +317,13 @@ the behaviour it describes, and keep each one to a sentence or two.
   instance's environment. Not protected: a federation profile shared by all homes can still
   outrank a home's own sign-in, and a cloud provider's own credentials (`AWS_*`, `GOOGLE_*`) stay,
   so an instance that selects that provider can use them.
+- What doctor, `ttasks setup agents` and Settings say about a Claude Code or Codex login is what
+  the app's own status command (`claude auth status`, `codex login status`) reported for that home,
+  run as a launch would run it: TTasks keeps only its exit code, and never opens, copies or shows
+  a sign-in file or what the command prints. It only informs: Open and a background run start the
+  app either way. Not protected: "a login was found" does not mean it works (a placeholder key
+  counts), and "no confirmed login" does not mean it fails (a key in the environment or a gateway
+  works without one).
 - Open puts the brief in the agent's prompt box and waits for you to send it, so you can switch
   the model or add a word first: Claude Code, T3 Code, Claude Desktop and the Codex app. Codex has
   no way to wait, so Open sends the brief there as its first turn. So does a Claude Code older than
@@ -511,6 +518,12 @@ the behaviour it describes, and keep each one to a sentence or two.
   their answers so far.
 - The updater leaves your spaces and settings alone. A new version may upgrade a space when it
   opens it, and rolling back the app does not undo that upgrade.
+- After an update, a rollback or an install, TTasks deletes the older versions it installed. It
+  keeps the version that runs, the one `ttasks update --rollback` goes back to, and any newer one.
+  It never deletes a version a program still runs from: that one goes at a later start. A version
+  folder that holds anything TTasks did not put there stays whole, and `ttasks doctor` names it.
+- A version of TTasks from before old versions were removed forgets a removal that was cut off:
+  after a rollback to such a version, that half-removed folder stays until you delete it.
 
 ## Where the protection stops
 

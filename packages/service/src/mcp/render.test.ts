@@ -93,7 +93,10 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
     );
     // A follow-up by its input path: its title is the caller's own and is not echoed (A3 3.2.5).
     expect(renderResult("task.finish", example("task.finish", 0))).toBe(
-      ["completed M-14 · wrapped · as_of 1.1047.5n0w8k3q", "follow_ups.0: created M-31"].join("\n"),
+      [
+        "completed M-14 · wrapped · library: nothing reusable · as_of 1.1047.5n0w8k3q",
+        "follow_ups.0: created M-31",
+      ].join("\n"),
     );
     expect(renderResult("entry.add", { ...example("entry.add", 0), replayed: true })).toMatch(
       / \(replayed\)$/,

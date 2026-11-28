@@ -339,7 +339,7 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
         await context.close();
       }
     }
-    // The tests of a worker share its service: the theme goes back to its default.
+    // The tests of a file share its service: the theme goes back to its default.
     await world.machine("ui.theme", null);
   });
 });

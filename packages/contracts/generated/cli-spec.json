@@ -724,7 +724,7 @@
         {
           "field": "on",
           "flag": "--on",
-          "help": "create: \"task\", a task, a project, an area or \"space\"; default: its project",
+          "help": "create: \"task\", a task, a project, an area or \"space\"",
           "repeat": false,
           "required": false,
           "type": "string"

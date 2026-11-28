@@ -1160,7 +1160,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Use to keep the library: create a page (on the task's project unless you name the task), edit it (old words become new), append, set title or brief, move, trash or restore it; or set a project's, an area's or the space's brief and description. why: one line.",
+      "description": "Keep the library: create a page (leave on empty for the task's project, then its area, then the task itself), edit it (old words become new), append, set title or brief, move, trash or restore it; or set a project's, an area's or the space's brief and description. why: one line.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1208,7 +1208,7 @@
             "type": "string"
           },
           "on": {
-            "description": "create: \"task\", a task, a project, an area or \"space\"; default: its project",
+            "description": "create: \"task\", a task, a project, an area or \"space\"",
             "maxLength": 250,
             "type": "string"
           },

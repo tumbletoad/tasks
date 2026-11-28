@@ -1474,7 +1474,7 @@ export const incarnationTag = (incarnation: string): string =>
   incarnation.slice(incarnation.indexOf("_") + 1, incarnation.indexOf("_") + 9);
 
 /** Reads the fields of one object, refusing any key it does not know. */
-class Fields {
+export class Fields {
   readonly #value: Record<string, unknown>;
   readonly #path: string;
   readonly #op: number | undefined;
@@ -1563,7 +1563,7 @@ class Fields {
     return value;
   }
 
-  id<P extends "t" | "ac" | "m" | "se" | "ru" | "ro" | "sp" | "la" | "op" | "s">(
+  id<P extends "t" | "ac" | "m" | "se" | "ru" | "ro" | "sp" | "la" | "op" | "s" | "p" | "n" | "pg">(
     key: string,
     prefix: P,
   ): Id<P> {
@@ -2625,11 +2625,17 @@ function checkIntent(value: unknown): Intent {
   return { entry: entry as string, input };
 }
 
+/** What every writer's request holds the same way, whatever schema it writes. */
+export type Envelope = Omit<CheckedRequest, "ops" | "intent">;
+
 /**
- * Checks a request's shape and limits, before any transaction (A1 3.7). Returns the request with
- * its text normalised, or throws RequestProblem. Nothing is stored for such a request.
+ * Checks what every writer's request holds the same way, before any transaction (A1 3.7, 3.8): its
+ * size as JSON, its request ID, its space, its credential (the writer's own scope refused), its
+ * base, reason, `active` mark, preview flag, warnings and the caller's answer, text normalised.
+ * Returns them, and the request's fields for the writer to read the rest from and then refuse any
+ * key it does not know. Throws RequestProblem; nothing is stored for a request this refuses.
  */
-export function checkRequest(value: unknown): CheckedRequest {
+export function checkEnvelope(value: unknown): { envelope: Envelope; fields: Fields } {
   let json: string | undefined;
   try {
     // JSON.stringify returns undefined for undefined and functions, which its type leaves out.
@@ -2651,31 +2657,17 @@ export function checkRequest(value: unknown): CheckedRequest {
   }
   const spaceId = f.raw("space_id");
   if (!isId(spaceId, "sp")) return fail("VALIDATION_FAILED", "Expected a space ID", "space_id");
-  const actor = checkCredential(f.raw("actor"));
-  const ops: unknown = f.raw("ops");
-  if (!Array.isArray(ops) || (ops.length === 0 && !f.has("intent"))) {
-    return fail("VALIDATION_FAILED", "A request has at least one operation", "ops");
-  }
-  const list = ops as unknown[];
-  if (list.length > WRITE_LIMITS.ops) {
-    fail("TOO_LARGE", `A request has at most ${String(WRITE_LIMITS.ops)} operations`, "ops");
-  }
-  const request: CheckedRequest = {
+  const envelope: Envelope = {
     space_id: spaceId,
     request_id: requestId,
-    actor,
-    ops: list.map((op, i) => checkOperation(op, i)),
+    actor: checkCredential(f.raw("actor")),
   };
-  if (request.ops.length > 1 && request.ops.some((op) => PAGE_OPERATIONS.has(op.kind))) {
-    fail("VALIDATION_FAILED", "A page's or a node's write is a request of its own", "ops");
-  }
-  if (f.has("base")) request.base = checkBase(f.raw("base"));
-  if (f.has("intent")) request.intent = checkIntent(f.raw("intent"));
+  if (f.has("base")) envelope.base = checkBase(f.raw("base"));
   const reason = f.optText("reason", { chars: WRITE_LIMITS.reason });
-  if (reason !== undefined) request.reason = reason;
-  if (f.has("active")) request.active = f.boolean("active");
-  if (f.has("dry_run") && f.boolean("dry_run")) request.dry_run = true;
-  if (f.has("warnings")) request.warnings = checkWarnings(f.raw("warnings"));
+  if (reason !== undefined) envelope.reason = reason;
+  if (f.has("active")) envelope.active = f.boolean("active");
+  if (f.has("dry_run") && f.boolean("dry_run")) envelope.dry_run = true;
+  if (f.has("warnings")) envelope.warnings = checkWarnings(f.raw("warnings"));
   if (f.has("answer")) {
     const answer = f.raw("answer");
     if (
@@ -2686,8 +2678,49 @@ export function checkRequest(value: unknown): CheckedRequest {
     ) {
       f.fail("VALIDATION_FAILED", "Expected an object of plain JSON data", "answer");
     }
-    request.answer = answer as Record<string, unknown>;
+    envelope.answer = answer as Record<string, unknown>;
   }
+  return { envelope, fields: f };
+}
+
+/**
+ * An undo or a redo (A1 3.10.1): from a human, guarded by provenance rather than a base, and with
+ * no `active` mark (it changes back whatever the commit changed).
+ */
+export function checkHistoryEnvelope(f: Fields, envelope: Envelope): void {
+  if (envelope.actor.actor_kind !== "human") {
+    f.fail("VALIDATION_FAILED", "Only a human undoes and redoes", "actor.actor_kind");
+  }
+  if (envelope.base !== undefined) {
+    f.fail("VALIDATION_FAILED", "An undo or redo is guarded by provenance, not a base", "base");
+  }
+  if (envelope.active !== undefined) {
+    f.fail("VALIDATION_FAILED", "An undo or redo takes no active", "active");
+  }
+}
+
+/**
+ * Checks a request's shape and limits, before any transaction (A1 3.7). Returns the request with
+ * its text normalised, or throws RequestProblem. Nothing is stored for such a request.
+ */
+export function checkRequest(value: unknown): CheckedRequest {
+  const { envelope, fields: f } = checkEnvelope(value);
+  const ops: unknown = f.raw("ops");
+  if (!Array.isArray(ops) || (ops.length === 0 && !f.has("intent"))) {
+    return fail("VALIDATION_FAILED", "A request has at least one operation", "ops");
+  }
+  const list = ops as unknown[];
+  if (list.length > WRITE_LIMITS.ops) {
+    fail("TOO_LARGE", `A request has at most ${String(WRITE_LIMITS.ops)} operations`, "ops");
+  }
+  const request: CheckedRequest = {
+    ...envelope,
+    ops: list.map((op, i) => checkOperation(op, i)),
+  };
+  if (request.ops.length > 1 && request.ops.some((op) => PAGE_OPERATIONS.has(op.kind))) {
+    fail("VALIDATION_FAILED", "A page's or a node's write is a request of its own", "ops");
+  }
+  if (f.has("intent")) request.intent = checkIntent(f.raw("intent"));
   if (request.ops.some(isExecutionOp)) checkExecutionRequest(f, request);
   if (request.ops.some(isHistoryOperation)) checkHistoryRequest(f, request);
   // A1 3.16: the writer reads the space's preferences (statuses, efforts, dedupe's window) once,
@@ -2771,15 +2804,7 @@ function checkHistoryRequest(f: Fields, request: CheckedRequest): void {
   if (request.ops.length !== 1) {
     f.fail("VALIDATION_FAILED", "An undo or redo is a request of its own", "ops");
   }
-  if (request.actor.actor_kind !== "human") {
-    f.fail("VALIDATION_FAILED", "Only a human undoes and redoes", "actor.actor_kind");
-  }
-  if (request.base !== undefined) {
-    f.fail("VALIDATION_FAILED", "An undo or redo is guarded by provenance, not a base", "base");
-  }
-  if (request.active !== undefined) {
-    f.fail("VALIDATION_FAILED", "An undo or redo takes no active", "active");
-  }
+  checkHistoryEnvelope(f, request);
 }
 
 /**
@@ -2847,4 +2872,19 @@ function checkExecutionRequest(f: Fields, request: CheckedRequest): void {
   if (!LAUNCH_SCOPE.test(actor.scope_id)) {
     f.fail("VALIDATION_FAILED", "A launch request's writer scope is an ID", "actor.scope_id");
   }
+}
+
+/** A1 3.5: a base from another epoch or incarnation, or from the future, is refused. */
+export function checkBaseOf(base: Base, asOf: AsOf): void {
+  const incarnation = isId(base.incarnation, "ai")
+    ? base.incarnation === asOf.incarnation
+    : base.incarnation === incarnationTag(asOf.incarnation);
+  if (base.epoch !== asOf.epoch || !incarnation) {
+    fail(
+      "EPOCH_CHANGED",
+      "The base is from another copy of the space, or from before it was restored: read again",
+      "base",
+    );
+  }
+  if (base.seq > asOf.seq) fail("BASE_FROM_FUTURE", "The base is newer than the space", "base");
 }

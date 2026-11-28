@@ -177,7 +177,7 @@ export function wordsMatch(query: Query): string | null {
   return groups.length === 0 ? null : groups.join(" AND ");
 }
 
-function negativeMatch(query: Query): string | null {
+export function negativeMatch(query: Query): string | null {
   const terms = termsOf(query).filter((t): t is TextTerm => t.type === "text" && t.negated);
   return terms.length === 0 ? null : terms.map((t) => ftsString(t, false)).join(" OR ");
 }

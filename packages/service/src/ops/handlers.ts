@@ -39,6 +39,7 @@ import {
   LATER_SETS,
   mayWrite,
   newerWorkJson,
+  NOTHING_REUSABLE,
   opSpec,
   parseInput,
   PREFERENCES,
@@ -153,7 +154,6 @@ import type { FolderMarkers } from "./marker.ts";
 import { repoName } from "./repo.ts";
 import { SearchCursors } from "../search/cursors.ts";
 import { runSearch, type SearchInput } from "../search/search.ts";
-import { wordsMatch } from "../search/plan.ts";
 import { parseQuery, printQuery } from "../search/query.ts";
 import { editDistance, fold, resolveGroup } from "./groups.ts";
 import {
@@ -2509,6 +2509,7 @@ const finishAnswer: Answer = async (view, stored) => {
     lifecycle: done.lifecycle,
     ...(done.wrap_state === undefined ? {} : { wrap_state: done.wrap_state }),
     learnings: result.status === "applied" ? (wrap?.learnings ?? 0) : 0,
+    ...(stored.answer?.["library"] === undefined ? {} : { library: stored.answer["library"] }),
     // A follow-up upserts by its source keys as task.add's drafts do (A3 3.4.5, 3.4.8).
     follow_ups: rows.map((row) => ({
       result: row["result"],
@@ -2918,7 +2919,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const cursor = typeof input["cursor"] === "string" ? input["cursor"] : undefined;
     if ("node" in target) return nodeView(reader, target.node, cursor);
     const { space: read, row } = await readPageRow(reader, target.page);
-    if (row?.["shown"] !== 1) throw noPage("target");
+    // A page in the Trash is read only by its history and Restore.
+    if (row?.["shown"] !== 1 || row["deleted_at"] !== null) throw noPage("target");
     const section = typeof input["section"] === "string" ? input["section"] : undefined;
     return pageView(read, row, await ownerOf(reader, read, row), section, cursor);
   },
@@ -3580,10 +3582,14 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   "task.finish": async (call) => {
     const { input } = call;
     const task = await taskOf(call);
-    const outcome = typeof input["outcome"] === "string" ? input["outcome"] : undefined;
     const learnings = Array.isArray(input["learnings"]) ? (input["learnings"] as string[]) : [];
     const dropped = input["status"] === "dropped";
     const unnamed = await checkLibrary(call, learnings);
+    const library = libraryOf(input["library"]);
+    const outcome = withLibrary(
+      typeof input["outcome"] === "string" ? input["outcome"] : undefined,
+      library,
+    );
     if (dropped && input["finished"] !== undefined) {
       throw invalid("finished", "A dropped task keeps no time it was done", "Leave out finished.");
     }
@@ -3633,7 +3639,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       ...(own > 1 ? { wrapUp: 1 } : {}),
       inserted: { at: own, count: groups.length },
       warnings: [...folders.warnings, ...unnamed],
-      answer: { made: named.made, paths: pathsOf(ops, pathOf), shared: folders.shared },
+      answer: {
+        made: named.made,
+        paths: pathsOf(ops, pathOf),
+        shared: folders.shared,
+        ...(library === undefined ? {} : { library }),
+      },
       pathOf,
     });
     await markersAfter(call, ops, ownResults(submitted));
@@ -3897,10 +3908,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       if (!(await hasPageTable(reader))) throw noLibrary();
       const query = parseQuery(typeof call.input["q"] === "string" ? call.input["q"] : "");
       return searchLibrary(reader, {
-        match: wordsMatch(query),
+        query,
         limit: typeof call.input["limit"] === "number" ? call.input["limit"] : 15,
         agent: call.principal.audience === "agent",
         parsed: printQuery(query),
+        task: sessionIn(call)?.task,
       });
     }
     const { host } = call;
@@ -5391,6 +5403,29 @@ export async function spaceNameOf(
  * never lost at the end of the work. Every page it names is one the space shows. Returns the
  * warning for a finish that named nothing.
  */
+/** The pages a finish says it updated, as given: references, or "nothing reusable". */
+function libraryOf(given: unknown): readonly string[] | typeof NOTHING_REUSABLE | undefined {
+  if (given === NOTHING_REUSABLE) return NOTHING_REUSABLE;
+  return Array.isArray(given) ? [...new Set(given as string[])] : undefined;
+}
+
+/**
+ * The outcome with the finish's pages below it, so whoever reads the outcome reads which pages the
+ * agent says it updated. It is the outcome's own text: the person may edit it as the rest.
+ */
+function withLibrary(
+  outcome: string | undefined,
+  library: readonly string[] | typeof NOTHING_REUSABLE | undefined,
+): string | undefined {
+  if (library === undefined) return outcome;
+  const line = `Library: ${library === NOTHING_REUSABLE ? NOTHING_REUSABLE : library.join(", ")}`;
+  return outcome === undefined || outcome.trim() === ""
+    ? line
+    : `${outcome.trimEnd()}
+
+${line}`;
+}
+
 async function checkLibrary(call: Call, learnings: readonly string[]): Promise<string[]> {
   const library = call.input["library"];
   if (library === undefined) {

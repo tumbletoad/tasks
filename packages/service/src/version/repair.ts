@@ -21,9 +21,8 @@
 // journal names, then the journal (an updater that brings the service back removes the journal
 // itself, after that): the install is the complete old version or the complete new one. Each step
 // does nothing when it is already done, so a repair cut off at any point is finished by the next.
-// It never removes a version folder: a process may still run from it (A2 3.12.6), and retiring
-// versions needs version-use leases. The aside launchers go later, in cleanLaunchers, once no
-// journal names them.
+// It never removes a version folder: old ones go in retire.ts. The aside launchers go later, in
+// cleanLaunchers, once no journal names them.
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { acquireLock, LockBusy } from "../hub/lock.ts";
