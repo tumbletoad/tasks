@@ -11,7 +11,7 @@
 // at this origin could have written it), so each kind is read by its shape and shown only as text.
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { changeOf, type Field, type Words } from "./edit/change.ts";
-import type { Unsaved, UnsavedKeeper } from "./edit/edits.ts";
+import type { ActionKeeper, KeptAction, Unsaved, UnsavedKeeper } from "./edit/edits.ts";
 import { browserKept, onKept, onKeptUnder, tabKept } from "./kept.ts";
 
 /** The composer's own limit: a longer draft is not kept. */
@@ -33,7 +33,7 @@ const editPrefix = (space: string) => `edit.${space}.`;
 const editName = (space: string, task: string, field: string, id: string) =>
   `${editPrefix(space)}${task}.${field}.${id}`;
 const editNames = (space: string): string[] => browserKept.names(editPrefix(space));
-const KINDS = ["draft.", "note.", "title.", "text.", "edit."] as const;
+const KINDS = ["draft.", "note.", "title.", "text.", "edit.", "action."] as const;
 
 const listeners = new Set<() => void>();
 let hearing: (() => void) | undefined;
@@ -254,13 +254,14 @@ export function useKeptTitles(space: string, task: string): readonly KeptTitle[]
 // the editor opens again on the text as it is now, and a new draft never takes their place.
 
 /**
- * What a text editor corrects: a task's summary, its context, or an entry by reference (n3, l4);
- * a page's title, brief or body, and a node's brief, description or text for agents. Each is kept
- * under its owner's ID: the task's, the page's or the node's.
+ * What a text editor corrects: a task's summary, its context, who it waits on, or an entry by
+ * reference (n3, l4); a page's title, brief or body, and a node's brief, description or text for
+ * agents. Each is kept under its owner's ID: the task's, the page's or the node's.
  */
 export type TextPart =
   | "summary"
   | "context"
+  | "waiting_on"
   | `${"n" | "l"}${number}`
   | "title"
   | "brief"
@@ -268,7 +269,8 @@ export type TextPart =
   | "description"
   | "for_agents";
 
-const PART = /^(?:summary|context|[nl][1-9][0-9]{0,5}|title|brief|body|description|for_agents)$/u;
+const PART =
+  /^(?:summary|context|waiting_on|[nl][1-9][0-9]{0,5}|title|brief|body|description|for_agents)$/u;
 
 export const isTextPart = (value: string): value is TextPart => PART.test(value);
 
@@ -538,6 +540,140 @@ export function unsavedKeeper(space: string): UnsavedKeeper {
   };
 }
 
+// A check-off, a reopen, a move to or from the Trash, an undo or a redo that waited behind another
+// request when a page went (edit/edits.ts): kept for the browser under its task and request ID, and
+// shown on the task with Try again and Discard until the service decided it or the person let it
+// go. Nothing here is sent by itself; two tabs that try one again are applied once, by its ID.
+
+const actionPrefix = (space: string, task = "") =>
+  `action.${space}.${task === "" ? "" : `${task}.`}`;
+const COMMIT = /^op_[0-9a-z]{26}$/u;
+const LIFECYCLE: ReadonlySet<string> = new Set(["finish", "reopen", "trash", "restore"]);
+
+/** A kept action, read by its shape. */
+function actionOf(value: unknown): KeptAction | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { kind, request, task, ref, base, commit, of } = value as Record<string, unknown>;
+  if (typeof request !== "string" || !NOTE_ID.test(request)) return undefined;
+  if (typeof task !== "string" || !TASK_ID.test(task)) return undefined;
+  if (typeof ref !== "string" || !REF.test(ref)) return undefined;
+  const on = { request, task, ref };
+  if (typeof kind === "string" && LIFECYCLE.has(kind)) {
+    if (base !== undefined && (typeof base !== "string" || !AS_OF.test(base))) return undefined;
+    const lifecycle = kind as "finish" | "reopen" | "trash" | "restore";
+    return { kind: lifecycle, ...on, ...(base === undefined ? {} : { base }) };
+  }
+  if (kind !== "undo" && kind !== "redo") return undefined;
+  if (typeof commit === "string" && COMMIT.test(commit) && of === undefined) {
+    return { kind, ...on, commit };
+  }
+  if (kind === "undo" && typeof of === "string" && NOTE_ID.test(of) && commit === undefined) {
+    return { kind, ...on, of };
+  }
+  return undefined;
+}
+
+/** The actions kept for `task`, or for the whole space, each with its name. */
+function actionsAt(
+  space: string,
+  task = "",
+): { readonly name: string; readonly action: KeptAction }[] {
+  return browserKept
+    .names(actionPrefix(space, task))
+    .sort()
+    .flatMap((name) => {
+      const action = actionOf(browserKept.json(name));
+      return action !== undefined && name === actionPrefix(space, action.task) + action.request
+        ? [{ name, action }]
+        : [];
+    });
+}
+
+/** Lets go of the kept action with this request ID, wherever it is kept in the space. */
+export function letGoAction(space: string, request: string): void {
+  for (const name of browserKept.names(actionPrefix(space))) {
+    if (name.endsWith(`.${request}`)) keep(name, undefined);
+  }
+}
+
+/** Where the edits of `space` keep an action whose page goes before it is sent. */
+export function actionKeeper(space: string): ActionKeeper {
+  return {
+    keep(action) {
+      keep(actionPrefix(space, action.task) + action.request, JSON.stringify(action));
+    },
+    done(request) {
+      letGoAction(space, request);
+    },
+    settle(task) {
+      settleActions(space, task);
+    },
+  };
+}
+
+/** The actions kept for a task, of every tab. */
+export function keptActions(space: string, task: string): KeptAction[] {
+  return actionsAt(space, task).map(({ action }) => action);
+}
+
+/** What a kept action needs to know of its task: where it is now. */
+export interface TaskState {
+  readonly id: string;
+  readonly lifecycle: string;
+  readonly deleted_at?: number | undefined;
+}
+
+/**
+ * Whether the task already is as a kept action asked: a check-off of a finished task, a reopen of
+ * an open one, a move to the Trash of one in it, a restore of one out of it. An undo or a redo has
+ * no such test: it waits for the person.
+ */
+export function alreadyDone(action: KeptAction, task: TaskState): boolean {
+  switch (action.kind) {
+    case "finish":
+      return task.lifecycle !== "active";
+    case "reopen":
+      return task.lifecycle === "active";
+    case "trash":
+      return task.deleted_at !== undefined;
+    case "restore":
+      return task.deleted_at === undefined;
+    default:
+      return false;
+  }
+}
+
+/** Lets go of the task's kept actions that its state already is. */
+export function settleActions(space: string, task: TaskState): void {
+  for (const action of keptActions(space, task.id)) {
+    if (alreadyDone(action, task)) letGoAction(space, action.request);
+  }
+}
+
+/**
+ * The actions kept for a task, of every tab, as they come and go: those its state already is are
+ * not shown, and go. While this tab's own write of the task is on its way (`sending`), the state on
+ * screen is that write's, not yet the task's: nothing is judged by it.
+ */
+export function useKeptActions(
+  space: string,
+  task: TaskState,
+  sending = false,
+): readonly KeptAction[] {
+  const kept = useSyncExternalStore(onUnsent, () => JSON.stringify(keptActions(space, task.id)));
+  const { id, lifecycle, deleted_at } = task;
+  const all = useMemo(() => JSON.parse(kept) as KeptAction[], [kept]);
+  const due = useMemo(
+    () =>
+      sending ? all : all.filter((action) => !alreadyDone(action, { id, lifecycle, deleted_at })),
+    [all, sending, id, lifecycle, deleted_at],
+  );
+  useEffect(() => {
+    if (due.length < all.length) settleActions(space, { id, lifecycle, deleted_at });
+  }, [due, all, space, id, lifecycle, deleted_at]);
+  return due;
+}
+
 // Every kind together: what the foot of the Trash lists, and the one way to let a value go.
 
 /** One kept value: its task, its kind and the exact value. */
@@ -731,6 +867,7 @@ export function unsentTasks(space: string): string[] {
     ...after(`title.${space}.`).map(taskOf),
     ...after(`text.${space}.`).map(editTask),
     ...after(editPrefix(space)).map(editTask),
+    ...after(actionPrefix(space)).map(editTask),
   ];
   return [...new Set(tasks.filter((task) => task !== ""))];
 }
@@ -747,7 +884,10 @@ export function forgetTask(space: string, task: string): void {
   ]) {
     browserKept.keep(name, undefined);
   }
-  for (const name of browserKept.names(`${editPrefix(space)}${task}.`)) {
+  for (const name of [
+    ...browserKept.names(`${editPrefix(space)}${task}.`),
+    ...browserKept.names(actionPrefix(space, task)),
+  ]) {
     browserKept.keep(name, undefined);
   }
   tell();

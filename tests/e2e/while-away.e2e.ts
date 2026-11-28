@@ -2,8 +2,8 @@
 // service process: the agents' changes of the last seven days on Agents and Today, also after a
 // reload; an agent's questions under "Needs you" until the person answers or dismisses them,
 // which Undo takes back, also once the task is finished; a long thread read back to its first
-// entry; and a title still being typed back in its editor after a reload, unsent, in the tab that
-// typed it alone. At 1,440 and 390 px in both themes. Fixture data only.
+// entry; and a title or who a task waits on, still being typed, back after a reload, unsent, in the
+// tab that typed it alone. At 1,440 and 390 px in both themes. Fixture data only.
 import { expect, type Locator, type Page } from "@playwright/test";
 import { onOneDay } from "./days.ts";
 import { test } from "./fixture.ts";
@@ -212,6 +212,59 @@ test.describe("[A5.while-away.e2e.older] a long thread reads back to its first e
     const kept = thread.locator(`li[data-entry-key="${String(was)}"]`);
     expect(Math.abs(((await kept.boundingBox())?.y ?? 0) - (at ?? 0))).toBeLessThanOrEqual(2);
     await expect(kept.locator("..").locator("li").first()).toContainText("Note 1:");
+  });
+});
+
+test.describe("[A5.while-away.e2e.waiting-draft] who a task waits on, still being typed, survives a reload", () => {
+  test("the typed words come back in Waiting on, unsent, also when the card closes and opens; Escape lets them go", async ({
+    page,
+    world,
+  }) => {
+    const added = (await world.op(world.mira.id, "task.add", {
+      tasks: [
+        {
+          title: `Get the roof quote (${test.info().project.name})`,
+          inbox: true,
+          status: "waiting",
+          waiting_on: "Ana",
+        },
+      ],
+    })) as { tasks: readonly { ref: string }[] };
+    const ref = added.tasks[0]?.ref ?? "";
+    const waitingOf = async () =>
+      (
+        (await world.op(world.mira.id, "task.get", { task: ref })) as {
+          task: { waiting_on?: string };
+        }
+      ).task.waiting_on;
+    const row = await openTask(page, world, ref);
+    const field = row.getByRole("combobox", { name: "Waiting on" });
+    await field.click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" Reyes");
+    await page.reload();
+    await expect(field).toHaveValue("Ana Reyes", { timeout: SLOW_MS });
+    // Never saved by itself, also when the card closes before the person is in the field again.
+    let updates = 0;
+    page.on("request", (request) => {
+      if (request.url().endsWith("/api/v1/op/task.update")) updates += 1;
+    });
+    const title = row.locator('[data-part="title"]');
+    await title.click();
+    await expect(title).toHaveAttribute("aria-expanded", "false");
+    await title.click();
+    await expect(field).toHaveValue("Ana Reyes", { timeout: SLOW_MS });
+    expect(updates).toBe(0);
+    expect(await waitingOf()).toBe("Ana");
+    await field.focus();
+    await page.keyboard.press("Escape");
+    await expect(field).toHaveValue("Ana");
+    await page.reload();
+    await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true", {
+      timeout: SLOW_MS,
+    });
+    await expect(field).toHaveValue("Ana");
+    expect(await waitingOf()).toBe("Ana");
   });
 });
 

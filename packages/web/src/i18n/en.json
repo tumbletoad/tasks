@@ -343,6 +343,7 @@
   "row.markerNeedsInput": "{by} needs your input",
   "row.markerWorking": "{by} is working on it in the background",
   "row.markerDraft": "Unsent words in its composer",
+  "row.markerNotDone": "Something you did is not done yet: open the task to try it again",
   "row.tile.ready": "Open in {label}",
   "row.tile.opening": "Opening in {label}",
   "row.tile.running": "{label} · running",
@@ -366,6 +367,7 @@
   "row.desc.needsInput": "needs your input",
   "row.desc.working": "{by} is working on it",
   "row.desc.draft": "unsent words in its composer",
+  "row.desc.notDone": "something you did is not done yet",
 
   "list.updated": "{count, plural, one {# task} other {# tasks}} updated by {actor}",
 
@@ -770,6 +772,9 @@
   "edit.tryAgainField": "Try again: {field}",
   "edit.keepTheirs": "Keep theirs",
   "edit.discard": "Discard",
+  "edit.keptAction": "Not done yet: {kind, select, finish {check off} reopen {reopen} trash {move to the Trash} restore {restore} undo {Undo} other {Redo}}",
+  "edit.keptActionAgain": "Try again: {kind, select, finish {check off} reopen {reopen} trash {move to the Trash} restore {restore} undo {Undo} other {Redo}}",
+  "edit.keptActionDiscard": "Discard: {kind, select, finish {check off} reopen {reopen} trash {move to the Trash} restore {restore} undo {Undo} other {Redo}}",
 
   "field.title": "the title",
   "field.summary": "the brief",

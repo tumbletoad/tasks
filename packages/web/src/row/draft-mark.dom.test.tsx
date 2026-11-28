@@ -13,7 +13,7 @@ import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
 import type { TaskRow } from "@ttasks/client/store";
-import { keepDraft } from "../unsent.ts";
+import { actionKeeper, keepDraft, keptActions } from "../unsent.ts";
 import { TaskList } from "../views/TaskList.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";
 
@@ -133,5 +133,78 @@ describe("[A5.3.6.web.draft-mark] a row shows that its composer holds unsent wor
       );
     });
     expect(markOf("t_00002")).toBeUndefined();
+  });
+});
+
+describe("[A5.3.11.web.kept-action-mark] a row shows that something the person did is not done yet, until it is", () => {
+  const request = () => crypto.randomUUID();
+  /** The feed brings the task as `row`, written by an agent. */
+  const feed = (row: TaskRow, seq: number) => {
+    act(() => {
+      live.store.push({
+        type: "batch",
+        space_id: SPACE.id,
+        epoch: 1,
+        incarnation: "ai_0123456789abcdefghjkmnpq",
+        from: seq - 1,
+        through: seq,
+        events: [
+          {
+            seq,
+            op_id: `op_${String(seq).padStart(26, "0")}`,
+            request_id: `rq-${String(seq)}`,
+            actor: { kind: "agent", label: "Codex" },
+            kind: "task.update",
+            entities: [
+              {
+                type: "task",
+                id: row.id,
+                row: row as unknown as Record<string, unknown>,
+                changed: ["lifecycle"],
+                created: false,
+              },
+            ],
+          },
+        ],
+      });
+      live.store.flush();
+    });
+  };
+
+  test("a kept check-off or undo marks its row; one the task's state already is goes by itself, an undo stays", () => {
+    const keeper = actionKeeper(SPACE.id);
+    const finish = { kind: "finish", request: request(), task: "t_00001", ref: "M-1" } as const;
+    const undo = {
+      kind: "undo",
+      request: request(),
+      task: "t_00002",
+      ref: "M-2",
+      commit: `op_${"7".padStart(26, "0")}`,
+    } as const;
+    act(() => {
+      keeper.keep(finish);
+      keeper.keep(undo);
+    });
+    const said = "Something you did is not done yet: open the task to try it again";
+    expect(markOf("t_00001")).toEqual({ kind: "draft", label: said });
+    expect(markOf("t_00002")).toEqual({ kind: "draft", label: said });
+
+    // A reopen of a task that is open is already true: no mark, and it goes.
+    const reopen = { kind: "reopen", request: request(), task: "t_00002", ref: "M-2" } as const;
+    act(() => {
+      keeper.keep(reopen);
+    });
+    expect(keptActions(SPACE.id, "t_00002")).toEqual([undo]);
+
+    // The task is checked off again, here or anywhere: the kept check-off goes with it.
+    feed(
+      { ...task(1), lifecycle: "completed", completed_at: Date.UTC(2026, 10, 2), version: 2 },
+      11,
+    );
+    expect(keptActions(SPACE.id, "t_00001")).toEqual([]);
+    // An undo has no such test: it waits for the person.
+    feed({ ...task(2), priority: 1, version: 2 }, 12);
+    expect(keptActions(SPACE.id, "t_00002")).toEqual([undo]);
+    expect(markOf("t_00002")).toEqual({ kind: "draft", label: said });
   });
 });

@@ -161,6 +161,8 @@ export interface RowInput {
   readonly marker?: MarkerFact;
   /** The task's composer holds words the person has not sent. */
   readonly draft?: boolean;
+  /** Something the person did to the task waits as not done yet (edit/KeptActions.tsx). */
+  readonly notDone?: boolean;
   readonly launchBlock?: LaunchBlock;
   /** When the task's current wait began, in ms since the epoch: Waiting's age column counts from it. */
   readonly waitingSince?: number;
@@ -581,6 +583,9 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
           : msg("row.markerChangedWhat", { what: row.marker.what, time }),
     };
     description.push(msg("row.desc.changed", { by: row.marker.by }));
+  } else if (row.notDone === true) {
+    marker = { kind: "draft", tip: msg("row.markerNotDone") };
+    description.push(msg("row.desc.notDone"));
   } else if (row.draft === true) {
     marker = { kind: "draft", tip: msg("row.markerDraft") };
     description.push(msg("row.desc.draft"));

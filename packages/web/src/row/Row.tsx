@@ -22,6 +22,7 @@ import type { Receipt, Run } from "../api.ts";
 import { Session } from "../context.ts";
 import { titleChange } from "../edit/change.ts";
 import { whoOf, type Leaving } from "../edit/edits.ts";
+import { KeptActions } from "../edit/KeptActions.tsx";
 import { Unsaved } from "../edit/Unsaved.tsx";
 import { useEdits } from "../edit/useEdits.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
@@ -49,6 +50,7 @@ import {
   TITLE_MAX,
   type TitleDraft,
   useHasDraft,
+  useKeptActions,
 } from "../unsent.ts";
 import {
   ChevronUpIcon,
@@ -569,6 +571,8 @@ function RowView({
   const marker = agentMarker(task.run, instances, task.questions?.[0]);
   const { live } = useContext(Session);
   const draft = useHasDraft(live.spaceId ?? "", task.id);
+  const edits = useEdits();
+  const kept = useKeptActions(live.spaceId ?? "", task, edits.sending(task.id));
   const model = renderRow(
     {
       task,
@@ -583,6 +587,7 @@ function RowView({
       ...(place === undefined ? {} : { place }),
       ...(task.waiting_since === undefined ? {} : { waitingSince: task.waiting_since }),
       ...(draft ? { draft } : {}),
+      ...(kept.length > 0 ? { notDone: true } : {}),
     },
     ctx,
   );
@@ -638,7 +643,6 @@ function RowView({
   // unless the title shows it: the service took it before the page went, or this tab's save of it is
   // on its way and that save's answer lets the words go.
   const space = live.spaceId ?? "";
-  const edits = useEdits();
   useEffect(() => {
     const kept = readTitleDraft(space, task.id);
     if (!expanded || kept === undefined) return;
@@ -865,6 +869,8 @@ function RowView({
           {expanded ? (
             <Unsaved task={task.id} field="title" finished={!active} trashed={trashed} />
           ) : null}
+          {/* A check-off, an undo or the like that a page did not get to send before it went. */}
+          {expanded ? <KeptActions task={task} actions={kept} /> : null}
           {/* What another tab is typing, or what was typed before the task was finished. */}
           {expanded ? (
             <KeptTitles

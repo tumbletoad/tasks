@@ -20,7 +20,15 @@ import {
   type Change,
 } from "./change.ts";
 import type { Unsaved } from "./edits.ts";
-import { forgetTask, unsavedKeeper, unsavedOf, unsentOf, unsentTasks } from "../unsent.ts";
+import {
+  actionKeeper,
+  forgetTask,
+  keptActions,
+  unsavedKeeper,
+  unsavedOf,
+  unsentOf,
+  unsentTasks,
+} from "../unsent.ts";
 
 const SPACE = "sp_0123456789abcdefghjkmnpqrs";
 const OTHER = "sp_abcdefghjkmnpqrs0123456789";
@@ -290,5 +298,41 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
         source: { kind: "title", title: "A" },
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("[A5.3.11.web.kept-actions] an action that waited when the page went is kept for the browser on its task until it is decided or discarded", () => {
+  test("each kept action is listed on its task in its space; one of another shape never is; it goes once done, and with a task gone for good", () => {
+    const request = () => crypto.randomUUID();
+    const on = (n: number) => ({ task: `tk_0000${String(n)}`, ref: `M-${String(n)}` });
+    const finish = { kind: "finish", request: request(), ...on(1), base: "1.12.0a1b2c3d" } as const;
+    const undo = { kind: "undo", request: request(), ...on(1), of: request() } as const;
+    const redo = {
+      kind: "redo",
+      request: request(),
+      ...on(2),
+      commit: `op_${"7".padStart(26, "0")}`,
+    } as const;
+    const keeper = actionKeeper(SPACE);
+    keeper.keep(finish);
+    keeper.keep(undo);
+    keeper.keep(redo);
+    expect(keptActions(SPACE, "tk_00001")).toHaveLength(2);
+    expect(keptActions(SPACE, "tk_00001")).toEqual(expect.arrayContaining([finish, undo]));
+    expect(keptActions(SPACE, "tk_00002")).toEqual([redo]);
+    expect(keptActions(OTHER, "tk_00001")).toEqual([]);
+    expect(unsentTasks(SPACE).sort()).toEqual(["tk_00001", "tk_00002"]);
+    // Not of a kept action's shape: never listed.
+    const id = request();
+    localStorage.setItem(
+      `${PRODUCT_ID}.action.${SPACE}.tk_00002.${id}`,
+      JSON.stringify({ kind: "finish", request: id, task: "tk_00002" }),
+    );
+    expect(keptActions(SPACE, "tk_00002")).toEqual([redo]);
+    keeper.done(undo.request);
+    expect(keptActions(SPACE, "tk_00001")).toEqual([finish]);
+    forgetTask(SPACE, "tk_00002");
+    expect(keptActions(SPACE, "tk_00002")).toEqual([]);
+    expect(keptActions(SPACE, "tk_00001")).toEqual([finish]);
   });
 });
