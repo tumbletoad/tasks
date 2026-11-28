@@ -4,12 +4,11 @@
 // it opens on this machine, and an actor names an agent's instance and session; a phone gets
 // none of that.
 import type { BatchMessage, SnapshotMessage } from "../http/feed.ts";
-import { FEED_GROUP, FEED_NODE, FEED_TASK, project, type Authors } from "./allowed.ts";
+import { FEED_NODE, FEED_TASK, project, type Authors } from "./allowed.ts";
 
 const rowOf = (type: string, row: unknown, authors: Authors): unknown => {
   if (row === null || row === undefined) return null;
   if (type === "task") return project(row, FEED_TASK, authors);
-  if (type === "area" || type === "project") return project(row, FEED_GROUP, authors);
   if (type === "node") return project(row, FEED_NODE, authors);
   return null;
 };
@@ -39,8 +38,6 @@ export function phoneSnapshot(
       ...(c.row === undefined ? {} : { row: rowOf("task", c.row, authors) }),
     })),
     asking: snapshot.asking.map((t) => rowOf("task", t, authors)),
-    areas: snapshot.areas.map((a) => rowOf("area", a, authors)),
-    projects: snapshot.projects.map((p) => rowOf("project", p, authors)),
     nodes: snapshot.nodes.map((n) => rowOf("node", n, authors)),
     preferences: snapshot.preferences,
     ...(reason === undefined ? {} : { reason }),

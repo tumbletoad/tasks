@@ -212,3 +212,61 @@ export function readOpenLaunches(conn: Connection, machine: string): LaunchRecor
   if (!isId(machine, "m")) return [];
   return conn.prepare(LAUNCH_SQL.open).all({ machine }).map(decodeLaunch);
 }
+
+/**
+ * The agent conversation a launch continues (`evidence.resumes`), or null: a second click gets the
+ * launch still opening for its task and instance that continues the same one, or neither does.
+ */
+export const resumesOf = (
+  evidence: Readonly<Record<string, unknown>> | undefined,
+): string | null => {
+  const given = evidence?.["resumes"];
+  return typeof given === "string" ? given : null;
+};
+
+/** Why a launch or a run may not start, as both writers say it. */
+export interface StartProblem {
+  code: "NOT_FOUND" | "DELETED" | "VALIDATION_FAILED";
+  message: string;
+  field: string;
+}
+
+/** The request's machine has no record in the space: nothing is bound or started on it. */
+export const NO_MACHINE: StartProblem = {
+  code: "VALIDATION_FAILED",
+  message: "The request's machine has no record in this space",
+  field: "actor.machine_id",
+};
+
+/**
+ * Why a launch or a run may not start in the place (today) or the folder (the tree) it names: none
+ * has the ID, it is removed, or it is on another machine than the request's.
+ */
+export function whereProblem(
+  row: Row | undefined,
+  machine: string,
+  noun: "place" | "folder",
+): StartProblem | undefined {
+  if (row === undefined)
+    return { code: "NOT_FOUND", message: `No ${noun} has this ID`, field: noun };
+  if (row["deleted_at"] !== null) {
+    return { code: "DELETED", message: `The ${noun} is removed`, field: noun };
+  }
+  if (row["machine_id"] !== machine) {
+    return { code: "VALIDATION_FAILED", message: `The ${noun} is on another machine`, field: noun };
+  }
+  return undefined;
+}
+
+/** The ordinal of the note a launch's `evidence.request` names (`n3`), or undefined. */
+export function requestOrdinal(asked: unknown): number | undefined {
+  const ordinal = typeof asked === "string" ? /^n([1-9][0-9]{0,5})$/u.exec(asked)?.[1] : undefined;
+  return ordinal === undefined ? undefined : Number(ordinal);
+}
+
+/** A launch's `evidence.request` that names no note of its task. */
+export const NO_REQUEST_NOTE: StartProblem = {
+  code: "NOT_FOUND",
+  message: "The task has no note with this reference",
+  field: "evidence.request",
+};

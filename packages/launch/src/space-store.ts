@@ -85,7 +85,6 @@ export interface SpaceLaunchRow {
 export interface SpaceRunRow {
   id: string;
   task_id: string | null;
-  routine_id: string | null;
   session_id: string | null;
   instance_id: string;
   machine_id: string;
@@ -300,13 +299,12 @@ export class SpaceExecutionStore implements ExecutionStore {
     const { limits } = input;
     const result = await this.#submit(requestId, {
       kind: "run.create",
-      ...(input.task === null ? {} : { task: input.task }),
-      ...(input.routine === null ? {} : { routine: input.routine }),
+      task: input.task,
       instance: input.instance,
       adapter: input.adapter,
       place: input.place,
       ...(input.session === undefined ? {} : { session: input.session }),
-      ...(input.request === null ? {} : { request: input.request }),
+      request: input.request,
       brief_hash: input.briefHash,
       permission: input.permission,
       limits: {
@@ -551,7 +549,6 @@ export function decodeRun(row: SpaceRunRow): RunRecord {
   return {
     id: row.id,
     task: row.task_id,
-    routine: row.routine_id,
     session: row.session_id,
     machine: row.machine_id,
     instance: row.instance_id,

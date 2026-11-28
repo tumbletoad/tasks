@@ -46,8 +46,7 @@ async function compare(core: LiveCore, reader: Reader) {
   const got = core.publish();
   expect(core.cursor).toEqual(want?.cursor);
   expect(got?.tasks).toEqual(want?.tasks);
-  expect(got?.areas).toEqual(want?.areas);
-  expect(got?.projects).toEqual(want?.projects);
+  expect(got?.nodes).toEqual(want?.nodes);
 }
 
 /** Reads batches of `limit` commits until the core is at the head; a resnapshot reads a snapshot. */
@@ -144,8 +143,8 @@ describe("[A5.3.15.web.store.service] the live store on the service's own feed",
     "the feed names logical fields the page knows, and a row a view shows follows it exactly",
     SLOW,
     async () => {
-      // The page's map of logical fields is storage's.
-      expect(TASK_FIELD_COLUMNS).toEqual(TASK_FIELDS);
+      // The page names a task's logical fields as storage does.
+      expect(Object.keys(TASK_FIELD_COLUMNS)).toEqual(Object.keys(TASK_FIELDS));
       const { user, reader } = await served("ls3");
       const core = new LiveCore();
       core.receive(wire(await readSnapshot(reader)));

@@ -47,7 +47,6 @@ const m3 = {
   status: "open",
   inbox: false,
   priority: 2,
-  area_id: "ar_1b5d9f3h7k0m4p8r2t6w0y4a8c",
   parent: "ar_1b5d9f3h7k0m4p8r2t6w0y4a8c",
   position: "a0",
   wrap_state: "wrapped",

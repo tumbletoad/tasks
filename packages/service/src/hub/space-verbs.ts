@@ -46,9 +46,8 @@ import { AppError } from "@ttasks/contracts";
 import { shellLine } from "@ttasks/launch";
 import {
   backupHistories,
-  backupsFolder,
   exportsFolder,
-  listBackupsIn,
+  listBackups,
   readManifest,
   StorageError,
   type Id,
@@ -543,32 +542,11 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
     };
   };
 
-  /**
-   * Where the space's backups are written (space-settings.ts backupsFolderOf), and the folders they
-   * are read from: that one, then the space's own `backups/`, where backups went before.
-   */
-  const backupsOf = (
-    view: SpaceView,
-  ): { dir: string; set: boolean; folders: readonly [string, string] } => {
-    const own = backupsFolder(manager.folderOf(view.entry));
+  /** Where the space's backups are written and read (space-settings.ts backupsFolderOf). */
+  const backupsOf = (view: SpaceView): { dir: string; set: boolean } => {
     const id = view.id ?? view.registered;
-    const folder =
-      id === undefined
-        ? { dir: own, set: false }
-        : backupsFolderOf(readSpaceSettings(host.settingsDir, id), host.backups, id);
-    return { ...folder, folders: [folder.dir, own] };
-  };
-
-  /** The data file of the complete backup `name` (`<name>.db.gz`) in `folders`, if one reads. */
-  const completeCopy = (folders: readonly [string, string], name: string): string | undefined => {
-    try {
-      return listBackupsIn(folders).backups.find(
-        (b) => `${b.name}.db.gz` === name && b.state === "ok",
-      )?.file;
-    } catch {
-      // A folder that cannot be read: the restore says what is wrong with the file it takes.
-      return undefined;
-    }
+    if (id === undefined) throw invalid("space", "The space's ID is not known yet");
+    return backupsFolderOf(readSpaceSettings(host.settingsDir, id), host.backups, id);
   };
 
   return {
@@ -766,10 +744,10 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
 
     "space/backups": (params) => {
       const view = find(required(params, "space"));
-      const { dir, set, folders } = backupsOf(view);
+      const { dir, set } = backupsOf(view);
       const id = view.id ?? view.registered;
       try {
-        const listing = listBackupsIn(folders);
+        const listing = listBackups(dir);
         // The default folder is made at the space's first backup: until then it holds none.
         if (set && !listing.present) throw backupsAway(dir);
         // Each copy of the space writes its own history (a copy claimed on another machine, one a
@@ -793,7 +771,6 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
             ...listing.backups.filter((b) => b.sidecar === undefined),
           ].map((b) => ({
             name: b.name,
-            folder: dirname(b.file),
             state: b.state,
             created_at: new Date(b.createdAt).toISOString(),
             ...(b.sidecar === undefined
@@ -876,16 +853,16 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
         const spaceId = of.id ?? of.registered;
         if (spaceId === undefined) throw invalid("of", "The space's ID is not known yet");
         const target = resolve(to);
-        const { dir, set, folders } = backupsOf(of);
+        const { dir, set } = backupsOf(of);
         try {
           // A folder that is not there, or holds no backup of the space, is said as itself: never
           // as a backup that does not verify.
-          const listing = listBackupsIn(folders);
+          const listing = listBackups(dir);
           if (set && !listing.present) throw backupsAway(dir);
           if (!listing.backups.some((b) => b.state === "ok" && b.sidecar?.space_id === spaceId)) {
             throw new AppError({
               code: "not_found",
-              message: `No complete backup of this space is in ${[...new Set(folders)].join(" or ")}`,
+              message: `No complete backup of this space is in ${dir}`,
               hint: `${CLI_NAME} space backups <folder> lists what is there.`,
               data: { reason: "no_backup", folder: dir },
             });
@@ -897,7 +874,7 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
             const incarnation = manager.incarnationOf(of.entry);
             const restored = await runAdmin({
               kind: "restore-latest",
-              backupDirs: folders,
+              backupDir: dir,
               spaceId,
               target,
               ...(incarnation === undefined ? {} : { incarnation }),
@@ -930,14 +907,9 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
       if (isAbsolute(backup)) file = resolve(backup);
       else if (of !== undefined && /^[A-Za-z0-9._-]+$/.test(backup)) {
         const name = backup.endsWith(".db.gz") ? backup : `${backup}.db.gz`;
-        // Backups made before they went to the backups folder, and an upgrade's whose set folder
-        // was away, are in the space's own, or on their way between the two: the listing of both
-        // names the complete copy, else the name is looked for where it is.
-        const { folders } = backupsOf(of);
-        const [dir, own] = folders.map((folder) => join(folder, name)) as [string, string];
         file = /\.zip$/i.test(backup)
           ? join(exportsFolder(manager.folderOf(of.entry)), backup)
-          : (completeCopy(folders, name) ?? (!existsSync(dir) && existsSync(own) ? own : dir));
+          : join(backupsOf(of).dir, name);
       } else {
         throw invalid(
           "backup",

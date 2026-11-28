@@ -71,7 +71,6 @@ import {
   BUNDLE_POLICY,
   checkFreeSpace,
   compressFile,
-  existingFolder,
   freeBytes,
   inflateFile,
   type BundlePolicy,
@@ -79,7 +78,6 @@ import {
 import {
   BACKUP_KINDS,
   BACKUP_TEMP_PREFIX,
-  BACKUPS_FOLDER,
   backupName,
   DATA_SUFFIX,
   SIDECAR_MARKER,
@@ -95,11 +93,8 @@ export { BACKUP_TEMP_PREFIX };
 
 export interface SpaceBackupOptions {
   kind: BackupKind;
-  /**
-   * The backups folder, which must be there. Default: `<space>/backups`, made when missing. The
-   * service passes a served space's (hub/space-settings.ts backupsFolderOf).
-   */
-  backupDir?: string;
+  /** The backups folder, which must be there (hub/space-settings.ts backupsFolderOf). */
+  backupDir: string;
   appVersion?: string;
   /** Milliseconds since 1970. Default: Date.now. */
   now?: () => number;
@@ -145,28 +140,15 @@ export interface BackupSeams {
   freeBytes?: (folder: string) => number;
 }
 
-/** The backups folder of a space folder, unless machine-local settings move it. */
-export const backupsFolder = (spaceFolder: string): string =>
-  join(checkSpacePath(spaceFolder), BACKUPS_FOLDER);
-
 /**
- * The backups folder this machine set for a space (`backup.dir`) is not there: a drive that is not
- * connected, a folder moved. No backup makes it, so none lands on whatever disk holds the path,
- * where nobody looks and from where the next backups would go on without a word.
+ * The space's backups folder is not there: a drive that is not connected, a folder moved. No backup
+ * makes it, so none lands on whatever disk holds the path, where nobody looks and from where the
+ * next backups would go on without a word.
  */
 export class BackupsFolderAway extends StorageError {
   constructor() {
-    super("BACKUP_FAILED", "The backups folder set for the space is not there");
+    super("BACKUP_FAILED", "The space's backups folder is not there");
   }
-}
-
-/**
- * Where a backup goes: the space's own backups folder, which the writer makes when it is missing,
- * or another folder (`backup.dir`), which must be there (BackupsFolderAway).
- */
-interface BackupPlace {
-  readonly folder: string;
-  readonly own: boolean;
 }
 
 /**
@@ -200,16 +182,8 @@ export async function backupSpaceWith(
     },
     seams.steps === undefined ? {} : { steps: seams.steps },
   );
-  const own = join(dir, BACKUPS_FOLDER);
-  const target = options.backupDir ?? own;
   try {
-    return await writeBackup(
-      checked,
-      opened.conn,
-      { folder: target, own: resolve(target) === resolve(own) },
-      options,
-      seams,
-    );
+    return await writeBackup(checked, opened.conn, options, seams);
   } finally {
     opened.conn.close();
   }
@@ -230,11 +204,10 @@ function backupFailed(error: unknown): StorageError {
 async function writeBackup(
   checked: CheckedDriver,
   source: Connection,
-  place: BackupPlace,
   options: SpaceBackupOptions,
   seams: BackupSeams = {},
 ): Promise<BackupRecord> {
-  const backupDir = place.folder;
+  const { backupDir } = options;
   const policy = seams.policy ?? BUNDLE_POLICY;
   const io = seams.io ?? NODE_IO;
   const appVersion = options.appVersion ?? SOURCE_APP_VERSION;
@@ -269,22 +242,17 @@ async function writeBackup(
   const timer = setInterval(refresh, FRESH_INTERVAL_MS);
   timer.unref();
   try {
-    // Only the space's own folder is made here: any other is one a person chose, and it may be on
-    // a drive that is away.
-    if (
-      !place.own &&
-      !fsCall(() => statSync(backupDir, { throwIfNoEntry: false }))?.isDirectory()
-    ) {
+    // Never made here: it may be on a drive that is away, and a backup there is lost.
+    if (!fsCall(() => statSync(backupDir, { throwIfNoEntry: false }))?.isDirectory()) {
       throw new BackupsFolderAway();
     }
     // Before anything is written: the free disk space, less the policy's reserve, holds the
     // backup's peak (backupPeak).
     checkFreeSpace(
       backupPeak(databaseBytes(source)),
-      (seams.freeBytes ?? freeBytes)(existingFolder(backupDir)),
+      (seams.freeBytes ?? freeBytes)(backupDir),
       policy,
     );
-    if (place.own) makeDurableFolder(backupDir, io);
     // The driver writes only a new file (A1 3.18): it creates the copy exclusively and
     // owner-only under this backup's random temporary name, so the copy is owner-only from its
     // first byte and no other file, a live space's least of all, can be written by mistake.

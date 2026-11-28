@@ -298,7 +298,7 @@ const LAST_OPEN =
   "FROM launches WHERE machine_id = $machine AND route <> 'clipboard' AND state <> 'failed' " +
   "ORDER BY created_at DESC, id DESC LIMIT 1";
 const LAST_SQL =
-  `SELECT (SELECT instance_id ${LAST_OPEN}) AS open, (SELECT route ${LAST_OPEN}) AS open_route, ` +
+  `SELECT (SELECT instance_id ${LAST_OPEN}) AS open, ` +
   "(SELECT instance_id FROM runs WHERE machine_id = $machine ORDER BY queued_at DESC, id DESC " +
   "LIMIT 1) AS run";
 
@@ -474,10 +474,9 @@ export class UiLaunches {
     const { reader } = this.#space(spaceRef, copy);
     if (reader === undefined) return {};
     const [row] = await reader.all(LAST_SQL, { machine: this.#options.host.machine.id });
-    const { open, open_route: route, run } = row ?? {};
+    const { open, run } = row ?? {};
     return {
       ...(typeof open === "string" ? { open } : {}),
-      ...(typeof route === "string" ? { open_route: route } : {}),
       ...(typeof run === "string" ? { run } : {}),
     };
   }

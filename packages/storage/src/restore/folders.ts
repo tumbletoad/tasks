@@ -9,8 +9,6 @@
 //
 // 1. Rename `<slug>` to `<slug>.replaced-<T>`, then sync the parent folder.
 // 2. Rename `.<slug>.restoring-<T>` to `<slug>`, then sync the parent folder.
-// 3. Move the replaced folder's `backups/` into the new folder, when the new one has none, so the
-//    space's backups stay listed with it (one rename, best effort).
 //
 // A crash leaves one of these states, and each is either the old space, the new one, or clearly
 // incomplete and recoverable:
@@ -18,8 +16,6 @@
 // - Between 1 and 2: no `<slug>`, so the space is not found (SPACE_NOT_FOUND), never a wrong one.
 //   `<slug>.replaced-<T>` and a complete `.<slug>.restoring-<T>` with the same T are both there.
 //   finishInterruptedRestore completes the swap.
-// - Between 2 and 3: the new space is in place. Its backups are still in the replaced folder, and
-//   finishInterruptedRestore moves them.
 // The new folder is complete, claimed and verified before step 1, so no crash exposes a half-built
 // or unclaimed space under the space's name. M1.08 runs finishInterruptedRestore before it opens a
 // space, and M1.10's leftover cleanup lists the other names.
@@ -42,7 +38,7 @@ import {
   removeQuietly,
 } from "../files.ts";
 import { DATABASE_FILE, MANIFEST_FILE } from "../manifest.ts";
-import { parseUtcStamp, utcStamp, BACKUPS_FOLDER } from "../backup/sidecar.ts";
+import { parseUtcStamp, utcStamp } from "../backup/sidecar.ts";
 import { checkSpacePath } from "../space-path.ts";
 
 /** The names of a swap at the moment `stamp`. */
@@ -136,13 +132,11 @@ const isDirectory = (path: string): boolean =>
   fsCall(() => statSync(path, { throwIfNoEntry: false })?.isDirectory() === true);
 
 /** The points M1.07's crash harness kills at. */
-export type SwapPoint = "moved-aside" | "moved-into-place" | "backups-carried";
+export type SwapPoint = "moved-aside" | "moved-into-place";
 
 export interface SwapResult {
   /** The live folder's new name. */
   replaced: string;
-  /** Whether the replaced folder's backups now sit in the new folder. */
-  backupsCarried: boolean;
 }
 
 /**
@@ -197,28 +191,7 @@ export function swapIntoPlace(
   }
   fsyncFolder(names.parent);
   at?.("moved-into-place");
-  const backupsCarried = carryBackups(names.replaced, names.live);
-  at?.("backups-carried");
-  return { replaced: names.replaced, backupsCarried };
-}
-
-/**
- * Moves `<from>/backups` to `<to>/backups` when `to` has none: one rename, so the backups are in
- * one folder or the other, never split. Best effort: on failure they stay where they were, still
- * restorable by path. Returns whether they moved.
- */
-export function carryBackups(from: string, to: string): boolean {
-  const source = join(from, BACKUPS_FOLDER);
-  const target = join(to, BACKUPS_FOLDER);
-  try {
-    if (!isDirectory(source) || existsSync(target)) return false;
-    renameSync(source, target);
-    fsyncFolder(to);
-    fsyncFolder(from);
-    return true;
-  } catch {
-    return false;
-  }
+  return { replaced: names.replaced };
 }
 
 export interface ResumeReport {
@@ -226,8 +199,6 @@ export interface ResumeReport {
   completed: string | undefined;
   /** The stamp of a rejected swap this call undid (the live folder moved back), if any. */
   undone?: string;
-  /** The stamps whose backups this call moved into the space. */
-  backupsCarried: string[];
 }
 
 const REPLACED = /^(.+)\.replaced-(\d{8}T\d{6}\.\d{3}Z)$/;
@@ -235,14 +206,13 @@ const REPLACED = /^(.+)\.replaced-(\d{8}T\d{6}\.\d{3}Z)$/;
 /**
  * Completes a restore in place or a recovery that a crash interrupted (see above), for the space
  * at `folder`: a missing space folder whose complete new folder and replaced folder are both
- * there is moved into place, and backups left in a replaced folder join the space. Anything else
- * is left alone. Run it before the space opens, while nothing else works on it.
+ * there is moved into place. Anything else is left alone. Run it before the space opens, while nothing else works on it.
  */
 export function finishInterruptedRestore(folder: string): ResumeReport {
   const live = checkSpacePath(folder);
   const parent = dirname(live);
   const slug = basename(live);
-  const report: ResumeReport = { completed: undefined, backupsCarried: [] };
+  const report: ResumeReport = { completed: undefined };
   let entries: string[];
   try {
     entries = readdirSync(parent);
@@ -282,7 +252,6 @@ export function finishInterruptedRestore(folder: string): ResumeReport {
       fsyncFolder(parent);
       report.completed = stamp;
     }
-    if (isDirectory(live) && carryBackups(replaced, live)) report.backupsCarried.push(stamp);
   }
   return report;
 }

@@ -11,7 +11,7 @@ import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { filterOf } from "@ttasks/contracts/query-terms";
 import type { Group } from "../list/items.ts";
 import type { MessageId } from "../i18n/intl.tsx";
-import { landedOf, type AreaRow, type ProjectRow, type TaskRow } from "@ttasks/client/store";
+import { landedOf, nodeNamed, type Nodes, type TaskRow } from "@ttasks/client/store";
 import type { Page, PageSource } from "../store/queries.ts";
 import type { HeldRow } from "./TaskList.tsx";
 
@@ -43,15 +43,10 @@ export type FoundRow = TaskRow & { readonly found: Found; readonly foundEffort?:
 export function rowOfFound(
   row: SearchRow,
   found: Found,
-  areas: ReadonlyMap<string, AreaRow>,
-  projects: ReadonlyMap<string, ProjectRow>,
+  nodes: Nodes,
   read: number,
 ): FoundRow | undefined {
   if (row.kind !== "task") return undefined;
-  const area = [...areas.values()].find((a) => a.title === row.area);
-  const project = [...projects.values()].find(
-    (p) => p.title === row.project && (area === undefined || p.area_id === area.id),
-  );
   const due = row.due;
   // Without words the snippet is the summary.
   const summary = row.snippet_from === undefined ? row.snippet : undefined;
@@ -71,8 +66,7 @@ export function rowOfFound(
     ...(row.effort === undefined ? {} : { effort: row.effort }),
     ...(typeof due === "string" ? { due_date: due } : {}),
     ...(typeof due === "object" ? { due_at: Date.parse(due.at), due_tz: due.tz } : {}),
-    ...(area === undefined ? {} : { area_id: area.id }),
-    ...(project === undefined ? {} : { project_id: project.id }),
+    parent: nodeNamed(nodes, row.area, row.project),
     position: "",
     ...(row.completed === undefined ? {} : { completed_on: row.completed }),
     created_at: 0,

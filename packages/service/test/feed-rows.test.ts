@@ -219,7 +219,6 @@ describe("[M6.page.run-feed] a run's change carries its task's row, which shows 
     };
     const input = {
       task,
-      routine: null,
       machine,
       instance: "codex-work",
       adapter: "codex" as const,
@@ -328,20 +327,19 @@ describe("[M6.page.last-agents] a task's row names the agents it was last opened
 
     let from = (await readHead(reader)).cursor.seq;
     await open("claude-work");
-    expect(await lastOf(from)).toEqual({ open: "claude-work", open_route: "terminal" });
+    expect(await lastOf(from)).toEqual({ open: "claude-work" });
 
     // T3 Code refused the Open: the work account stays the task's.
     const t3 = await open("t3-personal", "t3-mcp");
     from = (await readHead(reader)).cursor.seq;
     await store.transitionIntent(t3.id, "prepared", "failed", { reason: "pairing_denied" });
-    expect(await lastOf(from)).toEqual({ open: "claude-work", open_route: "terminal" });
+    expect(await lastOf(from)).toEqual({ open: "claude-work" });
 
     from = (await readHead(reader)).cursor.seq;
     await open("claude-work", "clipboard");
     await store.createRun(
       {
         task,
-        routine: null,
         machine,
         instance: "codex-personal",
         adapter: "codex",
@@ -355,21 +353,11 @@ describe("[M6.page.last-agents] a task's row names the agents it was last opened
     );
     expect(await lastOf(from)).toEqual({
       open: "claude-work",
-      open_route: "terminal",
       run: "codex-personal",
     });
     const snapshot = await readSnapshot(reader, here);
     expect(snapshot.tasks.find((r) => r["id"] === task)?.["last"]).toEqual({
       open: "claude-work",
-      open_route: "terminal",
-      run: "codex-personal",
-    });
-    // An Open in T3 Code names its route: a T3 key machine.toml no longer has still says T3 Code.
-    from = (await readHead(reader)).cursor.seq;
-    await open("t3-personal", "t3-mcp");
-    expect(await lastOf(from)).toEqual({
-      open: "t3-personal",
-      open_route: "t3-mcp",
       run: "codex-personal",
     });
   });

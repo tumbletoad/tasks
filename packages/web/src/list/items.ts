@@ -1,7 +1,7 @@
 // A grouped list as one sequence of items (A5 3.25: "Group headings are virtual items too"): each
 // group's heading, each project's label, then its rows, in order. Pure, so the order, the set sizes
 // and the positions are unit tests, and the list (List.tsx) only lays out what this gives it.
-import type { AreaRow, ProjectRow, TaskRow } from "@ttasks/client/store";
+import { trail, type Nodes, type NodeRow, type TaskRow } from "@ttasks/client/store";
 import type { Group as KeyedGroup } from "@ttasks/client/today";
 import type { MessageId } from "../i18n/intl.tsx";
 
@@ -34,9 +34,9 @@ export interface RowItem {
   /** The row's place in its list (its project's, or its group's), 1-based, and that list's size. */
   readonly posinset: number;
   readonly setsize: number;
-  readonly area: AreaRow | undefined;
+  readonly area: NodeRow | undefined;
   readonly slot: number | undefined;
-  readonly project: ProjectRow | undefined;
+  readonly project: NodeRow | undefined;
   /** Drawn as Completed draws its rows (`Group.finished`). */
   readonly finished: boolean;
 }
@@ -52,13 +52,12 @@ export interface Items {
 }
 
 /**
- * The items of the groups. `areas` and `projects` give each row its area and project rows by
- * identity, so an unchanged row gets the same objects every time; `slots` each area's colour slot.
+ * The items of the groups. `nodes` give each row its area and project rows by identity, so an
+ * unchanged row gets the same objects every time; `slots` each area's colour slot.
  */
 export function itemsOf(
   groups: readonly Group[],
-  areas: ReadonlyMap<string, AreaRow>,
-  projects: ReadonlyMap<string, ProjectRow>,
+  nodes: Nodes,
   slots: ReadonlyMap<string, number>,
 ): Items {
   const items: Item[] = [];
@@ -74,6 +73,7 @@ export function itemsOf(
         items.push({ kind: "section", key: sectionKey, group: group.key, title: section.title });
       }
       section.tasks.forEach((task, i) => {
+        const [area, project] = trail(nodes, task.parent);
         items.push({
           kind: "row",
           key: task.id,
@@ -83,9 +83,9 @@ export function itemsOf(
           sectionKey: section.key,
           posinset: i + 1,
           setsize: section.tasks.length,
-          area: task.area_id === undefined ? undefined : areas.get(task.area_id),
-          slot: task.area_id === undefined ? undefined : slots.get(task.area_id),
-          project: task.project_id === undefined ? undefined : projects.get(task.project_id),
+          area,
+          slot: area === undefined ? undefined : slots.get(area.id),
+          project,
           finished: group.finished === true,
         });
         rows += 1;

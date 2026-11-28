@@ -12,6 +12,7 @@ import { Session } from "../context.ts";
 import { useEdits } from "../edit/useEdits.ts";
 import { refusalText } from "../folder/FolderDialog.tsx";
 import { useT } from "../i18n/intl.tsx";
+import { filedAs, trail } from "@ttasks/client/store";
 import { useLive } from "../store/hooks.ts";
 import css from "./Library.module.css";
 import type { LibraryNode } from "./lists.ts";
@@ -24,13 +25,12 @@ export function BuildLibrary({ node }: { readonly node: Exclude<LibraryNode, { k
   const router = useRouter({ warn: false }) as ReturnType<typeof useRouter> | null;
   const { api, live } = useContext(Session);
   const edits = useEdits();
-  const { areas, projects } = useLive();
+  const { nodes } = useLive();
   const [sending, setSending] = useState(false);
   /** The task made for it whose note for agents did not land yet. */
   const [made, setMade] = useState<string | undefined>(undefined);
-  const project = node.kind === "project" ? projects.get(node.id) : undefined;
-  const areaId = node.kind === "area" ? node.id : project?.area_id;
-  const area = areaId === undefined ? undefined : areas.get(areaId);
+  const [area, project] = trail(nodes, node.id);
+  const filed = area === undefined ? {} : filedAs(area, project);
   const kind = node.kind;
   const add = async (): Promise<string | undefined> => {
     const title = t("library.buildTitle", { kind });
@@ -40,8 +40,8 @@ export function BuildLibrary({ node }: { readonly node: Exclude<LibraryNode, { k
           tasks: [
             {
               title,
-              ...(area === undefined ? {} : { area: area.title }),
-              ...(project === undefined ? {} : { project: project.title }),
+              ...(filed.area === undefined ? {} : { area: filed.area.title }),
+              ...(filed.project === undefined ? {} : { project: filed.project.title }),
             },
           ],
           request_id,
@@ -79,16 +79,10 @@ export function BuildLibrary({ node }: { readonly node: Exclude<LibraryNode, { k
         params: { space, area: node.id },
         search,
       });
-    } else if (areaId === undefined) {
-      await router?.navigate({
-        to: "/s/$space/project/$project",
-        params: { space, project: node.id },
-        search,
-      });
     } else {
       await router?.navigate({
         to: "/s/$space/area/$area/project/$project",
-        params: { space, area: areaId, project: node.id },
+        params: { space, area: area?.id ?? "", project: node.id },
         search,
       });
     }

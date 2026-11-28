@@ -71,9 +71,8 @@ export function Knowledge({ task }: { readonly task: TaskRow }) {
   useFocusReturn(root);
   const from = t("library.task", { ref: task.ref, title: task.title });
   const { own, above } = useMemo(
-    () =>
-      taskLists(task, state.pages.values(), state.space?.name ?? "", state.areas, state.projects),
-    [task, state.pages, state.space?.name, state.areas, state.projects],
+    () => taskLists(task, state.pages.values(), state.space?.name ?? "", state.nodes),
+    [task, state.pages, state.space?.name, state.nodes],
   );
   const count = above.reduce((n, level) => n + level.pages.length, 0);
   // A new page goes on an open task that is not in the Trash, as any change to it.

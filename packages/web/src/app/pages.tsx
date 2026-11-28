@@ -13,18 +13,17 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "r
 import { Session } from "../context.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
-import type { TaskRow } from "@ttasks/client/store";
+import { projectWithoutArea, topLevel, trail, type TaskRow } from "@ttasks/client/store";
 import type { TaskFacts } from "../task/detail.ts";
 import { ArchivedLine } from "./Archived.tsx";
 import { useTitle, useToast } from "./frame.ts";
 import { hostOf, type Host } from "./host.ts";
 import css from "./pages.module.css";
 import {
-  areaFilter,
   groupCounts,
   isCounted,
-  projectFilter,
   LANDING,
+  underFilter,
   VIEW_LABEL,
   VIEW_LIST,
   viewFilter,
@@ -112,8 +111,8 @@ function useTaskCount(group: string): number | undefined {
   const state = useLive();
   const known = state.space !== undefined;
   return useMemo(
-    () => (known ? (groupCounts(state.tasks.values()).get(group) ?? 0) : undefined),
-    [known, state.tasks, group],
+    () => (known ? (groupCounts(state.tasks.values(), state.nodes).get(group) ?? 0) : undefined),
+    [known, state.tasks, state.nodes, group],
   );
 }
 
@@ -130,12 +129,29 @@ export function AreaPage({
   const t = useT();
   const state = useLive();
   const onExpand = useExpandInUrl();
-  const row = state.areas.get(area);
+  const [row, below] = trail(state.nodes, area);
   const node = useMemo(() => ({ kind: "area", id: area }) as const, [area]);
   const count = useTaskCount(area);
   useTitle(row?.title ?? "");
-  const filter = useMemo(() => areaFilter(area), [area]);
-  if (row === undefined) return <p className={styles.line}>{t("view.noArea")}</p>;
+  const filter = useMemo(() => underFilter(state.nodes, area), [state.nodes, area]);
+  const space = state.space?.id;
+  if (row === undefined || space === undefined) {
+    return <p className={styles.line}>{t("view.noArea")}</p>;
+  }
+  // A project made without an area, moved into one since: its page is the project's now.
+  if (below !== undefined) {
+    const params = { space, area: row.id, project: below.id };
+    return tab === "library" ? (
+      <Navigate to="/s/$space/area/$area/project/$project/library" params={params} replace />
+    ) : (
+      <Navigate
+        to="/s/$space/area/$area/project/$project"
+        params={params}
+        search={task === undefined ? {} : { task }}
+        replace
+      />
+    );
+  }
   // An archived area's view begins with the way back.
   return (
     <>
@@ -144,16 +160,20 @@ export function AreaPage({
       {tab === "library" ? (
         <NodeLibrary key={area} node={node} />
       ) : (
-        <TaskList
-          key={area}
-          view="area"
-          grouping="project"
-          group={areaGroups}
-          filter={filter}
-          empty={t("view.empty")}
-          expand={task}
-          onExpand={onExpand}
-        />
+        <>
+          {/* A project made without an area keeps its folder on this machine. */}
+          {projectWithoutArea(area) ? <ProjectFolder key={area} project={area} /> : null}
+          <TaskList
+            key={`list/${area}`}
+            view="area"
+            grouping="project"
+            group={areaGroups}
+            filter={filter}
+            empty={t("view.empty")}
+            expand={task}
+            onExpand={onExpand}
+          />
+        </>
       )}
     </>
   );
@@ -161,8 +181,9 @@ export function AreaPage({
 
 /**
  * A project's page, by its ID alone: its tasks, its archived line and its folder are the project's
- * as it is now. Its address names its area when it has one; an address whose area part no longer
- * fits (the project moved, or the move was undone) is replaced by the present one.
+ * as it is now. Its address names its area; an address whose area part no longer fits (the project
+ * moved, or the move was undone) is replaced by the present one, and a project at the top opens as
+ * an area.
  */
 export function ProjectPage({
   space,
@@ -181,19 +202,29 @@ export function ProjectPage({
   const t = useT();
   const state = useLive();
   const onExpand = useExpandInUrl();
-  const row = state.projects.get(project);
+  const [top, row] = trail(state.nodes, project);
   const node = useMemo(() => ({ kind: "project", id: project }) as const, [project]);
   const count = useTaskCount(project);
   useTitle(row?.title ?? "");
-  const filter = useMemo(() => projectFilter(project), [project]);
-  if (row === undefined) return <p className={styles.line}>{t("view.noProject")}</p>;
-  const area = row.area_id;
+  const filter = useMemo(() => underFilter(state.nodes, project), [state.nodes, project]);
+  if (top === undefined) return <p className={styles.line}>{t("view.noProject")}</p>;
+  const search = task === undefined ? {} : { task };
+  if (row === undefined) {
+    return tab === "library" ? (
+      <Navigate to="/s/$space/area/$area/library" params={{ space, area: top.id }} replace />
+    ) : (
+      <Navigate
+        to="/s/$space/area/$area"
+        params={{ space, area: top.id }}
+        search={search}
+        replace
+      />
+    );
+  }
+  const area = top.id;
   if (area !== addressed) {
-    const search = task === undefined ? {} : { task };
     if (tab === "library") {
-      return area === undefined ? (
-        <Navigate to="/s/$space/project/$project/library" params={{ space, project }} replace />
-      ) : (
+      return (
         <Navigate
           to="/s/$space/area/$area/project/$project/library"
           params={{ space, area, project }}
@@ -201,14 +232,7 @@ export function ProjectPage({
         />
       );
     }
-    return area === undefined ? (
-      <Navigate
-        to="/s/$space/project/$project"
-        params={{ space, project }}
-        search={search}
-        replace
-      />
-    ) : (
+    return (
       <Navigate
         to="/s/$space/area/$area/project/$project"
         params={{ space, area, project }}
@@ -297,7 +321,7 @@ export function TaskPage({ task }: { readonly task: string }) {
   const known = read?.task === task ? read : undefined;
   const resolved: Host | { readonly kind: "error" } | undefined =
     row !== undefined
-      ? hostOf(row)
+      ? hostOf({ ...row, area: trail(state.nodes, row.parent)[0]?.id })
       : known === undefined
         ? undefined
         : "failed" in known
@@ -308,7 +332,7 @@ export function TaskPage({ task }: { readonly task: string }) {
               lifecycle: known.facts.lifecycle,
               inbox: known.facts.inbox,
               status: known.facts.status,
-              area_id: [...state.areas.values()].find((a) => a.title === known.facts.area)?.id,
+              area: topLevel(state.nodes).find((a) => a.title === known.facts.area)?.id,
               deleted: known.facts.deleted !== undefined,
             });
   const space = state.space?.id;

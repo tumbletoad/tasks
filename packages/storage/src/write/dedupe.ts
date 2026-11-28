@@ -32,7 +32,7 @@
 // The start-state read follows `task_sources` from each source, and `task_sources` has no index on
 // `source_id` in schema 0.2, so it scans the links once per request that names a key that exists.
 // It reads deleted tasks' links too, so a task the request restores holds its keys again.
-import type { Connection } from "../driver.ts";
+import type { Connection, Row } from "../driver.ts";
 import { misuse } from "../errors.ts";
 import type { Id } from "../ids.ts";
 import { readSpacePreference } from "../preferences.ts";
@@ -109,6 +109,33 @@ function lifecycleSeq(r: RowReader): number {
   const seq = held === undefined ? r.int("created_seq", "seq") : held;
   if (!inRange(seq, "seq")) throw invalidValue("tasks", "fp");
   return seq;
+}
+
+/** The instant of a commit. */
+function commitAt(conn: Connection, seq: number): number {
+  const commit = conn.prepare(SQL.commitAt).get({ seq });
+  if (commit === undefined) throw invalidValue("tasks", "fv");
+  return new RowReader("commits", commit).int("at", "instant");
+}
+
+/**
+ * When a finished task finished, for the window, read from its row as both writers keep it (its
+ * `fp` and `created_seq`): the instant of the commit whose write its lifecycle holds, and that
+ * commit. A completion dated earlier, or an archive, counts from when this space recorded it.
+ */
+export function finishedOf(conn: Connection, row: Row): { at: number; seq: number } {
+  const seq = lifecycleSeq(new RowReader("tasks", row));
+  return { at: commitAt(conn, seq), seq };
+}
+
+/**
+ * `tasks.dedupe_window_days` in milliseconds, as the registry reads it: its default when unset,
+ * reset or not a whole number of days from 0 to 3,650 (A1 3.16).
+ */
+export function dedupeWindowMs(conn: Connection): number {
+  const days = readSpacePreference(conn, "tasks.dedupe_window_days").value;
+  if (typeof days !== "number") throw misuse("The dedupe window reads as a number of days");
+  return days * DAY_MS;
 }
 
 /**
@@ -399,10 +426,7 @@ export class Dedupe {
     const r = new RowReader("tasks", row);
     const lifecycle = r.oneOf("lifecycle", ["active", "completed", "archived"]);
     let finished: Holder["finished"] = null;
-    if (lifecycle !== "active") {
-      const seq = lifecycleSeq(r);
-      finished = { at: this.#commitAt(seq), seq };
-    }
+    if (lifecycle !== "active") finished = finishedOf(this.#conn, row);
     const holder: Holder = {
       lifecycle,
       finished,
@@ -414,22 +438,8 @@ export class Dedupe {
     return holder;
   }
 
-  /** The instant of a commit. */
-  #commitAt(seq: number): number {
-    const commit = this.#conn.prepare(SQL.commitAt).get({ seq });
-    if (commit === undefined) throw invalidValue("tasks", "fv");
-    return new RowReader("commits", commit).int("at", "instant");
-  }
-
-  /**
-   * `tasks.dedupe_window_days` in milliseconds, as the registry reads it: its default when unset,
-   * reset or not a whole number of days from 0 to 3,650 (A1 3.16).
-   */
   #window(): number {
-    if (this.#windowMs !== undefined) return this.#windowMs;
-    const days = readSpacePreference(this.#conn, "tasks.dedupe_window_days").value;
-    if (typeof days !== "number") throw misuse("The dedupe window reads as a number of days");
-    this.#windowMs = days * DAY_MS;
+    this.#windowMs ??= dedupeWindowMs(this.#conn);
     return this.#windowMs;
   }
 }

@@ -1,6 +1,5 @@
-// The feed sends the space as a tree beside its areas and projects: the space, each area as a
-// top-level project and each project under its area or the space, with the IDs they have, and a
-// `parent` on every task row. A real service in this process, a real ttasks-local/1 session and
+// The feed sends the space as a tree: the space, each area as a top-level project and each project
+// under its area or the space, with the IDs they have, and a `parent` on every task row. A real service in this process, a real ttasks-local/1 session and
 // fixture text.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -70,7 +69,7 @@ describe("[A5.tree.http.feed] the feed sends the space as a tree: areas as top-l
       folder: join(work, "garden"),
       request_id: rid(),
     });
-    await call("task.add", {
+    const added = (await call("task.add", {
       tasks: [
         { title: "Fixture fix the login", area: "Client work", project: "Portal" },
         { title: "Fixture send the invoice", area: "Client work" },
@@ -78,13 +77,26 @@ describe("[A5.tree.http.feed] the feed sends the space as a tree: areas as top-l
         { title: "Fixture a loose thought", inbox: true },
       ],
       request_id: rid(),
-    });
+    })) as { tasks: { ref: string }[] };
+    const page = (on: string, title: string) =>
+      call("page.write", {
+        action: "create",
+        on,
+        title,
+        brief: "Fixture brief",
+        body: "Fixture body.",
+        why: "fixture",
+        request_id: rid(),
+      });
+    await page(added.tasks[0]?.ref ?? "", "Fixture login notes");
+    await page("Client work", "Fixture client rules");
+    await page("space", "Fixture glossary");
 
     const snapshot = await readSnapshot(reader);
     const space = snapshot.space.id;
-    const area = idOf(snapshot.areas, "Client work");
-    const portal = idOf(snapshot.projects, "Portal");
-    const garden = idOf(snapshot.projects, "Garden");
+    const area = idOf(snapshot.nodes, "Client work");
+    const portal = idOf(snapshot.nodes, "Portal");
+    const garden = idOf(snapshot.nodes, "Garden");
     for (const node of snapshot.nodes) expect(CompactNode.parse(node)).toEqual(node);
     expect(snapshot.nodes[0]).toEqual({ id: space, kind: "space", title: "Mira", state: "active" });
     expect(titled(snapshot.nodes, "Client work")).toMatchObject({
@@ -106,6 +118,12 @@ describe("[A5.tree.http.feed] the feed sends the space as a tree: areas as top-l
     expect(titled(snapshot.tasks, "Fixture send the invoice")).toMatchObject({ parent: area });
     expect(titled(snapshot.tasks, "Fixture water the beans")).toMatchObject({ parent: garden });
     expect(titled(snapshot.tasks, "Fixture a loose thought")).toMatchObject({ parent: space });
+
+    // A page lies under the node that holds it, or its task's.
+    const pages = snapshot.pages ?? [];
+    expect(titled(pages, "Fixture login notes")).toMatchObject({ under: portal });
+    expect(titled(pages, "Fixture client rules")).toMatchObject({ owner_id: area, under: area });
+    expect(titled(pages, "Fixture glossary")).toMatchObject({ owner_id: space, under: space });
 
     // The same IDs in the next snapshot: a node is the area or project it was made from.
     expect((await readSnapshot(reader)).nodes).toEqual(snapshot.nodes);
@@ -137,7 +155,7 @@ describe("[A5.tree.http.feed] the feed sends the space as a tree: areas as top-l
 
     const { batch } = await readBatch(reader, start);
     const snapshot = await readSnapshot(reader);
-    const internal = idOf(snapshot.areas, "Internal");
+    const internal = idOf(snapshot.nodes, "Internal");
     const nodes = batch.events.map((e) => e.entities.filter((x) => x.type === "node"));
     expect(nodes.map((list) => list.length)).toEqual([1, 1, 1]);
     const [created, moved, archived] = nodes.map((list) => list[0]);
@@ -147,19 +165,19 @@ describe("[A5.tree.http.feed] the feed sends the space as a tree: areas as top-l
       row: { kind: "project", parent: snapshot.space.id, title: "Internal" },
     });
     expect(moved).toMatchObject({
-      id: idOf(snapshot.projects, "Portal"),
+      id: idOf(snapshot.nodes, "Portal"),
       changed: ["place"],
       row: { parent: internal },
     });
     expect(archived).toMatchObject({
-      id: idOf(snapshot.areas, "Client work"),
+      id: idOf(snapshot.nodes, "Client work"),
       changed: ["state"],
       row: { state: "archived" },
     });
     // Each batch row is the snapshot's row of the same node.
     expect(moved?.row).toEqual(titled(snapshot.nodes, "Portal"));
     expect(titled(snapshot.tasks, "Fixture fix the login")).toMatchObject({
-      parent: idOf(snapshot.projects, "Portal"),
+      parent: idOf(snapshot.nodes, "Portal"),
     });
 
     const phone = phoneBatch(batch, (label) => label) as {

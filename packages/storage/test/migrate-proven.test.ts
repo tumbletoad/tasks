@@ -8,7 +8,7 @@ import { migrateSpaceWith, type MigrationOutcome } from "../src/migrate/runner.t
 import { openWriter } from "../src/open.ts";
 import { openSpace } from "../src/space.ts";
 import type { CheckedDriver } from "../src/startup-check.ts";
-import { readFacts, writeCommits } from "./backup-helpers.ts";
+import { backupsBeside, readFacts, writeCommits } from "./backup-helpers.ts";
 import { STEPS_0_1 } from "./revisions.ts";
 import { checkedDriver, createFixtureSpace, tempFolders } from "./space-helpers.ts";
 
@@ -52,12 +52,12 @@ describe("[A1.5.migration.proven-barrier] an upgrade starts only behind a backup
     const checked = await checkedDriver();
     const folder = await spaceAt01();
     const before = await readFacts(folder);
-    const backups = join(folder, "backups");
+    const backups = backupsBeside(folder);
     const outcome = failed(
       await migrateSpaceWith(
         checked,
         folder,
-        {},
+        { backupDir: backupsBeside(folder) },
         {
           backup: {
             at: (point) => {
@@ -93,7 +93,14 @@ describe("[A1.5.migration.proven-barrier] an upgrade starts only behind a backup
     let calls = 0;
     // The backup's own check passes; the trial restore's, which comes after it, finds no room.
     const freeBytes = (): number => (++calls === 1 ? 64 * 1024 ** 3 : 0);
-    const outcome = failed(await migrateSpaceWith(checked, folder, {}, { backup: { freeBytes } }));
+    const outcome = failed(
+      await migrateSpaceWith(
+        checked,
+        folder,
+        { backupDir: backupsBeside(folder) },
+        { backup: { freeBytes } },
+      ),
+    );
     expect(calls).toBe(2);
     expect(outcome.stage).toBe("backup");
     expect(outcome.error.code).toBe("BUNDLE_LIMIT_EXCEEDED");

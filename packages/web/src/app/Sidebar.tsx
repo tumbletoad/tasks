@@ -10,8 +10,9 @@
 // button does. Areas and projects count the open tasks their view lists, quietly, and a folded area
 // keeps its count. A name the sidebar cuts shows whole in a tip. New project sits in the foot beside
 // Settings, and on each area while the pointer or focus is on it, in place of the area's count so
-// nothing beside it moves; on a touch screen always, after the count. A project without an area is
-// listed after the areas. An archived area or project leaves the areas for Archived, folded until
+// nothing beside it moves; on a touch screen always, after the count. A project made without an
+// area is an area of its own, after the others, and holds no project. An archived area or project
+// leaves the areas for Archived, folded until
 // the person opens it, where it keeps its count, so open work in it is never out of sight, and its
 // page has the way back.
 import { Link, useParams } from "@tanstack/react-router";
@@ -28,6 +29,7 @@ import {
   VIEW_LABEL,
   viewCounts,
 } from "@ttasks/client/today";
+import { projectWithoutArea } from "@ttasks/client/store";
 import { useT } from "../i18n/intl.tsx";
 import { ChevronIcon, PlusIcon, SettingsIcon, ViewIcon } from "./Icons.tsx";
 import { useLive } from "../store/hooks.ts";
@@ -88,8 +90,7 @@ function ProjectLink({
   counts,
 }: {
   readonly space: string;
-  /** None for a project without an area. */
-  readonly area: string | undefined;
+  readonly area: string;
   readonly project: { readonly id: string; readonly title: string };
   /** The name shown, when it is not the project's alone. */
   readonly label?: string;
@@ -100,12 +101,8 @@ function ProjectLink({
   const name = label ?? project.title;
   return (
     <Link
-      {...(area === undefined
-        ? { to: "/s/$space/project/$project", params: { space, project: project.id } }
-        : {
-            to: "/s/$space/area/$area/project/$project",
-            params: { space, area, project: project.id },
-          })}
+      to="/s/$space/area/$area/project/$project"
+      params={{ space, area, project: project.id }}
       className={styles.item}
       activeProps={{ "aria-current": "page" }}
       activeOptions={IGNORE_TASK}
@@ -183,11 +180,8 @@ function AreaLink({
   );
 }
 
-/**
- * A project listed on its own, beside the areas: one without an area (no colour), or under Archived
- * an archived one of a live area, named with its area and in its colour.
- */
-function LooseProject({
+/** Under Archived, an archived project of a live area on its own: named with its area, in its colour. */
+function ShelvedProject({
   space,
   area,
   slot,
@@ -195,24 +189,22 @@ function LooseProject({
   counts,
 }: {
   readonly space: string;
-  readonly area?: { readonly id: string; readonly title: string } | undefined;
-  readonly slot?: number | undefined;
+  readonly area: { readonly id: string; readonly title: string };
+  readonly slot: number;
   readonly project: { readonly id: string; readonly title: string };
   readonly counts: ReadonlyMap<string, number> | undefined;
 }) {
   const t = useT();
   return (
-    <div className={slot === undefined ? styles.area : `${styles.area} slot-${String(slot)}`}>
+    <div className={`${styles.area} slot-${String(slot)}`}>
       <span className={styles.fold} aria-hidden="true">
-        {area === undefined ? null : <span className={styles.dot} />}
+        <span className={styles.dot} />
       </span>
       <ProjectLink
         space={space}
-        area={area?.id}
+        area={area.id}
         project={project}
-        {...(area === undefined
-          ? {}
-          : { label: t("fact.areaProject", { area: area.title, project: project.title }) })}
+        label={t("fact.areaProject", { area: area.title, project: project.title })}
         counts={counts}
       />
     </div>
@@ -220,9 +212,8 @@ function LooseProject({
 }
 
 /**
- * Archived: the archived areas with their projects, the archived projects of live areas, and the
- * archived projects without an area, each with its count and a link to its page. Nothing here takes
- * new work.
+ * Archived: the archived areas with their projects and the archived projects of live areas, each
+ * with its count and a link to its page. Nothing here takes new work.
  */
 function Shelf({
   id,
@@ -282,7 +273,7 @@ function Shelf({
               </li>
             ) : (
               <li key={group.project.id}>
-                <LooseProject
+                <ShelvedProject
                   space={space}
                   area={group.area}
                   slot={group.slot}
@@ -321,13 +312,10 @@ export function Sidebar({
     [known, state.tasks],
   );
   const counts = useMemo(
-    () => (known ? groupCounts(state.tasks.values()) : undefined),
-    [known, state.tasks],
+    () => (known ? groupCounts(state.tasks.values(), state.nodes) : undefined),
+    [known, state.tasks, state.nodes],
   );
-  const groups = useMemo(
-    () => sidebarAreas(state.areas.values(), state.projects.values()),
-    [state.areas, state.projects],
-  );
+  const groups = useMemo(() => sidebarAreas(state.nodes), [state.nodes]);
   const { folded, toggle } = useFolds(space);
   // The side menu and the drawer can both be in the page: each names its own lists.
   const menu = useId();
@@ -380,7 +368,7 @@ export function Sidebar({
           );
         })}
       </ul>
-      {groups.live.length + groups.loose.length === 0 ? null : (
+      {groups.live.length === 0 ? null : (
         <ul className={styles.list} data-group="areas">
           {groups.live.map(({ area, slot, projects: own }) => {
             const isFolded = folded.has(area.id);
@@ -416,16 +404,18 @@ export function Sidebar({
                     n={n}
                     within={isFolded && shownArea === area.id && shownProject !== undefined}
                   />
-                  <Button
-                    className={styles.add}
-                    aria-label={t("project.newIn", { area: area.title })}
-                    data-tip={t("project.newIn", { area: area.title })}
-                    onPress={() => {
-                      setAdding({ area: area.id });
-                    }}
-                  >
-                    <PlusIcon />
-                  </Button>
+                  {projectWithoutArea(area.id) ? null : (
+                    <Button
+                      className={styles.add}
+                      aria-label={t("project.newIn", { area: area.title })}
+                      data-tip={t("project.newIn", { area: area.title })}
+                      onPress={() => {
+                        setAdding({ area: area.id });
+                      }}
+                    >
+                      <PlusIcon />
+                    </Button>
+                  )}
                 </div>
                 {isFolded ? null : (
                   <Projects id={list} space={space} area={area.id} projects={own} counts={counts} />
@@ -433,11 +423,6 @@ export function Sidebar({
               </li>
             );
           })}
-          {groups.loose.map((project) => (
-            <li key={project.id}>
-              <LooseProject space={space} project={project} counts={counts} />
-            </li>
-          ))}
         </ul>
       )}
       {groups.archived.length === 0 ? null : (
@@ -453,7 +438,7 @@ export function Sidebar({
           within={groups.archived.some((g) =>
             g.kind === "area"
               ? g.area.id === shownArea
-              : g.project.id === shownProject && g.area?.id === shownArea,
+              : g.project.id === shownProject && g.area.id === shownArea,
           )}
         />
       )}

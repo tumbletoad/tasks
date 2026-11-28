@@ -40,6 +40,11 @@ export const TREE_STATEMENTS: readonly string[] = [
   kind TEXT NOT NULL CHECK (kind IN ('human','agent','routine','system','import')),
   label TEXT NOT NULL, instance_id TEXT, routine_id TEXT, created_at INTEGER NOT NULL
 ) STRICT`,
+  `CREATE TABLE machines (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, os TEXT NOT NULL CHECK (os IN ('linux','windows','macos')),
+  first_seen INTEGER NOT NULL, retired_at INTEGER,
+  ${VERSIONS}
+) STRICT`,
   `CREATE TABLE commits (
   seq INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, epoch INTEGER NOT NULL,
   incarnation TEXT NOT NULL, at INTEGER NOT NULL,
@@ -90,8 +95,22 @@ export const TREE_STATEMENTS: readonly string[] = [
   // Every child, live or in the Trash: the end of a parent's list counts them all.
   "CREATE INDEX nodes_children ON nodes(parent_id, kind, position)",
   "CREATE UNIQUE INDEX nodes_slug ON nodes(parent_id, slug) WHERE kind = 'project'",
+  // Something from outside, on one node. The key that recognises it again is its own column.
+  `CREATE TABLE sources (
+  id TEXT PRIMARY KEY, ref INTEGER NOT NULL UNIQUE, owner_id TEXT NOT NULL REFERENCES nodes(id),
+  kind TEXT NOT NULL, title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 300),
+  brief TEXT NOT NULL DEFAULT '' ${ONE_LINE("brief", 400)}, body TEXT NOT NULL DEFAULT '',
+  who TEXT, outside_ref TEXT, url TEXT, at INTEGER, source_key TEXT,
+  created_at INTEGER NOT NULL, created_by TEXT NOT NULL REFERENCES actors(id), deleted_at INTEGER,
+  ${VERSIONS}
+) STRICT`,
+  "CREATE UNIQUE INDEX sources_key ON sources(source_key) " +
+    "WHERE source_key IS NOT NULL AND deleted_at IS NULL",
+  "CREATE INDEX sources_owner ON sources(owner_id) WHERE deleted_at IS NULL",
+  // origin_source_id: the source a capture made the task from, which a repeat capture resolves.
   `CREATE TABLE tasks (
   id TEXT PRIMARY KEY REFERENCES nodes(id), ref INTEGER NOT NULL UNIQUE,
+  origin_source_id TEXT REFERENCES sources(id),
   lifecycle TEXT NOT NULL DEFAULT 'active' CHECK (lifecycle IN ('active','completed','archived')),
   status TEXT NOT NULL DEFAULT 'open', inbox INTEGER NOT NULL DEFAULT 0 CHECK (inbox IN (0,1)),
   priority INTEGER NOT NULL DEFAULT 4 CHECK (priority BETWEEN 1 AND 4), effort TEXT,
@@ -107,6 +126,7 @@ export const TREE_STATEMENTS: readonly string[] = [
   "CREATE INDEX tasks_open ON tasks(lifecycle, status)",
   "CREATE INDEX tasks_due ON tasks(due_date) WHERE lifecycle = 'active'",
   "CREATE INDEX tasks_done ON tasks(completed_at) WHERE lifecycle = 'completed'",
+  "CREATE INDEX tasks_origin ON tasks(origin_source_id) WHERE origin_source_id IS NOT NULL",
   // Knowledge written in the space, on one node. Its earlier versions are its change rows.
   `CREATE TABLE pages (
   id TEXT PRIMARY KEY, ref INTEGER NOT NULL UNIQUE, owner_id TEXT NOT NULL REFERENCES nodes(id),
@@ -117,12 +137,59 @@ export const TREE_STATEMENTS: readonly string[] = [
   ${VERSIONS}
 ) STRICT`,
   "CREATE INDEX pages_owner ON pages(owner_id) WHERE deleted_at IS NULL",
-  // The prototype import's task IDs, which text written before may hold: a task is found by them.
-  `CREATE TABLE aliases (
-  namespace TEXT NOT NULL CHECK (namespace IN ('planning')), alias TEXT NOT NULL,
-  entity_id TEXT NOT NULL REFERENCES nodes(id), created_at INTEGER NOT NULL,
-  PRIMARY KEY (namespace, alias)
-) STRICT, WITHOUT ROWID`,
+  // A pointer from a node to a page or a source elsewhere in the space.
+  `CREATE TABLE links (
+  id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES nodes(id), target_id TEXT NOT NULL,
+  position TEXT NOT NULL, added_by TEXT NOT NULL REFERENCES actors(id), removed_at INTEGER,
+  ${VERSIONS},
+  UNIQUE (owner_id, target_id)
+) STRICT`,
+  "CREATE INDEX links_target ON links(target_id)",
+  // The space's preferences, by key, as today's writer keeps them (preferences.ts reads both).
+  `CREATE TABLE preferences (
+  key TEXT PRIMARY KEY, value TEXT NOT NULL CHECK (json_valid(value)), schema_ver INTEGER NOT NULL,
+  policy INTEGER NOT NULL DEFAULT 0 CHECK (policy IN (0,1)),
+  ${VERSIONS}
+) STRICT`,
+  // A folder of a node on one machine, as that machine spells it: the default one per node and
+  // machine, where an agent starts.
+  `CREATE TABLE folders (
+  id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES nodes(id),
+  machine_id TEXT NOT NULL REFERENCES machines(id),
+  path TEXT NOT NULL CHECK (length(path) BETWEEN 1 AND 4096), is_default INTEGER NOT NULL DEFAULT 1
+    CHECK (is_default IN (0,1)), label TEXT, created_at INTEGER NOT NULL, deleted_at INTEGER,
+  ${VERSIONS}
+) STRICT`,
+  "CREATE UNIQUE INDEX folders_default ON folders(owner_id, machine_id) " +
+    "WHERE is_default = 1 AND deleted_at IS NULL",
+  // What Open records: as today's, with the folder it opened in in place of a place. Launches and
+  // runs point at tasks.
+  `CREATE TABLE launches (
+  id TEXT PRIMARY KEY, reference TEXT NOT NULL CHECK (length(reference) = 6 AND reference GLOB 'L*'),
+  task_id TEXT REFERENCES tasks(id), session_id TEXT, instance_id TEXT NOT NULL,
+  machine_id TEXT NOT NULL REFERENCES machines(id), route TEXT NOT NULL,
+  folder_id TEXT REFERENCES folders(id), task_version INTEGER, brief_hash TEXT,
+  state TEXT NOT NULL CHECK (state IN ('prepared','dispatching','dispatched','confirmed','failed','unknown')),
+  reason TEXT, detail TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(detail)),
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+  ${VERSIONS}
+) STRICT`,
+  "CREATE INDEX launches_task ON launches(task_id, created_at)",
+  "CREATE INDEX launches_open ON launches(machine_id, created_at) " +
+    "WHERE state IN ('prepared','dispatching','dispatched')",
+  // What Run records. A run outlives the redaction of its task, which leaves it without one.
+  `CREATE TABLE runs (
+  id TEXT PRIMARY KEY, task_id TEXT REFERENCES tasks(id), session_id TEXT,
+  instance_id TEXT NOT NULL, machine_id TEXT NOT NULL REFERENCES machines(id),
+  adapter TEXT NOT NULL, folder_id TEXT REFERENCES folders(id), request TEXT,
+  spec TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(spec)),
+  state TEXT NOT NULL, reason TEXT, attempt INTEGER NOT NULL DEFAULT 1,
+  detail TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(detail)),
+  result TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(result)),
+  queued_at INTEGER NOT NULL, started_at INTEGER, ended_at INTEGER,
+  ${VERSIONS}
+) STRICT`,
+  "CREATE INDEX runs_task ON runs(task_id, queued_at)",
   // Notes, log entries and learnings in one thread on a node, and a page's comments; numbered per
   // owner.
   `CREATE TABLE notes (
@@ -135,6 +202,15 @@ export const TREE_STATEMENTS: readonly string[] = [
   ${VERSIONS},
   UNIQUE (owner_id, ordinal)
 ) STRICT`,
+  // The search index (search.ts): derived, each document on the node that holds it.
+  `CREATE TABLE search_docs (
+  doc INTEGER PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('task','project','note','log','learning','page')),
+  entity_id TEXT NOT NULL UNIQUE, node_id TEXT NOT NULL, seq INTEGER NOT NULL
+) STRICT`,
+  "CREATE INDEX search_docs_node ON search_docs(node_id)",
+  "CREATE VIRTUAL TABLE search_fts USING fts5(title, body, extra, " +
+    "tokenize = 'unicode61 remove_diacritics 2', prefix = '2 3')",
 ];
 
 export interface NewTreeSpace {
