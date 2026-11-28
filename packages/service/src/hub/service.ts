@@ -128,6 +128,7 @@ import {
   supervisorReplaced,
   type RepairOutcome,
 } from "../version/repair.ts";
+import { retireWhenIdle } from "../version/retire.ts";
 import { journalPresent } from "../version/journal.ts";
 import { currentVersion } from "../version/switch.ts";
 import { t3Files, t3FileNames, t3HomeOf, t3Host, T3_STATE_DIR } from "./t3.ts";
@@ -135,7 +136,7 @@ import { homeGate } from "./home-gate.ts";
 import { homeRows } from "./home-rows.ts";
 import { namedBy } from "./named.ts";
 import { SeenCalls } from "./agent-homes.ts";
-import { agentAppVerbs, personEnv } from "./agent-apps.ts";
+import { agentAppVerbs, personBase } from "./agent-apps.ts";
 import {
   findMonitor,
   heldSessions,
@@ -822,7 +823,14 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       ...(options.monitor?.times === undefined ? {} : { times: options.monitor.times }),
       command: async () => {
         const source = launching.service?.environment;
-        return monitorIn(source === undefined ? env : await personEnv(source).catch(() => env));
+        return monitorIn(
+          source === undefined
+            ? env
+            : await personBase(source).then(
+                (base) => base.env,
+                () => env,
+              ),
+        );
       },
       log: (event, fields) => {
         log.log(event, fields);
@@ -1172,8 +1180,11 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         stateDir: layout.state,
         tasks: join(layout.bin, platform === "win32" ? `${CLI_NAME}.exe` : CLI_NAME),
         userHome: options.agentApps?.home ?? personHome,
-        env: async () =>
-          options.agentApps?.env ?? (await personEnv(launches.environment).catch(() => env)),
+        base: async () => {
+          const given = options.agentApps?.env;
+          if (given !== undefined) return { kind: "user", env: given };
+          return await personBase(launches.environment).catch(() => ({ kind: "service", env }));
+        },
         homes: hub.agentHomes,
         instances: hub.instances,
         spaceName: (id) => made.spaces?.served().find((s) => s.id === id)?.name,
@@ -1483,6 +1494,19 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           });
     void noteSeen();
 
+    // Old versions go once the service is ready (retire.ts), not before it binds. While an update
+    // or install holds update.lock, the next 10 s check tries again, until one pass has run.
+    let retired = false;
+    const retireOld = async (): Promise<void> => {
+      if (retired) return;
+      const done = await retireWhenIdle(updateRepair);
+      if (done === undefined) return;
+      retired = true;
+      if (done.removed.length > 0) log.log("update.retired", { count: done.removed.length });
+      if (done.failed !== undefined) log.log("update.retire_failed", { code: done.failed });
+    };
+    void retireOld();
+
     // While it runs, an update journal whose updater is gone is finished or rolled back within
     // 10 s (A2 3.12.6). A live updater holds update.lock, and then nothing is done. An update
     // that cannot be repaired (stuck) or a repair that fails is logged once, not every 10 s. The
@@ -1492,6 +1516,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     update.timer = setInterval(() => {
       if (repairing || draining !== undefined || aborted) return;
       void noteSeen();
+      void retireOld();
       repairing = true;
       void repairIfIdle(updateRepair)
         .then(

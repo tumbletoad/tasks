@@ -72,6 +72,7 @@ const SQL = {
     "WHERE n.kind = 'task' AND n.deleted_at IS NULL) SELECT id FROM down",
   ref: "SELECT ref FROM tasks WHERE id = $id",
   /** Who changed, after `$since`, field `$field` of row `$entity` `$id` (every field when null), or anything of node `$task`. */
+  comments: "SELECT id FROM notes WHERE owner_id = $id",
   newer:
     "SELECT c.node_id AS task, k.author_id AS actor, a.kind AS kind, a.label AS label, " +
     "k.origin AS origin, max(k.at) AS at FROM changes c JOIN commits k ON k.seq = c.seq " +
@@ -426,6 +427,15 @@ function newerOn(
     const task = c.entity === "nodes" || c.entity === "tasks" ? c.id : null;
     const own = { since, principal, anyone: false, field: null };
     if (work.add({ ...own, entity: c.entity, id: c.id, task })) hidden = true;
+    // A page put back in the Trash takes its comments along, as a task takes its notes: one someone
+    // else wrote or changed since keeps the step.
+    if (c.entity === "pages") {
+      for (const note of conn.prepare(SQL.comments).all({ id: c.id })) {
+        const id = String(note["id"]);
+        if (work.add({ ...own, entity: "notes", id, task: null })) hidden = true;
+      }
+      continue;
+    }
     // A task put back in the Trash takes the tasks below it along: one someone else made or
     // changed since, outside what the step wrote, keeps the step.
     if (c.entity !== "nodes" || c.field !== "deleted") continue;

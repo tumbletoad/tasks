@@ -228,10 +228,12 @@ describe("[A3.5.registry.agent-projection] agent projection and the MCP tool lis
       "get_task",
       "organize",
       "preferences",
+      "read",
       "reopen_task",
       "search",
       "status",
       "update_task",
+      "write_page",
     ]);
     const addEntry = tools.find((t) => t.name === "add_entry");
     expect(Object.keys(addEntry?.inputSchema["properties"] as object)).not.toContain("for_agents");
@@ -382,7 +384,7 @@ describe("[A3.5.registry.agent-projection] agent projection and the MCP tool lis
     for (const tool of mcpTools(registry).tools) {
       // A tool with write actions is no read, even when most calls of it only read (organize). One
       // whose write actions are all a later step's only reads now (preferences).
-      const read = ["status", "get_task", "search", "preferences"].includes(tool.name);
+      const read = ["status", "get_task", "search", "preferences", "read"].includes(tool.name);
       expect(tool.annotations, tool.name).toEqual({
         readOnlyHint: read,
         destructiveHint: false,

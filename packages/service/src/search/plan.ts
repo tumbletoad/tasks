@@ -171,7 +171,13 @@ function positiveGroups(query: Query): string[] {
   });
 }
 
-function negativeMatch(query: Query): string | null {
+/** The FTS5 expression of a query's words, its groups ANDed; null for a query without words. */
+export function wordsMatch(query: Query): string | null {
+  const groups = positiveGroups(query);
+  return groups.length === 0 ? null : groups.join(" AND ");
+}
+
+export function negativeMatch(query: Query): string | null {
   const terms = termsOf(query).filter((t): t is TextTerm => t.type === "text" && t.negated);
   return terms.length === 0 ? null : terms.map((t) => ftsString(t, false)).join(" OR ");
 }
@@ -609,6 +615,7 @@ const LIFECYCLES: Readonly<Record<Scope, string | null>> = {
   finished: "('completed', 'archived')",
   all: null,
   learnings: null,
+  library: null,
 };
 
 /** The documents of a task's own text: its document, notes, log entries and learnings. */

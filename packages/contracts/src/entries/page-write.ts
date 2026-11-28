@@ -38,7 +38,7 @@ export const PageWriteInput = z.strictObject({
   on: z
     .string()
     .max(250)
-    .describe('create: "task", a task, a project, an area or "space"; default: its project')
+    .describe('create: "task", a task, a project, an area or "space"')
     .optional(),
   to: z.string().max(250).describe('move: a task, a project, an area or "space"').optional(),
   title: safeLine(user.title).describe("create, set: one line").optional(),
@@ -135,13 +135,13 @@ export const pageWrite = defineEntry({
   output: PageWriteResult,
   faces: {
     ui: true,
-    cli: { verb: "page", positional: ["action", "target"] },
+    cli: { verb: "page", positional: ["action", "target"], exclude: ["task", "base"] },
     mcp: {
       tool: "write_page",
       title: "Write a page",
       description:
-        "Use to keep the library: create a page (on the task's project unless you name the " +
-        "task), edit it (old words become new), append, set title or brief, move, trash or " +
+        "Keep the library: create a page (leave on empty for the task's project, then its " +
+        "area, then the task itself), edit it (old words become new), append, set title or brief, move, trash or " +
         "restore it; or set a project's, an area's or the space's brief and description. why: " +
         "one line.",
     },
@@ -160,15 +160,15 @@ export const pageWrite = defineEntry({
   ],
   examples: [
     {
-      title: "The person makes a page with a title only",
+      title: "The person makes a page on the space with a title only",
       actor: "user",
       input: {
         action: "create",
-        on: LUMEN.project,
+        on: "space",
         title: "Clinic visit, 2 Dec",
         request_id: requestId(89),
       },
-      output: { result: "created", target: "M-231", on: "Lumen Health", as_of: AS_OF_NEXT },
+      output: { result: "created", target: "M-231", on: "Mira", as_of: AS_OF_NEXT },
     },
     {
       title: "Create a page on M-14's project",

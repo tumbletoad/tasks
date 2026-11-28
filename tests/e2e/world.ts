@@ -76,7 +76,7 @@ export interface World {
   /** A task of Mira's in an area, for the launch. */
   readonly task: FixtureTask;
   /**
-   * Another task of Mira's in an area, for a second launch: the tests of one worker share the
+   * Another task of Mira's in an area, for a second launch: the tests of one file share the
    * world, and a task whose session still runs shows a Running tile.
    */
   readonly spare: FixtureTask;
@@ -91,7 +91,7 @@ export interface World {
   signInUrl(to: string): Promise<string>;
   /**
    * Sets one of this machine's settings (`ui.theme`, `ui.single_keys`) as the page does, or resets
-   * it with null. The tests of a worker share its service: a test that changes one puts it back.
+   * it with null. The tests of a file share its service: a test that changes one puts it back.
    */
   machine(key: string, value: unknown): Promise<void>;
   /** The fake terminal's command lines so far. */

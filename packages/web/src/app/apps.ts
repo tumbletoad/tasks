@@ -48,7 +48,26 @@ export interface AppRow {
   readonly byName: boolean;
   readonly open: Part | undefined;
   readonly tools: Part | undefined;
+  readonly ready: Ready | undefined;
 }
+
+/**
+ * What the home's app reported about itself: installed, its version, whether its own status command
+ * found a login, and the line or page that comes next (none when no line could be quoted safely).
+ */
+export type Ready =
+  | { readonly state: "not_installed"; readonly install: string }
+  | { readonly state: "login_found"; readonly version: string | undefined }
+  | {
+      readonly state: "no_login";
+      readonly version: string | undefined;
+      readonly login: string | undefined;
+    }
+  | {
+      readonly state: "unknown";
+      readonly version: string | undefined;
+      readonly status: string | undefined;
+    };
 
 export interface AppsView {
   readonly space: string;
@@ -144,6 +163,28 @@ function partOf(value: unknown): Part | undefined {
   };
 }
 
+/** A row's readiness; undefined for another shape, or an install page that is not https. */
+function readyOf(value: unknown): Ready | undefined {
+  if (!isRecord(value)) return undefined;
+  const version = text(value["version"], 64);
+  switch (value["state"]) {
+    case "not_installed": {
+      const install = text(value["install"], 400);
+      return install?.startsWith("https://") === true
+        ? { state: "not_installed", install }
+        : undefined;
+    }
+    case "login_found":
+      return { state: "login_found", version };
+    case "no_login":
+      return { state: "no_login", version, login: text(value["login"]) };
+    case "unknown":
+      return { state: "unknown", version, status: text(value["status"]) };
+    default:
+      return undefined;
+  }
+}
+
 /** The service's view, or an error when it has another shape. */
 export function viewOf(value: unknown): AppsView {
   if (!isRecord(value) || typeof value["space"] !== "string" || !Array.isArray(value["rows"])) {
@@ -167,6 +208,7 @@ export function viewOf(value: unknown): AppsView {
         byName: row["byName"] === true,
         open: partOf(row["open"]),
         tools: partOf(row["tools"]),
+        ready: readyOf(row["ready"]),
       },
     ];
   });

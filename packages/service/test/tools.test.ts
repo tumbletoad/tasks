@@ -582,6 +582,7 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
         log: 7,
         sources: 3,
         learnings: 0,
+        pages: 0,
       });
 
       // A note for agents over 1,000 characters stops the digest's notes for agents there.
@@ -632,7 +633,8 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
       { task: ref, set: { summary }, base: await asOf(), request_id: rid() },
       USER,
     );
-    for (const letter of ["a", "b"]) {
+    // Four notes for agents of 1,000 characters pass the digest's budget on their own.
+    for (const letter of ["a", "b", "c", "d"]) {
       await call(
         "entry.add",
         {

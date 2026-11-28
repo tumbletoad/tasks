@@ -350,8 +350,10 @@ Each step ships and is useful on its own. The order follows what each step needs
 
 - **A person gets:** the phone app on their own phone: Today, capture, check off, read a page,
   watch a run, against their own computer on the home network.
-- **Parts, in order:** the space service apart from the device service; an endpoint for paired
-  devices with its rights; pairing by a QR code; the app as a development build. Its first proof,
+- **Parts, in order:** a listener for paired phones beside the page's, in the same process, that
+  reaches only the operations, the feed and a task's runs, over TLS with each end's key pinned;
+  rights per phone and space, and pairing by a QR code; the app as a development build in the
+  workspace, sharing Today and capture with the page. Its first proof,
   on a throwaway space: pair with the computer's key pinned and load Today; let the computer
   sleep, capture, close and reopen the app, wake the computer; drop the computer's answer after it
   saved, so the phone sends again with the same request ID; find exactly one new task. Then Run is
