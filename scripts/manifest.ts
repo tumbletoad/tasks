@@ -27,6 +27,7 @@
 // collected through Playwright's own listing (`playwright test --list`) and checked the same way.
 //
 // Run directly: node scripts/manifest.ts [root]
+import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { createVitest } from "vitest/node";
@@ -153,12 +154,13 @@ export function checkManifest(entries: readonly ManifestEntry[], tests: readonly
   const errors = checkIds(entries, tests);
   const covered = new Set(tests.flatMap((t) => idsInTitle(t.name)));
   for (const e of entries) {
-    if (e.kind !== "manual" && !covered.has(e.id)) {
-      errors.push(`manifest entry "${e.id}" (${e.kind}) has no test carrying its ID`);
-    }
+    if (e.kind !== "manual" && !covered.has(e.id)) errors.push(noTest(e));
   }
   return errors;
 }
+
+const noTest = (e: ManifestEntry) =>
+  `manifest entry "${e.id}" (${e.kind}) has no test carrying its ID`;
 
 /** A name that marks a file as a test in some runner: *.test.* or *.spec.*, or code in __tests__/. */
 const TEST_LIKE = /\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)__tests__\/.*\.[cm]?[jt]sx?$/;
@@ -365,24 +367,83 @@ export async function taggedTestsInSource(root: string = repoRoot): Promise<Coll
   }
 }
 
+function git(root: string, args: readonly string[], input?: string): string {
+  const result = spawnSync("git", args, {
+    cwd: root,
+    encoding: "utf8",
+    windowsHide: true,
+    maxBuffer: 64 * 1024 * 1024,
+    ...(input === undefined ? {} : { input }),
+  });
+  // git grep exits 1 when nothing matches.
+  if (result.status === 0 || (args[0] === "grep" && result.status === 1)) return result.stdout;
+  const why = (result.stderr || result.error?.message || `exit ${String(result.status)}`).trim();
+  throw new Error(`git ${args.join(" ")} failed: ${why}`);
+}
+
+/** What `pnpm check` compares the tree with: a revision, and the paths it is limited to, if any. */
+export interface Change {
+  base: string;
+  paths?: readonly string[];
+}
+
+/**
+ * The entries whose ID tag the change removed from a line and that no file of the tree still
+ * tags. A tag is found in the text, so an ID only ever built as its file runs is not seen here.
+ */
+export function orphanedEntries(
+  entries: readonly ManifestEntry[],
+  change: Change,
+  root: string = repoRoot,
+): string[] {
+  const diff = git(root, [
+    "diff",
+    "--no-color",
+    "--no-ext-diff",
+    "--no-renames",
+    "-U0",
+    change.base,
+    ...(change.paths === undefined ? [] : ["--", ...change.paths]),
+  ]);
+  const removed = new Set(
+    diff
+      .split("\n")
+      .filter((line) => line.startsWith("-") && !line.startsWith("---"))
+      .flatMap(idsInTitle),
+  );
+  const candidates = entries.filter((e) => e.kind !== "manual" && removed.has(e.id));
+  if (candidates.length === 0) return [];
+  const tags = candidates.map((e) => `[${e.id}]`);
+  const found = git(
+    root,
+    ["grep", "-h", "-o", "-I", "-F", "--untracked", "-f", "-"],
+    tags.join("\n"),
+  );
+  const still = new Set(found.split(/\r?\n/));
+  return candidates.filter((e) => !still.has(`[${e.id}]`)).map(noTest);
+}
+
 /**
  * The ID check `pnpm check` can make in a few seconds: every test it ran, and every other test
- * whose ID is in its source and every end-to-end test, carries IDs the manifest holds. A merge can
- * keep a test whose entry the branch took out, in a file the change does not reach.
+ * whose ID is in its source and every end-to-end test, carries IDs the manifest holds, and every
+ * entry whose tag the change removed is still tagged somewhere. A merge can keep a test whose
+ * entry the branch took out, in a file the change does not reach.
  */
 export async function checkIdsQuickly(
   ran: readonly CollectedTest[],
+  change: Change,
   root: string = repoRoot,
 ): Promise<{ errors: string[]; tests: number }> {
   const manifest = parseManifest(
     JSON.parse(readFileSync(join(root, "tests", "manifest.json"), "utf8")),
   );
+  const orphans = orphanedEntries(manifest.entries, change, root);
   const ranFiles = new Set(ran.map((t) => t.file));
   const others = (await taggedTestsInSource(root)).filter((t) => !ranFiles.has(t.file));
   const e2e = collectE2e(root);
   const tests = [...ran, ...others, ...e2e.tests];
   return {
-    errors: [...manifest.errors, ...e2e.errors, ...checkIds(manifest.entries, tests)],
+    errors: [...manifest.errors, ...e2e.errors, ...checkIds(manifest.entries, tests), ...orphans],
     tests: tests.length,
   };
 }
