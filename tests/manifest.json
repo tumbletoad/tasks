@@ -5823,6 +5823,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.11.web.kept-action-mark",
+      "title": "A row whose task has a kept check-off, reopen, move to or from the Trash, undo or redo carries the draft mark with its own name; a kept lifecycle action the task's state already is (finished, open, in the Trash, restored) is not shown and goes, also when the feed brings that state; an undo or a redo stays until the person tries it again or discards it",
+      "source": "A5 3.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.26.web.markdown",
       "title": "Task Markdown (context, notes, log, outcome, learnings) renders as React elements of an allow-list (paragraphs and line breaks, strong lines, lists, quotes, fenced and inline code, emphasis, links): raw HTML and the XSS payloads show as text, and only https, http and mailto links open, in a new tab with no opener and no referrer",
       "source": "A5 3.26, A5 3.7, A7 3.12 M5.06",
@@ -6087,6 +6095,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.12.e2e.checkoff-reload",
+      "title": "In Chromium and Firefox against the real service: a rename that never reached the service, a check-off behind it and a reload: the task is still open, the typed title and the check-off are both shown, nothing is sent by itself, and Try again on each ends with the new title and the task checked off with one finish request",
+      "source": "A5 3.11, A5 3.12",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.12.e2e.checkoff-leaves",
       "title": "In Chromium and Firefox against the real service, in a list of a few hundred tasks: a check-off shows the row checked and takes it away while its answer is held, and a move to the Trash by its key takes it away at once; neither row shows open again once the answer and the feed come",
       "source": "A5 3.12, A5 3.15",
@@ -6146,6 +6162,14 @@
       "id": "A5.3.11.web.kept-edits",
       "title": "A field edit the service did not take is kept per space and comes back after a reload as its control made it, ready for Try again; a value no control could make, or kept under another name, never comes back and is removed; a tab removes only what it kept or read; a task gone for good takes its edits along",
       "source": "A5 3.11, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.11.web.kept-actions",
+      "title": "A check-off, a reopen, an undo or a redo still waiting behind another request when the page goes is kept in the browser on its task with the request ID it got when the person acted, and nothing sends it by itself; Try again sends it once with that ID and base, an undo naming the commit of the write it takes back from that write's receipt; one without an answer, or whose receipt cannot be read, stays kept; a refusal or a kept undo says so and lets it go; a kept value of another shape is never listed",
+      "source": "A5 3.11, A5 3.12",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -6948,6 +6972,13 @@
     {
       "id": "A5.while-away.e2e.title-draft",
       "title": "In Chromium and Firefox: a title typed and not yet saved is back in its editor after a reload and is not saved by itself; Escape lets it go for good; a second tab shows it as typed in another tab and its own Escape does not erase it; on a task finished meanwhile the words show with Copy and Discard instead of an editor; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.e2e.waiting-draft",
+      "title": "In Chromium and Firefox: words typed into Waiting on and not yet saved are back in the field after a reload and are not saved by themselves, also when the card closes and opens again; Escape puts the saved value back and lets them go for good",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

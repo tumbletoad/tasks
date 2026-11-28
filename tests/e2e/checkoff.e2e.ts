@@ -1,11 +1,12 @@
 // A check-off and a move to the Trash, against the real service in Chromium and Firefox: in a list
 // of a few hundred tasks the row shows checked and leaves while the write is still on its way, an
 // expanded card and a search result stay checked, and none shows open again, however late the
-// answer comes. The page's answer is held with a route;
-// each frame's state of the row is recorded in the page. Fixture data only.
+// answer comes; a check-off waiting behind a rename when the page reloads is made by the next
+// page. The page's answer is held with a route; each frame's state of the row is recorded in the
+// page. Fixture data only.
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn } from "./page.ts";
+import { picture, showsSpace, signIn } from "./page.ts";
 import { SLOW_MS, startWorld, type World } from "./world.ts";
 
 const rowOf = (page: Page, ref: string) => page.locator(`main li[data-task="${ref}"]`);
@@ -179,3 +180,70 @@ async function checkOffAndTrash(page: Page, world: World): Promise<void> {
   expect(await trashSeen()).toEqual(["open", "gone"]);
   await page.unrouteAll({ behavior: "ignoreErrors" });
 }
+
+test.describe("[A5.3.12.e2e.checkoff-reload] A check-off waiting behind an edit when the page reloads is shown, and made when the person tries it again", () => {
+  test("a rename that never reached the service, a check-off behind it and a reload: the task is still open, both are shown, and Try again on each ends with the new title, checked off once", async ({
+    page,
+    world,
+  }) => {
+    const added = (await world.op(world.mira.id, "task.add", {
+      tasks: [{ title: "Sweep the porch", area: "home" }],
+    })) as { tasks: { ref: string }[] };
+    const ref = added.tasks[0]?.ref;
+    if (ref === undefined) throw new Error("the task was not added");
+    const read = async () =>
+      (
+        (await world.op(world.mira.id, "task.get", { task: ref })) as {
+          task: { lifecycle: string; title: string };
+        }
+      ).task;
+    // The page's own clock: the rename stays without its outcome for as long as the test needs.
+    await page.clock.install();
+    await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);
+    await showsSpace(page, world.mira.name);
+    const row = rowOf(page, ref);
+    const title = row.locator('[data-part="title"]');
+    await expect(title).toHaveAttribute("aria-expanded", "true", { timeout: SLOW_MS });
+    let finishes = 0;
+    page.on("request", (request) => {
+      if (request.url().endsWith("/api/v1/op/task.finish")) finishes += 1;
+    });
+    // The rename never reaches the service.
+    await page.route("**/api/v1/op/task.update", (route) => route.abort());
+    await title.focus();
+    await page.keyboard.press("F2");
+    await page.keyboard.press("End");
+    await page.keyboard.type(" today");
+    await page.keyboard.press("Enter");
+    await row.locator('[data-part="check"]').first().click();
+    await page.clock.runFor(1_000);
+    expect(finishes).toBe(0);
+    await page.unroute("**/api/v1/op/task.update");
+
+    // The page goes, and the task's link opens it again in the same tab.
+    await page.goto(`${world.origin}/s/${world.mira.id}/task/${ref}`);
+    await showsSpace(page, world.mira.name);
+    // Nothing went by itself: the task is open, the words and the check-off are both shown.
+    const kept = row.locator('[data-part="kept-action"]');
+    await expect(kept).toHaveText(/^Not done yet: check off/, { timeout: SLOW_MS });
+    const editor = row.getByRole("textbox", { name: "Title" });
+    await expect(editor).toHaveValue("Sweep the porch today");
+    await expect(row.locator('[data-part="check"]').first()).not.toBeChecked();
+    expect(await read()).toMatchObject({ lifecycle: "active", title: "Sweep the porch" });
+    expect(finishes).toBe(0);
+    await picture(page, "kept-action-1440.png");
+    const wide = page.viewportSize();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(kept).toBeVisible();
+    await picture(page, "kept-action-390.png");
+    if (wide !== null) await page.setViewportSize(wide);
+
+    await editor.focus();
+    await page.keyboard.press("Enter");
+    await expect.poll(async () => (await read()).title).toBe("Sweep the porch today");
+    await kept.getByRole("button", { name: "Try again: check off" }).click();
+    await expect.poll(async () => (await read()).lifecycle).toBe("completed");
+    await expect(kept).toHaveCount(0);
+    expect(finishes).toBe(1);
+  });
+});
