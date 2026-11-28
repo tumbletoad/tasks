@@ -411,7 +411,7 @@ function ReadyLine({ t, ready }: { readonly t: Translate; readonly ready: Ready 
       {command === undefined ? null : (
         <>
           {" "}
-          <code data-machine="" dir="ltr">
+          <code dir="ltr" {...(/[\\/]/u.test(command) ? { "data-machine": "" } : {})}>
             {command}
           </code>
         </>
