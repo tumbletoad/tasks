@@ -182,6 +182,15 @@ export const FEED_TASK: Spec = {
   run: keep("id", "state"),
   questions: [{ ...keep("ref", "text", "at"), by: "author" }],
 };
+/**
+ * A page in a phone's feed: what Today's "pages agents changed" lists and a card opens, with who
+ * changed it last. Its text is read with page.read.
+ */
+export const FEED_PAGE: Spec = {
+  ...keep("id", "ref", "title", "brief", "owner_id", "under", "version", "at", "why", "deleted_at"),
+  task: keep("ref", "title", "lifecycle"),
+  by: "author",
+};
 /** A node of the space's tree in a phone's feed: the space or a project, as the page gets it. */
 export const FEED_NODE: Spec = keep(
   "id",
