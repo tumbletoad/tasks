@@ -1,9 +1,9 @@
 // The pace's rules that need answers the recorded conversations do not hold: several settling
 // answers in a row, launches that come while an answer is on its way, answers that come after
 // the last tab left, a steady clock that moves on while timers wait (a machine that slept), and a
-// monitor that is slow, and an agent TTasks holds that TTAM stops seeing. The monitor here answers
-// when the test says, and the clock is virtual.
-import type { AgentsView, MonitorSnapshot } from "@ttasks/contracts/monitor";
+// monitor that is slow, an agent TTasks holds that TTAM stops seeing, and the tasks' T3 threads
+// while TTAM is missing. The monitor here answers when the test says, and the clock is virtual.
+import type { AgentsThread, AgentsView, MonitorSnapshot } from "@ttasks/contracts/monitor";
 import { describe, expect, test } from "vitest";
 import { testClock } from "../../test/clock.ts";
 import { homeDigest } from "../setup/agents.ts";
@@ -45,7 +45,11 @@ const snapshot = (settling: boolean, generation = 1, present = true): MonitorSna
   accounts: [],
 });
 
-function setup(held: () => readonly HeldSession[] = () => [], present = true) {
+function setup(
+  held: () => readonly HeldSession[] = () => [],
+  present = true,
+  threads?: () => readonly AgentsThread[],
+) {
   const clock = testClock<PaceTimerKind>({ virtual: "all" });
   /** How far the steady clock moved on without any timer firing. */
   let slept = 0;
@@ -68,6 +72,7 @@ function setup(held: () => readonly HeldSession[] = () => [], present = true) {
     timers: clock.timers,
     now: () => clock.now + slept,
     held: () => Promise.resolve(held()),
+    ...(threads === undefined ? {} : { threads: () => Promise.resolve(threads()) }),
     platform: process.platform,
   });
   /** A tab: the views it was sent. */
@@ -159,6 +164,7 @@ describe("[A5.agents.pace] the pace's follow-ups", () => {
     expect(s.views.at(-1)).toEqual({
       picture: null,
       trouble: { kind: "not_installed", reason: "not_found" },
+      threads: [],
     });
   });
 
@@ -196,7 +202,7 @@ describe("[A5.agents.pace] a picture nobody asked to keep is dropped", () => {
     const later = s.tab();
     s.clock.advance(5_000);
     s.pace.watch(later, LOOKED);
-    expect(later.views[0]).toEqual({ picture: null, trouble: null });
+    expect(later.views[0]).toEqual({ picture: null, trouble: null, threads: [] });
     // It is asked at once, as for a tab that starts fresh.
     expect(s.asks).toHaveLength(2);
   });
@@ -213,7 +219,7 @@ describe("[A5.agents.pace] a picture nobody asked to keep is dropped", () => {
     s.clock.advance(PACE.keepMs);
     const later = s.tab();
     s.pace.watch(later, LOOKED);
-    expect(later.views[0]).toEqual({ picture: null, trouble: null });
+    expect(later.views[0]).toEqual({ picture: null, trouble: null, threads: [] });
   });
 
   test("a sign-in that ends with the last tab takes the answer on its way with it", async () => {
@@ -225,7 +231,7 @@ describe("[A5.agents.pace] a picture nobody asked to keep is dropped", () => {
     await s.reply(false, 2);
     const next = s.tab();
     s.pace.watch(next, LOOKED);
-    expect(next.views[0]).toEqual({ picture: null, trouble: null });
+    expect(next.views[0]).toEqual({ picture: null, trouble: null, threads: [] });
   });
 
   test("a sign-in that ends while another tab watches leaves its picture", async () => {
@@ -267,7 +273,7 @@ describe("[A5.agents.pace] the slow flag goes with the next answer, never before
     s.status.slow = false;
     s.pace.changed();
     s.asks.at(-1)?.resolve({ ok: false, problem: { kind: "failed", reason: "exited" } });
-    await Promise.resolve();
+    await new Promise((resolve) => setImmediate(resolve));
     expect(s.views.map((v) => v.trouble?.kind ?? null)).toEqual([null, null, "slow", "failed"]);
     expect(s.views.at(-1)?.picture).not.toBeNull();
   });
@@ -367,5 +373,38 @@ describe("[A5.agents.unseen] an agent TTasks holds as running that the monitor d
       s.clock.advance(20_000);
     }
     expect(unseen(s)).toEqual([]);
+  });
+});
+
+describe("[A4.3.4.1.t3.thread] the tasks' T3 threads on the Agents page, with or without TTAM", () => {
+  test("a missing monitor still sends the threads, and they are read again at the page's pace", async () => {
+    const told: { activity: AgentsThread["activity"] } = { activity: "working" };
+    const s = setup(
+      () => [],
+      true,
+      () => [{ task: { ...TASK, started: "t3" }, activity: told.activity }],
+    );
+    s.asks.at(-1)?.resolve({ ok: false, problem: { kind: "not_installed", reason: "not_found" } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(s.views.at(-1)).toMatchObject({
+      picture: null,
+      trouble: { kind: "not_installed" },
+      threads: [{ task: { id: TASK.id, started: "t3" }, activity: "working" }],
+    });
+    // The thread now waits for the person: the next pass says so, with no monitor at all.
+    told.activity = "waiting";
+    expect(s.due()).toBe(PACE.restMaxMs);
+    s.clock.advance(PACE.restMaxMs);
+    s.asks.at(-1)?.resolve({ ok: false, problem: { kind: "not_installed", reason: "not_found" } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(s.views.at(-1)?.threads.map((t) => t.activity)).toEqual(["waiting"]);
+  });
+
+  test("without a source of threads a missing monitor is not asked again", async () => {
+    const s = setup();
+    s.asks.at(-1)?.resolve({ ok: false, problem: { kind: "not_installed", reason: "not_found" } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(s.due()).toBeUndefined();
+    expect(s.views.at(-1)?.threads).toEqual([]);
   });
 });
