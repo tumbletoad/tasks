@@ -3617,6 +3617,86 @@ When `view` is `"routine"`:
 | `history[].by` | string | yes | Who logged it: user, or agent:<label> |
 | `history[].why` | "you" \| "run_failed" | no | A skip's: by you, or its run failed |
 | `history[].note` | string | no | What was done |
+| `sections` | object | no | The sections asked for that a routine has: its notes, log and description |
+| `sections.instructions` | object[] | no | Notes from the user to agents, newest first, each whole |
+| `sections.instructions[].ref` | string | yes | Note ordinal, such as n2 |
+| `sections.instructions[].author` | string | yes | Actor that wrote it, from history |
+| `sections.instructions[].for_agents` | boolean | yes | A note from the user addressed to agents |
+| `sections.instructions[].at` | string | yes | When, ISO date and time |
+| `sections.instructions[].text` | string | yes | Note text |
+| `sections.instructions[].request_for` | object[], max 20 items | no | The user's request for these launches, oldest first: history, not yours to do |
+| `sections.instructions[].request_for[].launch` | string | yes | The launch reference |
+| `sections.instructions[].request_for[].instance` | string, max 64 | yes | The agent instance it opened |
+| `sections.instructions[].edited` | object | no | Its words were corrected since it was written |
+| `sections.instructions[].edited.at` | string | yes | When, ISO date and time |
+| `sections.instructions[].edited.by` | string | yes | Who corrected it |
+| `sections.instructions[].cut` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
+| `sections.instructions[].slice` | object | no | Only this part of the text is on this page |
+| `sections.instructions[].slice.from` | integer, 0 to 9007199254740991 | yes | First character here, counted from 0 |
+| `sections.instructions[].slice.to` | integer, 0 to 9007199254740991 | yes | The character after the last one here |
+| `sections.instructions[].slice.of` | integer, 0 to 9007199254740991 | yes | Characters in all |
+| `sections.context` | string | no | Markdown context |
+| `sections.context_slice` | object | no | Only this part of the text is on this page |
+| `sections.context_slice.from` | integer, 0 to 9007199254740991 | yes | First character here, counted from 0 |
+| `sections.context_slice.to` | integer, 0 to 9007199254740991 | yes | The character after the last one here |
+| `sections.context_slice.of` | integer, 0 to 9007199254740991 | yes | Characters in all |
+| `sections.notes` | object[] | no | Other notes, newest first |
+| `sections.notes[].ref` | string | yes | Note ordinal, such as n2 |
+| `sections.notes[].author` | string | yes | Actor that wrote it, from history |
+| `sections.notes[].for_agents` | boolean | yes | A note from the user addressed to agents |
+| `sections.notes[].at` | string | yes | When, ISO date and time |
+| `sections.notes[].text` | string | yes | Note text |
+| `sections.notes[].request_for` | object[], max 20 items | no | The user's request for these launches, oldest first: history, not yours to do |
+| `sections.notes[].request_for[].launch` | string | yes | The launch reference |
+| `sections.notes[].request_for[].instance` | string, max 64 | yes | The agent instance it opened |
+| `sections.notes[].edited` | object | no | Its words were corrected since it was written |
+| `sections.notes[].edited.at` | string | yes | When, ISO date and time |
+| `sections.notes[].edited.by` | string | yes | Who corrected it |
+| `sections.notes[].cut` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
+| `sections.notes[].slice` | object | no | Only this part of the text is on this page |
+| `sections.notes[].slice.from` | integer, 0 to 9007199254740991 | yes | First character here, counted from 0 |
+| `sections.notes[].slice.to` | integer, 0 to 9007199254740991 | yes | The character after the last one here |
+| `sections.notes[].slice.of` | integer, 0 to 9007199254740991 | yes | Characters in all |
+| `sections.log` | object[] | no | Log entries, newest first, up to log_limit |
+| `sections.log[].ref` | string | yes | Log ordinal, such as l3 |
+| `sections.log[].kind` | "progress" \| "evidence" \| "blocker" \| "decision" \| "question" \| "handoff" | yes | Entry kind |
+| `sections.log[].author` | string | yes | Actor that wrote it, from history |
+| `sections.log[].at` | string | yes | When, ISO date and time |
+| `sections.log[].text` | string | yes | Entry text |
+| `sections.log[].edited` | object | no | Its words were corrected since it was written |
+| `sections.log[].edited.at` | string | yes | When, ISO date and time |
+| `sections.log[].edited.by` | string | yes | Who corrected it |
+| `sections.log[].cut` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
+| `sections.log[].slice` | object | no | Only this part of the text is on this page |
+| `sections.log[].slice.from` | integer, 0 to 9007199254740991 | yes | First character here, counted from 0 |
+| `sections.log[].slice.to` | integer, 0 to 9007199254740991 | yes | The character after the last one here |
+| `sections.log[].slice.of` | integer, 0 to 9007199254740991 | yes | Characters in all |
+| `sections.sources` | object[] | no | Linked sources |
+| `sections.sources[].id` | string | yes | Source ID: detach or put back by it |
+| `sections.sources[].key` | string | no | Source key |
+| `sections.sources[].kind` | "email" \| "chat" \| "ticket" \| "pr" \| "issue" \| "doc" \| "calendar" \| "crash" \| "session" \| "book" \| "web" \| "other" | yes | Source kind |
+| `sections.sources[].title` | string | yes | Title |
+| `sections.sources[].who` | string | no | Sender or counterpart |
+| `sections.sources[].url` | string | no | Link |
+| `sections.sources[].at` | string | no | When it was sent |
+| `sections.sources[].ref` | string | no | Its key, held by another task |
+| `sections.sources[].captures_to` | string[], max 5 items | no | Active tasks with its key: captures go there |
+| `sections.sources[].captures_more` | integer, 0 to 9007199254740991 | no | How many more tasks have its key |
+| `sections.sources[].removed` | object | no | Detached from the task; put_back_sources brings it back |
+| `sections.sources[].removed.at` | string | yes | When, ISO date and time |
+| `sections.sources[].removed.by` | string | yes | Actor that detached it |
+| `sections.outcome` | object | no | Outcome and learnings |
+| `sections.outcome.outcome` | string | no | Outcome of the last completion |
+| `sections.outcome.wrap_state` | "pending" \| "wrapped" | no | Wrap-up state |
+| `sections.outcome.learnings` | string[] | yes | Learnings |
+| `sections.outcome.slice` | object | no | Only this part of the text is on this page |
+| `sections.outcome.slice.from` | integer, 0 to 9007199254740991 | yes | First character here, counted from 0 |
+| `sections.outcome.slice.to` | integer, 0 to 9007199254740991 | yes | The character after the last one here |
+| `sections.outcome.slice.of` | integer, 0 to 9007199254740991 | yes | Characters in all |
+| `sections.history` | object[], max 64 items | no | The task's own changes, newest first: before reads the older ones |
+| `sections.history[].seq` | integer, 1 to 9007199254740991 | yes | Commit sequence number |
+| `sections.history[].actor` | string | yes | Actor that wrote it, from history |
+| `sections.history[].what` | string | yes | Operation kind and the fields it changed |
 
 ### Examples
 

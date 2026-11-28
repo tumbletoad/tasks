@@ -163,7 +163,17 @@ function pattern(text: string, today: string): Rule | undefined {
     const on = turn(m[2]);
     return on === undefined ? undefined : monthly(on, n);
   }
-  if ((m = /^(?:on )?(.+?) of (?:every|each) (?:(\d+|other) )?months?$/u.exec(text)) !== null) {
+  const yearTurn = /^(?:the )?(.+?) of ([a-z]+),? (?:every|each) (?:(\d+|other) )?years?$/u;
+  if ((m = yearTurn.exec(text)) !== null) {
+    const n = every(m[3]);
+    const on = turn(m[1] ?? "");
+    const named = month(m[2] ?? "");
+    return n === undefined || on === undefined || named === undefined
+      ? undefined
+      : { pattern: { freq: "YEARLY", month: named, on }, interval: n, time: null };
+  }
+  const monthOf = /^(?:on )?(.+?) of (?:the month|(?:every|each) (?:(\d+|other) )?months?)$/u;
+  if ((m = monthOf.exec(text)) !== null) {
     const n = every(m[2]);
     const on = turn(m[1] ?? "") ?? dateOn(m[1] ?? "");
     return n === undefined || on === undefined ? undefined : monthly(on, n);
@@ -213,6 +223,11 @@ const monthly = (on: MonthDay, interval: number): Rule => ({
 
 /** "14 december", "december 14", "dec 14th": a date of every year. */
 function yearDate(text: string): Rule | undefined {
+  const last = /^(?:the )?last day of ([a-z]+)$/u.exec(text);
+  if (last !== null) {
+    const n = month(last[1] ?? "");
+    return n === undefined ? undefined : presets.yearly(n, -1);
+  }
   const m =
     /^(?:the )?(\d{1,2})(?:st|nd|rd|th)? (?:of )?([a-z]+)$|^([a-z]+) (\d{1,2})(?:st|nd|rd|th)?$/u.exec(
       text,
@@ -293,6 +308,13 @@ function onMonth(on: MonthDay): string {
   }
 }
 
+/**
+ * The date from which a yearly date falls on its month's last day every year: the 29th of February,
+ * which an ordinary year moves to the 28th, else the month's own length (as the page says it).
+ */
+const lastDayFrom = (n: number): number =>
+  n === 2 ? 29 : new Date(Date.UTC(2024, n, 0)).getUTCDate();
+
 /** A rule in English, as `repeat` reads it back: "Every Saturday", "Every weekday at 07:00". */
 export function repeatWords(rule: Rule): string {
   const { pattern: p, interval } = rule;
@@ -319,7 +341,7 @@ export function repeatWords(rule: Rule): string {
       words =
         p.on.kind === "date"
           ? `${periods(interval, "Every year", "Every # years")} on ${
-              p.on.day === -1
+              p.on.day === -1 || p.on.day >= lastDayFrom(p.month)
                 ? `the last day of ${MONTH_NAME(p.month)}`
                 : `${String(p.on.day)} ${MONTH_NAME(p.month)}`
             }`
