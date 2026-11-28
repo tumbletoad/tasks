@@ -143,7 +143,7 @@ describe("[A7.3.9.m2-13.web.build] the built page under SRI and the strict CSP",
       const port = world.port();
       const first = await send(port, { path: "/" });
       const second = await send(port, {
-        path: `/s/sp_0123456789abcdefghjkmnpqrs/area/ar_1/project/pj_2`,
+        path: `/s/sp_0123456789abcdefghjkmnpqrs/project/pj_2`,
       });
       expect(first.status).toBe(200);
       expect(second.status).toBe(200);

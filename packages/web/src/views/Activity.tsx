@@ -103,8 +103,8 @@ function TargetLink({ target, space }: { readonly target: Target; readonly space
       </Link>
     ) : target.kind === "area" && target.trash !== true ? (
       <Link
-        to="/s/$space/area/$area"
-        params={{ space, area: target.id }}
+        to="/s/$space/project/$project"
+        params={{ space, project: target.id }}
         className={styles.task}
         dir="auto"
       >

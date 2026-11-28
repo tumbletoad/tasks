@@ -39,7 +39,7 @@ test.describe("[A7.3.9.m2-13.e2e.open] Open from the skeleton page", () => {
     await showsSpace(page, world.mira.name);
     await expect(page).toHaveURL(`${world.origin}/s/${world.mira.id}/today`);
     // The task's area lists it (Today lists only what it selects).
-    await page.goto(`${world.origin}/s/${world.mira.id}/area/${world.task.area}`);
+    await page.goto(`${world.origin}/s/${world.mira.id}/project/${world.task.area}`);
     await showsSpace(page, world.mira.name);
 
     const row = page.locator(`li[data-task="${world.task.ref}"]`);
@@ -166,7 +166,7 @@ test.describe("[M6.page.e2e.open-other-space] Open with an agent registered for 
     const revoke = await world.registerAgent(world.studio.id);
     try {
       const before = world.terminal().length;
-      await signIn(page, world, `/s/${world.mira.id}/area/${world.task.area}`);
+      await signIn(page, world, `/s/${world.mira.id}/project/${world.task.area}`);
       await showsSpace(page, world.mira.name);
       const row = page.locator(`li[data-task="${world.task.ref}"]`);
       await row.locator('[data-part="tile"]').click();
@@ -327,7 +327,7 @@ test.describe("[A7.3.9.m2-10.e2e.copy] Copy puts the pointer brief on the clipbo
     world,
   }) => {
     await watchViolations(page);
-    await signIn(page, world, `/s/${world.mira.id}/area/${world.spare.area}`);
+    await signIn(page, world, `/s/${world.mira.id}/project/${world.spare.area}`);
     await showsSpace(page, world.mira.name);
     // What the page writes to the clipboard, kept in the page: no clipboard permission needed.
     await page.evaluate(() => {
@@ -378,7 +378,7 @@ test.describe("[A7.3.14.m6-11.e2e.pack] Shift+Copy puts the context pack on the 
     world,
   }) => {
     await watchViolations(page);
-    await signIn(page, world, `/s/${world.mira.id}/area/${world.spare.area}`);
+    await signIn(page, world, `/s/${world.mira.id}/project/${world.spare.area}`);
     await showsSpace(page, world.mira.name);
     await page.evaluate(() => {
       const copied: string[] = [];

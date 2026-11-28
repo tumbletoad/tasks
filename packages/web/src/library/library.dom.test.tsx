@@ -385,7 +385,7 @@ describe("[A5.pages.web.page] a page's screen against the contract's examples", 
   test("who changed it, the way back to where the person came from, its versions with Show and Restore", async () => {
     await mount(<PageScreen page={PAGE.ref} />, "/s/x/page/M-180", {
       from: {
-        path: `/s/${SPACE_ID}/area/${AREA}/project/${PROJECT}/library`,
+        path: `/s/${SPACE_ID}/project/${PROJECT}/library`,
         label: "Lumen Health · Library",
       },
     });
@@ -558,7 +558,7 @@ describe("[A5.pages.web.build] Build this project's library", () => {
     const note = calls.find(([name]) => name === "entry.add")?.[1];
     expect(note).toMatchObject({ task: "M-231", kind: "note", for_agents: true });
     expect(String(note?.["text"])).toContain("keeping-the-library");
-    expect(router.state.location.pathname).toBe(`/s/${SPACE_ID}/area/${AREA}/project/${BILLING}`);
+    expect(router.state.location.pathname).toBe(`/s/${SPACE_ID}/project/${BILLING}`);
     expect(router.state.location.search).toEqual({ task: "M-231" });
   });
 

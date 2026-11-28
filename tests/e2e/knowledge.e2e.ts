@@ -161,8 +161,8 @@ test.describe("[A5.pages.e2e.knowledge] the library around a task", () => {
     page,
     knowledge: world,
   }) => {
-    const { area, bare } = await place(world);
-    await open(page, world, `/s/${world.mira.id}/area/${area.id}/project/${bare.id}/library`);
+    const { bare } = await place(world);
+    await open(page, world, `/s/${world.mira.id}/project/${bare.id}/library`);
     await page.locator('[data-part="build-library"]').click();
     await expect(page).toHaveURL(/[?&]task=/, { timeout: SLOW_MS });
     const card = page.locator("main li[data-task]", { hasText: "Build this project's library" });

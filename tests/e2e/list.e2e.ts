@@ -134,7 +134,7 @@ test.describe("[A7.3.12.m5-03.e2e.scroll-5000] 5,000 rows in the real store", ()
     await watchViolations(page);
     await page.emulateMedia({ reducedMotion: "reduce" });
     // An area view lists every status of its area: about half of the 5,000 are in this one.
-    await signIn(page, bulk, `/s/${bulk.mira.id}/area/${bulk.task.area}`);
+    await signIn(page, bulk, `/s/${bulk.mira.id}/project/${bulk.task.area}`);
     await showsSpace(page, bulk.mira.name);
     const list = page.locator("[data-list]");
     await expect(list).toHaveAttribute("data-virtual", "true", { timeout: SLOW_MS });

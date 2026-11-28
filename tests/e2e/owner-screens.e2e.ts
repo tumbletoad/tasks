@@ -11,7 +11,7 @@ import { SLOW_MS, startWorld, type World } from "./world.ts";
 
 const WIDTHS = [1280, 1440, 1920, 390] as const;
 
-const sidebar = (page: Page) => page.getByRole("navigation", { name: "Views and areas" });
+const sidebar = (page: Page) => page.getByRole("navigation", { name: "Views and projects" });
 
 /** Opens a view: signed in once per browser context, then by its address alone. */
 const signedIn = new WeakSet<object>();
@@ -71,7 +71,7 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
     const project = client?.projects[0];
     if (client === undefined || project === undefined)
       throw new Error("the large space has no areas");
-    const project_path = `area/${client.id}/project/${project.id}`;
+    const project_path = `project/${project.id}`;
     for (const theme of themes()) {
       const context = await browser.newContext({ reducedMotion: "reduce" });
       try {
@@ -82,7 +82,7 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
           for (const [name, path] of [
             ["today", "today"],
             ["open", "open"],
-            ["area", `area/${client.id}`],
+            ["area", `project/${client.id}`],
             ["project", project_path],
           ] as const) {
             await open(page, large, path);
@@ -104,7 +104,7 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
           // Narrow, the menu is a drawer with the same entries.
           if (width === 390) {
             await page.getByRole("button", { name: "Menu" }).click();
-            const drawer = page.getByRole("dialog", { name: "Views and areas" });
+            const drawer = page.getByRole("dialog", { name: "Views and projects" });
             await expect(drawer.getByRole("button", { name: "Fold Client work" })).toBeVisible();
             await picture(page, `owner-drawer-${theme}-390.png`);
             await page.keyboard.press("Escape");

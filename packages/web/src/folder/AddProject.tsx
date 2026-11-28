@@ -12,7 +12,7 @@ import { useUnarchive } from "../app/Archived.tsx";
 import { useToast } from "../app/frame.ts";
 import setup from "../app/Setup.module.css";
 import { Session } from "../context.ts";
-import { projectWithoutArea, topLevel, trail } from "@ttasks/client/store";
+import { projectWithoutArea, topLevel } from "@ttasks/client/store";
 import { liveGroups } from "@ttasks/client/today";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
@@ -46,24 +46,20 @@ const NEW_AREA = "";
 /** How long the page waits for the feed to bring a new project before it stays where it is. */
 const ARRIVE_MS = 10_000;
 
-/** The project's area once the feed holds it, or undefined after `ARRIVE_MS`. */
-function arrival(live: Live, project: string): Promise<string | undefined> {
-  const area = () => {
-    const [top, below] = trail(live.getState().nodes, project);
-    return below === undefined ? undefined : top?.id;
-  };
-  if (area() !== undefined) return Promise.resolve(area());
+/** Whether the feed brought the new project within `ARRIVE_MS`. */
+function arrival(live: Live, project: string): Promise<boolean> {
+  const here = () => live.getState().nodes.has(project);
+  if (here()) return Promise.resolve(true);
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       stop();
-      resolve(undefined);
+      resolve(false);
     }, ARRIVE_MS);
     const stop = live.onChanges(() => {
-      const found = area();
-      if (found === undefined) return;
+      if (!here()) return;
       clearTimeout(timer);
       stop();
-      resolve(found);
+      resolve(true);
     });
   });
 }
@@ -119,13 +115,10 @@ export function AddProject({
           (a) => a.state === "archived" && !projectWithoutArea(a.id) && sameName(a.title, typed),
         );
 
-  const open = (project: string, areaOf: string | undefined) => {
+  const open = (project: string, arrived: boolean) => {
     onClose();
-    if (areaOf === undefined) return;
-    void navigate({
-      to: "/s/$space/area/$area/project/$project",
-      params: { space, area: areaOf, project },
-    });
+    if (!arrived) return;
+    void navigate({ to: "/s/$space/project/$project", params: { space, project } });
   };
 
   const add = (withFolder: boolean) => {

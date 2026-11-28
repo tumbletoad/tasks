@@ -72,7 +72,7 @@ async function openArea(page: Page, world: World, name: string): Promise<void> {
     .getByRole("navigation")
     .getByRole("link", { name: new RegExp(`^${name}, `) })
     .click();
-  await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/area/[a-z0-9_]+$`));
+  await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/project/[a-z0-9_]+$`));
 }
 
 test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off, undo and redo, by keyboard alone", () => {
@@ -591,7 +591,7 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     await expect(
       page
         .getByRole("navigation")
-        .locator('[data-group="areas"]')
+        .locator('[data-group="projects"]')
         .getByRole("link", { name: new RegExp(`^${seedlings}, `) }),
     ).toHaveCount(0);
     const laterTitle = rowOf(page, later).locator('[data-part="title"]');

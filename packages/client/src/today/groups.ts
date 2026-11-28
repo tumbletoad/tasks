@@ -9,7 +9,7 @@
 // - Inside a group: open first, then the other statuses, backlog last, then position.
 // Each task appears exactly once.
 import type { NodeRow, TaskRow } from "../store/rows.ts";
-import { childrenOf, topLevel, trail, type Nodes } from "../store/tree.ts";
+import { childrenOf, isUnder, topLevel, trail, type Nodes } from "../store/tree.ts";
 
 export interface Section {
   readonly key: string;
@@ -27,11 +27,14 @@ export interface Group<Label extends string = GroupLabel> {
   /**
    * `section`: one of Today's sections, a small muted heading and no dot. `label`: the
    * same small heading with its own text (a person in Waiting, a month in Completed). `flat`: no
-   * heading at all (Inbox, Review, the area view, whose sidebar item names it).
+   * heading at all (Inbox, Review, the area view, whose sidebar item names it). `project`: a
+   * project under the one on screen, its heading opening it.
    */
-  readonly kind: "inbox" | "area" | "loose" | "section" | "label" | "flat";
+  readonly kind: "inbox" | "area" | "loose" | "section" | "label" | "flat" | "project";
   /** The area's title (inbox and loose groups take theirs from the messages). */
   readonly title?: string;
+  /** A project group's project: the heading opens it. */
+  readonly node?: string;
   /** A section's heading, by its key. */
   readonly label?: Label;
   /** The heading's values, such as the effort a search's group holds. */
@@ -42,6 +45,10 @@ export interface Group<Label extends string = GroupLabel> {
   readonly finished?: boolean;
   /** The heading's one action, such as the Trash's `"Restore these`" for its change. */
   readonly action?: { readonly label: string; readonly run: () => void };
+  /** A short line after the heading's name, such as how a project stands. */
+  readonly line?: string;
+  /** The heading folds its rows away: whether they show, and the person's fold or unfold. */
+  readonly fold?: { readonly open: boolean; readonly toggle: () => void };
   readonly sections: readonly Section[];
 }
 
@@ -107,44 +114,52 @@ export function liveGroups(nodes: Nodes): {
   };
 }
 
-/** An area as the sidebar lists it, with its colour among all areas and the projects beneath it. */
-export interface ListedArea {
-  readonly kind: "area";
-  readonly area: NodeRow;
+/** A project in the side menu, at its depth (1 at the top), with its colour and what lies under it. */
+export interface TreeEntry {
+  readonly node: NodeRow;
+  readonly depth: number;
+  /** Its top-level project's colour slot. */
   readonly slot: number;
-  readonly projects: readonly NodeRow[];
+  readonly children: readonly TreeEntry[];
 }
 
-/** An archived project of a live area, listed on its own under Archived. */
-export interface ListedProject {
-  readonly kind: "project";
-  readonly area: NodeRow;
-  readonly slot: number;
-  readonly project: NodeRow;
+/** An archived project under Archived: the live projects above it, then it with all it holds. */
+export interface ShelvedEntry extends TreeEntry {
+  readonly above: readonly NodeRow[];
 }
 
 /**
- * The sidebar's groups, in the space's order: each live area with its live projects; under
- * Archived each archived area with all its projects, then each archived project of a live area.
- * An area keeps the colour it has among all areas, so archiving one recolours no other.
+ * The side menu's tree, in the space's order: the live projects at every depth, each with its
+ * live projects; under Archived each archived project whose projects above are live, with
+ * everything under it. A project keeps the colour of its top-level project among all of them, so
+ * archiving one recolours no other.
  */
-export function sidebarAreas(nodes: Nodes): {
-  readonly live: readonly ListedArea[];
-  readonly archived: readonly (ListedArea | ListedProject)[];
+export function sidebarTree(nodes: Nodes): {
+  readonly live: readonly TreeEntry[];
+  readonly archived: readonly ShelvedEntry[];
 } {
-  const live: ListedArea[] = [];
-  const shelved: (ListedArea | ListedProject)[] = [];
-  topLevel(nodes).forEach((area, index) => {
-    const slot = slotOf(area, index);
-    const own = childrenOf(nodes, area.id);
-    if (archived(area)) {
-      shelved.push({ kind: "area", area, slot, projects: own });
-      return;
+  const shelved: ShelvedEntry[] = [];
+  /** `above` while the walk is in the live tree, where an archived project leaves for Archived. */
+  const walk = (
+    node: NodeRow,
+    depth: number,
+    slot: number,
+    above: readonly NodeRow[] | undefined,
+  ): TreeEntry => {
+    const children: TreeEntry[] = [];
+    const path = above === undefined ? undefined : [...above, node];
+    for (const child of childrenOf(nodes, node.id)) {
+      if (path !== undefined && archived(child)) {
+        shelved.push({ ...walk(child, depth + 1, slot, undefined), above: path });
+      } else children.push(walk(child, depth + 1, slot, path));
     }
-    live.push({ kind: "area", area, slot, projects: own.filter((p) => !archived(p)) });
-    for (const project of own) {
-      if (archived(project)) shelved.push({ kind: "project", area, slot, project });
-    }
+    return { node, depth, slot, children };
+  };
+  const live: TreeEntry[] = [];
+  topLevel(nodes).forEach((node, index) => {
+    const slot = slotOf(node, index);
+    if (archived(node)) shelved.push({ ...walk(node, 1, slot, undefined), above: [] });
+    else live.push(walk(node, 1, slot, []));
   });
   return { live, archived: shelved };
 }
@@ -266,22 +281,43 @@ export const personGroups: GroupTasks = (tasks) => {
 };
 
 /**
- * The area view: every unfinished status of one area, grouped by project under project
- * labels, with no area heading, because the sidebar's item names the area. Tasks without a project
- * come first; backlog rows sort last in their group.
+ * A project's screen, for a project at any depth: its own tasks under no heading, then each
+ * project directly under it as a headed group of everything beneath it: that project's own tasks,
+ * then each deeper project's under its trail from there. A live project below is there with
+ * nothing open too, so the screen always leads to it; an archived one only while it holds tasks.
  */
-export const areaGroups: GroupTasks = (tasks, nodes) =>
-  groupTasks(tasks, nodes).map((group) =>
-    group.kind === "area" ? { ...group, kind: "flat" } : group,
-  );
-
-/**
- * A project's view: its tasks in one list under no label, because the sidebar's item names the
- * project, whether or not it has an area.
- */
-export const projectGroups: GroupTasks = (tasks) => {
-  const list = [...tasks].sort(byStatusThenPosition);
-  return list.length === 0
-    ? []
-    : [{ key: "project", kind: "flat", sections: [{ key: "project", tasks: list }] }];
-};
+export function subtreeGroups(project: string): GroupTasks {
+  return (tasks, nodes) => {
+    const byParent = new Map<string, TaskRow[]>();
+    for (const task of tasks) {
+      // A task the list keeps though it sits elsewhere now (the expanded one) stays with the
+      // project's own tasks.
+      const parent = isUnder(nodes, task.parent, project) ? task.parent : project;
+      const list = byParent.get(parent) ?? [];
+      list.push(task);
+      byParent.set(parent, list);
+    }
+    const own = (id: string) => [...(byParent.get(id) ?? [])].sort(byStatusThenPosition);
+    const groups: Group[] = [];
+    const mine = own(project);
+    if (mine.length > 0) {
+      groups.push({ key: project, kind: "flat", sections: [{ key: project, tasks: mine }] });
+    }
+    for (const child of childrenOf(nodes, project)) {
+      const sections: Section[] = [];
+      const add = (node: NodeRow, title: string | undefined) => {
+        const list = own(node.id);
+        if (list.length > 0) {
+          sections.push({ key: node.id, ...(title === undefined ? {} : { title }), tasks: list });
+        }
+        for (const below of childrenOf(nodes, node.id)) {
+          add(below, title === undefined ? below.title : `${title} › ${below.title}`);
+        }
+      };
+      add(child, undefined);
+      if (sections.length === 0 && archived(child)) continue;
+      groups.push({ key: child.id, kind: "project", title: child.title, node: child.id, sections });
+    }
+    return groups;
+  };
+}

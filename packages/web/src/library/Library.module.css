@@ -4,75 +4,6 @@
  * 68 characters a line. Tokens only.
  */
 
-/* Where the person is (the area, then the project), and the two tabs: Tasks and Library. */
-.place {
-  margin: 8px 0 4px;
-  padding-inline-start: 40px;
-}
-
-.path {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0 0 4px;
-  font-size: 0.8125rem;
-  line-height: 1.25rem;
-  color: var(--k-muted);
-}
-
-.path a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.path a:hover {
-  color: var(--k-text);
-}
-
-.path a::after {
-  content: "›";
-  margin-inline-start: 6px;
-  color: var(--k-muted);
-}
-
-.tabs {
-  display: flex;
-  gap: 4px;
-  margin-inline-start: -8px;
-}
-
-.tab {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 4px 8px;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  color: var(--k-muted);
-  text-decoration: none;
-  box-shadow: inset 0 -2px 0 transparent;
-}
-
-.tab:hover {
-  background: var(--k-hover);
-  color: var(--k-text);
-}
-
-.tab[aria-current="page"] {
-  color: var(--k-text);
-  font-weight: 600;
-  border-radius: 0;
-  box-shadow: inset 0 -2px 0 var(--k-accent);
-}
-
-.count {
-  font-size: 0.75rem;
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-  color: var(--k-muted);
-}
-
 /* A Library. */
 .library {
   overflow-wrap: anywhere;
@@ -857,10 +788,6 @@
 }
 
 @media (max-width: 599px) {
-  .place {
-    padding-inline-start: 16px;
-  }
-
   .library,
   .screen {
     padding: 8px 16px 48px;
