@@ -261,11 +261,16 @@ describe("[A2.3.1.hub.space-retry] space open tries an unavailable space again, 
           return typeof value === "function" ? (value as () => unknown).bind(t) : value;
         },
       });
+    let workerClosed = false;
     const pool = workers(async () => {
       const real = await StorageWorker.start({ driver: "node:sqlite" });
       cleanups.push(() => real.close().catch(() => undefined));
+      const withClose = wrap(real, "close", async () => {
+        await real.close();
+        workerClosed = true;
+      });
       const withWriter = wrap(
-        real,
+        withClose,
         "openSpaceWriter",
         async (...args: Parameters<StorageWorker["openSpaceWriter"]>) => {
           const writer = await real.openSpaceWriter(...args);
@@ -304,11 +309,8 @@ describe("[A2.3.1.hub.space-retry] space open tries an unavailable space again, 
     await service.spaceManager.close(0);
     expect(service.spaces()[0]?.state).toBe("closed");
     free();
-    await waitFor(
-      () => (statesAtClose.length > 0 ? true : undefined),
-      30_000,
-      "the late open's writer closes",
-    );
+    // The late open has ended once its worker has closed: only then may the space open again.
+    await waitFor(() => (workerClosed ? true : undefined), 30_000, "the late open's worker closes");
     expect(statesAtClose).toEqual(["closed"]);
     await service.spaceManager.open(space.folder);
     expect(service.spaces()).toEqual([{ entry: 0, state: "open", id: space.space.spaceId }]);

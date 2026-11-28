@@ -16,7 +16,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { FAKE_SHELL, readJsonLines } from "@ttasks/testkit";
 import {
   agentSetup,
@@ -513,6 +513,25 @@ describe("[A4.5.environment.layers] the session layer, the snapshot's parse and 
   });
 });
 
+/** Whether the process `pid` still runs. */
+function alive(pid: number | undefined): boolean {
+  if (pid === undefined) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The timers of before any test fakes them: a wait here never moves a faked clock. */
+const realSetTimeout = globalThis.setTimeout;
+
+/** Resolves once `check` holds, looking again every 50 ms of real time. */
+async function until(check: () => boolean): Promise<void> {
+  while (!check()) await new Promise((resolve) => realSetTimeout(resolve, 50));
+}
+
 /** A capture that runs the testkit fake shell in place of the login shell, with its mode. */
 function fakeShell(
   mode: string,
@@ -619,28 +638,30 @@ describe("[A4.5.environment.snapshot] the login-shell snapshot: a deadline and a
       now += 25 * 60 * 60_000;
       const hang = fakeShell("hang");
       const second = environmentWith(hang.capture, state, { now: () => now, timeoutMs: 1_500 });
-      const t0 = performance.now();
-      const taken = await second.take();
-      expect(taken.outcome).toBe("timeout");
-      expect(performance.now() - t0).toBeLessThan(10_000);
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      let taken: Awaited<ReturnType<UserEnvironment["take"]>> | undefined;
+      try {
+        const taking = second.take().then((result) => (taken = result));
+        // The shell has started its child before the clock reaches the deadline.
+        await until(() => readJsonLines(hang.log).length === 2);
+        await vi.advanceTimersByTimeAsync(1_499);
+        expect(taken).toBeUndefined();
+        await vi.advanceTimersByTimeAsync(1);
+        await taking;
+      } finally {
+        vi.useRealTimers();
+      }
+      expect(taken?.outcome).toBe("timeout");
       await second.prepare();
       expect(second.snapshot()?.env).toMatchObject({ FROM: "first" });
       expect((await second.base()).kind).toBe("user");
       if (process.platform !== "win32") {
         // The shell led its own process group, which the deadline killed whole.
         const [run] = readJsonLines(hang.log) as { pid: number }[];
-        const alive = (pid: number): boolean => {
-          try {
-            process.kill(pid, 0);
-            return true;
-          } catch {
-            return false;
-          }
-        };
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        expect(run !== undefined && alive(run.pid)).toBe(false);
-        const group = spawnSync("pgrep", ["-g", String(run?.pid ?? 0)], { encoding: "utf8" });
-        expect(group.stdout.trim()).toBe("");
+        expect(run).toBeDefined();
+        const group = (): string =>
+          spawnSync("pgrep", ["-g", String(run?.pid ?? 0)], { encoding: "utf8" }).stdout.trim();
+        await until(() => !alive(run?.pid) && group() === "");
       }
     },
   );
@@ -654,27 +675,21 @@ describe("[A4.5.environment.snapshot] the login-shell snapshot: a deadline and a
         FAKE_SHELL_EXPORTS: JSON.stringify({ FROM: "linger" }),
       });
       const env = environmentWith(linger.capture, state, { timeoutMs: 1_500 });
-      const t0 = performance.now();
-      const taken = await env.take();
-      expect(taken.outcome).toBe("ok");
-      expect(taken.env).toMatchObject({ FROM: "linger" });
-      expect(performance.now() - t0).toBeLessThan(1_500);
-      const [run] = readJsonLines(linger.log) as { pid: number }[];
-      const alive = (pid: number | undefined): boolean => {
-        if (pid === undefined) return false;
-        try {
-          process.kill(pid, 0);
-          return true;
-        } catch {
-          return false;
-        }
-      };
-      expect(alive(run?.pid)).toBe(true);
-      const until = performance.now() + 10_000;
-      while (alive(run?.pid) && performance.now() < until) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      let run: { pid: number } | undefined;
+      try {
+        // The clock stands still, so the fences alone end the capture: not the deadline, and not
+        // the shell, which never ends by itself.
+        const taken = await env.take();
+        expect(taken.outcome).toBe("ok");
+        expect(taken.env).toMatchObject({ FROM: "linger" });
+        [run] = readJsonLines(linger.log) as { pid: number }[];
+        expect(alive(run?.pid)).toBe(true);
+        await vi.advanceTimersByTimeAsync(1_500);
+      } finally {
+        vi.useRealTimers();
       }
-      expect(alive(run?.pid)).toBe(false);
+      await until(() => !alive(run?.pid));
     },
   );
 

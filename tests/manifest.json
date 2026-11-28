@@ -2200,6 +2200,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "S3.files.layout",
+      "title": "Where a tree space's readable files are: the space and each project a folder with _index.md named by its stored slug, a task a file with _<ref>/ beside it only when it holds something, pages and sources in _pages/ and _sources/; a project's rename moves no path, a task's rename moves its file and keeps its folder, a move takes the subtree along; _done/ holds a finished or dropped task only when nothing open lies below it, and a reopen brings it back; the Trash and a taken-back note are not written; a device name, a title without ASCII letters and a long title get file names; every relative link reaches a file; one calculation of a node's path from its levels",
+      "source": "PLAN step 3",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S3.files.content",
+      "title": "What a tree space's readable files hold: a task's fixed front-matter keys, title, brief, subtasks, knowledge, links and fenced notes, without its reference or project again; a project's index with its projects, open tasks, library and the person's text for agents marked as theirs; the node's own folders on this machine only; a page's Markdown as written with raw HTML and images turned to text outside code blocks, and its comments; the README's commit; the same rows give the same bytes",
+      "source": "PLAN step 3",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "S2.tree.runs",
       "title": "A folder's change held to its path and its removal as the caller saw them, and a new folder to a removal since the base, as today's writer; What Open and Run record on the tree writer, by today's rules: a launch opens prepared, a second click that continues the same agent conversation or none gets it, and it moves by the state machine's edges only, by one compare-and-set, with evidence that only grows and a reason where a state takes one; a run is queued for a task with the person's instruction and moves on its version; a node's folder on this machine is set as the machine spells a path, changed and cleared, and a removed folder is refused; a launch of a task in the Trash is refused, and one may name a note of its task as its request",
       "owner": "M3",
