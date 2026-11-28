@@ -161,10 +161,10 @@ function checkMetadata(entry: AnyEntry, say: Say): void {
       // A read action takes none, so the field is optional; the request path requires it for a
       // write action.
       if (requestId === RequestId || !isShared(requestId, RequestId, true)) {
-        say("request_id of an entry with read actions is RequestId.optional() (A3 3.2.3)");
+        say("request_id of an entry with read actions is RequestId.optional()");
       }
     } else if (!isShared(requestId, RequestId, false)) {
-      say("request_id must be the shared RequestId schema from schemas.ts (A3 3.4.1)");
+      say("request_id must be the shared RequestId schema from schemas.ts");
     }
     checkBase(entry, say);
     if (!entry.errors.includes("request_id_conflict")) {
@@ -189,7 +189,7 @@ function checkMetadata(entry: AnyEntry, say: Say): void {
       say(`an agent-allowed entry cannot need scope "${entry.scope}" (R7)`);
     }
     const budget = entry.budget;
-    if (budget === undefined) say("an agent-allowed entry declares a budget (A3 3.2.5)");
+    if (budget === undefined) say("an agent-allowed entry declares a budget");
     else if (!(budget.typical > 0 && budget.typical <= budget.max && budget.max <= LIMITS.result)) {
       say(
         `budget: typical ${String(budget.typical)} must not exceed max ${String(budget.max)}, and max must not exceed ${String(LIMITS.result)}`,
@@ -242,7 +242,7 @@ function checkOps(entry: AnyEntry, say: Say): void {
         `an agent-allowed entry cannot emit "${op}" (R7: launches, runs and routines are the user's)`,
       );
     } else if (isAgentAllowed(entry) && spec.class === "user") {
-      say(`an agent-allowed entry cannot emit the user-only "${op}" (A3 3.2.3)`);
+      say(`an agent-allowed entry cannot emit the user-only "${op}"`);
     }
   }
 }
@@ -273,16 +273,16 @@ function checkBase(entry: AnyEntry, say: Say): void {
   const guarded = entry.ops.filter((op) => opSpec(op)?.base === true);
   if (base === undefined) {
     if (guarded.length > 0) {
-      say(`a write entry that may emit ${guarded.join(", ")} takes base (A1 3.5)`);
+      say(`a write entry that may emit ${guarded.join(", ")} takes base`);
     }
   } else if (!isShared(base, Base, true) && !isShared(base, GroupBase, true)) {
-    say("base must be a shared base schema from schemas.ts, or one made optional (A3 3.4.1)");
+    say("base must be a shared base schema from schemas.ts, or one made optional");
   } else if (entry.actions !== undefined) {
     // A read action takes no base: the request path requires it for a write action.
     if (base === Base || base === GroupBase)
-      say("base of an entry with read actions is Base.optional() (A3 3.2.3)");
+      say("base of an entry with read actions is Base.optional()");
   } else if (base !== Base && guarded.length > 0 && guarded.length === entry.ops.length) {
-    say("base is required: every operation of the entry changes existing fields (A1 3.5)");
+    say("base is required: every operation of the entry changes existing fields");
   }
 }
 
@@ -546,7 +546,7 @@ function node(schema: z.ZodType, at: At): void {
   const shape = Object.hasOwn(SHAPES, name) ? SHAPES[name] : undefined;
   if (shape === undefined) {
     at.say(
-      `${at.path}: type "${def.type}" is not in the schema grammar (A3 3.2.1)${TYPE_HINTS[def.type] ?? ""}`,
+      `${at.path}: type "${def.type}" is not in the schema grammar${TYPE_HINTS[def.type] ?? ""}`,
     );
     return;
   }
@@ -556,7 +556,7 @@ function node(schema: z.ZodType, at: At): void {
   }
   if (name === "null" && at.option !== true) {
     at.say(
-      `${at.path}: null stands only as a union option, such as a preference value (A3 3.4.11)`,
+      `${at.path}: null stands only as a union option, such as a preference value`,
     );
     return;
   }
@@ -900,7 +900,7 @@ function checkFaces(
     say("an entry has at least one face");
   }
   if (faces.mcp !== undefined && !isAgentAllowed(entry)) {
-    say("only agent-allowed entries have an MCP face (A3 3.2.3)");
+    say("only agent-allowed entries have an MCP face");
   }
   if (entry.actors === "ui" && clis.length > 0) say("a UI-only entry has no CLI face");
 
@@ -1035,7 +1035,7 @@ function firstIssue(error: z.ZodError): string {
  * audience inputs are built only from rules that passed the check (`schemasOk`).
  */
 function checkExamples(entry: AnyEntry, say: Say, schemasOk: boolean): void {
-  if (entry.examples.length === 0) say("needs at least one example (A3 3.2.1)");
+  if (entry.examples.length === 0) say("needs at least one example");
   for (const example of entry.examples) {
     const at = `example "${example.title}"`;
     const actor = example.actor ?? (isAgentAllowed(entry) ? "agent" : "user");

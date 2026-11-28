@@ -711,7 +711,7 @@ export function checkPreferences(
       problems.push(`${key}: a policy key has the human as its only writer`);
     }
     if (spec.scope === "machine" && spec.writers.includes("agent")) {
-      problems.push(`${key}: a machine preference is the user's (A2 3.2.4)`);
+      problems.push(`${key}: a machine preference is the user's`);
     }
     if (!Number.isSafeInteger(spec.schemaVer) || spec.schemaVer < 1) {
       problems.push(`${key}: the schema version is a whole number from 1`);

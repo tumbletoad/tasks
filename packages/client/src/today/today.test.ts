@@ -89,7 +89,7 @@ describe("[A5.3.4.day.one-rule] the page's day follows the rule an agent's statu
 });
 
 describe("[A5.3.4.web.today] Today's sections and numbers", () => {
-  test("the fixture example of A5 3.4", () => {
+  test("the fixture example of Today's sections", () => {
     const lumen = "ar_lumen";
     const home = "ar_home";
     const tasks = [

@@ -35,7 +35,7 @@ const A1_3_7 = [
 const mappings = Object.entries(A1_ERRORS) as [string, A1ErrorMapping][];
 
 describe("[A3.3.5.error-map] A1's codes map onto the registry's, with A1's code as the cause", () => {
-  test("every code of A1 3.7 is mapped, onto a code of the catalogue", () => {
+  test("every code of the write path is mapped, onto a code of the catalogue", () => {
     for (const code of A1_3_7) expect(Object.hasOwn(A1_ERRORS, code), code).toBe(true);
     for (const [cause, mapping] of mappings) {
       expect(isErrorCode(mapping.code), cause).toBe(true);
@@ -43,7 +43,7 @@ describe("[A3.3.5.error-map] A1's codes map onto the registry's, with A1's code 
     }
   });
 
-  test("a reason and a retry rule come only with the codes that carry them (A3 3.5)", () => {
+  test("a reason and a retry rule come only with the codes that carry them", () => {
     for (const [cause, mapping] of mappings) {
       const carries = mapping.code === "space_unavailable" || mapping.code === "read_only";
       if (!carries) {

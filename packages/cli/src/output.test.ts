@@ -46,7 +46,7 @@ function recorder(
 }
 
 describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
-  test("every error code exits with its class's code (A2 3.10.3)", () => {
+  test("every error code exits with its class's code", () => {
     const expected: Record<string, number> = {
       invalid_input: 2,
       not_found: 3,
@@ -373,7 +373,7 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
     );
   });
 
-  test("no service: exit 6 with A2 3.3.6's message, and tasks alone still answers", async () => {
+  test("no service: exit 6 with the no-service message, and tasks alone still answers", async () => {
     const home = mkdtempSync(join(tmpdir(), "kc-"));
     try {
       const json = recorder(["status", "--json"], { TTASKS_HOME: home });

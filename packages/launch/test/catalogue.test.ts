@@ -13,7 +13,7 @@ import {
 } from "../src/catalogue.ts";
 
 describe("[A4.3.2.catalogue.invariants] the built-in target catalogue", () => {
-  test("each built-in target once, routes well-formed, templates within A4 3.6.4, budgets within limits", () => {
+  test("each built-in target once, routes well-formed, templates well-formed, budgets within limits", () => {
     expect(CATALOGUE.map((t) => t.id)).toEqual([...BUILT_IN_TARGETS]);
     for (const target of CATALOGUE) {
       expect(target.routes.length, target.id).toBeGreaterThan(0);
@@ -39,7 +39,7 @@ describe("[A4.3.2.catalogue.invariants] the built-in target catalogue", () => {
     }
   });
 
-  test("A4 3.11.6's permission flags; inherit adds nothing, and a Codex run takes no flags", () => {
+  test("each permission mode's flags; inherit adds nothing, and a Codex run takes no flags", () => {
     const claude = targetDef("claude-cli").permissionArgs;
     const codex = targetDef("codex-cli").permissionArgs;
     expect(claude.inherit).toEqual({ open: [], run: null });

@@ -76,7 +76,7 @@ describe("[A1.3.16.prefs.registry] every preference is declared once, with a sha
     expect(checkPreferences([base], ["ui.sample"])).toEqual(["ui.sample: a retired name"]);
   });
 
-  test("A1 3.16's keys and A3 3.8.2's policy keys are declared as the plan names them", () => {
+  test("every preference is declared with its scope, policy and writers", () => {
     const table = PREFERENCES.map((p) => [p.key, p.scope, p.policy, p.writers.join("+")]);
     expect(table).toEqual([
       ["ui.theme", "machine", false, "human"],

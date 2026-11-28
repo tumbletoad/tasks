@@ -179,9 +179,9 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
     ).toBe(true);
   }
 
-  const NOT_IN_GRAMMAR = 'type "default" is not in the schema grammar (A3 3.2.1)';
+  const NOT_IN_GRAMMAR = 'type "default" is not in the schema grammar';
 
-  describe("the schema grammar (A3 3.2.1)", () => {
+  describe("the schema grammar", () => {
     test("accepts every shape it lists, in the places it lists", () => {
       const accepted: [string, AnyEntry][] = [
         ["string with a maximum", withInput(z.string().max(10).describe("P").optional())],
@@ -275,7 +275,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
           withOutput(z.array(z.string()).describe("P").optional()),
         ],
         [
-          "null as an input union option, a preference value's reset (A3 3.4.11)",
+          "null as an input union option, a preference value's reset",
           withInput(
             z
               .union([z.string().max(5), z.array(z.string().max(5)).max(3), z.null()])
@@ -291,11 +291,11 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
       const n = (s: z.ZodType) => withInput(s.describe("P").optional());
       const nested = n(z.union([z.strictObject({ v: z.null().describe("V") }), z.string().max(3)]));
       expect(check(nested)).toEqual([
-        "fixture.note: input.probe|0.v: null stands only as a union option, such as a preference value (A3 3.4.11)",
+        "fixture.note: input.probe|0.v: null stands only as a union option, such as a preference value",
       ]);
       const element = n(z.union([z.array(z.null()).max(2), z.string().max(3)]));
       expect(check(element)).toEqual([
-        "fixture.note: input.probe|0[]: null stands only as a union option, such as a preference value (A3 3.4.11)",
+        "fixture.note: input.probe|0[]: null stands only as a union option, such as a preference value",
       ]);
       const twice = n(z.union([z.null(), z.literal(null)]));
       expect(check(twice).length).toBeGreaterThan(0);
@@ -1130,7 +1130,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
           input: taskUpdate.input.extend({ base: Base.optional().check(any(z.maxLength(1))) }),
         });
         expect(check(inUpdate)).toContain(
-          "task.update: base must be a shared base schema from schemas.ts, or one made optional (A3 3.4.1)",
+          "task.update: base must be a shared base schema from schemas.ts, or one made optional",
         );
         // SafeText with a minimum or a pattern on its optional: both run after normalising.
         for (const field of [
@@ -1413,7 +1413,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
     });
   });
 
-  describe("entry metadata (A3 3.2.1, 3.2.3, A6 3.3)", () => {
+  describe("entry metadata", () => {
     test("names are dotted lower case and unique", () => {
       rejects(defineEntry({ ...base, name: "FixtureNote" }), /name must be dotted lower case/);
       const twice = check(base, base);
@@ -1490,7 +1490,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
       ]);
     });
 
-    test("request_id is the shared RequestId schema, not a look-alike (A3 3.4.1)", () => {
+    test("request_id is the shared RequestId schema, not a look-alike", () => {
       // The review's probe: an integer request_id with a description passed the old check.
       const integer = defineEntry({
         ...base,
@@ -1498,7 +1498,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
         examples: [{ ...example, input: { ...example.input, request_id: 7 } }],
       });
       expect(check(integer)).toEqual([
-        "fixture.note: request_id must be the shared RequestId schema from schemas.ts (A3 3.4.1)",
+        "fixture.note: request_id must be the shared RequestId schema from schemas.ts",
       ]);
       const lookAlike = defineEntry({
         ...base,
@@ -1511,7 +1511,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
         }),
       });
       expect(check(lookAlike)).toEqual([
-        "fixture.note: request_id must be the shared RequestId schema from schemas.ts (A3 3.4.1)",
+        "fixture.note: request_id must be the shared RequestId schema from schemas.ts",
       ]);
       expect(
         check(defineEntry({ ...base, input: input.extend({ request_id: RequestId }) })),
@@ -1526,29 +1526,29 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
         expect(
           check(defineEntry({ ...base, input: input.extend({ request_id: wrapped }) })),
         ).toContainEqual(
-          "fixture.note: request_id must be the shared RequestId schema from schemas.ts (A3 3.4.1)",
+          "fixture.note: request_id must be the shared RequestId schema from schemas.ts",
         );
       }
     });
 
-    test("a write that changes fields takes the shared Base schema (A1 3.5)", () => {
+    test("a write that changes fields takes the shared Base schema", () => {
       const missing = defineEntry({ ...taskReopen, input: taskReopen.input.omit({ base: true }) });
       expect(check(missing)).toContainEqual(
-        "task.reopen: a write entry that may emit task.reopen takes base (A1 3.5)",
+        "task.reopen: a write entry that may emit task.reopen takes base",
       );
       const optional = defineEntry({
         ...taskReopen,
         input: taskReopen.input.extend({ base: Base.optional() }),
       });
       expect(check(optional)).toEqual([
-        "task.reopen: base is required: every operation of the entry changes existing fields (A1 3.5)",
+        "task.reopen: base is required: every operation of the entry changes existing fields",
       ]);
       const lookAlike = defineEntry({
         ...taskReopen,
         input: taskReopen.input.extend({ base: z.string().max(40).describe("Base") }),
       });
       expect(check(lookAlike)).toEqual([
-        "task.reopen: base must be a shared base schema from schemas.ts, or one made optional (A3 3.4.1)",
+        "task.reopen: base must be a shared base schema from schemas.ts, or one made optional",
       ]);
       // task.finish also emits task.create, which needs no base, so base could be optional there.
       const finish = defineEntry({
@@ -1570,13 +1570,13 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
           expect(
             check(defineEntry({ ...entry, input: entry.input.extend({ base: wrapped }) })),
           ).toContainEqual(
-            `${entry.name}: base must be a shared base schema from schemas.ts, or one made optional (A3 3.4.1)`,
+            `${entry.name}: base must be a shared base schema from schemas.ts, or one made optional`,
           );
         }
       }
     });
 
-    describe("[A3.3.2.3.registry.mixed-actions] an entry with read and write actions (A3 3.2.3)", () => {
+    describe("[A3.3.2.3.registry.mixed-actions] an entry with read and write actions", () => {
       const mixedInput = z.strictObject({
         action: z.enum(["list", "add"]).describe("list reads; add writes"),
         task: SessionTask,
@@ -1605,7 +1605,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
           examples: [{ ...example, input: full }],
         });
         expect(check(required)).toEqual([
-          "fixture.note: request_id of an entry with read actions is RequestId.optional() (A3 3.2.3)",
+          "fixture.note: request_id of an entry with read actions is RequestId.optional()",
         ]);
         expect(
           check(
@@ -1615,7 +1615,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
             }),
           ),
         ).toEqual([
-          "fixture.note: request_id of an entry with read actions is RequestId.optional() (A3 3.2.3)",
+          "fixture.note: request_id of an entry with read actions is RequestId.optional()",
         ]);
         const base_ = defineEntry({
           ...mixed,
@@ -1623,7 +1623,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
           examples: [{ ...example, input: full }],
         });
         expect(check(base_)).toEqual([
-          "fixture.note: base of an entry with read actions is Base.optional() (A3 3.2.3)",
+          "fixture.note: base of an entry with read actions is Base.optional()",
         ]);
       });
 
@@ -1669,7 +1669,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
         const plain: AnyEntry = { ...mixed };
         delete (plain as { actions?: unknown }).actions;
         expect(check(defineEntry(plain))).toContainEqual(
-          "fixture.note: request_id must be the shared RequestId schema from schemas.ts (A3 3.4.1)",
+          "fixture.note: request_id must be the shared RequestId schema from schemas.ts",
         );
       });
 
@@ -1734,7 +1734,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
         );
       }
       expect(check(defineEntry({ ...entryAdd, ops: ["log.add", "proposal.accept"] }))).toEqual([
-        'entry.add: an agent-allowed entry cannot emit the user-only "proposal.accept" (A3 3.2.3)',
+        'entry.add: an agent-allowed entry cannot emit the user-only "proposal.accept"',
       ]);
       // The same operations are fine on a user-only entry with the right scope.
       const userEntry = defineEntry({
@@ -1762,7 +1762,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
           examples: [{ ...example, actor: "user", input: { ...example.input, base: AS_OF } }],
         });
 
-      test("a run needs launch:run, and pref.set may need admin (A6 3.6.3)", () => {
+      test("a run needs launch:run, and pref.set may need admin", () => {
         expect(check(userEntry(["run.create"], "launch:run"))).toEqual([]);
         expect(check(userEntry(["run.create"], "admin"))).toEqual([
           'fixture.note: operation kind "run.create" needs scope "launch:run", not "admin"',
@@ -1774,7 +1774,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
       });
     });
 
-    test("the table holds only unconditional preconditions (A1 3.6)", () => {
+    test("the table holds only unconditional preconditions", () => {
       // The review's probe: source.unlink with a link version and no base failed. A1 takes a
       // link version or a base, so the handler checks it.
       const unlink = defineEntry({
@@ -1792,7 +1792,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
       }
       // An unconditional base stays required.
       expect(check(defineEntry({ ...base, ops: ["log.delete"] }))).toEqual([
-        "fixture.note: a write entry that may emit log.delete takes base (A1 3.5)",
+        "fixture.note: a write entry that may emit log.delete takes base",
       ]);
     });
 
@@ -1834,7 +1834,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
     });
   });
 
-  describe("MCP names and budgets (A3 3.2.4, 3.2.5)", () => {
+  describe("MCP names and budgets", () => {
     const withTool = (tool: string) =>
       defineEntry({ ...base, faces: { ...base.faces, mcp: { ...mcp, tool } } });
 
@@ -1874,7 +1874,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
       );
     });
 
-    test("a tool definition's size is reported, never refused (A3 3.2.5)", () => {
+    test("a tool definition's size is reported, never refused", () => {
       // 80 tools with long descriptions: far over any cap, and still no problem.
       const many = Array.from({ length: 80 }, (_, i) =>
         defineEntry({
@@ -1909,7 +1909,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
     });
   });
 
-  describe("CLI faces (A2 3.10, A3 3.4.13)", () => {
+  describe("CLI faces", () => {
     test("verbs are lower case and unique", () => {
       rejects(
         defineEntry({ ...base, faces: { ...base.faces, cli: { verb: "Note" } } }),
@@ -1974,7 +1974,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
     });
   });
 
-  describe("examples (A3 3.2.1)", () => {
+  describe("examples", () => {
     test("every entry has an example", () => {
       rejects(defineEntry({ ...base, examples: [] }), /needs at least one example/);
     });
