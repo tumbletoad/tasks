@@ -308,7 +308,8 @@ export async function readSnapshot(
 ): Promise<SnapshotMessage> {
   const folders = await hasFolderTable(reader);
   const since = { since: now - AGENT_CHANGE_DAYS * 86_400_000 };
-  const [space, tasks, areas, projects, preferences, changed, finished, asking] =
+  const withPages = await hasPageTable(reader);
+  const [space, tasks, areas, projects, preferences, changed, finished, asking, livePages] =
     await reader.transaction("deferred", [
       { sql: SPACE_SQL, mode: "get" },
       { sql: openTasks(folders), mode: "all" },
@@ -318,13 +319,14 @@ export async function readSnapshot(
       { sql: AGENT_CHANGES, mode: "all", params: since },
       { sql: agentChangedRows(folders), mode: "all", params: since },
       { sql: askingRows(folders), mode: "all" },
+      ...(withPages ? [{ sql: LIVE_PAGES, mode: "all" as const }] : []),
     ]);
   const head = headOf(space);
   const rows = new Map(
     (await taskRows(finished as Row[], head.ref_prefix, here)).map((row) => [row["id"], row]),
   );
-  const pages = (await hasPageTable(reader))
-    ? (await reader.all(LIVE_PAGES)).map((row) => compactPage(head.ref_prefix, row))
+  const pages = withPages
+    ? ((livePages ?? []) as Row[]).map((row) => compactPage(head.ref_prefix, row))
     : undefined;
   return {
     type: "snapshot",

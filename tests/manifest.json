@@ -167,6 +167,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.pages.service",
+      "title": "write_page puts an agent's page on its task's project and asks for a brief; read gives a page by heading and a node with what is above it; the digest lists the pages above; search scope library finds pages; complete_task takes the pages updated; the feed carries the pages",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.pages.trail",
       "title": "get_task's first answer lists what is known above the task, nearest first, within its budget: older log entries go before page rows above, every level keeps its count and read target, and the user's texts for agents stand outside the data block under an ID",
       "source": "Step 1 design, pull request 228",
