@@ -1,4 +1,4 @@
-// The launch state machine's rules one by one (A4 3.6.3, 3.9.1–3.9.3), on the in-memory store
+// The launch state machine's rules one by one, on the in-memory store
 // with stub external steps. The property test covers their combinations under crashes.
 import { beforeEach, describe, expect, test } from "vitest";
 import { CLAIM_WINDOW_MS, PREPARED_TTL_MS, type Route } from "../src/intents.ts";
@@ -140,7 +140,7 @@ describe("[A4.5.launch.machine] the launch state machine's rules", () => {
     const cases: [Route, DispatchOutcome, string, string | null][] = [
       ["terminal", { kind: "accepted" }, "dispatched", null],
       ["terminal", { kind: "refused" }, "failed", "refused"],
-      // A terminal's claim window decides an ambiguous answer (A4 3.6.2).
+      // A terminal's claim window decides an ambiguous answer.
       ["terminal", { kind: "unknown" }, "dispatched", null],
       ["link", { kind: "unknown" }, "unknown", "no_answer"],
       ["link", { kind: "refused", reason: "refused" }, "failed", "refused"],

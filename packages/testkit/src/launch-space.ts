@@ -1,5 +1,5 @@
-// A space for the launch tests (A4 5.1): a fixture space, its writer with a clock the test moves,
-// and tasks and places made through the write path. Launch code never imports storage (A7 3.2),
+// A space for the launch tests: a fixture space, its writer with a clock the test moves,
+// and tasks and places made through the write path. Launch code never imports storage,
 // so its tests reach a space through this module, in the calling thread or through a storage
 // worker as the service does. Fixture text only.
 import { join } from "node:path";
@@ -32,7 +32,7 @@ interface Fixture<W> {
   folder: string;
   spaceId: Id<"sp">;
   machine: Id<"m">;
-  /** The space's owner, writing from the UI: who clicks Open (A4 3.16: `created_by = user`). */
+  /** The space's owner, writing from the UI: who clicks Open (`created_by = user`). */
   credential: Credential;
   /** The writer now open. `restart` replaces it. */
   writer: W;

@@ -1,5 +1,5 @@
-// `pnpm accept m1 --installed <root>` against an install that an install script made (A7 3.8
-// M1.14's Verify line; the CI smoke job runs it on the root it installed). The other installed
+// `pnpm accept m1 --installed <root>` against an install that an install script made (the
+// CI smoke job runs it on the root it installed). The other installed
 // entries lay out test installs of the root's current version folder in homes of their own; this
 // one checks the install itself, as it was installed: its stable command, doctor's rows in it, its
 // install.json and install ID, and its service started and stopped through its stable command by

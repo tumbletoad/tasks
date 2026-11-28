@@ -1,4 +1,4 @@
-// When the projection runs (A1 3.13 step 2, A1 3.20, A7 3.10 M3.10's Verify line): one task shows
+// When the projection runs: one task shows
 // within 1 s of its commit; a batch waits 500 ms after the last change, at most 5 s while changes
 // keep coming; a backlog runs at once; failures pause. Fixture text only.
 import {

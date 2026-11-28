@@ -1,7 +1,7 @@
-// The client side of `ttasks-local/1` (A2 3.6): connect to the socket or pipe, verify the
+// The client side of `ttasks-local/1`: connect to the socket or pipe, verify the
 // challenge, send only the hello, verify the service's proof, and only then send the bind frame
-// with the context and verify the bind result. The CLI (M1.10), the shim and the bridge (M2.01)
-// build on it. It imports only Node built-ins, so the bridge bundle stays small (A2 3.7.1).
+// with the context and verify the bind result. The CLI, the shim and the bridge
+// build on it. It imports only Node built-ins, so the bridge bundle stays small.
 import net from "node:net";
 import {
   BIND_MAX_BYTES,
@@ -48,13 +48,13 @@ import {
 } from "./proofs.ts";
 
 export interface ConnectOptions {
-  /** The socket path or pipe name: `endpoint.path` from `service.json` (A2 3.6.1). */
+  /** The socket path or pipe name: `endpoint.path` from `service.json`. */
   readonly path: string;
   /** The 32 bytes of `ipc.key`. Read it for every connection, so a key rotation needs nothing else. */
   readonly key: Uint8Array;
   readonly mode: Mode;
   readonly client: ClientInfo;
-  /** The bind context (A2 3.6.4). Sent only after the service's proof verified. */
+  /** The bind context. Sent only after the service's proof verified. */
   readonly context: JsonObject;
   /** From the connect call to the connection. */
   readonly connectTimeoutMs?: number;
@@ -66,7 +66,7 @@ export interface ConnectOptions {
   readonly protocol?: number;
 }
 
-/** The verified bind result (A2 3.6.3), without its mac. */
+/** The verified bind result, without its mac. */
 export interface Bound {
   readonly protocol: number;
   readonly service: { readonly version: string; readonly build: string; readonly instance: string };
@@ -434,7 +434,7 @@ class CloseSignal {
 }
 
 // ---------------------------------------------------------------------------------------------
-// rpc mode (A2 3.6.4)
+// rpc mode
 
 export interface CallOptions {
   /** A reply that does not come in time fails the call and closes the connection. */
@@ -615,7 +615,7 @@ export async function openRpc(options: Omit<ConnectOptions, "mode">): Promise<Rp
 }
 
 // ---------------------------------------------------------------------------------------------
-// mcp mode (A2 3.6.4): after the bind result, every line is an unchanged MCP message
+// mcp mode: after the bind result, every line is an unchanged MCP message
 
 /**
  * An mcp mode connection: whole lines in both directions. The service may send lines right after
@@ -707,7 +707,7 @@ export class LineSession {
 
   /**
    * Delivers no more lines until `resume()`, and stops reading from the service: for a consumer
-   * whose own output is backed up, such as the bridge's stdout (A2 3.6.2's backpressure).
+   * whose own output is backed up, such as the bridge's stdout.
    * Lines already read wait in order, at most what one read brought, and the close still comes
    * after the last of them.
    */

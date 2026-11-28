@@ -1,5 +1,5 @@
-// The offline responder's table (A2 3.7.4) for both eras, the file format and its loading
-// (A2 3.7.3), and the one parse per line the forwarder relies on.
+// The offline responder's table for both eras, the file format and its loading,
+// and the one parse per line the forwarder relies on.
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

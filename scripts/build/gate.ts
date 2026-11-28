@@ -1,13 +1,13 @@
-// The build's runtime gate (A2 3.12.1, 3.12.8 "build"): inside the version folder it made, through
-// the version's own launcher, as install and update run a candidate (A2 3.12.6). The folder is laid
+// The build's runtime gate: inside the version folder it made, through
+// the version's own launcher, as install and update run a candidate. The folder is laid
 // out as a test install in the work folder, so the launcher sets TTASKS_HOME to that root and
 // nothing outside it is read or written. Then
 //   - `ttasks doctor --self-test --json`: its `integrity` row (every file matches manifest.json), its
 //     `runtime` row (Node and SQLite as pinned, FTS5, JSON, STRICT, the backup API, the launcher
-//     flags) and the candidate's rows (a temporary space, endpoint and bridge, M1.14) must pass.
+//     flags) and the candidate's rows (a temporary space, endpoint and bridge) must pass.
 //     The rows about a service are not asked: none runs here.
 //   - `ttasks version` names the build's version and build.
-//   - the entry turned on the compile cache in `<root>/cache/compile/` (A2 3.12.2).
+//   - the entry turned on the compile cache in `<root>/cache/compile/`.
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -30,7 +30,7 @@ export interface GateRun {
 
 /**
  * The rows of `ttasks doctor` that the build's gate requires: the files and the runtime, and the
- * candidate's own checks that `ttasks install --finish` runs before it switches current (M1.14),
+ * candidate's own checks that `ttasks install --finish` runs before it switches current,
  * so a build never ships a folder its own install would refuse.
  */
 export const GATE_ROWS = [

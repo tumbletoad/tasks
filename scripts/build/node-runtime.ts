@@ -1,5 +1,5 @@
-// The official Node runtime of a version folder (A2 3.12.1), promoted from the M0.03
-// spike. Downloaded from nodejs.org, never taken from the machine that builds, and accepted only
+// The official Node runtime of a version folder.
+// Downloaded from nodejs.org, never taken from the machine that builds, and accepted only
 // when
 //   1. SHASUMS256.txt carries a valid OpenPGP signature of a Node releaser, checked with gpgv
 //      against the nodejs/release-keys keyring at a pinned commit, whose SHA-256 is pinned too,

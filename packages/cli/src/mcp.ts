@@ -1,7 +1,7 @@
-// `ttasks mcp` (A2 3.7): the bridge, on this process's stdio. The entry (bin.ts) hands over here
+// `ttasks mcp`: the bridge, on this process's stdio. The entry (bin.ts) hands over here
 // before it loads anything else of the CLI, so the bridge starts as fast as on its own and nothing
 // the CLI prints can reach stdout, which carries MCP frames only. This file imports nothing: the
-// bridge itself loads only its own modules and the built-ins A2 3.7.1 allows. The build (M1.13)
+// bridge itself loads only its own modules and a few Node built-ins. The build
 // bundles `@ttasks/bridge/mcp` as its own `lib/bridge.mjs`, shared with no chunk of the CLI.
 
 /** The verb. bin.ts compares the first argument with it before it loads the router. */

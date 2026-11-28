@@ -1,4 +1,4 @@
-// Approval of definitions that arrive with data (A4 3.2, A4 5.1 "Approval hashes"): the canonical
+// Approval of definitions that arrive with data: the canonical
 // form is stable under key order, and changing any one byte of an approved definition disables it.
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
@@ -11,7 +11,7 @@ import {
 } from "./approval.ts";
 import { APPROVAL_KEY, type Verdict } from "./sections.ts";
 
-/** A custom target as a space would carry it (A4 3.4.7), fixture text only. */
+/** A custom target as a space would carry it, fixture text only. */
 const CURSOR_AGENT = {
   id: "custom:cursor-agent",
   label: "Cursor Agent",
@@ -167,7 +167,7 @@ describe("[A4.3.2.approval.hash] approval hashes of definitions that arrive with
     expect(approvalState("routine", routineApproval(routine, "auto-edit"), approvals)).toBe(
       "approved",
     );
-    // A raised permission asks again (A4 3.12.1).
+    // A raised permission asks again.
     expect(approvalState("routine", routineApproval(routine, "full-access"), approvals)).toBe(
       "needs_approval",
     );

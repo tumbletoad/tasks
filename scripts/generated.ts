@@ -1,4 +1,4 @@
-// Generated files (A7 3.3: `pnpm gen` writes them, `pnpm verify` checks they are fresh).
+// Generated files: `pnpm gen` writes them, `pnpm verify` checks they are fresh.
 //
 // A generator owns one folder and renders every file it must hold. The check compares the folder
 // with a fresh render: a missing, changed or extra file fails. Generators register in `generators`
@@ -23,10 +23,10 @@ export const generators: readonly Generator[] = [
   // packages/service/generated/skills.json: the default skills, which the service and the bridge's
   // offline answers below read.
   skillsGenerator(),
-  // packages/contracts/generated/ and docs/agents/ (A3 3.2.2). The names come from the brand, so
-  // contracts depend on nothing in the repository (A7 3.2).
+  // packages/contracts/generated/ and docs/agents/. The names come from the brand, so
+  // contracts depend on nothing in the repository.
   ...contractsGenerators({ cli: CLI_NAME, mcpServerKey: MCP_SERVER_KEY }),
-  // packages/bridge/lib/mcp-offline.json (A2 3.7.3): the bridge's offline answers, captured from
+  // packages/bridge/lib/mcp-offline.json: the bridge's offline answers, captured from
   // the service's MCP endpoint, whose tool list is contracts' generated one.
   bridgeOfflineGenerator(),
 ];

@@ -1,6 +1,6 @@
-// Doctor's accounts and HTTP rows (A2 3.13; A6 3.3; R18): other interactive user
+// Doctor's accounts and HTTP rows: other interactive user
 // accounts warn, an agent app's sandbox accounts are not counted, and the UI listener's state and
-// self-test are reported: blocked by another user (fail, with A2's message), moved (warn), and a
+// self-test are reported: blocked by another user (fail, with its message), moved (warn), and a
 // rebinding Host and the style nonce checked on the live listener. The machine's accounts are
 // injected facts; no account is made or named.
 import { createServer } from "node:http";

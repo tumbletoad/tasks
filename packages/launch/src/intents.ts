@@ -1,12 +1,12 @@
-// Launch intents and their states (A4 3.9). Pure: the states, the routes, the edges of the state
+// Launch intents and their states. Pure: the states, the routes, the edges of the state
 // machine, the fixed reason codes, and the evidence a record may hold. Every backend of the
 // execution store and the state machine read these, so there is one table of legal transitions.
 //
 // A launch record holds IDs, states, instants and fixed codes only: never a brief, a prompt, a
-// composer text, a title or a path (A4 3.9.1, R14, AGENTS.md). The absolute folder, the composer
-// text and the tickets stay in machine state (A4 3.16), where M2.08 puts them.
+// composer text, a title or a path (AGENTS.md). The absolute folder, the composer
+// text and the tickets stay in machine state.
 
-/** A4 3.9.1's states, in the order a launch moves through them. */
+/** The states, in the order a launch moves through them. */
 export const INTENT_STATES = [
   "prepared",
   "dispatching",
@@ -17,12 +17,12 @@ export const INTENT_STATES = [
 ] as const;
 export type IntentState = (typeof INTENT_STATES)[number];
 
-/** The states recovery works on (A4 3.9.3, 3.16.1 `openWork`): not final on this machine. */
+/** The states recovery works on (`openWork`): not final on this machine. */
 export const OPEN_STATES = ["prepared", "dispatching", "dispatched"] as const;
 export type OpenState = (typeof OPEN_STATES)[number];
 
 /**
- * A4 3.1's routes: one mechanism of a target. `t3-cli` is read only: no launch takes it now, and
+ * The routes: one mechanism of a target. `t3-cli` is read only: no launch takes it now, and
  * launches recorded with it earlier still read and settle.
  */
 export const ROUTES = ["terminal", "link", "t3-mcp", "t3-cli", "clipboard"] as const;
@@ -81,7 +81,7 @@ export const heldAgentSql = (l: string): string =>
   `json_extract(${l}.detail, '$.evidence.lost_at') IS NULL))`;
 
 /**
- * The legal transitions (A4 3.9.1). A self edge records evidence and changes no state: T3's repeat
+ * The legal transitions. A self edge records evidence and changes no state: T3's repeat
  * on Dispatching, before it is sent; a terminal shim's claim and its agent's PID on Dispatched; the
  * bridge's binding on Confirmed. Dispatching → Confirmed is a confirmation that arrives before the
  * call's own answer was recorded, in one step. Unknown moves only on a definite observation, to
@@ -96,12 +96,12 @@ export const EDGES: Readonly<Record<IntentState, readonly IntentState[]>> = {
   unknown: ["confirmed", "failed"],
 };
 
-/** Whether `from → to` is an edge of A4's state machine. */
+/** Whether `from → to` is an edge of the launch state machine. */
 export const isEdge = (from: IntentState, to: IntentState): boolean => EDGES[from].includes(to);
 
 /** Why a place does not resolve to a folder, or a working folder fails its check. A closed list. */
 export const RESOLVE_REASONS = [
-  /** The relative path is not a place's path (A1 3.15). */
+  /** The relative path is not a place's path. */
   "invalid_path",
   /** This machine has no root with the place's root ID. */
   "root_missing",
@@ -125,7 +125,7 @@ export const RESOLVE_REASONS = [
    */
   "folder_changed",
   /**
-   * A folder TTasks makes and owns (the space's work folder, A4 3.3) is not one it may work
+   * A folder TTasks makes and owns (the space's work folder) is not one it may work
    * in: a link, a junction or another reparse point, another user's, open to other users (POSIX),
    * or not inside its parent by identity.
    */
@@ -136,8 +136,8 @@ export const RESOLVE_REASONS = [
 export type ResolveReason = (typeof RESOLVE_REASONS)[number];
 
 /**
- * The fixed reason codes of Failed and Unknown (A4 3.9.1, 3.9.2, 3.9.3). A record holds a code,
- * never a message: the UI words it (A4 3.9.4, 3.18).
+ * The fixed reason codes of Failed and Unknown. A record holds a code,
+ * never a message: the UI words it.
  */
 export const FAIL_REASONS = [
   /** Left in Prepared for 10 minutes. Not shown as a failure. */
@@ -201,8 +201,8 @@ export const isUnknownReason = (value: unknown): value is UnknownReason =>
 export type EvidenceKind = "id" | "instant" | "count" | "flag";
 
 /**
- * The evidence a launch record may hold (A4 3.9.1, 3.16: "evidence (shim claim, agent PID and
- * start time, T3 thread ID, observed cwd, bridge binding time)"). Evidence only grows: a key, once
+ * The evidence a launch record may hold (shim claim, agent PID and
+ * start time, T3 thread ID, observed cwd, bridge binding time). Evidence only grows: a key, once
  * written, keeps its value, which makes a terminal's claim a once-only record.
  */
 export const EVIDENCE_FIELDS = {
@@ -210,10 +210,10 @@ export const EVIDENCE_FIELDS = {
   folder_id: "id",
   /** The native session ID TTasks preset (Claude Code's `--session-id`). */
   preset: "id",
-  /** T3: the grant the launch was dispatched under (added at Dispatching, A4 3.9.1). */
+  /** T3: the grant the launch was dispatched under (added at Dispatching). */
   grant: "id",
   /**
-   * T3: when the idle-thread create was repeated with the same key (A4 3.9.3), recorded before the
+   * T3: when the idle-thread create was repeated with the same key, recorded before the
    * repeat is sent. Evidence only grows, so a launch is repeated once at most.
    */
   replayed_at: "instant",
@@ -245,7 +245,7 @@ export const EVIDENCE_FIELDS = {
    * copy of the space.
    */
   restored_at: "instant",
-  /** The bridge redeemed the ticket or the launch reference (A3). */
+  /** The bridge redeemed the ticket or the launch reference. */
   bound_at: "instant",
   /**
    * Terminal: the adapter that was Dispatched (`[terminal] app`'s names), and why it was in the
@@ -290,10 +290,10 @@ export type Evidence = {
 /** A native or local ID: plain characters only (the stream parsers' rule, runs/streams). */
 export const EVIDENCE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
-/** The largest instant: 9999-12-31T23:59:59.999Z (A1 3.4's integer domain). */
+/** The largest instant: 9999-12-31T23:59:59.999Z (the integer domain of instants). */
 export const MAX_INSTANT = 253_402_300_799_999;
 
-/** The largest count: 2^31 − 1 (A1 3.4). */
+/** The largest count: 2^31 − 1. */
 export const MAX_COUNT = 2_147_483_647;
 
 /** Whether `value` is a valid value of an evidence kind. */
@@ -345,11 +345,11 @@ export function cleanEvidence(evidence: Evidence): Evidence {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Launch references (A4 3.1): `L`, four random symbols from A1's ID alphabet in upper case, and a
+// Launch references: `L`, four random symbols from the ID alphabet in upper case, and a
 // check character, for example `L7KQ2M`. The space's writer makes them (never one a launch of the
 // space held); this module only reads them.
 
-/** A1's ID alphabet in upper case: Crockford base32 without I, L, O and U. */
+/** The ID alphabet in upper case: Crockford base32 without I, L, O and U. */
 export const REF_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 /**
@@ -374,13 +374,13 @@ export function isLaunchRef(text: unknown): text is string {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Timing (A4 3.9.1, 3.9.2, 3.6.3)
+// Timing
 
 /** A Prepared intent is closed as `expired` after 10 minutes. */
 export const PREPARED_TTL_MS = 10 * 60_000;
 
 /**
- * A terminal launch's claim window: no claim within it means no agent started (A4 3.9.2). It runs
+ * A terminal launch's claim window: no claim within it means no agent started. It runs
  * from Dispatching, when the ticket first leaves the service.
  */
 export const CLAIM_WINDOW_MS = 120_000;
@@ -393,13 +393,13 @@ export const CLICK_SLACK_MS = 5_000;
 
 /**
  * How long the launch machine waits for one call to the execution store. A call still unanswered
- * then has an open outcome (A1 3.8): the machine's call on that intent ends without it.
+ * then has an open outcome: the machine's call on that intent ends without it.
  */
 export const STORE_DEADLINE_MS = 15_000;
 
 /**
  * How long the launch machine waits for one external step: a dispatch, T3's repeat, a claim's
- * reply, an observation or the grant. A step still unanswered then is a timeout, which A4 3.9.2
+ * reply, an observation or the grant. A step still unanswered then is a timeout, which the machine
  * records as not knowing; its call on that intent then ends.
  */
 export const STEP_DEADLINE_MS = 30_000;

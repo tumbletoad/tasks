@@ -1,5 +1,5 @@
 // `ttasks doctor` on an entry setup did not write, and `ttasks doctor --live` against fake apps,
-// through the CLI and a real service (A3 3.14; A7 3.11 M4.05): a headless call through each app
+// through the CLI and a real service: a headless call through each app
 // must reach the service, and a run that hangs or leaves a process behind still gives its row. The
 // service, the fakes and the scratch homes are doctor-agents-world.ts's; the other agent checks are
 // in doctor-agents.test.ts. No real agent home, app folder or agent command is read or run.

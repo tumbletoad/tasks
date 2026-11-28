@@ -68,7 +68,7 @@ export interface RunMachineOptions {
   deadline?: number;
 }
 
-/** A call to the store gave no answer within its deadline: its outcome is open (A1 3.8). */
+/** A call to the store gave no answer within its deadline: its outcome is open. */
 export class RunDeadlinePassed extends Error {
   override readonly name = "RunDeadlinePassed";
   constructor() {

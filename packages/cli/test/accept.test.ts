@@ -1,7 +1,7 @@
-// `pnpm accept m1 --part cli` (A7 3.8 M1.10): the CLI as child processes against a real service
-// child in a temporary TTASKS_HOME. Fixture text only. With `--installed` (M1.13) the same tests
+// `pnpm accept m1 --part cli`: the CLI as child processes against a real service
+// child in a temporary TTASKS_HOME. Fixture text only. With `--installed` the same tests
 // run against a built version folder through its launchers, and `ttasks mcp` through the launcher
-// must be the build's own bridge (A2 3.7.1).
+// must be the build's own bridge.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -118,7 +118,7 @@ describe("[A2.3.10.cli.accept] the M1 acceptance of the CLI", () => {
   }, 180_000);
 
   test("ttasks mcp through the launcher is the build's bridge: offline answers, MCP frames only", async () => {
-    // A home of its own with no service: the bridge answers from its offline file (A2 3.7.3), the
+    // A home of its own with no service: the bridge answers from its offline file, the
     // build's lib/mcp-offline.json beside lib/bridge.mjs, or the source's.
     const temp = tempRoot("cli-mcp");
     try {
@@ -230,7 +230,7 @@ describe("[A2.3.10.cli.accept] the M1 acceptance of the CLI", () => {
       json((await world.tasks(["show", "M-2", "--json"])).stdout),
     );
 
-    // The retry asks for its receipt first and reads no fresh base (A2 3.10.2): the operations
+    // The retry asks for its receipt first and reads no fresh base: the operations
     // it calls are the receipt lookup and the write, which replays.
     const retry = await world.tasks(args, { script: FAULTY, env: { TTASKS_TEST_FAULT: "trace" } });
     expect(retry.code, retry.stderr).toBe(0);

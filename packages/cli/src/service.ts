@@ -1,7 +1,7 @@
-// `ttasks service install|uninstall|start|stop|restart|status` (A2 3.3.5): the service install's entries
-// (M1.12, `@ttasks/service/install`), a local command (A2 3.10.1). The CLI parses its global flags
+// `ttasks service install|uninstall|start|stop|restart|status`: the service install's entries
+// (`@ttasks/service/install`), a local command. The CLI parses its global flags
 // (`--json`); the entry takes the verb and `--yes` and `--dry-run`, prints its preview, asks in a
-// terminal and returns A2 3.10.3's exit code. It is loaded only for this command: the service
+// terminal and returns its exit code. It is loaded only for this command: the service
 // install reaches parts of the hub that the other verbs never load.
 import { CLI_NAME } from "@ttasks/brand";
 import type { ServiceContext } from "@ttasks/service/install";

@@ -1,10 +1,10 @@
-// The execution store's contract suite for runs (A4 3.16.1, 5.1): every backend of the run part
+// The execution store's contract suite for runs: every backend of the run part
 // must pass it, so the run machine, which knows only the interface, behaves the same on each. v1
 // runs it against the in-memory backend and the space database's (in-thread and through the
-// storage worker). The L1 journal must pass it too (M3.12).
+// storage worker). The L1 journal must pass it too.
 //
 // It covers what the run machine relies on: one queued record per request ID and its replay, a
-// compare-and-set on the state and the version that moves nothing when it loses, only A4's edges
+// compare-and-set on the state and the version that moves nothing when it loses, only the run machine's edges
 // and each state's reasons, evidence that only grows, a result once and only entering a final
 // state, a time per state, openWork per machine after a restart, records whose only texts are the
 // request and the result's, and every result value judged as the writer's own validation judges
@@ -40,7 +40,7 @@ const HASH = "5e0b7d13".repeat(8);
 const OTHER_MACHINE = "m_0000000000000000000000000z";
 const ROUTINE = "ro_0000000000000000000000000r";
 
-/** A path through A4's run machine from `queued` to `state`, with the patches each step needs. */
+/** A path through the run machine from `queued` to `state`, with the patches each step needs. */
 const PATHS: Record<RunState, { next: RunState; patch?: RunPatch }[]> = {
   queued: [],
   starting: [{ next: "starting" }],
@@ -138,7 +138,7 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 
 /**
  * A result value as every store sends it to the writer, and nothing more: the texts cut as every
- * store cuts them (A4 3.11.2), the known keys in the column's snake case, every value and every
+ * store cuts them, the known keys in the column's snake case, every value and every
  * other key as it is, so the writer judges the value itself.
  */
 function writerForm(value: unknown): unknown {
@@ -350,7 +350,7 @@ export function runStoreContract(
       ...extra,
     });
 
-    /** A fresh run moved along A4's machine to `state`. */
+    /** A fresh run moved along the run machine to `state`. */
     const runIn = async (state: RunState, extra: Partial<NewRun> = {}): Promise<RunRecord> => {
       let run = await store.createRun(await runInput(extra), requestId());
       for (const step of PATHS[state]) {
@@ -610,7 +610,7 @@ export function runStoreContract(
 
     test("every result value gets the writer's own verdict, and one that is kept reads back as the writer keeps it", async () => {
       // The writer's verdict comes from a space of its own: the same value, as every store sends
-      // it (the texts cut, A4 3.11.2; the keys in the column's snake case), in a run.transition
+      // it (the texts cut; the keys in the column's snake case), in a run.transition
       // submitted to its writer directly. A result goes in entering any final state; this one
       // takes a queued run to cancelled, one write per verdict.
       const parent = mkdtempSync(join(tmpdir(), "ttasks-run-judge-"));

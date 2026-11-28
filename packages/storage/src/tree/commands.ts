@@ -13,7 +13,7 @@ import type { Command, Tx } from "./tx.ts";
 type Run = Command["run"];
 import { TreeProblem } from "./fields.ts";
 
-type Input = Record<string, unknown>;
+export type Input = Record<string, unknown>;
 
 const NOTE_KINDS = [
   "note",
@@ -57,20 +57,25 @@ const SQL = {
   lastOrdinal: "SELECT max(ordinal) AS o FROM notes WHERE owner_id = $owner",
   note: "SELECT * FROM notes WHERE id = $id",
   noteAt: "SELECT * FROM notes WHERE owner_id = $owner AND ordinal = $ordinal",
+  /** A page, with whether what holds it lives: one under a task in the Trash is hidden. */
+  page:
+    "SELECT p.*, o.deleted_at IS NULL AS shown FROM pages p JOIN nodes o ON o.id = p.owner_id " +
+    "WHERE p.id = $id OR p.ref = $ref",
+  pageOwner: "SELECT owner_id FROM pages WHERE id = $id",
 } as const;
 
-const problem = (code: string, message: string, field?: string, data?: unknown): never => {
+export const problem = (code: string, message: string, field?: string, data?: unknown): never => {
   throw new TreeProblem(code, message, field, data);
 };
 
 /** A text the input holds, as check() left it. */
-const str = (input: Input, key: string): string | undefined => {
+export const str = (input: Input, key: string): string | undefined => {
   const value = input[key];
   return typeof value === "string" ? value : undefined;
 };
 
 /** A node by ID, or a task by its reference (`M-14`). Undefined when the space has none. */
-function findNode(tx: Tx, key: unknown): Row | undefined {
+export function findNode(tx: Tx, key: unknown): Row | undefined {
   if (typeof key !== "string") return undefined;
   const ref = parseTaskRef(key);
   if (ref !== undefined) {
@@ -110,12 +115,13 @@ function liveTask(tx: Tx, key: unknown, field = "task", deleted: boolean | "eith
 }
 
 /** The end of a parent's children of one kind. */
-const endOf = (tx: Tx, parent: string, kind: string): string => {
+export const endOf = (tx: Tx, parent: string, kind: string): string => {
   const last = tx.get(SQL.lastPosition, { parent, kind })?.["p"];
   return positionBetween(typeof last === "string" ? last : undefined, undefined);
 };
 
-const refText = (tx: Tx, ref: unknown): string => formatTaskRef(tx.space.refPrefix, Number(ref));
+export const refText = (tx: Tx, ref: unknown): string =>
+  formatTaskRef(tx.space.refPrefix, Number(ref));
 
 /** Where a new or moved task goes: a live project, a live task, or the space. */
 function parentFor(tx: Tx, under: unknown, field: string): Row {
@@ -130,7 +136,14 @@ function parentFor(tx: Tx, under: unknown, field: string): Row {
   return found;
 }
 
-function addNote(tx: Tx, owner: string, node: string, body: string, kind = "note", agents = false) {
+export function addNote(
+  tx: Tx,
+  owner: string,
+  node: string,
+  body: string,
+  kind = "note",
+  agents = false,
+) {
   const last = tx.get(SQL.lastOrdinal, { owner })?.["o"];
   const ordinal = (typeof last === "number" ? last : 0) + 1;
   const id = tx.newId("n");
@@ -340,26 +353,54 @@ const nodesRestore: Run = (tx, input) => {
   return { task: { id, ref: refText(tx, task["ref"]) }, tasks: ids.length };
 };
 
+/** A page by its reference or ID while what holds it lives, or undefined. */
+export function findPage(tx: Tx, key: unknown): Row | undefined {
+  if (typeof key !== "string") return undefined;
+  const parsed = parseTaskRef(key);
+  const ref = parsed !== undefined && parsed.prefix === tx.space.refPrefix ? parsed.ref : -1;
+  const row = tx.get(SQL.page, { id: key, ref });
+  return row?.["shown"] === 1 ? row : undefined;
+}
+
+/** What a note is on (a node, or a page), and the node its change rows belong to. */
+function noteHolder(tx: Tx, key: unknown): { owner: string; node: string } {
+  const page = findPage(tx, key);
+  if (page !== undefined) {
+    if (page["deleted_at"] !== null) problem("DELETED", "The page is in the Trash", "on");
+    return { owner: String(page["id"]), node: String(page["owner_id"]) };
+  }
+  const node = findNode(tx, key);
+  if (node === undefined || node["deleted_at"] !== null) {
+    return problem("NOT_FOUND", "Nothing of that name to write on", "on");
+  }
+  return { owner: String(node["id"]), node: String(node["id"]) };
+}
+
+/** The node a note's change rows belong to: its owner, or the node that holds its page. */
+const nodeOf = (tx: Tx, note: Row): string => {
+  const owner = String(note["owner_id"]);
+  const page = tx.get(SQL.pageOwner, { id: owner })?.["owner_id"];
+  return typeof page === "string" ? page : owner;
+};
+
 /** A note by ID, or by its owner and ordinal. */
 function findNote(tx: Tx, input: Input): Row {
+  const on = input["on"];
   const row =
     typeof input["note"] === "string"
       ? tx.get(SQL.note, { id: input["note"] })
       : tx.get(SQL.noteAt, {
-          owner: String(findNode(tx, input["on"])?.["id"]),
+          owner: String(findPage(tx, on)?.["id"] ?? findNode(tx, on)?.["id"]),
           ordinal: Number(input["ordinal"]),
         });
   return row ?? problem("NOT_FOUND", "The space has no such note", "note");
 }
 
 const noteAdd: Run = (tx, input) => {
-  const owner = findNode(tx, input["on"]);
-  if (owner === undefined || owner["deleted_at"] !== null)
-    problem("NOT_FOUND", "Nothing of that name to write on", "on");
+  const { owner, node } = noteHolder(tx, input["on"]);
   const kind = str(input, "kind") ?? "note";
   const body = String(input["body"]);
-  const id = String(owner?.["id"]);
-  return { note: addNote(tx, id, id, body, kind, input["for_agents"] === true) };
+  return { note: addNote(tx, owner, node, body, kind, input["for_agents"] === true) };
 };
 
 /** A note's words, and its removal, are the person's to correct: an agent writes a new note. */
@@ -374,9 +415,7 @@ const noteEdit: Run = (tx, input) => {
   const note = personsNote(tx, input);
   const body = String(input["body"]);
   if (note["body"] !== body) {
-    tx.set("notes", String(note["id"]), String(note["owner_id"]), {
-      body: { body, edited_at: tx.at },
-    });
+    tx.set("notes", String(note["id"]), nodeOf(tx, note), { body: { body, edited_at: tx.at } });
   }
   return { note: { id: note["id"], ordinal: note["ordinal"] } };
 };
@@ -385,7 +424,7 @@ const noteGone =
   (gone: boolean): Run =>
   (tx, input) => {
     const note = personsNote(tx, input);
-    tx.set("notes", String(note["id"]), String(note["owner_id"]), { deleted: gone ? tx.at : null });
+    tx.set("notes", String(note["id"]), nodeOf(tx, note), { deleted: gone ? tx.at : null });
     return { note: { id: note["id"], ordinal: note["ordinal"] } };
   };
 
@@ -437,23 +476,23 @@ const projectArchived =
 // command does not know is refused without its text.
 
 /** A node's key: an ID, a task's reference, `space`, or a project's path. */
-const KEY = { chars: 250, line: true } as const;
-const TITLE = { chars: WRITE_LIMITS.title, line: true } as const;
-const BRIEF = { chars: WRITE_LIMITS.summary, line: true, empty: true } as const;
-const DESCRIPTION = { bytes: WRITE_LIMITS.context, empty: true } as const;
-const NOTE = { bytes: WRITE_LIMITS.note } as const;
+export const KEY = { chars: 250, line: true } as const;
+export const TITLE = { chars: WRITE_LIMITS.title, line: true } as const;
+export const BRIEF = { chars: WRITE_LIMITS.summary, line: true, empty: true } as const;
+export const DESCRIPTION = { bytes: WRITE_LIMITS.context, empty: true } as const;
+export const NOTE = { bytes: WRITE_LIMITS.note } as const;
 
-type Check = Command["check"];
+export type Check = Command["check"];
 
 /** Copies the keys present, each read by its own reader, and refuses any other. */
-function read(f: Fields, readers: Record<string, (key: string) => unknown>): Input {
+export function read(f: Fields, readers: Record<string, (key: string) => unknown>): Input {
   const out: Input = {};
   for (const [key, reader] of Object.entries(readers)) if (f.has(key)) out[key] = reader(key);
   f.done();
   return out;
 }
 
-const required = (f: Fields, key: string): void => {
+export const required = (f: Fields, key: string): void => {
   if (!f.has(key)) f.fail("VALIDATION_FAILED", "This field is needed", key);
 };
 
@@ -572,7 +611,7 @@ const checkProject: Check = (f) => {
 /** An undo or a redo: of the newest step, or of the one change it names. */
 export const checkHistory: Check = (f) => read(f, { commit: (k) => f.id(k, "op") });
 
-export const COMMANDS: Readonly<Record<string, Command>> = {
+export const TASK_COMMANDS: Readonly<Record<string, Command>> = {
   "tasks.add": { check: checkTasksAdd, run: tasksAdd },
   "task.update": { check: checkUpdate, run: taskUpdate },
   "task.move": { check: checkMove, run: taskMove },

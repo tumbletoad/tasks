@@ -1,4 +1,4 @@
-// The install scripts' one pinned value (A2 3.12.4, 3.12.5; A7 3.8 M1.14): a release build takes
+// The install scripts' one pinned value: a release build takes
 // the release keys from packages/service/src/version/release-keys.ts only and fails while that
 // holds its placeholder; a test build pins a throwaway key and says so; a template never rendered
 // trusts nothing. Throwaway keys only, made here in memory.

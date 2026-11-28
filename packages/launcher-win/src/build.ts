@@ -240,7 +240,7 @@ const HOOK_PREFIX = "TTASKS_TEST_";
 /**
  * Throws unless exe is a release launcher: no test hook name, as UTF-16 (how launcher.c writes
  * its strings) or as single bytes. buildLaunchers runs it on every release build, and the
- * release build (M1.13) runs it on the binaries it ships.
+ * release build runs it on the binaries it ships.
  */
 export function assertReleaseBinary(exe: string): void {
   const image = readFileSync(exe);

@@ -1,4 +1,4 @@
-// @ttasks/testkit: fixture generators and the sample space (A7 3.2). Private, and imported only by
+// @ttasks/testkit: fixture generators and the sample space. Private, and imported only by
 // tests and scripts (the dependency rules). Fixture text only.
 export { digestDatabase, digestSchema, digestSpace } from "./digest.ts";
 export { FIXED_SAMPLE, FIXED_SAMPLE_0_1, RELEASED_SCHEMAS } from "./known.ts";
@@ -50,8 +50,8 @@ export {
   type WorkerLaunchSpace,
 } from "./launch-space.ts";
 /**
- * Storage's copies of A4's launch rules, which the launch package's tests compare with its own:
- * launch code never imports storage (A7 3.2), and the writer checks the same rules again.
+ * Storage's copies of the launch rules, which the launch package's tests compare with its own:
+ * launch code never imports storage, and the writer checks the same rules again.
  */
 export {
   isLaunchRef as storageIsLaunchRef,
@@ -64,7 +64,7 @@ export {
   OPEN_LAUNCH_STATES as STORAGE_OPEN_LAUNCH_STATES,
   OPEN_SETS as STORAGE_OPEN_SETS,
 } from "@ttasks/storage";
-/** Storage's copies of A4's run rules, which the launch package's tests compare with contracts'. */
+/** Storage's copies of the run rules, which the launch package's tests compare with contracts'. */
 export {
   normaliseStored as storageNormaliseText,
   FINAL_RUN_STATES as STORAGE_FINAL_RUN_STATES,

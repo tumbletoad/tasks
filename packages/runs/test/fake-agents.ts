@@ -1,6 +1,6 @@
-// Fake agents for tests (A4 5.1 "Fake agents", M6.05): a small program that stands in for
+// Fake agents for tests: a small program that stands in for
 // `claude -p` or `codex exec` and replays one recording of lab run N as the real process did, so
-// the supervisor, cancellation and adapters (M6.01–M6.06) can be tested without a real agent.
+// the supervisor, cancellation and adapters can be tested without a real agent.
 //
 //   node fake-agent.ts --fixture <cli>/<name>.jsonl [--line-delay-ms <n>] [--max-ms <n>]
 //                      [--report <file>] [-- <the agent's own argv>]
@@ -17,13 +17,13 @@
 //    - a run cancelled by Ctrl+C or SIGINT (Ctrl+Break: SIGBREAK, Windows only) holds where the
 //      cancel came, and on that signal writes what the CLI wrote after it and exits with the
 //      recorded code: for Claude the lines after its last `assistant` event (the tool-result
-//      error and the `result`), for Codex nothing (A4 3.11.3: no event after a cancel);
+//      error and the `result`), for Codex nothing (no event after a cancel);
 //    - a run that was killed (TerminateProcess, SIGTERM to the group, taskkill forced) writes its
 //      whole stream, the cut last line of a truncated recording included, and holds until the
 //      test kills it, so the exit is the kill's own (signal SIGTERM from Node's `kill()`).
 //    A holding fake exits with code 124 after --max-ms (default 60 s), so none outlives its test.
 //
-// This lives in packages/runs/test for now; A7 3.2 puts fake agents in testkit, where it moves
+// This lives in packages/runs/test for now; fake agents belong in testkit, where it moves
 // later.
 import { join } from "node:path";
 import type { FixtureEntry } from "./fixtures.ts";

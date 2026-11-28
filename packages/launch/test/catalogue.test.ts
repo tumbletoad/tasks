@@ -1,5 +1,5 @@
-// The built-in target catalogue (A4 3.2): reviewed data whose invariants hold for every entry, and
-// the permission flags of A4 3.11.6 exactly.
+// The built-in target catalogue: reviewed data whose invariants hold for every entry, and
+// the permission flags exactly.
 import { describe, expect, test } from "vitest";
 import {
   BUILT_IN_TARGETS,
@@ -64,7 +64,7 @@ describe("[A4.3.2.catalogue.invariants] the built-in target catalogue", () => {
       open: ["-s", "read-only", "-a", "on-request"],
       run: null,
     });
-    // Codex's terminal route keeps the session in the shim's process tree (A4 3.4.3).
+    // Codex's terminal route keeps the session in the shim's process tree.
     expect(targetDef("codex-cli").routes[0]?.argv).toContain("--no-daemon");
   });
 

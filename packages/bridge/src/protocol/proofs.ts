@@ -1,4 +1,4 @@
-// The handshake's cryptography (A2 3.6.3), with Node's built-in crypto only: HMAC-SHA256 for the
+// The handshake's cryptography, with Node's built-in crypto only: HMAC-SHA256 for the
 // proofs and the session key, SHA-256 for the transcript hash, the OS random source for nonces
 // and timingSafeEqual for every comparison of a proof.
 //
@@ -27,7 +27,7 @@ export interface HandshakeIds {
   readonly clientNonce: string;
 }
 
-/** The fields of the bind frame that the transcript covers, in the order A2 lists them. */
+/** The fields of the bind frame that the transcript covers, in the transcript's order. */
 export interface BindBody {
   readonly protocol: number;
   readonly mode: Mode;

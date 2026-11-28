@@ -1,4 +1,4 @@
-// The projection against a model of what may happen to it (A1 3.13 rule 10): random sequences of
+// The projection against a model of what may happen to it: random sequences of
 // commits, a person's acts in the tree (an edit of a generated file, in place or by an editor's
 // save through a temporary file renamed over it, some keeping the file's size; a file of theirs at
 // a generated path and elsewhere, a deleted generated file, a folder replaced by a file or a link,
@@ -586,7 +586,7 @@ class Model {
       }
       this.noticeFails = true;
     } else {
-      // Work for the run: a task deleted (A1 3.13's story of a full volume) or changed.
+      // Work for the run: a task deleted or changed.
       const pool = [...this.ids("active"), ...this.ids("completed")];
       const task = pool[fault.from % Math.max(1, pool.length)];
       if (task !== undefined) {

@@ -1,4 +1,4 @@
-// pnpm gen: regenerates every generated folder (A7 3.3).
+// pnpm gen: regenerates every generated folder.
 import { generators, writeGenerated } from "./generated.ts";
 import { repoRoot } from "./run.ts";
 

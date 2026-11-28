@@ -1,4 +1,4 @@
-// Finding the service (A2 3.6.1): the install's state and cache folders by A2 3.2.1 and 3.2.2,
+// Finding the service: the install's state and cache folders,
 // then `<state>/service.json` for the endpoint and `<state>/ipc.key` for the key, read again for
 // every connection so a restart or a key rotation needs nothing else. The folder rules are the
 // hub's (packages/service/src/hub/paths.ts); a test checks that both give the same folders.
@@ -42,7 +42,7 @@ const text = (facts: HostFacts, name: string): string | undefined => {
 };
 
 /**
- * The state and cache folders (A2 3.2.1): `state` and `cache` of the data folder,
+ * The state and cache folders: `state` and `cache` of the data folder,
  * which is TTASKS_HOME for a separate install and `~/.ttasks` otherwise, on every OS. The home
  * folder comes from the account (Linux, macOS) or USERPROFILE (Windows), never from XDG_*
  * variables. Throws when there is no home folder or TTASKS_HOME is not absolute.
@@ -111,7 +111,7 @@ export function readEndpoint(state: string, platform: NodeJS.Platform): string {
   return where;
 }
 
-/** The 32 bytes of `<state>/ipc.key`. A missing or bad key is a doctor-level problem (A2 3.6.1). */
+/** The 32 bytes of `<state>/ipc.key`. A missing or bad key is a doctor-level problem. */
 export function readKey(state: string, platform: NodeJS.Platform): Buffer {
   const path = (platform === "win32" ? win32 : posix).join(state, KEY_FILE);
   try {

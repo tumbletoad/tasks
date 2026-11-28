@@ -1,10 +1,10 @@
-// The projection's reads (A1 3.13 step 2): one read transaction on a reader connection of the
+// The projection's reads: one read transaction on a reader connection of the
 // space, so a batch sees one snapshot T, the `last_seq` of that transaction. Constant statements,
 // values bound as parameters; a batch's task IDs travel as one JSON array.
 //
-// Only what the projection shows is read: notes for every audience (A1 3.13: "Notes with an
-// audience other than `all` are never written"), live child rows, and the area and project slugs.
-// A task that is deleted, or that no row names any more (redaction, M3.14), reads as gone, and its
+// Only what the projection shows is read: notes for every audience (notes with an
+// audience other than `all` are never written), live child rows, and the area and project slugs.
+// A task that is deleted, or that no row names any more (redaction), reads as gone, and its
 // files go with it.
 import {
   decideLaunchFolder,
@@ -196,7 +196,7 @@ export function missingTasks(conn: Connection, ids: readonly string[]): string[]
 }
 
 /**
- * One batch at one snapshot: at most `limit` dirty tasks, oldest first (A1 3.13 step 2), none of
+ * One batch at one snapshot: at most `limit` dirty tasks, oldest first, none of
  * the `waiting` tasks (in their pause), and the `retried` ones (whose file could not be placed
  * before) only after every other: tasks that cannot be placed never fill a batch.
  */

@@ -1,4 +1,4 @@
-// What the CLI says when something did not go as the person meant (A3 3.4.8, 3.5, 3.7.4): a task
+// What the CLI says when something did not go as the person meant: a task
 // finished already, a required flag left out, and an undo that a newer change by a script does not
 // reach. The CLI in this process against a service in this process; fixture text and temporary
 // folders only.
