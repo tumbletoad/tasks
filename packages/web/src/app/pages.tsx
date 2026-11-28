@@ -13,7 +13,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "r
 import { Session } from "../context.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
-import { topLevel, trail, type TaskRow } from "@ttasks/client/store";
+import { projectWithoutArea, topLevel, trail, type TaskRow } from "@ttasks/client/store";
 import type { TaskFacts } from "../task/detail.ts";
 import { ArchivedLine } from "./Archived.tsx";
 import { useTitle, useToast } from "./frame.ts";
@@ -160,16 +160,20 @@ export function AreaPage({
       {tab === "library" ? (
         <NodeLibrary key={area} node={node} />
       ) : (
-        <TaskList
-          key={area}
-          view="area"
-          grouping="project"
-          group={areaGroups}
-          filter={filter}
-          empty={t("view.empty")}
-          expand={task}
-          onExpand={onExpand}
-        />
+        <>
+          {/* A project made without an area keeps its folder on this machine. */}
+          {projectWithoutArea(area) ? <ProjectFolder key={area} project={area} /> : null}
+          <TaskList
+            key={`list/${area}`}
+            view="area"
+            grouping="project"
+            group={areaGroups}
+            filter={filter}
+            empty={t("view.empty")}
+            expand={task}
+            onExpand={onExpand}
+          />
+        </>
       )}
     </>
   );
