@@ -3,9 +3,10 @@
 // entries/node-instruct.ts; they join the registry in the pull request that brings their handler.
 //
 // A page is Markdown knowledge on the space, an area, a project or a task. Its reference comes from
-// the space's one counter, so `M-180` is a task or a page, never both. A node's texts are the
-// space's brief, a description on the space, an area or a project, and the person's text for
-// agents there: the one standing instruction for every task below it, which only a person writes.
+// the space's one counter, so `M-180` is a task or a page, never both. Its brief may be empty when
+// a person made it: an agent gives one on every page it makes. A node's texts are the space's
+// brief, a description on the space, an area or a project, and the person's text for agents there:
+// the one standing instruction for every task below it, which only a person writes.
 import { z } from "zod";
 import { idPattern, patterns, TaskRef } from "./schemas.ts";
 
@@ -49,7 +50,7 @@ export const LastChange = z.strictObject({
 export const PageRow = z.strictObject({
   ref: PageRef,
   title: z.string().describe("Title"),
-  brief: z.string().describe("One line: what a reader finds in it"),
+  brief: z.string().describe("One line: what a reader finds in it; empty: none given"),
   by: By.describe("Who changed it last"),
   at: At.describe("When it was changed last"),
 });
@@ -74,7 +75,7 @@ export const TrailLevel = z.strictObject({
   kind: z.enum(NODE_KINDS).describe("What the level is"),
   id: NodeId,
   title: z.string().describe("Its name"),
-  brief: z.string().describe("One line: what it is"),
+  brief: z.string().describe("One line: what it is; empty: none given"),
   read: z.string().max(40).describe("Pass it to read for its description and all its pages"),
   has_description: z.boolean().describe("It has a description: read it"),
   for_agents: ForAgents.describe("The user's instruction for every task below it").optional(),
@@ -91,7 +92,7 @@ export const CompactPage = z.strictObject({
   id: PageId,
   ref: PageRef,
   title: z.string().describe("Title"),
-  brief: z.string().describe("One line: what a reader finds in it"),
+  brief: z.string().describe("One line: what a reader finds in it; empty: none given"),
   owner_kind: z.enum(PAGE_OWNER_KINDS).describe("What holds it"),
   owner_id: z.string().max(40).describe("The space's, area's, project's or task's ID"),
   task: z
@@ -139,7 +140,7 @@ export const SearchPageRow = z.strictObject({
   kind: z.literal("page").describe("A page"),
   ref: PageRef,
   title: z.string().describe("Title"),
-  brief: z.string().describe("One line: what a reader finds in it"),
+  brief: z.string().describe("One line: what a reader finds in it; empty: none given"),
   on: z.string().describe("What holds it, by name"),
   by: By.describe("Who changed it last"),
   at: At.describe("When it was changed last"),

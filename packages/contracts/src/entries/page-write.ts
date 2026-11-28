@@ -2,7 +2,8 @@
 // old words become those new words), appended to, set whole (title, brief or body; Restore is a
 // set from an earlier version), moved, moved to the Trash and brought back. On the space, an area
 // or a project it sets the brief and the description whole. Every write carries one line of what
-// changed and why: agents must give it.
+// changed and why: agents must give it. A person may make a page with a title only; an agent
+// gives a brief on every page it makes.
 //
 // An edit applies while its old words stand in the body exactly once, whatever else changed, so two
 // agents editing different passages both succeed. Words that are gone or stand more than once
@@ -42,7 +43,7 @@ export const PageWriteInput = z.strictObject({
   to: z.string().max(250).describe('move: a task, a project, an area or "space"').optional(),
   title: safeLine(user.title).describe("create, set: one line").optional(),
   brief: safeLine(user.brief)
-    .describe("create, set: one line, what a reader finds in it")
+    .describe("create, set: what a reader finds in it; agents must give one on create")
     .optional(),
   body: safeText(user.body).describe("create, set: Markdown").optional(),
   description: safeText(user.body).describe("set on a node: its description, whole").optional(),
@@ -158,6 +159,17 @@ export const pageWrite = defineEntry({
     "applied_earlier",
   ],
   examples: [
+    {
+      title: "The person makes a page with a title only",
+      actor: "user",
+      input: {
+        action: "create",
+        on: LUMEN.project,
+        title: "Clinic visit, 2 Dec",
+        request_id: requestId(89),
+      },
+      output: { result: "created", target: "M-231", on: "Lumen Health", as_of: AS_OF_NEXT },
+    },
     {
       title: "Create a page on M-14's project",
       input: {
