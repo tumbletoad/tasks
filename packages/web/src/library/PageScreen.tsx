@@ -24,7 +24,7 @@ import type { PageRow } from "../store/rows.ts";
 import { Markdown } from "../task/markdown.tsx";
 import { TEXT_MAX } from "../unsent.ts";
 import type { Client } from "@ttasks/contracts/generated/client.ts";
-import type { PageView, Version } from "./calls.ts";
+import type { PageView, TrashedPage, Version } from "./calls.ts";
 import { LibraryLink } from "./Library.tsx";
 import css from "./Library.module.css";
 import { Penned, useChanged, whoOf } from "./parts.tsx";
@@ -76,6 +76,16 @@ interface Read {
 
 const codeOf = (error: unknown): unknown =>
   typeof error === "object" && error !== null ? (error as { code?: unknown }).code : undefined;
+
+/**
+ * A page the service does not read: in the Trash (its own screen says so, with Restore), or not
+ * there at all. A page hidden because what holds it is in the Trash is not listed there.
+ */
+async function missing(calls: Client, ref: string): Promise<{ inTrash: TrashedPage } | "gone"> {
+  const { rows } = await calls.page.trashed({ q: ref });
+  const row = rows.find((page) => page.ref === ref);
+  return row === undefined ? "gone" : { inTrash: row };
+}
 
 async function readPage(calls: Client, ref: string): Promise<Read | "gone"> {
   const first = await calls.page.read({ target: ref });
@@ -300,7 +310,7 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
   const writes = useLibraryWrites();
   const changed = useChanged();
   const clock = useClock(true);
-  const [read, setRead] = useState<Read | "gone" | "failed">();
+  const [read, setRead] = useState<Read | { inTrash: TrashedPage } | "gone" | "failed">();
   const [round, setRound] = useState(0);
   const [history, setHistory] = useState(0);
   const [open, setOpen] = useState(false);
@@ -324,14 +334,25 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
       },
       (error: unknown) => {
         if (!current || live.failed(error)) return;
-        setRead(codeOf(error) === "not_found" ? "gone" : "failed");
+        if (codeOf(error) !== "not_found") {
+          setRead("failed");
+          return;
+        }
+        missing(api.client, ref).then(
+          (found) => {
+            if (current) setRead(found);
+          },
+          () => {
+            if (current) setRead("gone");
+          },
+        );
       },
     );
     return () => {
       current = false;
     };
   }, [api, live, ref, round]);
-  const page = typeof read === "object" ? read.page : undefined;
+  const page = typeof read === "object" && "page" in read ? read.page : undefined;
   const id = page?.id;
   // The Trash and back, from the feed: this tab's own and anyone's.
   useEffect(
@@ -384,6 +405,31 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
   }, [read]);
   useTitle(page?.title ?? ref);
   if (read === undefined) return null;
+  if (typeof read === "object" && "inTrash" in read) {
+    const { inTrash } = read;
+    return (
+      <div className={styles.screen}>
+        <p className={styles.notice} role="status" data-part="page-in-trash">
+          <span dir="auto">
+            {t("page.inTrashNamed", { ref: inTrash.ref, title: inTrash.title })}
+          </span>
+          {state.space?.read_only === undefined ? (
+            <button
+              type="button"
+              className={styles.act}
+              onClick={() => {
+                writes.untrash(inTrash.ref).then(again, (error: unknown) => {
+                  if (!live.failed(error)) say(refusalText(error, t("page.trashFailed")));
+                });
+              }}
+            >
+              {t("trash.restore")}
+            </button>
+          ) : null}
+        </p>
+      </div>
+    );
+  }
   if (read === "gone" || read === "failed") {
     return (
       <p className={styles.quiet} role="status" data-part="page-missing">

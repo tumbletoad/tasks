@@ -1013,6 +1013,7 @@
   "page.trash": "Move to Trash",
   "page.trashFailed": "The page was not moved.",
   "page.inTrash": "This page is in the Trash.",
+  "page.inTrashNamed": "{ref} {title} is in the Trash.",
   "page.ownerInTrash": "What holds this page is in the Trash: restoring it brings the page back.",
   "page.gone": "There is no page {ref}.",
   "page.failed": "The page could not be read.",

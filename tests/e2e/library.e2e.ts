@@ -192,13 +192,22 @@ test.describe("[A5.pages.e2e.library] the library in the page", () => {
     await expect(fresh.locator('[class*="brief"]')).toHaveCount(0);
   });
 
-  test("Move to Trash, the page in the Trash with where it was, and Restore brings it back to its Library", async ({
+  test("Move to Trash, the page's address says it is in the Trash with Restore, the Trash lists it with where it was, and Restore brings it back to its Library", async ({
     page,
     library: world,
   }) => {
     const { area, project } = await place(world);
     const ref = await makePage(world, project.id, "Fixture old notes", "Fixture words.");
     await open(page, world, `/s/${world.mira.id}/page/${ref}`);
+    await page.locator('[data-part="page-trash"]').click();
+    await expect(page.locator('[data-part="page-trashed"]')).toBeVisible({ timeout: SLOW_MS });
+    // Its address, opened again, says it is in the Trash and brings it back.
+    await page.reload();
+    const inTrash = page.locator('[data-part="page-in-trash"]');
+    await expect(inTrash).toContainText("is in the Trash", { timeout: SLOW_MS });
+    await picture(page, "page-in-trash.png");
+    await inTrash.getByRole("button", { name: "Restore" }).click();
+    await expect(body(page)).toContainText("Fixture words.", { timeout: SLOW_MS });
     await page.locator('[data-part="page-trash"]').click();
     await expect(page.locator('[data-part="page-trashed"]')).toBeVisible({ timeout: SLOW_MS });
     await page.goto(`${world.origin}/s/${world.mira.id}/trash`);
