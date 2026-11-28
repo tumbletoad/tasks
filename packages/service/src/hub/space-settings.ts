@@ -30,6 +30,9 @@
 // - `last_migration`: the newest migration that succeeded here: its revisions, when, and its
 //   barrier backup's name and folder. The space list and doctor show it, so a person who misses
 //   something after an update knows what changed and which backup is from just before.
+// - `old_dailies`: the daily backups this machine found in the space's own `backups/`, by name,
+//   which retention keeps wherever they stand now (maintenance.ts PRUNE_OLD_DAILIES). A name, never
+//   a path. At most MAX_OLD_DAILIES, the latest found kept.
 //
 // Beside this file, in the same folder, the projection keeps its trusted state for each folder
 // that holds the space (`<space_id>.<folder key>.projection.json` and
@@ -106,6 +109,45 @@ export interface SpaceSettings {
   readonly failedMigrations?: readonly FailedMigration[];
   /** The newest migration this machine ran on the space. */
   readonly lastMigration?: LastMigration;
+  /** Daily backups found in the space's own folder, by name. */
+  readonly oldDailies?: readonly string[];
+}
+
+/** The old daily backups remembered for a space: more than its folder can hold under retention. */
+export const MAX_OLD_DAILIES = 200;
+
+/** A daily backup's name (storage's backup names). */
+const DAILY_NAME = /^daily-[0-9A-Za-z.-]{1,100}$/;
+
+/** `old_dailies`, the names that read as a daily backup's. */
+const oldDailiesOf = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value
+        .filter((name): name is string => typeof name === "string" && DAILY_NAME.test(name))
+        .slice(-MAX_OLD_DAILIES)
+    : [];
+
+/**
+ * Remembers daily backups found in the space's own folder. Writes only when a name is new; other
+ * fields are kept.
+ */
+export function recordOldDailies(state: string, spaceId: Id<"sp">, names: readonly string[]): void {
+  const path = fileOf(state, spaceId);
+  const record = readForChange(path);
+  const known = oldDailiesOf(record["old_dailies"]);
+  const added = names.filter((name) => DAILY_NAME.test(name) && !known.includes(name));
+  if (added.length === 0) return;
+  makeDir(join(state, SPACES_FOLDER), 0o700);
+  const next = {
+    format: 1,
+    ...record,
+    old_dailies: [...known, ...added].slice(-MAX_OLD_DAILIES),
+  };
+  atomicWrite(
+    path,
+    `${JSON.stringify(next, null, 2)}
+`,
+  );
 }
 
 /**
@@ -125,7 +167,8 @@ export interface LastMigration {
  * Where a space's backups are written on this machine: `backup.dir` when this machine set one
  * (`set`: a person's choice, maybe on a drive that is away, so never made here and never cleaned),
  * else `<backups>/<space ID>` beside the TTasks home (paths.ts), which this service alone writes.
- * The space's own `backups/` (storage's backupsFolder), where backups went before, is only read.
+ * The space's own `backups/` (storage's backupsFolder), where backups went before, is read with
+ * it, and its backups move from there (storage's moveOldBackups).
  */
 export function backupsFolderOf(
   settings: SpaceSettings,
@@ -350,7 +393,9 @@ export function readSpaceSettings(state: string, spaceId: Id<"sp">): SpaceSettin
   const writerPath = isRecord(writer) ? writer["path"] : undefined;
   const failed = failedMigrationsOf(record["failed_migrations"]);
   const migrated = lastMigrationOf(record["last_migration"]);
+  const old = oldDailiesOf(record["old_dailies"]);
   return {
+    ...(old.length === 0 ? {} : { oldDailies: old }),
     ...(typeof dir === "string" && dir.length <= MAX_PATH && isAbsolute(dir)
       ? { backupDir: dir }
       : {}),

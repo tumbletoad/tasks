@@ -6,6 +6,7 @@ import {
   backupsFolder,
   createSpace,
   listBackups,
+  listBackupsIn,
   newId,
   restoreBackup,
 } from "@ttasks/storage";
@@ -194,4 +195,103 @@ describe("[A1.5.backup.kept-unknown] the upkeep removes only files it knows to b
     expect(report).toMatchObject({ backup: "taken", checked: true, unverified: 0, removed: 0 });
     expect(existsSync(barrier.file) && existsSync(barrier.sidecarFile)).toBe(true);
   }, 60_000);
+});
+
+describe("[A1.5.backup.old-move] the upkeep moves a space's old backups and keeps its old daily ones", () => {
+  /** A space with three daily backups in its own folder, 40 days and more old, and newer ones in its backups folder. */
+  async function old(label: string) {
+    const { root, cleanup } = tempRoot(label);
+    cleanups.push(cleanup);
+    const checked = await checkedDriver();
+    const space = createSpace(checked, join(root, "mira"), {
+      name: "Mira",
+      ownerLabel: "Mira Okafor",
+      machineId: newId("m"),
+    });
+    const start = Date.now();
+    const dailies = [];
+    for (let i = 0; i < 3; i += 1) {
+      dailies.push(
+        await backupSpace(checked, space.folder, {
+          kind: "daily",
+          now: () => start - (40 + i) * DAY,
+        }),
+      );
+    }
+    // Daily backups since in the backups folder, so the rules keep none of the old ones: one on
+    // each of the last 7 days and one in each of the 3 weeks before.
+    const outside = join(root, "outside");
+    mkdirSync(outside);
+    for (const days of [1, 2, 3, 4, 5, 6, 7, 14, 21, 28]) {
+      await backupSpace(checked, space.folder, {
+        kind: "daily",
+        backupDir: outside,
+        now: () => start - days * DAY,
+      });
+    }
+    const runner = new Maintenance();
+    runners.push(runner);
+    const job = {
+      folder: space.folder,
+      spaceId: space.space.spaceId,
+      incarnation: space.space.authority.incarnation,
+      backupDir: outside,
+      cleanup: true,
+      atStart: true,
+      utcOffsetMinutes: noonAt(start),
+    };
+    return { space, dailies, outside, runner, job, start };
+  }
+
+  /** The old backups of `names` listed complete in either folder. */
+  const kept = (space: { folder: string }, outside: string, names: readonly string[]): string[] =>
+    listBackupsIn([outside, backupsFolder(space.folder)])
+      .backups.filter((b) => b.state === "ok" && names.includes(b.name))
+      .map((b) => b.name)
+      .sort();
+
+  test("old daily backups are never removed: while they move, and after, wherever they stand", async () => {
+    const { space, dailies, outside, runner, job, start } = await old("old-kept");
+    const names = dailies.map((b) => b.name).sort();
+    const first = await runner.run({ ...job, now: start });
+    expect(first.moved).toEqual({ copied: 3, finished: 0, stayed: {} });
+    expect(first.oldDailies?.slice().sort()).toEqual(names);
+    expect(kept(space, outside, names)).toEqual(names);
+    const recorded = { oldDailies: first.oldDailies ?? [] };
+    const second = await runner.run({ ...job, ...recorded, now: start + 2 * HOUR });
+    expect(second.moved).toMatchObject({ copied: 0, finished: 3 });
+    expect(existsSync(backupsFolder(space.folder))).toBe(false);
+    await runner.run({ ...job, ...recorded, now: start + 3 * HOUR });
+    expect(kept(space, outside, names)).toEqual(names);
+  }, 120_000);
+
+  test("with pruning on, old daily backups fall under the rules from the run after the one that finished their move", async () => {
+    const { space, dailies, outside, runner, job, start } = await old("old-pruned");
+    const names = dailies.map((b) => b.name).sort();
+    const prune = { ...job, pruneOldDailies: true };
+    await runner.run({ ...prune, now: start });
+    expect(kept(space, outside, names)).toEqual(names);
+    const finishing = await runner.run({ ...prune, now: start + 2 * HOUR });
+    expect(finishing.moved).toMatchObject({ finished: 3 });
+    expect(kept(space, outside, names)).toEqual(names);
+    await runner.run({ ...prune, now: start + 3 * HOUR });
+    expect(kept(space, outside, names)).toEqual([]);
+  }, 120_000);
+
+  test("a run stopped in the middle ends as stopped, and every old backup is still listed once and whole", async () => {
+    const { space, dailies, outside, runner, job, start } = await old("old-stopped");
+    const names = dailies.map((b) => b.name).sort();
+    const stop = new AbortController();
+    const run = runner.run({ ...job, now: start }, stop.signal);
+    stop.abort();
+    await expect(run).rejects.toMatchObject({ stopped: true });
+    const listed = listBackupsIn([outside, backupsFolder(space.folder)]).backups;
+    expect(
+      listed
+        .filter((b) => names.includes(b.name))
+        .map((b) => b.name)
+        .sort(),
+    ).toEqual(names);
+    expect(kept(space, outside, names)).toEqual(names);
+  }, 120_000);
 });

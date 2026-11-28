@@ -1,21 +1,32 @@
 // The maintenance worker's entry: one space's backup upkeep, off the main thread, which holds no
 // SQLite connection. The job comes in workerData, and one content-free report or a code goes back:
-// leftovers, the daily backup when it is due, retention.
+// at a start the move of the space's old backups, then leftovers, the daily backup when it is due,
+// and retention over the backups folder and the space's own folder as one list.
 import { parentPort, workerData } from "node:worker_threads";
 import {
   applyRetention,
   backupHistories,
   backupSpace,
+  backupsFolder,
   CheckedDriver,
   compareInHistory,
   dailyBackupDue,
   DEFAULT_DRIVER,
   listBackups,
+  listBackupsIn,
   loadDriver,
+  moveOldBackups,
+  oldDailies,
   planRetention,
   removeBackupLeftovers,
+  type StayReason,
 } from "@ttasks/storage";
-import type { MaintenanceJob, MaintenanceReply, MaintenanceReport } from "./maintenance.ts";
+import {
+  PRUNE_OLD_DAILIES,
+  type MaintenanceJob,
+  type MaintenanceReply,
+  type MaintenanceReport,
+} from "./maintenance.ts";
 
 const reply = (message: MaintenanceReply): void => {
   parentPort?.postMessage(message);
@@ -31,9 +42,15 @@ async function upkeep(job: MaintenanceJob): Promise<MaintenanceReport> {
   if (!listing.present) {
     return { leftovers: 0, backup: "away", removed: 0, unverified: 0 };
   }
+  // Found before the move, so a backup whose move ends in this run is kept in it either way.
+  const old = oldDailies(job.folder, dir);
+  const moved = job.atStart
+    ? await moveOldBackups(job.folder, dir, job.spaceId, job.now)
+    : undefined;
   // Only in a backups folder this service alone writes: see maintenance.ts.
   const leftovers = job.cleanup ? removeBackupLeftovers(listing, { now: job.now }).length : 0;
-  if (leftovers > 0) listing = listBackups(dir);
+  const both = (): typeof listing => listBackupsIn([dir, backupsFolder(job.folder)]);
+  listing = both();
   // Only this copy's history counts: another copy's daily in a shared folder is not this one's.
   const due = dailyBackupDue(listing, clock, {
     atStart: job.atStart,
@@ -45,7 +62,7 @@ async function upkeep(job: MaintenanceJob): Promise<MaintenanceReport> {
   if (due) {
     const taken = await backupSpace(checked, job.folder, { kind: "daily", backupDir: dir });
     searchIndexDamaged = taken.searchIndexRemade === true;
-    listing = listBackups(dir);
+    listing = both();
     // The backup is dated after the job's `now`, and retention leaves out a backup from its
     // future: the clock moves up to it, so the backup just made is trial restored too.
     if (taken.sidecar.created_at > after.now) after = { ...after, now: taken.sidecar.created_at };
@@ -57,7 +74,13 @@ async function upkeep(job: MaintenanceJob): Promise<MaintenanceReport> {
       ? await applyRetention(
           checked,
           listing,
-          planRetention(listing, after, { spaceId: job.spaceId }),
+          planRetention(listing, after, {
+            spaceId: job.spaceId,
+            always:
+              (job.pruneOldDailies ?? PRUNE_OLD_DAILIES)
+                ? old
+                : [...old, ...(job.oldDailies ?? [])],
+          }),
           { history: job.incarnation },
         )
       : undefined;
@@ -81,8 +104,16 @@ async function upkeep(job: MaintenanceJob): Promise<MaintenanceReport> {
             b.createdAt <= after.now,
         ).length;
   const unchecked = retention?.unchecked;
+  const stayed: Partial<Record<StayReason, number>> = {};
+  for (const { why } of moved?.stayed ?? []) stayed[why] = (stayed[why] ?? 0) + 1;
   return {
     leftovers,
+    ...(moved === undefined
+      ? {}
+      : {
+          moved: { copied: moved.copied.length, finished: moved.finished.length, stayed },
+        }),
+    ...(old.length === 0 ? {} : { oldDailies: old }),
     backup: due ? "taken" : "not_due",
     removed: retention?.removed.length ?? 0,
     unverified: (retention?.unverified.length ?? 0) + broken,
