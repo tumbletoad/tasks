@@ -1,5 +1,5 @@
 /*
- * TTasks's Windows launchers (A2 3.12.3, 3.3.2). One source builds both:
+ * TTasks's Windows launchers. One source builds both:
  *   ttasks.exe   console subsystem. Runs Node once inside a kill-on-close job object and returns
  *               Node's exit code. If Windows refuses any step of the job, Node never runs (70).
  *   ttasksw.exe  GUI subsystem (TTASKS_GUI). No console window and no job object. With no
@@ -10,7 +10,7 @@
  * supervisor's time unit and trace the supervisor's decisions. Release builds never define it.
  *
  * README.md in this package describes the two modes, the environment, the supervisor, the exit
- * codes and every trust assumption. A2 3.12.3 states the rules, and A2 3.12.6 the update's side.
+ * codes and every trust assumption.
  */
 #define WIN32_LEAN_AND_MEAN
 #ifndef UNICODE
@@ -27,7 +27,7 @@
 #include <string.h>
 #include <wchar.h>
 
-/* Exit codes (A2 3.3.1). The launcher itself exits 64 on bad arguments and 70 when it cannot run
+/* Exit codes. The launcher itself exits 64 on bad arguments and 70 when it cannot run
  * Node. From the service, 0, 64 and 73 stop the supervisor and 75 asks for a restart. */
 #define EXIT_USAGE 64
 #define EXIT_SOFTWARE 70
@@ -40,7 +40,7 @@
 /* The longest version name that <root>\current may hold. */
 #define VERSION_MAX 64
 
-/* The stable launchers' file names in the command folder (A2 3.12.2). Each repairs the other. */
+/* The stable launchers' file names in the command folder. Each repairs the other. */
 #define CONSOLE_LAUNCHER L"ttasks.exe"
 #define GUI_LAUNCHER L"ttasksw.exe"
 #ifdef TTASKS_GUI
@@ -53,7 +53,7 @@
 
 #ifdef TTASKS_GUI
 /*
- * The supervisor's policy (A2 3.3.2): restart after 1, 2, 4 and 8 time
+ * The supervisor's policy: restart after 1, 2, 4 and 8 time
  * units, and give up at the 5th failure within the window. A restart that the service requests
  * (exit 75) happens at once, but more than QUICK_RESTART_LIMIT of them within the window count as
  * failures, so a service that always asks for a restart cannot spin. A time unit is one second in
@@ -325,7 +325,7 @@ typedef struct {
     wchar_t *entry; /* <version folder>\lib\ttasks.mjs */
 } Target;
 
-/* The program's folder below the daily install's share folder (A2 3.2.1). */
+/* The program's folder below the daily install's share folder. */
 #define PRODUCT_FOLDER L"ttasks"
 
 /* Whether folder\home.marker is a file: the folder is a TTASKS_HOME install's root. */
@@ -337,7 +337,7 @@ static int has_marker(const wchar_t *folder) {
 }
 
 /*
- * Finds the mode and the root from the launcher's own location (A2 3.12.3 step 1). P is the parent
+ * Finds the mode and the root from the launcher's own location. P is the parent
  * of the launcher's folder.
  *   - Version-local: P's parent is named "versions" and P\manifest.json is a file, so P is the
  *     version folder and the root is the parent of "versions".
@@ -406,7 +406,7 @@ static void release_target(Target *t) {
 }
 
 /*
- * Resolves node.exe and lib\ttasks.mjs (A2 3.12.3 step 2). Stable dispatch reads current on every
+ * Resolves node.exe and lib\ttasks.mjs. Stable dispatch reads current on every
  * call, so a restarted service runs the version current names now. Version-local mode never
  * reads current. In both modes versions and the version folder are checked before anything
  * under them, so a launcher started through a junction there runs nothing outside its install.
@@ -458,7 +458,7 @@ static int resolve(const Place *place, Target *t) {
     return ok;
 }
 
-/* ---- Sibling repair (A2 3.12.3 step 10) ------------------------------------------------------ */
+/* ---- Sibling repair -------------------------------------------------------------------------- */
 
 /* Copies exactly size bytes from in to out: a source that is shorter or longer fails. */
 static int copy_bytes(HANDLE in, HANDLE out, LONGLONG size) {
@@ -535,7 +535,7 @@ static int restore_sibling(const wchar_t *root, const wchar_t *version, const wc
 }
 
 /*
- * The data folder, where the service keeps <state> (A2 3.2.1, 3.2.2 rule 1): the
+ * The data folder, where the service keeps <state>: the
  * root of a TTASKS_HOME install, else %USERPROFILE%\.ttasks, as the service finds it. NULL when
  * USERPROFILE is not a full path (a drive letter and a backslash, or a UNC share).
  */
@@ -559,7 +559,7 @@ static wchar_t *data_folder(const Place *place) {
 
 /*
  * Whether an update of this install was cut off: its journal, <state>\update.json (the data
- * folder's state, as the service keeps it), is there, in a plain state folder (A2 3.12.6). Only its
+ * folder's state, as the service keeps it), is there, in a plain state folder. Only its
  * existence is read, never its contents.
  */
 static int update_journal(const Place *place) {
@@ -578,8 +578,8 @@ static int update_journal(const Place *place) {
 }
 
 /*
- * Sibling repair (A2 3.12.3 step 10). An update swaps the stable launchers one at a time, and one
- * that runs can only be renamed aside, not replaced (A2 3.12.6), so an update cut off between the
+ * Sibling repair. An update swaps the stable launchers one at a time, and one
+ * that runs can only be renamed aside, not replaced, so an update cut off between the
  * two renames of a launcher leaves the command folder without it. Before anything else, a stable
  * launcher in the command folder checks that its sibling is there: one file-attribute call, the
  * only cost on a normal start. When it is missing while an update's journal is there, the launcher
@@ -588,7 +588,7 @@ static int update_journal(const Place *place) {
  * journal's contents, no .new or .old-<n> file in the command folder) and can only ever place that
  * version's own launcher, which is the side the update's journal names for it (the swap comes
  * after current changed, and a rollback points current back before it restores the launchers).
- * Node's repair reconciles the rest from the journal (A2 3.12.6). Without a journal nothing is
+ * Node's repair reconciles the rest from the journal. Without a journal nothing is
  * repaired: then no update is under way, and whatever else manages the command folder (install
  * --finish and its undo, an uninstall) is never raced. From the daily install's command folder,
  * share and share\ttasks must be plain folders before current is read, as resolve requires. A repair
@@ -625,10 +625,10 @@ static void repair_sibling(const Place *place) {
     free(bin);
 }
 
-/* ---- Environment (A2 3.12.3 step 3) ---------------------------------------------------------- */
+/* ---- Environment ----------------------------------------------------------------------------- */
 
 /*
- * The environment rule (A2 3.12.3 step 3). Node reads its NODE_ variables, and OpenSSL its loader
+ * The environment rule. Node reads its NODE_ variables, and OpenSSL its loader
  * settings, while it starts, before the entry runs any code, so only the launcher can keep them
  * out. Removed, in any case and every copy:
  *   - every name that starts with NODE_, except KEEP_NODE. An allow-list within the namespace
@@ -637,12 +637,12 @@ static void repair_sibling(const Place *place) {
  *     load a provider DLL from any path), the folder of included files, providers and engines.
  *   - LAUNCHER_OWNED: the launcher's own variables, which set_environment then sets afresh, and
  *     TTASKS_SERVICE_MANAGER, which only the supervisor sets (to "ttasksw"), so the service's
- *     status names who started it (M1.12).
+ *     status names who started it.
  * Everything else passes through, including the proxy variables and SSL_CERT_FILE and
  * SSL_CERT_DIR, which select data, not code.
  */
 static const wchar_t *const KEEP_NODE[] = {
-    L"NODE_EXTRA_CA_CERTS", /* A2 3.12.3: corporate certificates pass through */
+    L"NODE_EXTRA_CA_CERTS", /* Corporate certificates pass through */
 };
 static const wchar_t *const OPENSSL_LOADER[] = {
     L"OPENSSL_CONF",
@@ -809,7 +809,7 @@ static const wchar_t *command_tail(const wchar_t *cmd) {
 }
 
 /*
- * Node's command line (A2 3.12.3 step 4): the quoted Node path, the fixed flags, the quoted entry
+ * Node's command line: the quoted Node path, the fixed flags, the quoted entry
  * and the tail, copied verbatim. Paths cannot contain a double quote. NULL if it is too long.
  */
 static wchar_t *command_line(const Target *t, const wchar_t *tail) {
@@ -911,7 +911,7 @@ static BOOL spawn(Spawn *s, const Target *t, wchar_t *cmdline, DWORD flags,
 /*
  * Ctrl+C and Ctrl+Break go to the whole console group, so Node receives them too and decides.
  * The launcher only stays alive to report Node's exit code. A handler function is used instead
- * of SetConsoleCtrlHandler(NULL, TRUE), because that flag is inherited by Node (A2 3.12.3 step 5).
+ * of SetConsoleCtrlHandler(NULL, TRUE), because that flag is inherited by Node.
  */
 static BOOL WINAPI ignore_ctrl(DWORD type) {
     return type == CTRL_C_EVENT || type == CTRL_BREAK_EVENT;
@@ -964,7 +964,7 @@ static HANDLE new_job(const wchar_t **step) {
 }
 
 /*
- * ttasks.exe (A2 3.12.3 step 5): Node runs only inside the job. The job is ready
+ * ttasks.exe: Node runs only inside the job. The job is ready
  * before Node exists, and Node starts suspended, so a refusal at any step stops it before it runs
  * any code. Returns Node's exit code, or 70.
  */
@@ -1024,7 +1024,7 @@ static int run_in_job(const Target *t, const wchar_t *tail) {
 
 #ifdef TTASKS_GUI
 /*
- * ttasksw.exe (A2 3.12.3 step 6): Node without a window and outside any job, so processes the
+ * ttasksw.exe: Node without a window and outside any job, so processes the
  * service starts detached outlive both. Returns 0 if Node could not start, else 1 with its exit
  * code in *code.
  */
@@ -1051,7 +1051,7 @@ static int run_hidden(const Target *t, const wchar_t *tail, DWORD *code) {
     return 1;
 }
 
-/* ---- The supervisor (A2 3.3.2) --------------------------------------------------------------- */
+/* ---- The supervisor -------------------------------------------------------------------------- */
 
 #ifdef TTASKS_TEST_HOOKS
 /* Test builds only: TTASKS_TEST_TIME_UNIT_MS (1 to 60000) replaces the one-second time unit. */
@@ -1119,7 +1119,7 @@ static int plain_folder(const wchar_t *path) {
 }
 
 /*
- * Writes <state>\crash\supervisor-gave-up.json (A2 3.3.2, 3.13), <state> being the data folder's
+ * Writes <state>\crash\supervisor-gave-up.json, <state> being the data folder's
  * state: the time, the window and each failure of the window, oldest first. No paths and no
  * environment. state and crash must be plain folders, so no link redirects the record elsewhere.
  * The record is written to a new temporary file, flushed, and that same file is renamed over the
@@ -1229,7 +1229,7 @@ static FileId file_id(const wchar_t *path) {
 /*
  * Whether the command folder's ttasksw.exe is now another plain file than the one this supervisor
  * started from: an update, or the service's repair of an interrupted one, put a new supervisor
- * there while this one ran from the old file, which Windows let it rename aside (A2 3.12.6).
+ * there while this one ran from the old file, which Windows let it rename aside.
  */
 static int supervisor_replaced(const Place *place, const FileId *own) {
     FileId now;
@@ -1285,7 +1285,7 @@ static int handed_over(const Place *place, const FileId *own) {
 }
 
 /*
- * ttasksw.exe with no arguments (A2 3.3.1, 3.3.2): starts `ttasks serve` from the version current
+ * ttasksw.exe with no arguments: starts `ttasks serve` from the version current
  * names, waits, and applies the exit-code table.
  *   0, 64, 73  stop, and exit with that code
  *   75         start again at once, re-reading current (more than QUICK_RESTART_LIMIT of these
@@ -1308,7 +1308,7 @@ static int supervise(const Place *place) {
     int i;
     ZeroMemory(failures, sizeof failures);
     ZeroMemory(quick, sizeof quick);
-    /* The service records its manager in service.json and its status (A2 3.2.3). */
+    /* The service records its manager in service.json and its status. */
     if (!set_variable(L"TTASKS_SERVICE_MANAGER", L"ttasksw")) return EXIT_SOFTWARE;
     for (;;) {
         Target target;
