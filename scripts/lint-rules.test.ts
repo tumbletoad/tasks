@@ -30,7 +30,7 @@ describe("[A7.3.3.lint.custom-rules] the custom lint rules of A7 3.3", () => {
     ]);
   });
 
-  test("AppData paths are refused in package source, allowed in tests and lab code", async () => {
+  test("AppData paths are refused in package source, allowed in tests", async () => {
     const imports = 'import process from "node:process";\n';
     const refused = [
       `${imports}export const p = process.env["LOCALAPPDATA"];\n`,
@@ -43,7 +43,6 @@ describe("[A7.3.3.lint.custom-rules] the custom lint rules of A7 3.3", () => {
         expect.stringMatching(/^no-restricted-syntax: Do not use AppData/),
       ]);
       expect(await messages(code, TEST), code).toEqual([]);
-      expect(await messages(code, "spikes/m0/probe.js"), code).toEqual([]);
     }
     expect(
       await messages(`${imports}export const p = process.env["USERPROFILE"];\n`, SOURCE),
@@ -299,7 +298,6 @@ describe("[A2.3.3.hub.system32-workers] product code takes no diagnostic report"
         ]);
       }
       expect(await messages(code, TEST), code).toEqual([]);
-      expect(await messages(code, "spikes/m0/probe.js"), code).toEqual([]);
     }
     expect(
       await messages(`${imports}export const e = process.report.excludeEnv;\n`, SOURCE),

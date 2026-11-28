@@ -69,9 +69,9 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A7.3.3.verify.lab-selection",
-      "title": "pnpm verify runs the serial lab tests on --lab, TTASKS_VERIFY_LAB=1, an unknown base or a change to lab or shared files, and otherwise says it skipped them",
-      "source": "A7 3.3, A7 3.7",
+      "id": "A7.3.3.verify.base",
+      "title": "pnpm verify's base for a change: the merge base locally, the pull request's base or the push's previous commit in CI, TTASKS_VERIFY_BASE outside CI only, and its arguments",
+      "source": "A7 3.3",
       "owner": "M0",
       "kind": "ci",
       "profiles": ["v1"]
@@ -95,150 +95,6 @@
       "id": "A7.3.2.brand.old-names",
       "title": "No file in the repository uses the product's earlier names in a form that can only mean the product, while the domain's plural, the stored format markers and the earlier data folder's one declaration pass",
       "source": "A7 3.2",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.7.m0-kit.self-test",
-      "title": "The M0 spike kit self-test: handshake and its deadlines, MCP envelopes of both eras, forwarder, page, token, WebSocket and Reveal, shim and run shim, probe redaction, owner-only permissions, socket folder, scratch tree, bench",
-      "source": "A7 3.7 (M0.02), A2 3.6-3.8, A4 3.6.3",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.7.m0-ui.self-test",
-      "title": "The M0 spike page (U rows) builds with Vite and loads under the strict CSP: fresh style nonce in header and meta, no inline script or style, same-origin assets with matching integrity hashes, WOFF2 fonts from the origin within budget, no service worker file, the runner's result files hold no token",
-      "source": "A7 3.7 (M0.08), A2 3.8.3, A5 3.20, 3.24-3.26",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.7.m0-lifecycle.self-test",
-      "title": "The M0.07 lifecycle lab: the forwarder reconnects and replays initialize, also one sent during a slow handshake, the service's environment snapshot, its parsers and E01's differences, the ttasksw.exe supervisor stand-in, the lab release folder and its entry",
-      "source": "A7 3.7 (M0.07), A2 3.3.2, 3.7.4, 3.7.5, A4 3.8",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.7.m0-session3.cold-start",
-      "title": "Lab session 3's cold-start timers count an answer only when the expected service gave it, check both replies by their JSON structure after the clock stops (a malformed reply, the right fragments in the wrong structure, a wrong id or a notification never count), reject a stale service.json and a process of the install's runtime with another entry, and stop every process they start, also at a hung bridge, a failure or a signal; E01 stops the Windows supervisor and service when it fails",
-      "source": "A7 3.7 (M0.07 review), A2 3.7.7",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.7.storage-bench.one-percent",
-      "title": "The storage bench runs its generators and R02 to R06 at 1 % scale and writes complete result files",
-      "source": "A7 3.7 M0.04, A1 3.20",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.7.storage-bench.seeded-generator",
-      "title": "The storage bench's fixture generator gives the same corpus for the same seed",
-      "source": "A7 3.7 M0.04, A1 3.20",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.7.storage-bench.failure-cleanup",
-      "title": "A failed storage bench run closes its connections, removes its run folder and reports the original error, with the removal error when that fails too",
-      "source": "A7 3.7 M0.04",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.7.storage-bench.verdict-conditions",
-      "title": "A storage bench row gives a verdict only when the run meets its prescribed scale, counts and durations, and is indicative otherwise",
-      "source": "A7 3.7 M0.04 rows R02 to R06, A1 3.20",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.7.storage-bench.write-shape",
-      "title": "The storage bench's timed writes use random A1 IDs and agent sessions, and its projection rebuild records projection_files and acknowledges the outbox",
-      "source": "A7 3.7 M0.04, A1 3.3, 3.7, 3.8, 3.13",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A2.3.12.1.spike.runtime-gate",
-      "title": "Packaging spike: the runtime gate passes on the pinned Node 26.13.1 with SQLite 3.54.1 and fails when a check fails",
-      "source": "A2 3.12.1, A7 3.7 R01",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A2.3.12.1.spike.node-download",
-      "title": "Packaging spike: the Node download must match SHASUMS256.txt, its gpgv-verified signature and the pinned digest",
-      "source": "A2 3.12.1, A2 S19",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A2.3.12.2.spike.version-folder",
-      "title": "Packaging spike: the version folder layout, its manifest and reproducible tar.gz and zip archives",
-      "source": "A2 3.12.2, A2 3.12.4",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A2.3.12.3.spike.launcher-argv",
-      "title": "Packaging spike: the POSIX and C launchers pass hostile argv to Node byte for byte and remove NODE_OPTIONS",
-      "source": "A2 3.12.3, A2 S21, A7 3.7 R09",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A2.3.12.4.spike.install-verify",
-      "title": "Packaging spike: install.sh and install.ps1 verify the SHA256SUMS signature and the archive hash before anything from the archive runs",
-      "source": "A2 3.12.4, A2 S22, A2 S31, A7 3.7 R09",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.7.lab-checks.self-test",
-      "title": "M0.05 lab checks: the sync detector on fixture trees, owner-only modes and ACLs in a temporary folder, and the identifier and Smart App Control classifiers",
-      "source": "A7 3.7 M0.05, A1 3.2, A6 3.4, A6 3.16.6, A2 M0-S13",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.7.m0-agents.self-test",
-      "title": "The M0.09 lab code: a child of the clean spawner sees no agent variables, the probe records names, matches and ID formats but no values, the key-level recorder compares every named file and proves exact removal through a fake CLI, the removal rule refuses anything not strictly inside the run scratch folder, no CLI output reaches the lab logs or files, and every child ends through one cleanup path",
-      "source": "A7 3.7 (M0.09), A3 5 M0 items 1, 2, 6-8, 10",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.7.m0-launch.trust-patch",
-      "title": "The M0.10 lab code: the text-level trust-entry patch for Claude Code's .claude.json and Codex's config.toml, and its undo, restore every fixture file byte for byte by the config recorder (no file, no projects, other entries, comments and odd whitespace, CRLF and LF, a byte order mark, an existing entry with another value); a file changed after the patch reverts only TTasks's key, and only while it still holds TTasks's value; unsupported layouts and files the scanner cannot account for are refused untouched; the lab command refuses a scratch folder it did not create",
-      "source": "A7 3.7 (M0.10, row L10), A4 3.14, A4 M0-L16",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.7.m0-runs.self-test",
-      "title": "The M0.11 lab code through fake CLIs: the recorder keeps the raw stream in its folder with exit code, line structure and schema event keys, refuses agent variables, leaves through one cleanup path (also for a missing executable), cancels by console event, taskkill or signal and sweeps what is left by PID, name and start time; the console helper refuses an unreadable process list; the sanitiser gives every allow-listed field one treatment whatever the input (the reviewer's adversarial values, wrong types, e-mail keys), names unknown fields by placeholders and publishes all or nothing after the checks; the lab refuses Windows-only commands and full access off Windows, and keeps CLI stderr, errors and events with private values out of its console, results and fixtures",
-      "source": "A7 3.7 (M0.11), A4 3.11.4, 3.11.8, M0-L12-L14",
       "owner": "M0",
       "kind": "ci",
       "profiles": ["v1"]
@@ -283,22 +139,6 @@
       "id": "A4.3.11.codex-app-server.fixture-content",
       "title": "The recorded codex app-server exchanges hold only what their sanitiser writes (protocol words, synthetic IDs, fixture paths, texts and numbers) and pass the stream fixtures' scan; the sanitiser drops a recording's paths, account, machine name, prompts, answers and ticket, and the check refuses any other value",
       "owner": "M6",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.7.m0-bridge-bench.self-test",
-      "title": "The M0 bridge harness runs B01 to B07 at a tiny size, reads process memory from outside, writes a result file per row and judges none of them",
-      "source": "A7 3.7 (M0.06), A2 3.7.7",
-      "owner": "M0",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.7.m0-bridge-bench.cleanup",
-      "title": "The M0 bridge harness stops every forwarder and service process it started when a row fails: a memory reading, the service start or the direct client",
-      "source": "A7 3.7 (M0.06), A2 3.7.7",
-      "owner": "M0",
       "kind": "ci",
       "profiles": ["v1"]
     },

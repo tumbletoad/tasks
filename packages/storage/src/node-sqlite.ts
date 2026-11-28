@@ -1,5 +1,5 @@
 // The primary driver: node:sqlite in the pinned Node runtime (A1 3.19). The only
-// module in the repository that imports node:sqlite, apart from lab code in spikes/.
+// module in the repository that imports node:sqlite.
 //
 // Node 26 exports the class as `Database` and keeps `DatabaseSync` as a deprecated alias
 // (DEP0210). The driver takes whichever the runtime exports. Options used: readOnly, timeout

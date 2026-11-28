@@ -15,8 +15,7 @@
 // names. Layer 2 is the guarantee: in the stream fixtures no string field is free.
 //
 // The deny-list is never written anywhere: findings name the rule, never the value. Used by
-// tests/stream-content.test.ts (CI, on the committed fixtures) and by the lab's sanitiser before
-// it publishes a fixture (spikes/m0/runs/).
+// tests/stream-content.test.ts on the committed fixtures.
 import { isIPv6 } from "node:net";
 import { homedir, hostname, userInfo } from "node:os";
 import { basename } from "node:path";
@@ -307,7 +306,7 @@ export const CANCEL_KINDS = [
   "sigint-group",
   "sigterm-group",
 ] as const;
-/** The lab's stderr classes (spikes/m0/runs/lab.ts): a fixed list, never the text. */
+/** The stderr classes the recordings were sorted into: a fixed list, never the text. */
 export const STDERR_CLASSES = [
   "none",
   "other",

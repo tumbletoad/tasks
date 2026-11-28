@@ -3,7 +3,7 @@
 // they fire on a fixture tree.
 
 // Repository code outside node_modules. A package may always import its own files.
-const REPO = "^(packages|spikes|scripts|tests|fixtures)/";
+const REPO = "^(packages|scripts|tests|fixtures)/";
 
 // Node built-ins that do I/O. `core` is pure domain logic and imports none of them (A7 3.2).
 const IO_BUILTINS =
@@ -20,9 +20,8 @@ const TEST_FILE = "(\\.test\\.tsx?$|/test/|^tests/)";
 const TEST_CODE = `(${TEST_FILE}|^scripts/|^packages/testkit/)`;
 
 // Rules that stay strict for tests too: testkit-only-from-tests (it binds production code only),
-// spikes-never-imported, the two SQLite rules, and no-storage-from-launch-runs. Tests of launch
-// and runs reach a space through testkit or the service, as the packages themselves do (A7 3.2,
-// 3.18.1).
+// the two SQLite rules, and no-storage-from-launch-runs. Tests of launch and runs reach a space
+// through testkit or the service, as the packages themselves do (A7 3.2, 3.18.1).
 
 /** @type {import('dependency-cruiser').IConfiguration} */
 module.exports = {
@@ -52,19 +51,17 @@ module.exports = {
     },
     {
       name: "only-storage-node-sqlite",
-      comment:
-        "Only storage imports node:sqlite (A7 3.2). spikes/ is lab code that is never shipped.",
+      comment: "Only storage imports node:sqlite (A7 3.2).",
       severity: "error",
-      from: { pathNot: "^(packages/storage|spikes)/" },
+      from: { pathNot: "^packages/storage/" },
       to: { dependencyTypes: ["core"], path: "^(node:)?sqlite$" },
     },
     {
       name: "only-storage-better-sqlite3",
       comment:
-        "Only storage imports better-sqlite3 (A7 3.2). testkit holds it for the fallback-driver " +
-        "suite (A7 3.3). spikes/ is lab code that is never shipped.",
+        "Only storage imports better-sqlite3 (A7 3.2). testkit holds it for the fallback-driver suite (A7 3.3).",
       severity: "error",
-      from: { pathNot: "^(packages/(storage|testkit)|spikes)/" },
+      from: { pathNot: "^packages/(storage|testkit)/" },
       to: { path: "(^|/)better-sqlite3(/|$)" },
     },
     {
@@ -152,13 +149,6 @@ module.exports = {
       severity: "error",
       from: { pathNot: TEST_CODE },
       to: { path: "^packages/testkit/" },
-    },
-    {
-      name: "spikes-never-imported",
-      comment: "Nothing outside spikes/ imports spikes/ (A7 3.2).",
-      severity: "error",
-      from: { pathNot: "^spikes/" },
-      to: { path: "^spikes/" },
     },
     {
       name: "no-circular",
