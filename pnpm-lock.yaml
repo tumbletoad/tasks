@@ -261,6 +261,19 @@ importers:
         specifier: 5.1.0
         version: 5.1.0(@types/node@26.6.6)(happy-dom@21.0.4)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2))
 
+  packages/client:
+    dependencies:
+      '@ttasks/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      fast-check:
+        specifier: 4.10.2
+        version: 4.10.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@26.6.6)(happy-dom@21.0.4)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2))
+
   packages/contracts:
     dependencies:
       zod:
@@ -473,6 +486,9 @@ importers:
       '@ttasks/brand':
         specifier: workspace:*
         version: link:../brand
+      '@ttasks/client':
+        specifier: workspace:*
+        version: link:../client
       '@ttasks/contracts':
         specifier: workspace:*
         version: link:../contracts

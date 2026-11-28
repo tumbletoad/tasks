@@ -5,7 +5,13 @@
 // its first three sources, where it opens on the machine that serves it, whether a background run
 // works or waits for the person's answer, and the start of each question agents asked that waits
 // for the person, logged or a run's last words.
-import { isOpenRun, RECORDED, type RowRunState, type RunState } from "@ttasks/contracts/runs";
+import {
+  isOpenRun,
+  RECORDED,
+  type LastUsed,
+  type RowRunState,
+  type RunState,
+} from "@ttasks/contracts/runs";
 import {
   decideLaunchFolder,
   FINISHED_AT_SQL,
@@ -58,14 +64,6 @@ export interface CompactRun {
   readonly instance: string;
 }
 
-/** The instances (machine.toml's keys) the task was last opened in and last ran with. */
-export interface CompactLast {
-  readonly open?: string;
-  /** The route of that Open: a key no longer in machine.toml still says T3 Code (`t3-mcp`). */
-  readonly open_route?: string;
-  readonly run?: string;
-}
-
 /** A question an agent asked on the task that waits for the person (`WAITS`, `RUN_WAITS`). */
 export interface CompactQuestion {
   /** The log entry, such as `l3`, or the run that ended with it. */
@@ -86,7 +84,7 @@ export type CompactValue =
   | readonly CompactSource[]
   | CompactPlace
   | CompactRun
-  | CompactLast
+  | LastUsed
   | readonly CompactQuestion[];
 export type CompactRow = Readonly<Record<string, CompactValue>>;
 
@@ -314,7 +312,7 @@ export function runOf(open: unknown, asks?: unknown): CompactRun | undefined {
 }
 
 /** `x_last` as the row's `last`, or nothing when the task was never opened in an agent or run. */
-function lastOf(value: unknown): CompactLast | undefined {
+function lastOf(value: unknown): LastUsed | undefined {
   const used = parsed(value);
   if (!isPlain(used)) return undefined;
   const { open, open_route: route, run } = used;

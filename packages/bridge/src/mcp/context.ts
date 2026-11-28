@@ -59,13 +59,12 @@ export function baseContext(
 
 /**
  * The context of one bind: the base, the client's first `initialize` or `server/discover` once it
- * was answered, the binding handle an older service gave an earlier bind, and
- * what an earlier bind answer named of its space, a space or null for none, kept for its life.
+ * was answered, and what an earlier bind answer named of its space, a space or null for none,
+ * kept for its life.
  */
 export function bindContext(
   base: BaseContext,
   mcpInit: JsonObject | undefined,
-  handle: string | undefined,
   held?: string | null,
 ): JsonObject {
   return {
@@ -76,7 +75,6 @@ export function bindContext(
     env: { ...base.env },
     parent: { pid: base.parent.pid },
     ...(mcpInit === undefined ? {} : { mcp_init: mcpInit }),
-    ...(handle === undefined ? {} : { resume: { handle } }),
     ...(held === undefined ? {} : { held_space: held }),
   };
 }

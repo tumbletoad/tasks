@@ -20,8 +20,7 @@
 //
 // The read itself is injected (`PageSource`): the service's paged reads (`task.search`,
 // `task.finished`); this module is the part that decides when they read again.
-import type { Change } from "./core.ts";
-import { withTaskRow } from "./rows.ts";
+import { type Change, withTaskRow } from "@ttasks/client/store";
 import type { Changes } from "./store.ts";
 
 export type QueryKind = "completed" | "trash" | "search";

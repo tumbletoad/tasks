@@ -51,7 +51,7 @@
         "enabled": true
       },
       {
-        "id": "t3-key",
+        "id": "unknown-key",
         "target": "codex-cli",
         "label": "x",
         "account": "",
@@ -104,11 +104,6 @@
     {
       "key": "color",
       "code": "unknown_key",
-      "severity": "warning"
-    },
-    {
-      "key": "roots",
-      "code": "retired",
       "severity": "warning"
     },
     {
@@ -172,8 +167,8 @@
       "severity": "error"
     },
     {
-      "key": "instance[5].t3_provider_instance",
-      "code": "retired",
+      "key": "instance[5].not_a_key",
+      "code": "unknown_key",
       "severity": "warning"
     },
     {

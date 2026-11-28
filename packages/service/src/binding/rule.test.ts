@@ -263,10 +263,5 @@ describe("[A3.3.7.binding.rule] the one rule, and the space a bridge's bind sett
     expect(() => bind({ kind: "failed" }, {})).toThrow(BindNotYet);
     // A process told it has no space keeps none: a default set since gives it none.
     expect(bind(none, { held_space: null }, open, S2)).toEqual({ space: null, state: "unbound" });
-    // An older bridge reconnects with a handle and no held space: on an entry that names no space,
-    // which space it worked in is not known, so it gets none; one its entry names is that one.
-    const legacy = { resume: { handle: "bh_0123456789abcdefghijkl" } };
-    expect(bind(none, legacy, open, S2)).toEqual({ space: null, state: "unbound" });
-    expect(bind(none, { ...legacy, space: S1 }, open, S2)).toEqual({ space: S1, state: "unbound" });
   });
 });

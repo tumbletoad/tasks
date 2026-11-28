@@ -137,25 +137,13 @@ const isPowerOfTen = (n: number): boolean => /^10*$/.test(String(n));
 /**
  * What a bind answer says of this process's space: a space, or null for none. One bridge process
  * works in one space for its life, so the first answer is kept and sent back at every bind.
- * Undefined: the answer says nothing of it. An older service's answer carries a handle, and its
- * null is a space that service has not chosen yet, not none.
+ * Undefined: the answer says nothing of it.
  */
 function spaceIn(binding: unknown): string | null | undefined {
   if (!isObject(binding) || !Object.hasOwn(binding, "space")) return undefined;
   const space = binding["space"];
-  if (space === null) return Object.hasOwn(binding, "handle") ? undefined : null;
+  if (space === null) return null;
   return typeof space === "string" && /^sp_[0-9a-z]{26}$/.test(space) ? space : undefined;
-}
-
-/**
- * The handle an older service's answer carries, kept for the next bind: a `bh_…`, shaped as an
- * ID, never logged. This service sends none. Sent back, it lets an older service (an update rolled
- * back) resume the binding it made, and tells this service that the bridge met an older one, so a
- * bridge whose space that service chose is not moved to the default of this moment.
- */
-function handleOf(binding: unknown): string | undefined {
-  const handle = isObject(binding) ? binding["handle"] : undefined;
-  return typeof handle === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(handle) ? handle : undefined;
 }
 
 export class Forwarder {
@@ -190,7 +178,6 @@ export class Forwarder {
   #era: Era | undefined;
   /** The latest `initialize` or `server/discover` the bridge dispatched, for later binds. */
   #mcpInit: JsonObject | undefined;
-  #handle: string | undefined;
   #space: string | null | undefined;
   #content: OfflineContent | undefined;
   #missingReported = false;
@@ -445,7 +432,7 @@ export class Forwarder {
     let session: LineSession | undefined;
     let failure: Unavailable | undefined;
     try {
-      session = await this.#o.dial(bindContext(this.#o.context, init, this.#handle, this.#space));
+      session = await this.#o.dial(bindContext(this.#o.context, init, this.#space));
     } catch (error) {
       failure = unavailableOf(error);
     }
@@ -461,7 +448,6 @@ export class Forwarder {
       // The client's initialize or server/discover was answered offline while this bind was on
       // its way without it. Bind again, so the service starts the session from it. An older
       // service's handle resumes the binding this bind made (its result was authenticated).
-      this.#handle = handleOf(session.bound.binding) ?? this.#handle;
       if (this.#space === undefined) this.#space = spaceIn(session.bound.binding);
       session.close();
       this.#schedule(0);
@@ -475,7 +461,6 @@ export class Forwarder {
     this.#backoff = 0;
     this.#failure = undefined;
     this.#reported = undefined;
-    this.#handle = handleOf(session.bound.binding);
     if (this.#space === undefined) this.#space = spaceIn(session.bound.binding);
     clearTimeout(this.#hold);
     this.#hold = undefined;

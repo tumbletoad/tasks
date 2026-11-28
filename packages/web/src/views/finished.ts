@@ -2,7 +2,7 @@
 // holds a finished task, so they are read from the service's finished tasks, newest first, only as
 // far back as the week's first day: a few small reads, never the whole history.
 import { finishedDayOf } from "../row/model.ts";
-import { taskRow } from "../store/rows.ts";
+import { taskRow } from "@ttasks/client/store";
 import type { FinishedRead } from "./completed.ts";
 
 export interface FinishedCounts {

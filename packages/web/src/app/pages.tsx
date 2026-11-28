@@ -13,7 +13,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "r
 import { Session } from "../context.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import type { TaskFacts } from "../task/detail.ts";
 import { ArchivedLine } from "./Archived.tsx";
 import { useTitle, useToast } from "./frame.ts";
@@ -29,8 +29,9 @@ import {
   VIEW_LIST,
   viewFilter,
   type View,
-} from "./views.ts";
-import { areaGroups, projectGroups } from "../groups.ts";
+  areaGroups,
+  projectGroups,
+} from "@ttasks/client/today";
 import { ProjectFolder } from "../folder/ProjectFolder.tsx";
 import { ActivityPage } from "../views/Activity.tsx";
 import { AgentsPage } from "../views/Agents.tsx";

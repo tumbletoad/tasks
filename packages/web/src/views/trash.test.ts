@@ -3,7 +3,7 @@
 // it was shown, also once restored; the count of what agents moved there that the Trash has not shown.
 import { describe, expect, test } from "vitest";
 import { pageKept } from "../kept.ts";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import {
   keepTrashSeen,
   movedByOthers,

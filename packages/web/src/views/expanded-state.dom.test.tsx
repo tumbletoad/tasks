@@ -12,7 +12,7 @@ import type { Api } from "../api.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
-import type { BatchMessage, SnapshotMessage, TaskRow } from "../store/rows.ts";
+import type { BatchMessage, SnapshotMessage, TaskRow } from "@ttasks/client/store";
 import { Thread } from "../task/Thread.tsx";
 import { keepTitleDraft, readTitleDraft, unsavedKeeper } from "../unsent.ts";
 import { effortChange, levelsKey, priorityChange, waitingChange } from "../edit/change.ts";

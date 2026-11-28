@@ -9,7 +9,7 @@ import type { Api } from "../api.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
-import { withTaskRow, type TaskRow } from "../store/rows.ts";
+import { withTaskRow, type TaskRow } from "@ttasks/client/store";
 import { FakeFrames } from "../../test/fake-frames.ts";
 import { searchGroups, type FoundRow } from "./search.ts";
 import { TaskList } from "./TaskList.tsx";

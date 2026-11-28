@@ -7,7 +7,9 @@ import type { Row, SqlValue } from "../driver.ts";
 import { formatTaskRef, parseTaskRef } from "../refs.ts";
 import { positionBetween } from "../write/positions.ts";
 import { freeSlug } from "../write/slugs.ts";
-import { Fields, WRITE_LIMITS } from "../write/request.ts";
+import { listPreference, type ScaleKey } from "../preferences.ts";
+import { dedupeWindowMs, finishedOf } from "../write/dedupe.ts";
+import { Fields, sourceFields, WRITE_LIMITS } from "../write/request.ts";
 import type { Command, Tx } from "./tx.ts";
 
 type Run = Command["run"];
@@ -27,8 +29,15 @@ const NOTE_KINDS = [
 ] as const;
 
 const SQL = {
+  liveSource: "SELECT id FROM sources WHERE source_key = $key AND deleted_at IS NULL",
+  /** The newest live task a source is the origin of. */
+  originTask:
+    "SELECT t.id, t.ref, t.lifecycle, t.fp, t.created_seq FROM tasks t JOIN nodes n ON n.id = t.id " +
+    "WHERE t.origin_source_id = $source AND n.deleted_at IS NULL ORDER BY n.created_seq DESC LIMIT 1",
   node: "SELECT * FROM nodes WHERE id = $id",
-  alias: "SELECT entity_id FROM aliases WHERE namespace = 'planning' AND alias = $alias",
+  sameLog:
+    "SELECT 1 FROM notes WHERE owner_id = $owner AND body = $body AND deleted_at IS NULL " +
+    "AND kind NOT IN ('note', 'learning')",
   taskByRef: "SELECT id FROM tasks WHERE ref = $ref",
   child:
     "SELECT * FROM nodes WHERE parent_id = $parent AND kind = 'project' AND (slug = $slug OR lower(title) = $title)",
@@ -86,9 +95,6 @@ export function findNode(tx: Tx, key: unknown): Row | undefined {
   if (key === "space") return tx.get(SQL.node, { id: tx.space.spaceId });
   const byId = tx.get(SQL.node, { id: key });
   if (byId !== undefined) return byId;
-  // A task's ID from the prototype the space was imported from, which text written then holds.
-  const alias = tx.get(SQL.alias, { alias: key })?.["entity_id"];
-  if (typeof alias === "string") return tx.get(SQL.node, { id: alias });
   // A project path: each part is a project's slug or title, ignoring case.
   let at: Row | undefined = tx.get(SQL.node, { id: tx.space.spaceId });
   for (const part of key.split("/")) {
@@ -166,12 +172,54 @@ export function addNote(
   return { id, ordinal };
 }
 
+/** A status or an effort the space's own list holds, refused naming the field otherwise. */
+function known(tx: Tx, list: ScaleKey, value: unknown, field: string): string {
+  const keys = listPreference(tx.conn, list);
+  if (typeof value !== "string" || !keys.includes(value)) {
+    return problem(
+      "VALIDATION_FAILED",
+      list === "tasks.statuses" ? "Not a status of this space" : "Not an effort of this space",
+      field,
+    );
+  }
+  return value;
+}
+
+/**
+ * The task a draft with source key `key` captured before, when it still counts, and the live source
+ * of that key. An open task counts; a finished one when it finished within the space's window, by
+ * today's rule (dedupe.ts `finishedOf`): when this space recorded the finish, never the date the
+ * finish names, so an archive and a backdated completion count too. One this request finished is
+ * no match: a draft after it is new work.
+ */
+function captured(tx: Tx, key: string): { task: Row | undefined; source: string | null } {
+  const source = tx.get(SQL.liveSource, { key })?.["id"];
+  if (typeof source !== "string") return { task: undefined, source: null };
+  const task = tx.get(SQL.originTask, { source });
+  if (task === undefined || task["lifecycle"] === "active") return { task, source };
+  const finished = finishedOf(tx.conn, task);
+  const counts = finished.seq !== tx.seq && finished.at >= tx.at - dedupeWindowMs(tx.conn);
+  return { task: counts ? task : undefined, source };
+}
+
 const tasksAdd: Run = (tx, input) => {
   const drafts = input["tasks"] as Input[];
   return {
     tasks: drafts.map((draft, i) => {
       const at = (field: string) => `tasks.${String(i)}.${field}`;
       const log = str(draft, "log");
+      const source = draft["source"] as Input | undefined;
+      const key = source === undefined ? undefined : str(source, "key");
+      const found = key === undefined ? undefined : captured(tx, key);
+      if (found?.task !== undefined) {
+        const id = String(found.task["id"]);
+        // As today: the log follows an active match only, and once.
+        const follows =
+          found.task["lifecycle"] === "active" &&
+          tx.get(SQL.sameLog, { owner: id, body: log ?? "" }) === undefined;
+        if (log !== undefined && follows) addNote(tx, id, id, log, "progress");
+        return { status: "exists", id, ref: refText(tx, found.task["ref"]) };
+      }
       const parent = parentFor(tx, draft["under"], at("under"));
       const id = str(draft, "id") ?? tx.newId("t");
       const ref = tx.ref();
@@ -191,12 +239,24 @@ const tasksAdd: Run = (tx, input) => {
         },
         id,
       );
+      // The source the task is made from: the one that holds the key already, else a new one on the
+      // task. A repeat capture of the key finds the task through it, wherever it moves.
+      let origin = found?.source ?? null;
+      if (source !== undefined && origin === null) {
+        const made = tx.call("source.add", { on: id, source }) as { source: { id: string } };
+        origin = made.source.id;
+      }
       tx.create(
         "tasks",
         {
           id,
           ref,
-          status: str(draft, "status") ?? "open",
+          origin_source_id: origin,
+          status: known(tx, "tasks.statuses", draft["status"] ?? "open", at("status")),
+          effort:
+            draft["effort"] === undefined
+              ? null
+              : known(tx, "tasks.effort_scale", draft["effort"], at("effort")),
           inbox: draft["inbox"] === true ? 1 : 0,
           priority,
           created_session: tx.request.actor.session_id ?? null,
@@ -218,7 +278,12 @@ const taskUpdate: Run = (tx, input) => {
   if (set["brief"] !== undefined) node["brief"] = str(set, "brief") ?? "";
   if (set["description"] !== undefined) node["description"] = str(set, "description") ?? "";
   const fields: Record<string, SqlValue> = {};
-  if (set["status"] !== undefined) fields["status"] = str(set, "status") ?? "open";
+  if (set["status"] !== undefined)
+    fields["status"] = known(tx, "tasks.statuses", set["status"], "set.status");
+  if (set["effort"] !== undefined) {
+    fields["effort"] =
+      set["effort"] === null ? null : known(tx, "tasks.effort_scale", set["effort"], "set.effort");
+  }
   if (set["inbox"] !== undefined) fields["inbox"] = set["inbox"] === true ? 1 : 0;
   if (set["priority"] !== undefined) fields["priority"] = Number(set["priority"]);
   if (set["reviewed_at"] !== undefined) fields["reviewed_at"] = set["reviewed_at"] as SqlValue;
@@ -512,7 +577,9 @@ function draft(f: Fields): Input {
     status: (k) => f.key(k),
     inbox: (k) => f.boolean(k),
     priority: (k) => f.int(k, 1, 4),
+    effort: (k) => f.level(k),
     log: (k) => f.text(k, { bytes: WRITE_LIMITS.log }),
+    source: (k) => ({ ...sourceFields(f.sub(k)) }),
   });
 }
 
@@ -542,6 +609,7 @@ const checkUpdate: Check = (f) => {
     status: (k) => s.key(k),
     inbox: (k) => s.boolean(k),
     priority: (k) => s.int(k, 1, 4),
+    effort: (k) => (s.raw(k) === null ? null : s.level(k)),
     reviewed_at: (k) => s.instantOrNull(k),
     waiting_on: (k) => s.nullableText(k, { chars: WRITE_LIMITS.line, line: true }),
   });

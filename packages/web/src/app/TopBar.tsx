@@ -31,16 +31,15 @@ import {
   groupTyped,
   parseCapture,
   type Chip,
-} from "../capture/parse.ts";
+} from "@ttasks/client/capture";
 import { joinRest, splitPaste } from "../capture/paste.ts";
 import { requestId } from "../api.ts";
 import { Session } from "../context.ts";
-import { liveGroups } from "../groups.ts";
+import { liveGroups, formatDay, LANDING } from "@ttasks/client/today";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { tabKept } from "../kept.ts";
 import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
 import { searchQueryOf } from "../route.ts";
-import { formatDay } from "../row/dates.ts";
 import { CopyIcon } from "../row/icons.tsx";
 import { sayMsg } from "../row/say.ts";
 import { useClock } from "../row/useClock.ts";
@@ -53,7 +52,6 @@ import { useMachine } from "./machine.ts";
 import { CrossIcon, PlusIcon, SearchIcon } from "./Icons.tsx";
 import css from "./TopBar.module.css";
 import { classes } from "./css.ts";
-import { LANDING } from "./views.ts";
 
 const styles = classes(css, [
   "bar",

@@ -1,12 +1,12 @@
-// The rows the live store holds and the feed's messages as the page reads them (A5 3.15; the
-// service's forms are packages/service/src/http/feed.ts and ws.ts). Everything
-// that arrives over the socket is checked by its shape here, once, before the store sees it: a
-// message or row the page cannot read is no message or row.
+// The rows the live store holds and the feed's messages as a page or an app reads them (A5 3.15;
+// the service's forms are packages/service/src/http/feed.ts and ws.ts). Everything that arrives
+// over the socket is checked by its shape here, once, before the store sees it: a message or row
+// that does not read is no message or row. The page's own messages, the Agent Monitor's view and
+// this machine's settings, are read in packages/web/src/store/messages.ts.
 //
 // Rows are the service's compact rows: a field that is null in the space is absent.
 import { EFFORT_LEVELS, effortLevels, type EffortLevel } from "@ttasks/contracts/preferences";
-import type { Instance, LastUsed } from "../api.ts";
-import { parseAgents, type AgentsView } from "./agents.ts";
+import type { Instance, LastUsed } from "@ttasks/contracts/runs";
 
 export interface TaskRow {
   readonly id: string;
@@ -435,40 +435,14 @@ export interface HelloMessage {
   readonly installed: string | undefined;
 }
 
-/** A setting of this machine as the feed carries it: its key and value, or its default. */
-export interface MachinePreference {
-  readonly key: string;
-  readonly value: unknown;
-  /** `default`: nobody chose it. */
-  readonly state: string;
-}
-
-/** This machine's settings of the page, after `hello` and again on each change. */
-export interface MachineMessage {
-  readonly type: "machine";
-  readonly preferences: readonly MachinePreference[];
-}
-
 /** The install's version changed while the service runs: undefined when it is the service's again. */
 export interface InstalledMessage {
   readonly type: "installed";
   readonly version: string | undefined;
 }
 
-/** The Agent Monitor's view for an Agents page (store/agents.ts). */
-export interface AgentsMessage {
-  readonly type: "agents";
-  readonly view: AgentsView;
-}
-
 export type FeedMessage =
-  | SnapshotMessage
-  | BatchMessage
-  | ErrorMessage
-  | HelloMessage
-  | MachineMessage
-  | InstalledMessage
-  | AgentsMessage;
+  SnapshotMessage | BatchMessage | ErrorMessage | HelloMessage | InstalledMessage;
 
 const VERSION = /^[0-9A-Za-z.+-]{1,64}$/;
 const versionOf = (value: unknown): string | undefined =>
@@ -730,19 +704,26 @@ function agentChangesOf(value: unknown): AgentChange[] {
   });
 }
 
-/**
- * A message from the feed, checked by its shape, or undefined when it is none the page takes. A
- * batch the page cannot read in full is `unreadable`: its coverage may hide a gap, so the store
- * takes a fresh snapshot rather than apply part of it.
- */
-export function parseMessage(text: unknown): FeedMessage | { type: "unreadable" } | undefined {
+/** A message's JSON text as a value, or undefined when it is not JSON. */
+export function jsonOf(text: unknown): unknown {
   if (typeof text !== "string") return undefined;
-  let value: unknown;
   try {
-    value = JSON.parse(text) as unknown;
+    return JSON.parse(text) as unknown;
   } catch {
     return undefined;
   }
+}
+
+/**
+ * A message from the feed, checked by its shape, or undefined when it is none the store takes. A
+ * batch that does not read in full is `unreadable`: its coverage may hide a gap, so the store takes
+ * a fresh snapshot rather than apply part of it.
+ */
+export const parseMessage = (text: unknown): FeedMessage | { type: "unreadable" } | undefined =>
+  messageOf(jsonOf(text));
+
+/** `parseMessage` of a message already read from its JSON. */
+export function messageOf(value: unknown): FeedMessage | { type: "unreadable" } | undefined {
   if (!isRecord(value)) return undefined;
   switch (value["type"]) {
     case "hello":
@@ -754,32 +735,12 @@ export function parseMessage(text: unknown): FeedMessage | { type: "unreadable" 
       };
     case "installed":
       return { type: "installed", version: versionOf(value["version"]) };
-    case "agents": {
-      const view = parseAgents(value);
-      return view === undefined ? undefined : { type: "agents", view };
-    }
     case "error":
       return {
         type: "error",
         code: isString(value["code"]) ? value["code"] : "",
         ...(value["reason"] === "replaced" ? { reason: "replaced" } : {}),
       };
-    case "machine": {
-      const list = value["preferences"];
-      if (!Array.isArray(list)) return undefined;
-      const preferences = list.flatMap((item: unknown) =>
-        isRecord(item) && isString(item["key"])
-          ? [
-              {
-                key: item["key"],
-                value: item["value"],
-                state: isString(item["state"]) ? item["state"] : "",
-              },
-            ]
-          : [],
-      );
-      return { type: "machine", preferences };
-    }
     case "snapshot": {
       const space = value["space"];
       const cursor = cursorOf(value["cursor"]);

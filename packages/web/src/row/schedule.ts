@@ -4,7 +4,7 @@
 import type { MonthDay, Ordinal, Rule, Weekday } from "@ttasks/contracts/schedule";
 import { WEEKDAYS } from "@ttasks/contracts/schedule";
 import type { Translate } from "../i18n/intl.tsx";
-import { formatDay, formatter } from "./dates.ts";
+import { formatDay, formatter } from "@ttasks/client/today";
 
 /** What the words need of the page: its messages, how it joins a list, and its locale. */
 export interface ScheduleWording {

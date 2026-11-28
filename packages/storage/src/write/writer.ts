@@ -30,7 +30,6 @@ import {
   EFFORT_NAME_MAX,
   checkEffortMoves,
   effortNamesFit,
-  mayWrite,
   PREFERENCES,
   preferenceSpec,
   samePrefValue,
@@ -39,6 +38,7 @@ import {
 } from "@ttasks/contracts/preferences";
 import type { Connection, Row, SqlValue } from "../driver.ts";
 import { misuse, StorageError } from "../errors.ts";
+import { agentLabel, notTheAuthority, spaceHuman } from "./actors.ts";
 import { isId, newId, osRandom, type Id, type RandomSource } from "../ids.ts";
 import {
   formatEntryRef,
@@ -55,7 +55,17 @@ import {
   RowReader,
   type SpaceRow,
 } from "../rows.ts";
-import { readSpacePreference } from "../preferences.ts";
+import {
+  isScaleKey,
+  levelMoves,
+  listPreference,
+  movedOf,
+  offListOf,
+  prefSetRule,
+  type Mover,
+  readSpacePreference,
+  scaleKeys,
+} from "../preferences.ts";
 import { REPLIED_SQL } from "../questions.ts";
 import type { SchemaStep } from "../schema.ts";
 import { indexChanges } from "../search/documents.ts";
@@ -76,6 +86,7 @@ import {
 import {
   carriedTo,
   decodeFolder,
+  FOLDER_HELD,
   FOLDER_SQL,
   folderProblem,
   machineOs,
@@ -90,7 +101,7 @@ import {
   nodeTexts,
   occurrences,
   PAGE_SQL,
-  pageInTrashAlready,
+  alreadyThere,
   pageSetTexts,
   textWrite,
 } from "./pages.ts";
@@ -108,14 +119,19 @@ import {
 import {
   decodeLaunch,
   detailText,
-  LAUNCH_EDGES,
   LAUNCH_SQL,
   newLaunchRef,
+  NO_MACHINE,
+  NO_REQUEST_NOTE,
   readLaunch,
   readOpenLaunches,
+  requestOrdinal,
+  resumesOf,
+  whereProblem,
   type LaunchRecord,
 } from "./launches.ts";
 import { canonicalJson } from "./canonical.ts";
+import { launchAfter, launchMoveProblem, runAfter, runMoveProblem } from "./moves.ts";
 import { markProjected, queueProjection, type ProjectedBatch } from "./outbox.ts";
 import { isPosition, positionBetween } from "./positions.ts";
 import { freeSlug } from "./slugs.ts";
@@ -124,8 +140,6 @@ import {
   FINAL_RUN_STATES,
   readOpenRuns,
   readRun,
-  RUN_EDGES,
-  RUN_REASONS,
   RUN_SQL,
   runDetailText,
   sortedJson,
@@ -148,8 +162,6 @@ import {
   FOLDER_OPERATIONS,
   formatAsOf,
   isHistoryOperation,
-  LAUNCH_FAIL_REASONS,
-  LAUNCH_UNKNOWN_REASONS,
   normaliseStored,
   REQUEST_ID,
   RequestProblem,
@@ -159,7 +171,6 @@ import {
   type CheckedRequest,
   type ConflictEntity,
   type Due,
-  type EffortCount,
   type EffortMove,
   type FieldConflict,
   type NewerWork,
@@ -946,23 +957,6 @@ export function readAsOf(conn: Connection): AsOf {
   };
 }
 
-/** The keys of `tasks.statuses` or `tasks.effort_scale` as the registry reads them (A1 3.16). */
-function listPreference(conn: Connection, key: ScaleKey): string[] {
-  return scaleKeys(readSpacePreference(conn, key).value);
-}
-
-type ScaleKey = "tasks.statuses" | "tasks.effort_scale";
-
-const isScaleKey = (key: string): key is ScaleKey =>
-  key === "tasks.statuses" || key === "tasks.effort_scale";
-
-/** A task a change of levels moves: the size it held, and where it is. */
-interface Mover {
-  id: Id<"t">;
-  from: string;
-  state: keyof EffortCount;
-}
-
 /**
  * The tasks a change of the effort levels moves, each by the size it held before the change, as
  * the rules of a change of levels allow it (checkEffortMoves). A move to the same name moves none.
@@ -999,39 +993,10 @@ function stageMoves(
     }));
 }
 
-/** How many tasks each move moved, by state, in the order of the moves. */
-const movedOf = (moves: readonly EffortMove[], movers: readonly Mover[]) =>
-  moves.map((move) => {
-    const count: EffortCount = { active: 0, finished: 0, trash: 0 };
-    for (const m of movers) if (m.from === move.from) count[m.state] += 1;
-    return { ...move, ...count };
-  });
-
-/** Most references of tasks on one size off the levels that an answer names. */
-const OFF_LIST_TASKS = 10;
-
 /** The live tasks on a size the effort levels lack now, by size (OpResult.off_list). */
 export function offList(conn: Connection, refPrefix: string): { off_list?: OffList[] } {
   const keys = listPreference(conn, "tasks.effort_scale");
-  const found = new Map<string, OffList>();
-  for (const r of conn.prepare(SQL.offList).all({ keys: JSON.stringify(keys) })) {
-    const effort = String(r["effort"]);
-    const entry = found.get(effort) ?? { effort, tasks: [], count: 0 };
-    found.set(effort, entry);
-    entry.count += 1;
-    if (entry.tasks.length < OFF_LIST_TASKS) {
-      entry.tasks.push(formatTaskRef(refPrefix, new RowReader("tasks", r).int("ref", "taskRef")));
-    }
-  }
-  return found.size === 0 ? {} : { off_list: [...found.values()] };
-}
-
-/** A scale's keys from its value: a list of keys, or of `{key}` objects. */
-function scaleKeys(value: unknown): string[] {
-  if (!Array.isArray(value)) throw misuse("A list preference reads as a list");
-  return value.map((item: unknown) =>
-    typeof item === "string" ? item : String((item as { key?: unknown }).key),
-  );
+  return offListOf(conn.prepare(SQL.offList).all({ keys: JSON.stringify(keys) }), refPrefix);
 }
 
 /**
@@ -1216,21 +1181,14 @@ export class SpaceWriter {
     const conn = this.#usable();
     if (kind === "human") {
       const found = conn.transaction("deferred", () => conn.prepare(SQL.firstHuman).get());
-      const id = found?.["id"];
-      if (!isId(id, "ac")) throw new StorageError("SPACE_INVALID", "The space has no human actor");
-      return id;
+      return spaceHuman(found?.["id"]);
     }
-    const name = normaliseStored(label);
-    if (!isSpaceName(name) || name !== label) {
-      throw misuse("An actor label is one line of 1 to 100 characters");
-    }
+    const name = agentLabel(label);
     return conn.transaction("immediate", () => {
       const found = conn.prepare(SQL.actorByLabel).get({ kind, label: name })?.["id"];
       if (isId(found, "ac")) return found;
       const space = decodeSpaceRow(conn.prepare(SQL.space).get());
-      if (space.authority.machineId !== this.#machine.id) {
-        throw new StorageError("STORAGE_READ_ONLY", "Another machine is this space's authority");
-      }
+      if (space.authority.machineId !== this.#machine.id) throw notTheAuthority();
       const id = newId("ac", this.#random);
       const { at } = writeSystemCommit(conn, {
         kind: "ops",
@@ -1586,7 +1544,11 @@ export class SpaceWriter {
         return fields.map((field): Touch => ({ entity, id, field, task: null }));
       };
       /** An existing folder row the operation writes, whose start state the base covers. */
-      const folderTouches = (row: Row, fields: string[], task: Id<"t"> | null): Touch[] => {
+      const folderTouches = (
+        row: Row,
+        fields: readonly string[],
+        task: Id<"t"> | null,
+      ): Touch[] => {
         const id = new RowReader("folders", row).id("id", "fo");
         const key = rowKey("folders", id);
         if (!starts.has(key)) starts.set(key, rowState("folders", row, CHILD_FIELDS.folders));
@@ -1597,12 +1559,7 @@ export class SpaceWriter {
         const machine = request.actor.machine_id;
         const os = machineOs(conn, machine);
         if (os === undefined) {
-          return problem(
-            "VALIDATION_FAILED",
-            "The request's machine has no record in this space",
-            i,
-            "actor.machine_id",
-          );
+          return problem(NO_MACHINE.code, NO_MACHINE.message, i, NO_MACHINE.field);
         }
         if (path !== undefined) {
           const wrong = folderProblem(path, os);
@@ -1694,12 +1651,7 @@ export class SpaceWriter {
       const placeMachine = (): string => {
         const machine = request.actor.machine_id;
         if (conn.prepare(SQL.machine).get({ id: machine }) === undefined) {
-          problem(
-            "VALIDATION_FAILED",
-            "The request's machine has no record in this space",
-            i,
-            "actor.machine_id",
-          );
+          problem(NO_MACHINE.code, NO_MACHINE.message, i, NO_MACHINE.field);
         }
         return machine;
       };
@@ -2196,7 +2148,7 @@ export class SpaceWriter {
           }
           const record = { task: parent, source: op.source };
           const live = links.get(id) ?? link["removed_at"] === null;
-          if (op.kind === "source.unlink" ? !live : live) {
+          if (alreadyThere(!live, op.kind === "source.relink")) {
             return { i, op, target: op.source, task: parent, touches: [], record, skip: true };
           }
           const start = linkState(link);
@@ -2339,44 +2291,29 @@ export class SpaceWriter {
           const parent = task(op.task, "task");
           const machine = request.actor.machine_id;
           if (conn.prepare(SQL.machine).get({ id: machine }) === undefined) {
-            problem(
-              "VALIDATION_FAILED",
-              "The request's machine has no record in this space",
-              i,
-              "actor.machine_id",
-            );
+            problem(NO_MACHINE.code, NO_MACHINE.message, i, NO_MACHINE.field);
           }
           if (op.place !== null) {
             const place = conn.prepare(LAUNCH_SQL.place).get({ id: op.place });
-            if (place === undefined) problem("NOT_FOUND", "No place has this ID", i, "place");
-            if (place["deleted_at"] !== null)
-              problem("DELETED", "The place is removed", i, "place");
-            if (place["machine_id"] !== machine) {
-              problem("VALIDATION_FAILED", "The place is on another machine", i, "place");
-            }
+            const wrong = whereProblem(place, machine, "place");
+            if (wrong !== undefined) problem(wrong.code, wrong.message, i, wrong.field);
           }
           const asked = op.evidence?.["request"];
           if (asked !== undefined) {
-            const ordinal = /^n([1-9][0-9]{0,5})$/u.exec(String(asked))?.[1];
+            const ordinal = requestOrdinal(String(asked));
             const found =
               ordinal === undefined
                 ? undefined
-                : conn.prepare(LAUNCH_SQL.request).get({ task: parent, ordinal: Number(ordinal) });
+                : conn.prepare(LAUNCH_SQL.request).get({ task: parent, ordinal });
             if (found === undefined) {
-              problem(
-                "NOT_FOUND",
-                "The task has no note with this reference",
-                i,
-                "evidence.request",
-              );
+              problem(NO_REQUEST_NOTE.code, NO_REQUEST_NOTE.message, i, NO_REQUEST_NOTE.field);
             }
           }
           const record = { task: parent, ...inputOf(op, "task") };
           // A second click on the same task and instance while an intent of it is still opening
           // gets that intent, in this request or before it, when both continue the same agent
           // conversation or neither does.
-          const given = op.evidence?.["resumes"];
-          const resumes = typeof given === "string" ? given : null;
+          const resumes = resumesOf(op.evidence);
           const key = `${parent}|${op.instance}|${String(resumes)}`;
           const found = drafts.has(parent)
             ? undefined
@@ -2442,26 +2379,8 @@ export class SpaceWriter {
               rowState("launches", row, CHILD_FIELDS.launches),
             );
           }
-          if (!LAUNCH_EDGES[op.expect].includes(op.next)) {
-            problem("VALIDATION_FAILED", "Not a transition of the launch state machine", i, "next");
-          }
-          const entering = op.next !== op.expect;
-          const needsReason = entering && (op.next === "failed" || op.next === "unknown");
-          if (needsReason !== (op.reason !== undefined)) {
-            problem(
-              "VALIDATION_FAILED",
-              needsReason
-                ? "Entering Failed or Unknown takes a reason code"
-                : "Only entering Failed or Unknown takes a reason code",
-              i,
-              "reason",
-            );
-          }
-          const reasons: readonly string[] =
-            op.next === "failed" ? LAUNCH_FAIL_REASONS : LAUNCH_UNKNOWN_REASONS;
-          if (needsReason && !reasons.includes(op.reason ?? "")) {
-            problem("VALIDATION_FAILED", "Not a reason code of that state", i, "reason");
-          }
+          const refused = launchMoveProblem(op);
+          if (refused !== undefined) problem(refused.code, refused.message, i, refused.field);
           return { i, op, target: op.launch, task: null, touches: [], record: inputOf(op) };
         }
         case "run.create": {
@@ -2469,22 +2388,12 @@ export class SpaceWriter {
           const parent = op.task === undefined ? null : task(op.task, "task");
           const machine = request.actor.machine_id;
           if (conn.prepare(SQL.machine).get({ id: machine }) === undefined) {
-            problem(
-              "VALIDATION_FAILED",
-              "The request's machine has no record in this space",
-              i,
-              "actor.machine_id",
-            );
+            problem(NO_MACHINE.code, NO_MACHINE.message, i, NO_MACHINE.field);
           }
           if (op.place !== null) {
             const place = conn.prepare(RUN_SQL.place).get({ id: op.place });
-            if (place === undefined) problem("NOT_FOUND", "No place has this ID", i, "place");
-            if (place["deleted_at"] !== null) {
-              problem("DELETED", "The place is removed", i, "place");
-            }
-            if (place["machine_id"] !== machine) {
-              problem("VALIDATION_FAILED", "The place is on another machine", i, "place");
-            }
+            const wrong = whereProblem(place, machine, "place");
+            if (wrong !== undefined) problem(wrong.code, wrong.message, i, wrong.field);
           }
           const id = newId("ru", random);
           draftRuns.add(id);
@@ -2514,29 +2423,8 @@ export class SpaceWriter {
             }
             starts.set(rowKey("runs", op.run), rowState("runs", row, CHILD_FIELDS.runs));
           }
-          if (!RUN_EDGES[op.expect].includes(op.next)) {
-            problem("VALIDATION_FAILED", "Not a transition of the run state machine", i, "next");
-          }
-          const entering = op.next !== op.expect;
-          const reasons = RUN_REASONS[op.next];
-          const needsReason = entering && reasons !== undefined;
-          if (needsReason !== (op.reason !== undefined)) {
-            problem(
-              "VALIDATION_FAILED",
-              needsReason
-                ? "Entering this state takes a reason code"
-                : "Only entering failed, timed_out or unknown takes a reason code",
-              i,
-              "reason",
-            );
-          }
-          if (needsReason && !reasons.includes(op.reason ?? "")) {
-            problem("VALIDATION_FAILED", "Not a reason code of that state", i, "reason");
-          }
-          const final = (FINAL_RUN_STATES as readonly RunState[]).includes(op.next);
-          if (op.result !== undefined && !(entering && final)) {
-            problem("VALIDATION_FAILED", "A result goes in entering a final state", i, "result");
-          }
+          const refused = runMoveProblem(op);
+          if (refused !== undefined) problem(refused.code, refused.message, i, refused.field);
           return { i, op, target: op.run, task: null, touches: [], record: inputOf(op) };
         }
         case "pref.set": {
@@ -2544,42 +2432,21 @@ export class SpaceWriter {
           // step 4). The admin scope a policy key also needs is the caller's check (A6 3.6.3).
           const spec = must(preferenceSpec(op.key), "A checked pref.set names a declared key");
           const row = conn.prepare(SQL.preferenceRow).get({ id: op.key });
-          // The space's own act (storeDefaults): a value every space holds, where it holds none.
-          const fills =
-            request.actor.actor_kind === "system" &&
-            spec.stored === true &&
-            (row === undefined || row["value"] === "null") &&
-            samePrefValue(op.value, spec.default) &&
-            op.moves === undefined;
-          if (!fills && !mayWrite(spec, request.actor.actor_kind)) {
-            problem("PREFERENCE_FORBIDDEN", "Only the user changes this preference", i, "key");
+          const rule = prefSetRule(
+            spec,
+            row,
+            op,
+            request.actor.actor_kind,
+            request.base !== undefined,
+            true,
+          );
+          if (rule.refused !== undefined) {
+            problem(rule.refused.code, rule.refused.message, i, rule.refused.field);
           }
-          // A newer build's value is kept unchanged: read-only here (A1 3.16). Said before any
-          // other reason, so nobody changes tasks for a change this build cannot make.
-          if (
-            row !== undefined &&
-            new RowReader("preferences", row).int("schema_ver", "count") > spec.schemaVer
-          ) {
-            problem(
-              "VALIDATION_FAILED",
-              "A newer build wrote this preference: it is read-only here",
-              i,
-              "key",
-            );
-          }
+          const { fills } = rule;
           const start =
             row === undefined ? undefined : rowState("preferences", row, CHILD_FIELDS.preferences);
           const levels = op.key === "tasks.effort_scale" && !fills;
-          // The levels a change replaces are the ones its person read, also on a space that never
-          // stored them: a first setter racing another meets the other's row as a conflict.
-          if (levels && row === undefined && request.base === undefined) {
-            problem(
-              "BASE_REQUIRED",
-              "This change needs the as_of of a read as its base",
-              i,
-              "base",
-            );
-          }
           // A base older than the list's last change is a conflict (preconditions), whatever the
           // change says of a list its person never saw.
           const stale =
@@ -2694,7 +2561,7 @@ export class SpaceWriter {
           const row = pageOf(op.page, restoring);
           const id = new RowReader("pages", row).id("id", "pg");
           const record = { ...inputOf(op, "page"), page: id };
-          const done = pageInTrashAlready(row["deleted_at"] !== null, restoring);
+          const done = alreadyThere(row["deleted_at"] !== null, restoring);
           return {
             i,
             op,
@@ -2915,7 +2782,7 @@ export class SpaceWriter {
             // says whether the caller saw it.
             const found = decodeFolder(row);
             target = found.id;
-            touches.push(...folderTouches(row, ["path", "deleted"], parent));
+            touches.push(...folderTouches(row, FOLDER_HELD, parent));
             if (op.carry !== undefined && op.carry.length > 0) {
               const carried = new Set(op.carry);
               for (const inside of conn
@@ -2925,7 +2792,7 @@ export class SpaceWriter {
                 if (moved.id === found.id || !carried.has(moved.ownerId)) continue;
                 if (carriedTo(moved.path, found.path, op.path, folder.os) === undefined) continue;
                 const owned = moved.ownerKind === "task" ? task(moved.ownerId, "task", true) : null;
-                touches.push(...folderTouches(inside, ["path", "deleted"], owned));
+                touches.push(...folderTouches(inside, FOLDER_HELD, owned));
               }
             }
           } else {
@@ -2980,7 +2847,7 @@ export class SpaceWriter {
             op,
             target: decodeFolder(row).id,
             task: parent,
-            touches: folderTouches(row, ["path", "deleted"], parent),
+            touches: folderTouches(row, FOLDER_HELD, parent),
             record,
             owner: { ...owner, bound: true },
             folder,
@@ -4720,35 +4587,12 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
     case "launch.transition": {
       // One compare-and-set (A4 3.16.1): the launch moves only from the state the caller saw.
       const current = decodeLaunch(readRow(conn, "launches", staged.target));
-      if (current.state !== op.expect) {
-        problem("INVALID_TRANSITION", "The launch moved on: read it again", i, "expect");
+      const after = launchAfter(current, op, run.plan.wall);
+      if (after === undefined) return;
+      if ("problem" in after) {
+        return problem(after.problem.code, after.problem.message, i, after.problem.field);
       }
-      // The record the caller decided on: any change since, a self edge's evidence included,
-      // makes the decision stale (a sweep that read the launch before its claim).
-      if (op.expect_version !== undefined && current.version !== op.expect_version) {
-        problem("INVALID_TRANSITION", "The launch changed: read it again", i, "expect_version");
-      }
-      // Evidence only grows: a key the record holds keeps its value, so a claim is recorded once.
-      const held = current.evidence;
-      const incoming = op.evidence ?? {};
-      for (const [key, value] of Object.entries(incoming)) {
-        if (Object.hasOwn(held, key) && held[key] !== value) {
-          problem("INVALID_TRANSITION", "The launch holds other evidence", i, `evidence.${key}`);
-        }
-      }
-      const entering = op.next !== current.state;
-      const grows = Object.keys(incoming).some((key) => !Object.hasOwn(held, key));
-      if (!entering && !grows) return;
-      conn.prepare(LAUNCH_SQL.update).run({
-        id: staged.target,
-        state: op.next,
-        reason: entering ? (op.reason ?? null) : current.reason,
-        detail: detailText({
-          evidence: { ...held, ...incoming },
-          at: entering ? { ...current.at, [op.next]: run.plan.wall } : current.at,
-        }),
-        at: run.at,
-      });
+      conn.prepare(LAUNCH_SQL.update).run({ id: staged.target, ...after.write, at: run.at });
       wrote(run, i, "launches", staged.target, null, ["state"]);
       return;
     }
@@ -4789,47 +4633,12 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
     case "run.transition": {
       // One compare-and-set (A4 3.11.2, 3.16.1): the run moves only from the record the caller saw.
       const current = decodeRun(readRow(conn, "runs", staged.target));
-      if (current.state !== op.expect) {
-        problem("INVALID_TRANSITION", "The run moved on: read it again", i, "expect");
+      const after = runAfter(current, op, run.plan.wall);
+      if (after === undefined) return;
+      if ("problem" in after) {
+        return problem(after.problem.code, after.problem.message, i, after.problem.field);
       }
-      if (current.version !== op.expect_version) {
-        problem("INVALID_TRANSITION", "The run changed: read it again", i, "expect_version");
-      }
-      // Evidence only grows: a key the record holds keeps its value, so a claim is recorded once.
-      const held = current.evidence;
-      const incoming = op.evidence ?? {};
-      for (const [key, value] of Object.entries(incoming)) {
-        if (Object.hasOwn(held, key) && held[key] !== value) {
-          problem("INVALID_TRANSITION", "The run holds other evidence", i, `evidence.${key}`);
-        }
-      }
-      // A result goes in once: a run settled from unknown keeps the result it already has.
-      if (op.result !== undefined && current.result !== null) {
-        problem("INVALID_TRANSITION", "The run holds its result", i, "result");
-      }
-      const entering = op.next !== current.state;
-      const grows = Object.keys(incoming).some((key) => !Object.hasOwn(held, key));
-      if (!entering && !grows) return;
-      const wall = run.plan.wall;
-      const final = (FINAL_RUN_STATES as readonly RunState[]).includes(op.next);
-      conn.prepare(RUN_SQL.update).run({
-        id: staged.target,
-        state: op.next,
-        reason: entering ? (op.reason ?? null) : current.reason,
-        detail: runDetailText({
-          evidence: { ...held, ...incoming },
-          at: entering ? { ...current.at, [op.next]: wall } : current.at,
-        }),
-        result:
-          op.result === undefined
-            ? current.result === null
-              ? "{}"
-              : sortedJson(current.result)
-            : sortedJson(op.result),
-        started_at:
-          entering && op.next === "running" ? (current.started_at ?? wall) : current.started_at,
-        ended_at: entering && final ? wall : current.ended_at,
-      });
+      conn.prepare(RUN_SQL.update).run({ id: staged.target, ...after.write });
       wrote(run, i, "runs", staged.target, null, ["state"]);
       return;
     }
@@ -5198,14 +5007,11 @@ function changeLevels(
       .run({ id: op.key, value: canonicalJson(value), schema_ver: spec.schemaVer });
     wrote(run, i, "preferences", op.key, null, ["value"]);
   }
-  const to = new Map((op.moves ?? []).map((move) => [move.from, move.to]));
-  for (const mover of change.movers) {
-    const effort = to.get(mover.from);
-    if (effort === undefined) throw misuse("A mover follows a move");
-    if (effort === mover.from) continue;
-    ensureStart(conn, run, "tasks", mover.id);
-    update(conn, mover.id, { effort });
-    wrote(run, i, "tasks", mover.id, mover.id, ["effort"]);
+  for (const { id, effort } of levelMoves(op.moves ?? [], change.movers)) {
+    const task = id as Id<"t">;
+    ensureStart(conn, run, "tasks", task);
+    update(conn, task, { effort });
+    wrote(run, i, "tasks", task, task, ["effort"]);
   }
 }
 

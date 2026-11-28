@@ -2,10 +2,11 @@
 // of state in plain words, what the agent said (its answer, or the question it stopped on), how
 // its processes ended, and whether Stop is offered. Pure, so every state is a unit test; the
 // words are the catalogue's.
-import { Refused, type Instance, type Run } from "../api.ts";
+import { Refused, type Run } from "../api.ts";
+import type { Instance } from "@ttasks/contracts/runs";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { MarkerFact, Msg } from "../row/model.ts";
-import type { RowQuestion, RowRun } from "../store/rows.ts";
+import type { RowQuestion, RowRun } from "@ttasks/client/store";
 
 /**
  * How a run's entry looks: the one state that asks for attention is `needs_you`. `recorded` is a

@@ -27,8 +27,8 @@ import { AgentsFeed } from "./agents.ts";
 import { browserAttention, type Attention } from "./browser-attention.ts";
 import { browserFrames } from "./browser-frames.ts";
 import type { FrameClock } from "./frame.ts";
-import type { Overlay } from "./pending.ts";
-import { parseMessage, type Cursor, type MachinePreference } from "./rows.ts";
+import type { Cursor, Overlay } from "@ttasks/client/store";
+import { parsePageMessage, type MachinePreference } from "./messages.ts";
 import { LiveStore, type Changes, type LiveState, type Sent, type Touched } from "./store.ts";
 
 const RETRY_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
@@ -279,7 +279,7 @@ export class Live {
     ws.onmessage = (event: MessageEvent) => {
       // A stopped tab (signed out, or closed) takes nothing more from a socket still closing.
       if (this.#ws !== ws || this.#isStopped()) return;
-      const message = parseMessage(event.data);
+      const message = parsePageMessage(event.data);
       if (message === undefined) return;
       if (message.type === "hello") {
         this.#running = message.version;

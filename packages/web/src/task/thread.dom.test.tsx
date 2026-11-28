@@ -8,7 +8,8 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { Instance, Receipt, ReceiptState, Run } from "../api.ts";
+import type { Instance } from "@ttasks/contracts/runs";
+import type { Receipt, ReceiptState, Run } from "../api.ts";
 import { I18n } from "../i18n/intl.tsx";
 import type { DetailLog, DetailNote } from "./detail.ts";
 import { Thread, type EntryEdit } from "./Thread.tsx";
