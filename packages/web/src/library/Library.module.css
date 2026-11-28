@@ -184,12 +184,11 @@
   }
 }
 
-/* A task card's Knowledge, under its facts, on the facts' columns. */
+/* A task card's Knowledge, under its facts: its label above, as one word it is wider than theirs. */
 .knowledge {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
-  column-gap: 8px;
-  align-items: baseline;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   margin-top: 14px;
   padding-top: 12px;
   border-top: 1px solid var(--k-line);
@@ -230,6 +229,11 @@
 .kPage > span:last-child {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kPage > .ref {
+  flex: none;
   white-space: nowrap;
 }
 
