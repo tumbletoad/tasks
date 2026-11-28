@@ -243,7 +243,7 @@ function CapturesTo({
 }
 
 /**
- * The task's sources, each with Remove once the card is read, then one collapsed line for the
+ * The task's sources, each with Remove, then one collapsed line for the
  * links detached from it and the notes taken back from it, each with Put back: a wrong source or
  * note is corrected here, and a correction that was itself a mistake is undone here, also after
  * a reload or when an agent made it.
@@ -255,7 +255,7 @@ function Sources({
   writes: card,
 }: {
   readonly task: TaskRow;
-  readonly detail: Detail | undefined;
+  readonly detail: Detail;
   /** Where the feed was when `detail` was read: a change is made from it. */
   readonly base: string | undefined;
   readonly writes: CardWrites | undefined;
@@ -265,18 +265,10 @@ function Sources({
   const writes = card?.sources;
   const onAsk = card?.ask("sources");
   const [open, setOpen] = useState(false);
-  const all = detail?.sources;
-  const live: readonly SourceOutput[] =
-    all?.filter((s) => s.removed === undefined) ??
-    (task.sources ?? []).map((s) => ({
-      id: s.id,
-      kind: s.kind as SourceOutput["kind"],
-      title: s.title,
-      ...(s.who === undefined ? {} : { who: s.who }),
-      ...(s.url === undefined ? {} : { url: s.url }),
-    }));
-  const removed = all?.filter((s) => s.removed !== undefined) ?? [];
-  const notes = detail?.removedNotes ?? [];
+  const all = detail.sources;
+  const live = all.filter((s) => s.removed === undefined);
+  const removed = all.filter((s) => s.removed !== undefined);
+  const notes = detail.removedNotes;
   const count = removed.length + notes.length;
   const putBack = card?.notes.putBack;
   const act = (
@@ -307,11 +299,7 @@ function Sources({
           source={source}
           task={task}
           onAsk={onAsk}
-          {...(all === undefined
-            ? {}
-            : {
-                acts: act(writes?.detach, source, "source.notRemoved", true, "source.remove"),
-              })}
+          acts={act(writes?.detach, source, "source.notRemoved", true, "source.remove")}
         />
       ))}
       {count === 0 ? null : (
@@ -415,7 +403,7 @@ function PlaceLine({
   writes,
 }: {
   readonly task: TaskRow;
-  readonly detail: Detail | undefined;
+  readonly detail: Detail;
   /** Where the feed was when `detail` was read: a folder it shows is changed or cleared from it. */
   readonly base: string | undefined;
   /** An Open refused on the folder since the detail was read: what it found is the newer word. */
@@ -435,7 +423,7 @@ function PlaceLine({
     setAsked(refused);
     setChoosing(true);
   }
-  const folder = detail?.task.folder;
+  const folder = detail.task.folder;
   const own = folder !== undefined && "path" in folder && folder.of === "task" ? folder : undefined;
   const marker = refused?.anyway;
   /** The line's folder icon: in a card that changes the task, the button that chooses its folder. */
@@ -608,7 +596,7 @@ function PlaceLine({
     );
   }
   // No folder for this task here: Open and Run use the space's work folder, on a space that has them.
-  if (detail === undefined || task.place !== undefined || !launches) return null;
+  if (task.place !== undefined || !launches) return null;
   return (
     <li className={styles.link} data-part="place" data-state="work_folder">
       {lead(<FolderIcon />, "folder.choose")}
@@ -833,7 +821,6 @@ export function Expanded({
   useLayoutEffect(() => {
     if (moved) actions.folderChanged(task);
   }, [moved, actions, task]);
-  const learnings = detail?.learnings ?? [];
   const sources = useSourceWrites();
   const notes = useNoteWrites();
   const say = useToast();
@@ -887,59 +874,8 @@ export function Expanded({
             />
           )}
         </div>
-        {detail?.outcome === undefined ? null : (
-          <div
-            className={styles.outcome}
-            data-part="outcome"
-            {...asks(writes?.ask("outcome"), t("ask.tip"))}
-          >
-            <span className={styles.icon} role="img" aria-label={t("task.outcome")}>
-              <OutcomeIcon />
-            </span>
-            <div data-fact="">
-              <Markdown text={detail.outcome} />
-            </div>
-          </div>
-        )}
-        {detail === undefined ? null : (
-          <Context
-            task={task}
-            text={detail.context}
-            base={base}
-            onAsk={writes?.ask("context")}
-            // Only an open task's description changes, as its brief and title: the service
-            // refuses a finished one's.
-            write={task.lifecycle === "active" ? writes?.text.context : undefined}
-            partial={detail.contextPartial === true}
-          />
-        )}
-        <ul className={styles.links}>
-          <Sources task={task} detail={detail} base={base} writes={writes} />
-          <PlaceLine
-            task={task}
-            detail={detail}
-            base={base}
-            refused={refused}
-            onShow={actions.folder}
-            writes={writes?.folder}
-          />
-          {learnings.map((learning, i) => (
-            <li
-              key={`learning:${String(i)}`}
-              className={styles.link}
-              data-part="learning"
-              {...asks(writes?.ask("learnings"), t("ask.tip"))}
-            >
-              <span className={styles.icon} role="img" aria-label={t("task.learning")}>
-                <BulbIcon />
-              </span>
-              <div data-fact="">
-                <Markdown text={learning} />
-              </div>
-            </li>
-          ))}
-        </ul>
-        <hr className={styles.hairline} />
+        {/* All that the card's reads bring, drawn once with them: nothing drawn moves when they
+            arrive. */}
         {detail === undefined || !read ? (
           failed && detail === undefined ? (
             <p className={styles.line} role="status">
@@ -947,51 +883,104 @@ export function Expanded({
             </p>
           ) : null
         ) : (
-          <Thread
-            notes={detail.notes}
-            log={detail.log}
-            receipts={receipts}
-            runs={runs}
-            instances={instances}
-            partial={detail.partial}
-            onOlder={older}
-            loadingOlder={loadingOlder ?? false}
-            olderFailed={olderFailed ?? false}
-            {...(writes === undefined ? {} : { onOpenAgain: writes.openAgain })}
-            onOpenInT3={actions.openInT3}
-            removed={detail.removedNotes}
-            onRemove={
-              writes === undefined || base === undefined
-                ? undefined
-                : (note) => {
-                    writes.notes.remove(task, note, base).catch((error: unknown) => {
-                      say(refusalText(error, t("note.notRemoved")));
-                    });
-                  }
-            }
-            runsFailed={runsFailed}
-            edit={
-              writes === undefined || base === undefined
-                ? undefined
+          <>
+            {detail.outcome === undefined ? null : (
+              <div
+                className={styles.outcome}
+                data-part="outcome"
+                {...asks(writes?.ask("outcome"), t("ask.tip"))}
+              >
+                <span className={styles.icon} role="img" aria-label={t("task.outcome")}>
+                  <OutcomeIcon />
+                </span>
+                <div data-fact="">
+                  <Markdown text={detail.outcome} />
+                </div>
+              </div>
+            )}
+            <Context
+              task={task}
+              text={detail.context}
+              base={base}
+              onAsk={writes?.ask("context")}
+              // Only an open task's description changes, as its brief and title: the service
+              // refuses a finished one's.
+              write={task.lifecycle === "active" ? writes?.text.context : undefined}
+              partial={detail.contextPartial === true}
+            />
+            <ul className={styles.links}>
+              <Sources task={task} detail={detail} base={base} writes={writes} />
+              <PlaceLine
+                task={task}
+                detail={detail}
+                base={base}
+                refused={refused}
+                onShow={actions.folder}
+                writes={writes?.folder}
+              />
+              {detail.learnings.map((learning, i) => (
+                <li
+                  key={`learning:${String(i)}`}
+                  className={styles.link}
+                  data-part="learning"
+                  {...asks(writes?.ask("learnings"), t("ask.tip"))}
+                >
+                  <span className={styles.icon} role="img" aria-label={t("task.learning")}>
+                    <BulbIcon />
+                  </span>
+                  <div data-fact="">
+                    <Markdown text={learning} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <hr className={styles.hairline} />
+            <Thread
+              notes={detail.notes}
+              log={detail.log}
+              receipts={receipts}
+              runs={runs}
+              instances={instances}
+              partial={detail.partial}
+              onOlder={older}
+              loadingOlder={loadingOlder ?? false}
+              olderFailed={olderFailed ?? false}
+              {...(writes === undefined ? {} : { onOpenAgain: writes.openAgain })}
+              onOpenInT3={actions.openInT3}
+              removed={detail.removedNotes}
+              onRemove={
+                writes === undefined || base === undefined
+                  ? undefined
+                  : (note) => {
+                      writes.notes.remove(task, note, base).catch((error: unknown) => {
+                        say(refusalText(error, t("note.notRemoved")));
+                      });
+                    }
+              }
+              runsFailed={runsFailed}
+              edit={
+                writes === undefined || base === undefined
+                  ? undefined
+                  : {
+                      space: live.spaceId ?? "",
+                      task: task.id,
+                      base,
+                      save: (entry, words, from) =>
+                        writes.text.entry(task, entry, words, from ?? base),
+                    }
+              }
+              // A tab whose copy of the space is gone stops nothing: its copy's runs are not the
+              // space's.
+              {...(ended
+                ? {}
                 : {
-                    space: live.spaceId ?? "",
-                    task: task.id,
-                    base,
-                    save: (entry, words, from) =>
-                      writes.text.entry(task, entry, words, from ?? base),
-                  }
-            }
-            // A tab whose copy of the space is gone stops nothing: its copy's runs are not the
-            // space's.
-            {...(ended
-              ? {}
-              : {
-                  onStop: (run: Run) => {
-                    actions.stop(task, run);
-                  },
-                })}
-            {...(ended || writes === undefined ? {} : { onContinue: writes.continueRun })}
-          />
+                    onStop: (run: Run) => {
+                      actions.stop(task, run);
+                    },
+                  })}
+              {...(ended || writes === undefined ? {} : { onContinue: writes.continueRun })}
+            />
+          </>
         )}
         {failed && detail !== undefined ? (
           <p className={styles.line} role="status">
