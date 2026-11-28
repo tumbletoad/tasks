@@ -331,8 +331,8 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
   const from = t("library.of", { name: title });
   const changed = useChanged();
   const root = useRef<HTMLDivElement>(null);
-  useFocusReturn(root);
   const [read, setRead] = useState<NodeView | "failed" | undefined>(undefined);
+  useFocusReturn(root, read !== undefined);
   // Newer texts the feed brought while the person reads these: offered, never put in their place.
   const [newer, setNewer] = useState<NodeView | undefined>(undefined);
   const shown = useRef(read);
@@ -375,6 +375,8 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
     () => listsOf(node, state.pages.values(), state.space?.name ?? "", state.nodes),
     [node, state.pages, state.space?.name, state.nodes],
   );
+  // Nothing until the texts are read: the lists below them are drawn once, in their place.
+  if (read === undefined) return <div ref={root} className={styles.library} data-part="library" />;
   return (
     <div ref={root} className={styles.library} data-part="library">
       {read === "failed" ? (
@@ -390,7 +392,7 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
             {t("edit.tryAgain")}
           </button>
         </p>
-      ) : read === undefined ? null : (
+      ) : (
         <Texts
           node={node}
           read={read}

@@ -9,6 +9,8 @@ import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
 import {
   axeFound,
+  drawnNow,
+  hold,
   picture,
   pictures,
   showsSpace,
@@ -468,7 +470,7 @@ test.describe("[A7.3.12.m5-06.e2e.screens] The expanded task in both themes: scr
 });
 
 test.describe("[A7.3.12.m5-06.e2e.settled] An expanded card stays put when its detail arrives", () => {
-  test("after a reload and after a click on the row, at 1,440 px and 390 px, with the list's end in view: the card's star and the page's scroll stay where they were", async ({
+  test("after a reload and after a click on the row, at 1,440 px and 390 px, with the list's end in view: no link or button drawn before the card's reads moves when they arrive, nor the page's scroll, and Move to Trash then lands", async ({
     page,
     world,
   }) => {
@@ -479,14 +481,18 @@ test.describe("[A7.3.12.m5-06.e2e.settled] An expanded card stays put when its d
         area: "home",
       })),
     });
-    const ref = await addTask(world, { title: `Book the hall (${tag})`, area: "home" });
+    // A description and a source, which the card's read brings, above what it shows of the row.
+    const ref = await addTask(world, {
+      title: `Book the hall (${tag})`,
+      area: "home",
+      context: "The hall takes bookings by phone.\n\nAsk for the small room first.",
+      sources: [
+        { kind: "email", title: "Hall prices for spring", url: "https://mail.example/m/2" },
+      ],
+    });
     const row = page.locator(`main li[data-task="${ref}"]`);
     const title = row.locator('[data-part="title"]');
-    const star = row.locator('[data-part="star"]');
-    const where = async () => ({
-      scroll: await page.evaluate(() => window.scrollY),
-      star: (await star.boundingBox())?.y,
-    });
+    const scroll = () => page.evaluate(() => window.scrollY);
     for (const width of [1440, 390]) {
       for (const how of ["reload", "click"] as const) {
         await page.setViewportSize({ width: 1440, height: 900 });
@@ -498,29 +504,26 @@ test.describe("[A7.3.12.m5-06.e2e.settled] An expanded card stays put when its d
           await row.locator('[data-part="collapse"]').click();
           await expect(title).toHaveAttribute("aria-expanded", "false");
         }
-        let release!: () => void;
-        const gate = new Promise<void>((resolve) => {
-          release = resolve;
-        });
-        await page.route("**/api/v1/op/task.get", async (route) => {
-          await gate;
-          await route.continue();
-        });
+        const release = await hold(page, "task.get");
         if (how === "reload") await page.reload();
         else await title.click();
         await expect(title).toHaveAttribute("aria-expanded", "true", { timeout: SLOW_MS });
-        await expect(star).toBeVisible();
+        await expect(row.locator('[data-part="move-to-trash"]')).toBeVisible();
         // The list's end in view: what follows the list is on screen too.
         await page.evaluate(() => {
           window.scrollTo(0, document.documentElement.scrollHeight);
         });
-        const before = await where();
-        expect(before.scroll, `the page scrolls at ${String(width)} px`).toBeGreaterThan(0);
-        release();
+        const before = await scroll();
+        expect(before, `the page scrolls at ${String(width)} px`).toBeGreaterThan(0);
+        const moved = await drawnNow(row);
+        await release();
         await threadDrawn(row);
-        await page.unroute("**/api/v1/op/task.get");
-        expect(await where(), `${how} at ${String(width)} px`).toEqual(before);
+        await expect(row.locator('[data-part="source"]')).toBeVisible();
+        expect(await moved(), `${how} at ${String(width)} px`).toEqual([]);
+        expect(await scroll(), `${how} at ${String(width)} px`).toEqual(before);
       }
     }
+    await row.locator('[data-part="move-to-trash"]').click();
+    await expect(row.locator('[data-part="in-trash"]')).toBeVisible({ timeout: SLOW_MS });
   });
 });

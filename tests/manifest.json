@@ -5957,7 +5957,7 @@
     },
     {
       "id": "A7.3.12.m5-06.e2e.settled",
-      "title": "In Chromium and Firefox against the real service: while an expanded card's detail is held, after a reload and after a click on its row, at 1,440 px and 390 px with the list's end in view, the card's star and the page's scroll are where they were once the detail arrives",
+      "title": "In Chromium and Firefox against the real service: while an expanded card's detail is held, after a reload and after a click on its row, at 1,440 px and 390 px with the list's end in view, no link or button the card drew meanwhile has moved once the detail arrives, nor the page's scroll, and Move to Trash then lands",
       "source": "A5 3.7, A5 3.15, A7 3.12 M5.06",
       "owner": "M5",
       "kind": "ci",
