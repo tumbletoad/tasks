@@ -499,7 +499,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Undo and Restore do not unsend a mail, reverse a commit or undo anything done outside TTasks.
 - Undo steps back through your own changes. A change by an agent or a script is not on it, and
   nothing from before the last upgrade that changed the data format can be undone.
-- A new project or area whose creation you undid is archived, not gone: it is under Archived.
+- A new project or area whose creation you undid is archived, not gone: it is under Archived, and
+  a new one of the same name in the same place finds it.
 - Undo of a task's first area puts it back without an area at the end of that list, not at its
   earlier place.
 - Undoing the reopen of a dropped task drops it again at the time of the Undo.
