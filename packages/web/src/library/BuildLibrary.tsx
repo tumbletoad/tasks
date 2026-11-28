@@ -1,7 +1,9 @@
 // "Build this project's library", on a project's or an area's Library that has no pages: an
 // ordinary task there, with the person's note for agents that says what to build, opened in the
 // list so the person can hand it to an agent like any task. The note is the person's, written on
-// their click: a task's context is data an agent would not follow.
+// their click: a task's context is data an agent would not follow. A task's add takes no note for
+// agents, so the two go one after the other: once the task is made its reference is kept, and a
+// note that failed is tried again on that task, never with a second one.
 import { useRouter } from "@tanstack/react-router";
 import { useContext, useState } from "react";
 import { classes } from "../app/css.ts";
@@ -24,11 +26,13 @@ export function BuildLibrary({ node }: { readonly node: Exclude<LibraryNode, { k
   const edits = useEdits();
   const { areas, projects } = useLive();
   const [sending, setSending] = useState(false);
+  /** The task made for it whose note for agents did not land yet. */
+  const [made, setMade] = useState<string | undefined>(undefined);
   const project = node.kind === "project" ? projects.get(node.id) : undefined;
   const areaId = node.kind === "area" ? node.id : project?.area_id;
   const area = areaId === undefined ? undefined : areas.get(areaId);
   const kind = node.kind;
-  const build = async (): Promise<void> => {
+  const add = async (): Promise<string | undefined> => {
     const title = t("library.buildTitle", { kind });
     const added = await edits.write(
       (request_id) =>
@@ -44,19 +48,29 @@ export function BuildLibrary({ node }: { readonly node: Exclude<LibraryNode, { k
         }),
       () => ({ id: "toast.buildAdded" }),
     );
-    const ref = "tasks" in added ? added.tasks[0]?.ref : undefined;
+    return "tasks" in added ? added.tasks[0]?.ref : undefined;
+  };
+  const build = async (): Promise<void> => {
+    const ref = made ?? (await add());
     if (ref === undefined) return;
-    await edits.write(
-      (request_id) =>
-        api.client.entry.add({
-          task: ref,
-          kind: "note",
-          for_agents: true,
-          text: t("library.buildBrief", { kind }),
-          request_id,
-        }),
-      () => undefined,
-    );
+    setMade(ref);
+    try {
+      await edits.write(
+        (request_id) =>
+          api.client.entry.add({
+            task: ref,
+            kind: "note",
+            for_agents: true,
+            text: t("library.buildBrief", { kind }),
+            request_id,
+          }),
+        () => undefined,
+      );
+    } catch (error) {
+      if (!live.failed(error)) say(t("library.buildNoteFailed", { ref }));
+      return;
+    }
+    setMade(undefined);
     const space = live.spaceId ?? "";
     const search = { task: ref };
     if (node.kind === "area") {
@@ -99,7 +113,9 @@ export function BuildLibrary({ node }: { readonly node: Exclude<LibraryNode, { k
         );
       }}
     >
-      {t("library.buildTitle", { kind })}
+      {made === undefined
+        ? t("library.buildTitle", { kind })
+        : t("library.buildNote", { ref: made })}
     </button>
   );
 }

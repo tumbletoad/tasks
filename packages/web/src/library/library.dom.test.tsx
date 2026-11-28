@@ -78,6 +78,8 @@ let live: Live;
 let api: Api;
 /** Every library call, by name, with its input. */
 let calls: [string, Record<string, unknown>][];
+/** Answers entry.add: the note for agents. */
+let noted: () => Promise<unknown>;
 /** Answers page.read of a node. */
 let nodeRead: (input: Record<string, unknown>) => unknown;
 /** Answers page.write: the next write's answer, or its refusal. */
@@ -86,6 +88,14 @@ let written: () => Promise<unknown>;
 beforeEach(() => {
   calls = [];
   nodeRead = () => nodeExample;
+  noted = () =>
+    Promise.resolve({
+      result: "logged",
+      task: "M-231",
+      entry: "n1",
+      kind: "note",
+      as_of: "1.1048.5n0w8k3q",
+    });
   localStorage.clear();
   written = () => Promise.resolve({ result: "set", target: PAGE.ref, as_of: "1.1047.5n0w8k3q" });
   const record =
@@ -107,15 +117,7 @@ beforeEach(() => {
         ),
       },
       entry: {
-        add: record("entry.add", () =>
-          Promise.resolve({
-            result: "logged",
-            task: "M-231",
-            entry: "n1",
-            kind: "note",
-            as_of: "1.1048.5n0w8k3q",
-          }),
-        ),
+        add: record("entry.add", () => noted()),
       },
     },
     library: {
@@ -559,6 +561,26 @@ describe("[A5.pages.web.build] Build this project's library", () => {
     expect(note).toMatchObject({ task: "M-231", kind: "note", for_agents: true });
     expect(String(note?.["text"])).toContain("keeping-the-library");
     expect(router.state.location.pathname).toBe(`/s/${SPACE_ID}/area/${AREA}/project/${BILLING}`);
+    expect(router.state.location.search).toEqual({ task: "M-231" });
+  });
+
+  test("a note that fails after the task was made is tried again on that task, never with a second task", async () => {
+    let first = true;
+    const answer = noted;
+    noted = () => {
+      if (!first) return answer();
+      first = false;
+      return Promise.reject(Object.assign(new Error("Not now."), { code: "internal" }));
+    };
+    const router = await mount(<NodeLibrary node={{ kind: "project", id: BILLING }} />);
+    await click(part("build-library"));
+    expect(part("build-library")?.textContent).toBe("Add the note for agents to M-231");
+    expect(router.state.location.pathname).not.toContain(BILLING);
+    await click(part("build-library"));
+    expect(calls.filter(([name]) => name === "task.add")).toHaveLength(1);
+    expect(
+      calls.filter(([name]) => name === "entry.add").map(([, input]) => input["task"]),
+    ).toEqual(["M-231", "M-231"]);
     expect(router.state.location.search).toEqual({ task: "M-231" });
   });
 

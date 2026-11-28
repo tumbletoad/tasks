@@ -976,6 +976,8 @@
   "library.buildTitle": "Build this {kind, select, area {area} other {project}}'s library",
   "library.buildBrief": "Build this {kind, select, area {area} other {project}}'s library. Read its tasks, finished ones included, and write the pages the next agent working here would want: rules, procedures, facts about the systems and people involved, and decisions with their reasons. Follow the skill keeping-the-library: one page per subject, each fact with the task it came from. Give the {kind, select, area {area} other {project}} a brief and a description when it has none. Change nothing in the tasks themselves. Say in the outcome which pages you made.",
   "library.buildFailed": "The task was not added.",
+  "library.buildNote": "Add the note for agents to {ref}",
+  "library.buildNoteFailed": "{ref} was added, its note for agents was not: press again to add it.",
   "library.addPage": "Page",
   "library.knowledge": "Knowledge",
   "library.aboveCount": "From above ({count})",

@@ -4,7 +4,7 @@
 // what is drawn; a page an agent writes meanwhile joins it. A page opened from here goes back to
 // the same list with the task expanded: the way back is this address, `?task=` included.
 import { Link } from "@tanstack/react-router";
-import { useContext, useMemo, useState } from "react";
+import { useContext, useMemo, useRef, useState } from "react";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { useT } from "../i18n/intl.tsx";
@@ -14,7 +14,7 @@ import css from "./Library.module.css";
 import { LibraryLink } from "./Library.tsx";
 import { taskLists } from "./lists.ts";
 import { NewPage } from "./NewPage.tsx";
-import { fromHere } from "./parts.tsx";
+import { fromHere, noteFollowed, useFocusReturn } from "./parts.tsx";
 
 const styles = classes(css, [
   "knowledge",
@@ -48,6 +48,10 @@ function Pages({
             state={() => ({ from: fromHere(from) })}
             className={styles.kPage}
             data-part="knowledge-page"
+            data-ref={page.ref}
+            onClick={() => {
+              noteFollowed(page.ref);
+            }}
             {...(page.brief === "" ? {} : { "data-tip": page.brief })}
           >
             <span className={styles.ref}>{page.ref}</span>
@@ -63,6 +67,8 @@ export function Knowledge({ task }: { readonly task: TaskRow }) {
   const t = useT();
   const state = useLive();
   const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useFocusReturn(root);
   const from = t("library.task", { ref: task.ref, title: task.title });
   const { own, above } = useMemo(
     () =>
@@ -77,6 +83,7 @@ export function Knowledge({ task }: { readonly task: TaskRow }) {
     state.space?.read_only === undefined;
   return (
     <div
+      ref={root}
       className={styles.knowledge}
       data-part="knowledge"
       role="group"
@@ -92,6 +99,7 @@ export function Knowledge({ task }: { readonly task: TaskRow }) {
               type="button"
               className={styles.fold}
               data-part="knowledge-above"
+              data-holds={above.flatMap((level) => level.pages.map((page) => page.ref)).join(" ")}
               aria-expanded={open}
               onClick={() => {
                 setOpen(!open);

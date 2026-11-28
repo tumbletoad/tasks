@@ -6772,7 +6772,7 @@
     },
     {
       "id": "A5.pages.web.build",
-      "title": "Build this project's library, on a project's Library with no pages: an ordinary task there with the person's note for agents saying what to build, then the task expanded in the project's list; a Library with pages has no such button",
+      "title": "Build this project's library, on a project's Library with no pages: an ordinary task there with the person's note for agents saying what to build, then the task expanded in the project's list; a note that fails is tried again on the task made, never with a second task; a Library with pages has no such button",
       "source": "Step 1 design, pull request 228",
       "owner": "M5",
       "kind": "ci",
