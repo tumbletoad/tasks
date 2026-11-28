@@ -52,7 +52,9 @@ async function page(label: string): Promise<Page> {
   const { token } = await signIn(world);
   const machine = async (action: string, body: unknown) => {
     const reply = await post(world.port(), `/api/v1/machine/${action}`, body, { token });
-    const parsed = JSON.parse(reply.body) as { result?: Record<string, unknown> };
+    const parsed = JSON.parse(reply.body) as Record<string, unknown> & {
+      result?: Record<string, unknown>;
+    };
     return { status: reply.status, result: parsed.result ?? parsed };
   };
   return {

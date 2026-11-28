@@ -150,7 +150,7 @@ function PhoneRow({
       <span className={styles.facts}>
         {t("phones.facts", {
           space: phone.spaceName ?? t("phones.spaceGone"),
-          used: used === undefined ? t("phones.neverUsed") : formatWhen(used, clock),
+          time: used === undefined ? t("phones.neverUsed") : formatWhen(used, clock),
         })}
       </span>
       <SwitchField

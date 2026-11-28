@@ -537,7 +537,7 @@
   "phones.notSaved": "That was not saved. Try again.",
   "phones.pair": "Pair a phone",
   "phones.unnamed": "A phone",
-  "phones.facts": "{space} · {used}",
+  "phones.facts": "{space} · {time}",
   "phones.spaceGone": "a space that is not open here",
   "phones.neverUsed": "not used yet",
   "phones.run": "Run",
