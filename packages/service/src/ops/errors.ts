@@ -42,7 +42,7 @@ export function invalid(path: string, message: string, hint?: string): AppError 
   return new AppError({
     code: "invalid_input",
     message: `${message}.`,
-    ...(hint === undefined ? {} : { hint }),
+    ...(help === undefined ? {} : { hint: help }),
     data: { issues: [{ path, message }] },
   });
 }
@@ -68,20 +68,6 @@ function valueAt(input: unknown, path: readonly PropertyKey[]): unknown {
   }
   return node;
 }
-
-/** Fields an earlier build took, and the field a caller gives instead now. */
-const RENAMED: Readonly<Record<string, string>> = { place: "folder" };
-
-/**
- * Fields an earlier build took that no operation takes now: get_task's `bind`, since a launch's
- * session is decided by the connection. A fixed table, so a refusal names only keys the product
- * knows, never one a caller made up.
- */
-const RETIRED: ReadonlySet<string> = new Set(["bind"]);
-
-/** status's guides became skills: what an app that kept the old tool list sends instead. */
-const GUIDE_NOW =
-  'guide is now skills: skills ["working-a-task"] for work, ["organizing"] for triage or organize.';
 
 /** The form of a field whose pattern the caller cannot see in its name, by the field's name. */
 const FORMATS: Readonly<Record<string, string>> = {
@@ -110,9 +96,7 @@ function overLimit(maximum: unknown, origin: unknown, value: unknown): string {
  * A schema failure: `too_large` when every issue is a limit (A3 3.5: over a field, item or
  * request limit), else `invalid_input`, with each issue's path and a fixed sentence: a limit says
  * how much the field takes and how much it got, a format what it looks like. A field the input
- * leaves out is `Missing`, never a wrong type: the caller gave nothing to be wrong. A field an
- * earlier build took is named with the field that replaced it, or told to leave it out when none
- * did, so the caller fixes its call.
+ * leaves out is `Missing`, never a wrong type: the caller gave nothing to be wrong.
  * `face` and `entry` say where the caller reads its help: a command names its own.
  */
 export function schemaFailure(
@@ -120,7 +104,6 @@ export function schemaFailure(
     readonly issues: readonly {
       readonly code: string;
       readonly path: readonly PropertyKey[];
-      readonly keys?: readonly string[];
       readonly maximum?: unknown;
       readonly origin?: unknown;
     }[];
@@ -129,81 +112,30 @@ export function schemaFailure(
   face: Face = "mcp",
   entry?: string,
 ): AppError {
-  const renamed: string[] = [];
-  const retired: string[] = [];
-  const first = error.issues.slice(0, 20);
-  // Only status took guide, and only status takes the skills that replaced it.
-  const oldGuide = (issue: (typeof first)[number]) =>
-    entry === "space.status" &&
-    issue.code === "unrecognized_keys" &&
-    issue.path.length === 0 &&
-    issue.keys?.includes("guide") === true;
-  const guide = first.some(oldGuide);
-  const issues = first.flatMap((issue) => {
+  const issues = error.issues.slice(0, 20).map((issue) => {
     const path = issue.path.map(String).join(".");
-    // An old field, or its name in a list of fields such as update_task's clear.
     const value = valueAt(input, issue.path);
-    if (
-      issue.code === "invalid_value" &&
-      typeof value === "string" &&
-      Object.hasOwn(RENAMED, value)
-    ) {
-      const now = RENAMED[value] ?? "";
-      renamed.push(`${value} is now ${now}`);
-      return [{ path, message: `Now ${now}` }];
-    }
-    if (oldGuide(issue)) return [{ path: "guide", message: "Now skills" }];
-    const keys = issue.keys ?? [];
-    const known = keys.filter((key) => Object.hasOwn(RENAMED, key) || RETIRED.has(key));
-    if (issue.code === "unrecognized_keys" && known.length > 0) {
-      const at = (key: string) => (path === "" ? key : `${path}.${key}`);
-      return [
-        ...known.map((key) => {
-          if (RETIRED.has(key)) {
-            retired.push(key);
-            return { path: at(key), message: "No longer taken" };
-          }
-          const now = RENAMED[key] ?? "";
-          renamed.push(`${key} is now ${now}`);
-          return { path: at(key), message: `Now ${now}` };
-        }),
-        ...(known.length < keys.length
-          ? [{ path, message: ISSUE["unrecognized_keys"] ?? "" }]
-          : []),
-      ];
-    }
     const format = FORMATS[String(issue.path[issue.path.length - 1])];
-    return [
-      {
-        path,
-        message:
-          issue.code === "invalid_type" && value === undefined
-            ? "Missing"
-            : issue.code === "too_big"
-              ? overLimit(issue.maximum, issue.origin, value)
-              : issue.code === "invalid_format" && format !== undefined
-                ? format
-                : (ISSUE[issue.code] ?? "Invalid"),
-      },
-    ];
+    return {
+      path,
+      message:
+        issue.code === "invalid_type" && value === undefined
+          ? "Missing"
+          : issue.code === "too_big"
+            ? overLimit(issue.maximum, issue.origin, value)
+            : issue.code === "invalid_format" && format !== undefined
+              ? format
+              : (ISSUE[issue.code] ?? "Invalid"),
+    };
   });
   const tooLarge = error.issues.every((issue) => issue.code === "too_big");
   const found = face === "cli" && entry !== undefined ? findEntry(entry) : undefined;
   const verb = found === undefined ? undefined : cliFaces(found)[0]?.verb;
   const help = verb === undefined ? undefined : `Run ${CLI_NAME} help ${verb} for the arguments.`;
-  const fixes = [
-    ...(renamed.length > 0
-      ? [`${[...new Set(renamed)].join(", ")}: "cwd", an absolute folder or one under ~.`]
-      : []),
-    ...(retired.length > 0
-      ? [`${[...new Set(retired)].join(", ")} is no longer taken: leave it out.`]
-      : []),
-  ];
-  const hint = guide ? GUIDE_NOW : fixes.length > 0 ? fixes.join(" ") : help;
   return new AppError({
     code: tooLarge ? "too_large" : "invalid_input",
     message: tooLarge ? "The input is over a limit." : "The input does not match the operation.",
-    ...(hint === undefined ? {} : { hint }),
+    ...(help === undefined ? {} : { hint: help }),
     data: { issues },
   });
 }
@@ -383,7 +315,7 @@ export function resultFailure(
             ...(problem.at === undefined ? {} : { at: problem.at }),
             ...(problem.reason === undefined ? {} : { reason: problem.reason }),
           }),
-          ...(hint === undefined ? {} : { hint }),
+          ...(help === undefined ? {} : { hint: help }),
         };
   if (path !== undefined && problem !== undefined) {
     base = { ...base, data: { ...base.data, issues: [{ path, message: problem.message }] } };

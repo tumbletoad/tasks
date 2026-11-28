@@ -391,29 +391,6 @@ describe("[A3.3.4.folders.agent] organize's folders and the refusals", () => {
     expect(JSON.stringify(listed)).not.toContain("Nowhere");
   });
 
-  test("a caller that still sends place is refused naming folder", async () => {
-    const draft = await refused(
-      call(agent, "task.add", {
-        tasks: [{ title: "Fixture old caller", place: "cwd" }],
-        cwd: folder("portal"),
-        request_id: rid(),
-      }),
-    );
-    expect(draft).toMatchObject({
-      code: "invalid_input",
-      data: { issues: [{ path: "tasks.0.place", message: "Now folder" }] },
-    });
-    expect(draft.hint).toContain("place is now folder");
-    const clear = await refused(
-      call(agent, "task.update", {
-        task: "M-1",
-        clear: ["place"],
-        base: await asOf(),
-        request_id: rid(),
-      }),
-    );
-    expect(clear).toMatchObject({ data: { issues: [{ path: "clear.0", message: "Now folder" }] } });
-  });
 });
 
 describe("[A3.3.4.folders.agent] search by folder", () => {

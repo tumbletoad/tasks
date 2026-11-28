@@ -177,12 +177,5 @@ describe("[A3.3.4.folders.cli] folders at the command line", () => {
     expect(existsSync(inside)).toBe(false);
   });
 
-  test("the old --place and place= name --folder", async () => {
-    const flag = await tasks(["add", "Fixture old flag", "--place", "."], w.root);
-    expect(flag.code).toBe(2);
-    expect(flag.stderr).toContain("use --folder");
-    const key = await tasks(["set", "M-1", "place=."], w.root);
-    expect(key.code).toBe(2);
-    expect(key.stderr).toContain("use folder=");
-  });
+});
 });
