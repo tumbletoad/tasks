@@ -2222,6 +2222,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "S2.tree.routines",
+      "title": "Routines on the tree writer: a weekly chore checked off early, late after two missed Saturdays with one entry and the next time after now, skipped, and held to the person's read; found as a task and taken by no task command; paused over two weeks and resumed at the next time after now; Undo and Redo of a done and of a skip, kept back by a new schedule; finished for good by the person only, and its Undo; the Trash pauses it and Restore and Undo bring it back paused; an agent's routine is the person's to make, change, pause and switch on; the service's claim once its time has passed, never while its run is queued or working or a question waits, a second start replayed, a start that failed tried again after its wait with the same due time; a run's done bound to its own due time when the next has come; a check-off by the person that cancels the queued run; one claim for the latest time after a week with the computer off, and a failed run's time skipped by the next slot",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "S2.sources.both",
       "title": "Sources and the capture by source, the same ordinary sequences on today's writer and the tree's, answers and what a reader sees compared: a source added, moved to another task, removed and put back twice, and linked to a second task; a mail captured again while open with the same log, after an archive and after a backdated completion",
       "owner": "M3",
