@@ -20,6 +20,12 @@ import type { LibraryNode } from "./lists.ts";
 
 const styles = classes(css, ["build"]);
 
+/** Each job's words: its task's title and its note for agents. */
+const WORDS = {
+  build: { title: "library.buildTitle", brief: "library.buildBrief", added: "toast.buildAdded" },
+  tidy: { title: "library.tidyTitle", brief: "library.tidyBrief", added: "toast.tidyAdded" },
+} as const;
+
 export function BuildLibrary({
   node,
   job,
@@ -40,7 +46,7 @@ export function BuildLibrary({
   const filed = area === undefined ? {} : filedAs(area, project);
   const kind = filed.area !== undefined && filed.project === undefined ? "area" : "project";
   const add = async (): Promise<string | undefined> => {
-    const title = t(`library.${job}Title`, { kind });
+    const title = t(WORDS[job].title, { kind });
     const added = await edits.write(
       (request_id) =>
         api.client.task.add({
@@ -53,7 +59,7 @@ export function BuildLibrary({
           ],
           request_id,
         }),
-      () => ({ id: `toast.${job}Added` }),
+      () => ({ id: WORDS[job].added }),
     );
     return "tasks" in added ? added.tasks[0]?.ref : undefined;
   };
@@ -68,7 +74,7 @@ export function BuildLibrary({
             task: ref,
             kind: "note",
             for_agents: true,
-            text: t(`library.${job}Brief`, { kind }),
+            text: t(WORDS[job].brief, { kind }),
             request_id,
           }),
         () => undefined,
@@ -106,9 +112,7 @@ export function BuildLibrary({
         );
       }}
     >
-      {made === undefined
-        ? t(`library.${job}Title`, { kind })
-        : t("library.buildNote", { ref: made })}
+      {made === undefined ? t(WORDS[job].title, { kind }) : t("library.buildNote", { ref: made })}
     </button>
   );
 }

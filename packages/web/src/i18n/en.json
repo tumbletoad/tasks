@@ -1029,7 +1029,7 @@
   "library.buildNote": "Add the note for agents to {ref}",
   "library.buildNoteFailed": "{ref} was added, its note for agents was not: press again to add it.",
   "library.tidyTitle": "Tidy this {kind, select, area {area} other {project}}'s library",
-  "library.tidyBrief": "Tidy this {kind, select, area {area} other {project}}'s library, its tasks' pages included. Merge pages that cover one subject. Correct or remove what finished tasks made untrue. Move knowledge to the level where every task that needs it sees it: up to the area when a second project needs it. Keep each page readable in a minute. Follow the skill keeping-the-library. Change nothing in the tasks themselves. Say in the outcome what you changed and why.",
+  "library.tidyBrief": "Tidy this {kind, select, area {area} other {project}}'s library, its tasks' pages included. Merge pages that cover one subject into one, and move the others to the Trash. Correct or remove what finished tasks made untrue. Move knowledge to the level where every task that needs it sees it: up to the area when a second project needs it. Keep each page readable in a minute. Follow the skill keeping-the-library. Change nothing in the tasks themselves. Say in the outcome what you changed and why.",
   "library.addPage": "Page",
   "library.knowledge": "Knowledge",
   "library.aboveCount": "From above ({count})",

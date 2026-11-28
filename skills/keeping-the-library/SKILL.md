@@ -10,8 +10,7 @@ description: Use when you learn something a later task should know, and before y
   log. What only this task needed goes in its log.
 - Read before you write. When a page covers the subject, change that page, for a rule too; a new
   page is for a new subject. One page per subject, a title that names it, a brief that says what
-  is in it. Two pages on one subject become one: the other goes to the Trash, its why naming the
-  page that holds its words now.
+  is in it.
 - A wrong sentence is fixed where it stands. Never add a second one that contradicts it.
 - Say where a fact comes from: the task (M-214) or the source, and its date when it can change.
 - Keep a page readable in a minute. A page about two subjects becomes two.

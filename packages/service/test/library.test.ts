@@ -298,7 +298,7 @@ describe("[A3.pages.budget] an agent's write and search say how to keep the libr
     });
     const page = String(made["target"]);
     expect(made["over"]).toBeUndefined();
-    for (const _ of [1, 2]) {
+    for (let i = 0; i < 2; i += 1) {
       expect(
         (await write({ action: "append", target: page, text: words(4_000) }))["over"],
       ).toBeUndefined();
