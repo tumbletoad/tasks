@@ -140,6 +140,12 @@ export const TREE_STATEMENTS: readonly string[] = [
   UNIQUE (owner_id, target_id)
 ) STRICT`,
   "CREATE INDEX links_target ON links(target_id)",
+  // The space's preferences, by key, as today's writer keeps them (preferences.ts reads both).
+  `CREATE TABLE preferences (
+  key TEXT PRIMARY KEY, value TEXT NOT NULL CHECK (json_valid(value)), schema_ver INTEGER NOT NULL,
+  policy INTEGER NOT NULL DEFAULT 0 CHECK (policy IN (0,1)),
+  ${VERSIONS}
+) STRICT`,
   // The prototype import's task IDs, which text written before may hold: a task is found by them.
   `CREATE TABLE aliases (
   namespace TEXT NOT NULL CHECK (namespace IN ('planning')), alias TEXT NOT NULL,

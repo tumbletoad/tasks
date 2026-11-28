@@ -45,3 +45,21 @@ export function readSpacePreferences(conn: Connection): PreferenceRead[] {
     preferenceValue(spec, storedPreference(rows.get(spec.key))),
   );
 }
+
+export type ScaleKey = "tasks.statuses" | "tasks.effort_scale";
+
+export const isScaleKey = (key: string): key is ScaleKey =>
+  key === "tasks.statuses" || key === "tasks.effort_scale";
+
+/** A scale's keys from its value: a list of keys, or of `{key}` objects. */
+export function scaleKeys(value: unknown): string[] {
+  if (!Array.isArray(value)) throw misuse("A list preference reads as a list");
+  return value.map((item: unknown) =>
+    typeof item === "string" ? item : String((item as { key?: unknown }).key),
+  );
+}
+
+/** The keys of `tasks.statuses` or `tasks.effort_scale` as the registry reads them (A1 3.16). */
+export function listPreference(conn: Connection, key: ScaleKey): string[] {
+  return scaleKeys(readSpacePreference(conn, key).value);
+}

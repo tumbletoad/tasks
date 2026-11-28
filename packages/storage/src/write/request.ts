@@ -2415,7 +2415,7 @@ function normaliseJson(value: unknown): unknown {
  * `pref.set`'s fields (A1 3.16): a key this build declares for the space, and a value of its
  * declared shape, or null to reset it. The problem never quotes the key or the value.
  */
-function prefSet(f: Fields, i: number): PrefSet {
+export function prefSet(f: Fields, i: number): PrefSet {
   const set = prefValue(f);
   if (!f.has("moves")) return set;
   if (set.key !== EFFORT_SCALE) {

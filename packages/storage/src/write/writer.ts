@@ -55,7 +55,7 @@ import {
   RowReader,
   type SpaceRow,
 } from "../rows.ts";
-import { readSpacePreference } from "../preferences.ts";
+import { isScaleKey, listPreference, readSpacePreference, scaleKeys } from "../preferences.ts";
 import { REPLIED_SQL } from "../questions.ts";
 import type { SchemaStep } from "../schema.ts";
 import { indexChanges } from "../search/documents.ts";
@@ -935,15 +935,6 @@ export function readAsOf(conn: Connection): AsOf {
   };
 }
 
-/** The keys of `tasks.statuses` or `tasks.effort_scale` as the registry reads them (A1 3.16). */
-function listPreference(conn: Connection, key: ScaleKey): string[] {
-  return scaleKeys(readSpacePreference(conn, key).value);
-}
-
-type ScaleKey = "tasks.statuses" | "tasks.effort_scale";
-
-const isScaleKey = (key: string): key is ScaleKey =>
-  key === "tasks.statuses" || key === "tasks.effort_scale";
 
 /** A task a change of levels moves: the size it held, and where it is. */
 interface Mover {
@@ -1015,13 +1006,6 @@ export function offList(conn: Connection, refPrefix: string): { off_list?: OffLi
   return found.size === 0 ? {} : { off_list: [...found.values()] };
 }
 
-/** A scale's keys from its value: a list of keys, or of `{key}` objects. */
-function scaleKeys(value: unknown): string[] {
-  if (!Array.isArray(value)) throw misuse("A list preference reads as a list");
-  return value.map((item: unknown) =>
-    typeof item === "string" ? item : String((item as { key?: unknown }).key),
-  );
-}
 
 /**
  * A space's writer: the only write connection of an open space (A1 3.9). It owns the connection

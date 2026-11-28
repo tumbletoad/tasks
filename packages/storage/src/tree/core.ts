@@ -17,6 +17,7 @@ import {
   checkBaseOf,
   checkEnvelope,
   checkHistoryEnvelope,
+  Fields,
   formatAsOf,
   RequestProblem,
   type WriteProblem,
@@ -60,12 +61,16 @@ const SQL = {
   markUndone: "UPDATE commits SET undo_status = 'undone', undone_by = $seq WHERE seq = $target",
   markRedone: "UPDATE commits SET undo_status = 'done', undone_by = NULL WHERE seq = $target",
   markDead: "UPDATE commits SET undo_status = 'dead' WHERE seq = $target",
+  preference: "SELECT version FROM preferences WHERE key = $key",
   /** Who made commit `$seq`, and when. */
   author:
     "SELECT k.author_id AS actor, a.kind AS kind, a.label AS label, k.origin AS origin, k.at AS at " +
     "FROM commits k JOIN actors a ON a.id = k.author_id WHERE k.seq = $seq",
   ref: "SELECT t.ref AS ref, s.ref_prefix AS prefix FROM tasks t, space s WHERE t.id = $id",
 } as const;
+
+/** What a preview throws to roll its transaction back. */
+const PREVIEW = Symbol("preview");
 
 export type TreeStatus = "applied" | "unchanged" | "conflict" | "rejected";
 
@@ -82,6 +87,8 @@ export interface TreeResult {
   warnings?: string[];
   /** What the caller decided before the writer, kept with an accepted result. */
   answer?: Record<string, unknown>;
+  /** A preview's: the version of the preference it would change, 0 when the space holds none. */
+  version?: number;
   replayed?: true;
 }
 
@@ -138,6 +145,7 @@ export class TreeWriter {
         error: problemOf(error.problem),
       };
     }
+    if (request.dry_run === true) return this.#preview(request);
     const result = this.#conn.transaction("immediate", () => {
       const decided = this.#decide(request);
       this.#at?.("before-commit", decided);
@@ -145,6 +153,38 @@ export class TreeWriter {
     });
     this.#at?.("after-commit", result);
     return result;
+  }
+
+  /**
+   * A preview: decided whole, its receipt included, then rolled back, so nothing of it stays. Its
+   * answer says the space as it is, and the version of the preference it would change.
+   */
+  #preview(request: CheckedTreeRequest): TreeResult {
+    let would: TreeResult | undefined;
+    try {
+      this.#conn.transaction("immediate", () => {
+        const asOf = this.#space();
+        const key = String(request.input["key"]);
+        const row = this.#conn.prepare(SQL.preference).get({ key });
+        const decided = this.#decide(request);
+        would = {
+          ...decided,
+          as_of: formatAsOf({
+            epoch: asOf.epoch,
+            incarnation: asOf.incarnation,
+            seq: asOf.lastSeq,
+          }),
+          seq: asOf.lastSeq,
+          version: row === undefined ? 0 : Number(row["version"]),
+        };
+        delete would.commit;
+        throw PREVIEW;
+      });
+    } catch (error) {
+      if (error !== PREVIEW) throw error;
+    }
+    if (would === undefined) throw new Error("A preview is decided before it is rolled back");
+    return would;
   }
 
   #space(): SpaceState {
@@ -446,15 +486,19 @@ export function checkTreeRequest(value: unknown): CheckedTreeRequest {
   if (!history && named === undefined) {
     return f.fail("VALIDATION_FAILED", "No command of that name", "command");
   }
+  // The input's fields are named as the command names them (`tasks.0.title`), as a refusal of its
+  // run names them too.
+  const input = new Fields(f.raw("input"), "");
   const request: CheckedTreeRequest = {
     ...envelope,
     command: command as string,
-    input: history ? checkHistory(f.sub("input")) : (named?.check(f.sub("input")) ?? {}),
+    input: history ? checkHistory(input) : (named?.check(input) ?? {}),
   };
   if (f.has("entry")) request.entry = f.text("entry", { chars: 64, line: true });
-  // A preview decides preferences only, as today; the tree has its preferences from piece (iii).
-  if (envelope.dry_run === true)
+  // A preview decides preferences only, as today.
+  if (envelope.dry_run === true && command !== "pref.set") {
     f.fail("VALIDATION_FAILED", "A dry run decides preferences only", "dry_run");
+  }
   if (history) checkHistoryEnvelope(f, envelope);
   f.done();
   return request;

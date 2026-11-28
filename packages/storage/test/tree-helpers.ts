@@ -7,7 +7,7 @@ import { openSpaceConnection } from "../src/open.ts";
 import type { CheckedDriver } from "../src/startup-check.ts";
 import { TreeWriter, type TreeActor, type TreeResult } from "../src/tree/core.ts";
 import { formatAsOf } from "../src/write/request.ts";
-import { columnsOf, FIELDS, isEntity } from "../src/tree/fields.ts";
+import { columnsOf, FIELDS, isEntity, keyOf, type Entity } from "../src/tree/fields.ts";
 import { createTreeSpace } from "../src/tree/schema.ts";
 import { TEST_MACHINE } from "./space-helpers.ts";
 
@@ -192,8 +192,9 @@ export function treeHistoryProblems(conn: Connection): string[] {
   const stored = new Set<string>();
   for (const entity of Object.keys(FIELDS)) {
     for (const live of conn.prepare(`SELECT * FROM ${entity}`).all()) {
-      stored.add(`${entity}|${String(live["id"])}`);
-      const key = `${entity}|${String(live["id"])}`;
+      const named = String(live[keyOf(entity as Entity)]);
+      stored.add(`${entity}|${named}`);
+      const key = `${entity}|${named}`;
       const played = rows.get(key);
       const v = versions.get(key);
       if (played === undefined || v === undefined) {

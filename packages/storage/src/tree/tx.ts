@@ -10,7 +10,15 @@ import { takeTaskRef } from "../refs.ts";
 import { columnsValue, fieldJson } from "../write/fields.ts";
 import { Fields, type Credential, type Envelope } from "../write/request.ts";
 import { provenanceOf, rowState, versionOf, type RowState } from "../write/row-state.ts";
-import { columnsOf, FIELDS, KEYS, TreeProblem, type Entity, type FieldOf } from "./fields.ts";
+import {
+  columnsOf,
+  FIELDS,
+  keyOf,
+  KEYS,
+  TreeProblem,
+  type Entity,
+  type FieldOf,
+} from "./fields.ts";
 import { DERIVED } from "./schema.ts";
 
 const SQL = {
@@ -19,7 +27,7 @@ const SQL = {
   touched: "UPDATE nodes SET touched = $seq WHERE id = $id",
 } as const;
 
-const rowSql = (entity: Entity): string => `SELECT * FROM ${entity} WHERE id = $id`;
+const rowSql = (entity: Entity): string => `SELECT * FROM ${entity} WHERE ${keyOf(entity)} = $id`;
 
 /** Who asks, as today's writer reads a credential. */
 export type TreeActor = Credential;
@@ -163,7 +171,7 @@ export class Tx {
       `INSERT INTO ${entity} (${all.join(", ")}) VALUES (` +
       `${[...columns.map((c) => `$${c}`), "$seq", "$seq", ...(entity === "nodes" ? ["$seq"] : [])].join(", ")})`;
     this.conn.prepare(sql).run({ ...values, seq: this.seq });
-    const id = String(values["id"]);
+    const id = String(values[keyOf(entity)]);
     this.#rows.set(`${entity}|${id}`, {
       entity,
       id,
@@ -271,7 +279,8 @@ export class Tx {
       row.fields.add(field);
     }
     if (assign.length > 0) {
-      this.conn.prepare(`UPDATE ${entity} SET ${assign.join(", ")} WHERE id = $id`).run(params);
+      const where = `WHERE ${keyOf(entity)} = $id`;
+      this.conn.prepare(`UPDATE ${entity} SET ${assign.join(", ")} ${where}`).run(params);
     }
   }
 
@@ -324,7 +333,9 @@ export class Tx {
         }
         if (!changed) continue;
         this.conn
-          .prepare(`UPDATE ${row.entity} SET version = $seq, fv = $fv, fp = $fp WHERE id = $id`)
+          .prepare(
+            `UPDATE ${row.entity} SET version = $seq, fv = $fv, fp = $fp WHERE ${keyOf(row.entity)} = $id`,
+          )
           .run({ seq: this.seq, fv: JSON.stringify(fv), fp: JSON.stringify(fp), id: row.id });
       }
       if (row.node !== null) nodes.add(row.node);

@@ -7,7 +7,7 @@ import type { Row, SqlValue } from "../driver.ts";
 import { formatTaskRef, parseTaskRef } from "../refs.ts";
 import { positionBetween } from "../write/positions.ts";
 import { freeSlug } from "../write/slugs.ts";
-import { readPreference } from "@ttasks/contracts/preferences";
+import { listPreference, readSpacePreference, type ScaleKey } from "../preferences.ts";
 import { Fields, sourceFields, WRITE_LIMITS } from "../write/request.ts";
 import type { Command, Tx } from "./tx.ts";
 
@@ -174,6 +174,19 @@ export function addNote(
   return { id, ordinal };
 }
 
+/** A status or an effort the space's own list holds, refused naming the field otherwise. */
+function known(tx: Tx, list: ScaleKey, value: unknown, field: string): string {
+  const keys = listPreference(tx.conn, list);
+  if (typeof value !== "string" || !keys.includes(value)) {
+    return problem(
+      "VALIDATION_FAILED",
+      list === "tasks.statuses" ? "Not a status of this space" : "Not an effort of this space",
+      field,
+    );
+  }
+  return value;
+}
+
 /**
  * The task a draft with source key `key` captured before, when it still counts (open, or finished
  * within the space's window), and the live source of that key.
@@ -182,7 +195,7 @@ function captured(tx: Tx, key: string): { task: Row | undefined; source: string 
   const source = tx.get(SQL.liveSource, { key })?.["id"];
   if (typeof source !== "string") return { task: undefined, source: null };
   const task = tx.get(SQL.originTask, { source });
-  const days = readPreference("tasks.dedupe_window_days", undefined).value as number;
+  const days = readSpacePreference(tx.conn, "tasks.dedupe_window_days").value as number;
   const finished = task?.["completed_at"];
   const counts =
     task?.["lifecycle"] === "active" ||
@@ -236,7 +249,11 @@ const tasksAdd: Run = (tx, input) => {
           id,
           ref,
           origin_source_id: origin,
-          status: str(draft, "status") ?? "open",
+          status: known(tx, "tasks.statuses", draft["status"] ?? "open", at("status")),
+          effort:
+            draft["effort"] === undefined
+              ? null
+              : known(tx, "tasks.effort_scale", draft["effort"], at("effort")),
           inbox: draft["inbox"] === true ? 1 : 0,
           priority,
           created_session: tx.request.actor.session_id ?? null,
@@ -258,7 +275,12 @@ const taskUpdate: Run = (tx, input) => {
   if (set["brief"] !== undefined) node["brief"] = str(set, "brief") ?? "";
   if (set["description"] !== undefined) node["description"] = str(set, "description") ?? "";
   const fields: Record<string, SqlValue> = {};
-  if (set["status"] !== undefined) fields["status"] = str(set, "status") ?? "open";
+  if (set["status"] !== undefined)
+    fields["status"] = known(tx, "tasks.statuses", set["status"], "set.status");
+  if (set["effort"] !== undefined) {
+    fields["effort"] =
+      set["effort"] === null ? null : known(tx, "tasks.effort_scale", set["effort"], "set.effort");
+  }
   if (set["inbox"] !== undefined) fields["inbox"] = set["inbox"] === true ? 1 : 0;
   if (set["priority"] !== undefined) fields["priority"] = Number(set["priority"]);
   if (set["reviewed_at"] !== undefined) fields["reviewed_at"] = set["reviewed_at"] as SqlValue;
@@ -552,6 +574,7 @@ function draft(f: Fields): Input {
     status: (k) => f.key(k),
     inbox: (k) => f.boolean(k),
     priority: (k) => f.int(k, 1, 4),
+    effort: (k) => f.level(k),
     log: (k) => f.text(k, { bytes: WRITE_LIMITS.log }),
     source: (k) => ({ ...sourceFields(f.sub(k)) }),
   });
@@ -583,6 +606,7 @@ const checkUpdate: Check = (f) => {
     status: (k) => s.key(k),
     inbox: (k) => s.boolean(k),
     priority: (k) => s.int(k, 1, 4),
+    effort: (k) => (s.raw(k) === null ? null : s.level(k)),
     reviewed_at: (k) => s.instantOrNull(k),
     waiting_on: (k) => s.nullableText(k, { chars: WRITE_LIMITS.line, line: true }),
   });
