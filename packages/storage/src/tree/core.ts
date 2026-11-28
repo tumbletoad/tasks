@@ -70,7 +70,7 @@ const SQL = {
 } as const;
 
 /** What a preview throws to roll its transaction back. */
-const PREVIEW = Symbol("preview");
+const PREVIEW = new Error("A preview rolls its transaction back");
 
 export type TreeStatus = "applied" | "unchanged" | "conflict" | "rejected";
 
