@@ -175,6 +175,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.pages.budget",
+      "title": "An agent's write that leaves a page over 16 KB or what holds it over 12 pages says so, on each write while it stays over, never to the person and never once under; a library search in which no row holds every word, or no row at all, names scope all",
+      "source": "Step 1's trial",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.pages.trail",
       "title": "get_task's first answer lists what is known above the task, nearest first, within its budget: the request and the user's texts for agents count first, older log entries go before page rows above, every level keeps its count and read target, and the user's texts for agents stand outside the data block under an ID",
       "source": "Step 1 design, pull request 228",
@@ -192,7 +200,7 @@
     },
     {
       "id": "A3.pages.render",
-      "title": "read is sized before its cursor, so following the cursor gives a whole body in any script and every row of a node once, in order; a section read on names no stored heading; write_page's acknowledgement names the page by its reference only",
+      "title": "read is sized before its cursor, so following the cursor gives a whole body in any script and every row of a node once, in order; a section read on names no stored heading; write_page's acknowledgement names the page by its reference only, also where it says the library is over its budget; a library search that no row answers whole points to scope all, after saying its rows hold some of the words",
       "source": "Step 1 design, pull request 228; review of pull request 251",
       "owner": "M4",
       "kind": "ci",
@@ -3239,6 +3247,14 @@
       "id": "A3.5.search.ranking",
       "title": "Ranking and rows: a task appears once, ranked by its best document with A3 3.9.3's boosts and a snippet from that document; words found in different texts of one task find it together, a phrase only within one text; a source's key and its link's host and path find its task; scopes, the learnings scope and the default scope; the last word as a prefix of two characters or more; negated words; filters by area with its projects, priority, focus, id and has:; the order without text; sort:effort and sort:-effort by the space's scale with unsized tasks last, a sort never negated, in an OR or twice; an agent never matches or sees an only-me note; titles and snippets cut at 90 and 100 characters",
       "source": "A3 3.9.1, A3 3.9.2, A3 3.9.3, A3 3.9.4, A7 3.10 M3.05",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.search.some-words",
+      "title": "An agent's search of two words or more that nothing holds whole answers with the rows holding some of them, more of them first, and says so on every page, in scope learnings too; a person's search narrows as before, a row holding every word changes nothing, and negations and filters keep their meaning",
+      "source": "Step 1's trial",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -7055,6 +7071,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.pages.web.tidy",
+      "title": "Tidy this project's library, on a project's Library with pages: one ordinary task there with the person's note for agents saying what tidying is, then the task expanded in the project's list; a Library without pages offers Build instead",
+      "source": "Step 1's trial",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.pages.web.today",
       "title": "Today's Changes names the pages an agent changed last in the past seven days, newest first, beside the tasks; a page the person changed after the agent is not named",
       "source": "Step 1 design, pull request 228",
@@ -7080,7 +7104,7 @@
     },
     {
       "id": "A5.pages.e2e.knowledge",
-      "title": "Against the real service in Chromium and Firefox: a task's card shows its own pages and, folded, what is known above it, and Back from a page returns to the card with the focus on its link; + Page on a card makes a page on the task and opens it with its pen; Today names a page an agent changed and Activity reads the edit with the page as a link; Build this project's library adds its task with the person's note for agents, expanded in the list; screenshots of the card's Knowledge at 1,440 and 390 px in Sumi and Washi, axe finds nothing and nothing scrolls sideways",
+      "title": "Against the real service in Chromium and Firefox: a task's card shows its own pages and, folded, what is known above it, and Back from a page returns to the card with the focus on its link; + Page on a card makes a page on the task and opens it with its pen; Today names a page an agent changed and Activity reads the edit with the page as a link; Build this project's library adds its task with the person's note for agents, expanded in the list; Tidy on a project with pages adds one such task, and a project without pages offers Build instead; screenshots of the card's Knowledge at 1,440 and 390 px in Sumi and Washi, axe finds nothing and nothing scrolls sideways",
       "source": "Step 1 design, pull request 228",
       "owner": "M5",
       "kind": "ci",

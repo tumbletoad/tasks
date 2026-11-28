@@ -427,7 +427,7 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
             {node.kind !== "space" &&
             lists.tasks.length === 0 &&
             state.space?.read_only === undefined ? (
-              <BuildLibrary node={node} />
+              <BuildLibrary node={node} job="build" />
             ) : null}
           </div>
         ) : (
@@ -440,6 +440,13 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
           <PageList pages={lists.tasks} from={from} label={t("library.taskPages")} />
         </section>
       )}
+      {node.kind !== "space" &&
+      lists.own.length + lists.tasks.length > 0 &&
+      state.space?.read_only === undefined ? (
+        <div>
+          <BuildLibrary node={node} job="tidy" />
+        </div>
+      ) : null}
       <Above levels={lists.above} from={from} />
     </div>
   );

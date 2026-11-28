@@ -1,7 +1,8 @@
 // The library around a task, against the real service: a task's card shows its own pages, a new
 // page on it and what is known above it, and Back from a page returns to the card with the focus
 // on its link; Today names the pages agents changed; Activity reads an agent's page edit; and
-// Build this project's library adds its task with the person's note for agents. Agents write
+// Build this project's library, and Tidy on a project with pages, add their task with the person's
+// note for agents. Agents write
 // through their own requests outside the page. Fixture text only.
 import { expect, type Page } from "@playwright/test";
 import { built, test as base } from "./fixture.ts";
@@ -168,6 +169,24 @@ test.describe("[A5.pages.e2e.knowledge] the library around a task", () => {
     const card = page.locator("main li[data-task]", { hasText: "Build this project's library" });
     await expect(card.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true");
     await expect(card).toContainText("keeping-the-library", { timeout: SLOW_MS });
+  });
+
+  test("Tidy this project's library, on a project with pages, adds one task there with the person's note for agents; one without pages offers Build", async ({
+    page,
+    knowledge: world,
+  }) => {
+    const { project, bare } = await place(world);
+    await makePage(world, project.id, "Fixture rules to tidy");
+    await open(page, world, `/s/${world.mira.id}/project/${bare.id}/library`);
+    await expect(page.locator('[data-part="build-library"]')).toBeVisible({ timeout: SLOW_MS });
+    await expect(page.locator('[data-part="tidy-library"]')).toHaveCount(0);
+    await open(page, world, `/s/${world.mira.id}/project/${project.id}/library`);
+    await page.locator('[data-part="tidy-library"]').click();
+    await expect(page).toHaveURL(/[?&]task=/, { timeout: SLOW_MS });
+    const card = page.locator("main li[data-task]", { hasText: "Tidy this project's library" });
+    await expect(card).toHaveCount(1);
+    await expect(card.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true");
+    await expect(card).toContainText("Merge pages that cover one subject", { timeout: SLOW_MS });
   });
 
   test("a card's Knowledge at 1,440 and 390 px in both themes: no violation, nothing sideways", async ({
