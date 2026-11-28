@@ -807,6 +807,9 @@ function RowView({
                 setSummed(words);
                 setSumming(false);
               }}
+              reopen={() => {
+                setSumming(true);
+              }}
             />
           ) : model.prefix === undefined && text === undefined && !texts ? null : (
             <div

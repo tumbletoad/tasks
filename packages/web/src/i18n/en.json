@@ -478,6 +478,7 @@
   "text.addSummary": "Add a brief",
   "text.addContext": "Add a description",
   "text.preview": "Preview",
+  "text.closed": "Closed without saving",
   "text.notSaved": "The words were not saved: they wait under the text.",
   "text.partial": "Only part of this is loaded here, so it is not corrected here",
   "thread.requestRemoved": "Request removed",

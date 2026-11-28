@@ -729,6 +729,9 @@ function Context({
             saved(words);
             setEditing(false);
           }}
+          reopen={() => {
+            setEditing(true);
+          }}
         />
         {notSaved}
       </div>

@@ -10,6 +10,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Api } from "../api.ts";
+import { ToastContext, type ToastAction } from "../app/frame.ts";
 import { Session } from "../context.ts";
 import type { Toast } from "../edit/edits.ts";
 import { editsOf } from "../edit/useEdits.ts";
@@ -39,6 +40,8 @@ let texts: Texts;
 const updates: Record<string, unknown>[] = [];
 const undos: Record<string, unknown>[] = [];
 const toasts: Toast[] = [];
+/** What the page's own toast said, with its action. */
+const said: { readonly text: string; readonly action?: ToastAction | undefined }[] = [];
 /** How the service answers the next `task.update`. */
 let reply: () => Promise<unknown>;
 
@@ -138,15 +141,21 @@ function mount() {
   act(() => {
     root.render(
       <I18n>
-        <Session.Provider value={{ api, live }}>
-          <TaskList
-            view="open"
-            filter={() => true}
-            empty=""
-            expand="M-1"
-            onExpand={() => undefined}
-          />
-        </Session.Provider>
+        <ToastContext.Provider
+          value={(text, action) => {
+            said.push({ text, action });
+          }}
+        >
+          <Session.Provider value={{ api, live }}>
+            <TaskList
+              view="open"
+              filter={() => true}
+              empty=""
+              expand="M-1"
+              onExpand={() => undefined}
+            />
+          </Session.Provider>
+        </ToastContext.Provider>
       </I18n>,
     );
   });
@@ -161,6 +170,7 @@ beforeEach(() => {
   updates.length = 0;
   undos.length = 0;
   toasts.length = 0;
+  said.length = 0;
   localStorage.clear();
   reply = () => Promise.resolve({ as_of: WROTE, result: "updated" });
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
@@ -412,6 +422,59 @@ describe("[A5.text.add.web.card] a task's brief and description in its card", ()
     expect(kept()).toBe("At the branch.");
     expect(button("Add a description")).toBeDefined();
     expect(updates).toHaveLength(1);
+  });
+
+  test("Escape closes the box on words the person typed without a write, and the toast's Undo opens it again with them; on untouched words it says nothing", async () => {
+    await card({ context: "At the branch." });
+    click(button("Add a brief"));
+    type("Bring the old card");
+    press(box(), "Escape");
+    expect(box()).toBeNull();
+    expect(said.map((toast) => toast.text)).toEqual(["Closed without saving"]);
+    act(() => {
+      said[0]?.action?.run();
+    });
+    expect(box()?.getAttribute("aria-label")).toBe("Brief");
+    expect(box()?.value).toBe("Bring the old card");
+    press(box(), "Enter");
+    await settle();
+    expect(updates).toEqual([
+      expect.objectContaining({ task: "M-1", set: { summary: "Bring the old card" } }),
+    ]);
+
+    // A correction alike, from the Preview too.
+    click(button("Edit the description"));
+    type("At the other branch.");
+    click(button("Preview"));
+    press(button("Preview"), "Escape");
+    expect(box()).toBeNull();
+    act(() => {
+      said.at(-1)?.action?.run();
+    });
+    expect(box()?.value).toBe("At the other branch.");
+    press(box(), "Escape");
+    expect(said).toHaveLength(2 + 1);
+
+    // Opened and left as it was: nothing to bring back.
+    click(button("Edit the description"));
+    press(box(), "Escape");
+    expect(said).toHaveLength(3);
+    expect(updates).toHaveLength(1);
+  });
+
+  test("spaces alone typed where there is no text write nothing and leave no text", async () => {
+    await card({});
+    click(button("Add a brief"));
+    type("   ");
+    press(box(), "Enter");
+    click(button("Add a description"));
+    type("  \n ");
+    press(box(), "Enter", { ctrlKey: true });
+    await settle();
+    expect(updates).toEqual([]);
+    expect(box()).toBeNull();
+    expect(button("Add a brief")).toBeDefined();
+    expect(button("Add a description")).toBeDefined();
   });
 
   test("a finished task's card shows its texts with no pen and no Add: the service refuses their change", async () => {

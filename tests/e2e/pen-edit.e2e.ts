@@ -192,6 +192,15 @@ test.describe("[A5.text.add.e2e] A task without a brief or a description is give
     const shown = row.locator('[data-part="text-preview"]');
     await expect(shown.locator("strong")).toHaveText("Main Street");
     await expect(shown.locator("li")).toHaveText("open until 6");
+    // A click in the Preview's words, to select them, neither saves nor closes the box: back to
+    // the words, a line more, and Ctrl+Enter from the Preview saves them all.
+    await shown.locator("strong").click();
+    await preview.click();
+    await expect(box).toBeFocused();
+    await page.keyboard.press("Control+End");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("- closed on Sundays");
+    await preview.click();
     await expect(preview).toBeFocused();
     await page.keyboard.press("Control+Enter");
     await expect(toast(page)).toHaveText(`Description of ${ref} changed`);
@@ -202,7 +211,9 @@ test.describe("[A5.text.add.e2e] A task without a brief or a description is give
       task: ref,
       sections: ["context"],
     })) as { sections: { context?: string } };
-    expect(read.sections.context).toBe("The branch on **Main Street**\n- open until 6");
+    expect(read.sections.context).toBe(
+      "The branch on **Main Street**\n- open until 6\n- closed on Sundays",
+    );
     expect(await violations(page)).toEqual([]);
   });
 });

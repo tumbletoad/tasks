@@ -1,7 +1,8 @@
 // The person's correction of a text in place: a task's summary, its context, the words of any
 // note or log entry, whoever wrote them, and the library's pages and texts. A pen opens the whole text as an editable box where it
 // stands; a text the card holds only in part has no box to save from. Enter saves the words as
-// typed (Shift+Enter is a new line), Escape lets go, and leaving the box saves, as the title's
+// typed (Shift+Enter is a new line), Escape lets go (with Undo, which opens the box again on the
+// words), and leaving the box saves, as the title's
 // editor does; in a page's body, which is written in paragraphs, Enter is a new line and
 // Ctrl+Enter saves. A box of Markdown has a Preview beside it, where the pen stood, that shows the
 // words as they will read. A box whose words the person did not change writes nothing. What is
@@ -218,6 +219,8 @@ export interface TextEditorProps {
   readonly save: (words: string, base: string | undefined) => Promise<unknown>;
   /** The box closes: with the words saved, or with none. */
   readonly onDone: (saved: string | undefined) => void;
+  /** Opens the box again: it takes the words kept for it. */
+  readonly reopen: () => void;
 }
 
 export function TextEditor({
@@ -234,6 +237,7 @@ export function TextEditor({
   base,
   save,
   onDone,
+  reopen,
 }: TextEditorProps) {
   const t = useT();
   const say = useToast();
@@ -288,17 +292,27 @@ export function TextEditor({
   const finish = (send: boolean) => {
     if (sending.current) return;
     const typed = field.current?.value ?? "";
+    // Spaces alone are no text: an emptied box takes the text away, or writes nothing on none.
+    const words = typed.trim() === "" ? "" : typed;
     // Nothing the person changed, or nothing at all, is never sent: an emptied text is taken back
     // with its own control, and a box opened over words that changed since writes nothing.
-    if (!send || typed === opened.before || (typed.trim() === "" && !clears)) {
+    if (!send || words === opened.before || (words === "" && !clears)) {
       release();
       onDone(undefined);
+      // Escape is one key from losing what was typed: Undo brings the words back in the box.
+      if (!send && words !== opened.before) {
+        say(t("text.closed"), {
+          label: { id: "toast.undo" },
+          run: () => {
+            keepTextDraft(space, owner, part, draft(typed));
+            reopen();
+          },
+        });
+      }
       return;
     }
     sending.current = true;
     setSaving(true);
-    // An emptied box takes the text away: spaces alone are no text.
-    const words = typed.trim() === "" ? "" : typed;
     save(words, opened.base).then(
       () => {
         letGo(space, { kind: "text", task: owner, part, text: typed });
@@ -345,7 +359,7 @@ export function TextEditor({
     }
   };
   const onBlur = (event: { relatedTarget: EventTarget | null }) => {
-    // Focus moving to the Preview and back stays in the box.
+    // Focus moving to the Preview, into its words or back stays in the box.
     if (event.relatedTarget instanceof Node && box.current?.contains(event.relatedTarget)) return;
     // The window lost focus or the page goes away: the box keeps what was typed for its return.
     if (!document.hasFocus() || pageLeaving()) return;
@@ -373,6 +387,8 @@ export function TextEditor({
             <div
               className={styles.preview}
               data-part="text-preview"
+              // A click in the words, to select or copy them, keeps the focus in the box.
+              tabIndex={-1}
               style={{ "--k-h": `${String(shown.height)}px` } as CSSProperties}
             >
               {preview(shown.typed)}

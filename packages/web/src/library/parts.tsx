@@ -134,6 +134,9 @@ export function Penned({
             setEditing(false);
             onDone?.();
           }}
+          reopen={() => {
+            setEditing(true);
+          }}
         />
         {notSaved}
       </>
