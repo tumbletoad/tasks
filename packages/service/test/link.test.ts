@@ -406,12 +406,10 @@ describe("[S5.link.snapshot] a phone's feed carries the space's data and nothing
     const snapshot = await link.next((m) => m["type"] === "snapshot");
     expect(Object.keys(snapshot).sort()).toEqual([
       "agent_changes",
-      "areas",
       "asking",
       "cursor",
       "nodes",
       "preferences",
-      "projects",
       "space",
       "tasks",
       "type",

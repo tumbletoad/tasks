@@ -35,6 +35,7 @@ import {
 import { joinRest, splitPaste } from "../capture/paste.ts";
 import { requestId } from "../api.ts";
 import { Session } from "../context.ts";
+import { topLevel, trail } from "@ttasks/client/store";
 import { liveGroups, formatDay, LANDING } from "@ttasks/client/today";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { tabKept } from "../kept.ts";
@@ -364,21 +365,24 @@ export function TopBar({
   // New work goes to live groups only: an archived one is neither suggested nor taken, and its name
   // is said to be archived rather than read as another group's.
   const { areas, projects, archived } = useMemo(() => {
-    const open = liveGroups(state.areas.values(), state.projects.values());
+    const open = liveGroups(state.nodes);
     const liveIds = new Set([...open.areas, ...open.projects].map((g) => g.id));
+    const tops = topLevel(state.nodes);
+    const shelved = [...state.nodes.values()].filter(
+      (n) => n.kind === "project" && !liveIds.has(n.id),
+    );
     return {
       ...open,
       archived: {
-        areas: [...state.areas.values()].filter((a) => !liveIds.has(a.id)),
-        projects: [...state.projects.values()].filter((p) => !liveIds.has(p.id)),
+        areas: shelved.filter((n) => tops.includes(n)),
+        projects: shelved.filter((n) => !tops.includes(n)),
       },
     };
-  }, [state.areas, state.projects]);
+  }, [state.nodes]);
   // Only an area's and a project's routes have these. On a project's page a capture goes where the
   // project is now, whatever area its address names.
   const hereProject = params.project;
-  const hereArea =
-    hereProject === undefined ? params.area : state.projects.get(hereProject)?.area_id;
+  const hereArea = hereProject === undefined ? params.area : trail(state.nodes, hereProject)[0]?.id;
   const capture = useMemo(() => {
     const here =
       hereArea === undefined
@@ -386,8 +390,8 @@ export function TopBar({
         : { area: hereArea, ...(hereProject === undefined ? {} : { project: hereProject }) };
     return parseCapture(text, { today: clock.today, areas, projects, archived, here, kept });
   }, [text, clock.today, areas, projects, archived, hereArea, hereProject, kept]);
-  // On a group's page a capture usually lands in that group: one that goes to the Inbox instead (a
-  // project without an area, an archived group, the page's chip taken off) says so.
+  // On a group's page a capture usually lands in that group: one that goes to the Inbox instead (an
+  // archived group, the page's chip taken off) says so.
   const toInbox =
     (params.area !== undefined || params.project !== undefined) &&
     capture.archived === undefined &&

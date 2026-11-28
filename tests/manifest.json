@@ -6735,8 +6735,15 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.tree.client.tree",
+      "title": "The store's tree: a node's trail from the top down to it, siblings in their order with a project made without an area after every area, how today's operations file work into a node, and the node a read names by its area's and project's names",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.tree.http.feed",
-      "title": "The feed sends the space as a tree beside its areas and projects: the space, each area as a top-level project and each project under its area or the space, with the IDs they have, a project without an area after every area, a parent on every task row, a node row in each batch that creates, moves or archives a group, and the same tree to a phone",
+      "title": "The feed sends the space as a tree: the space, each area as a top-level project and each project under its area or the space, with the IDs they have, a project without an area after every area, a parent on every task row, a node row in each batch that creates, moves or archives a group, the node each page lies under, and the same tree to a phone",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

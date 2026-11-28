@@ -25,6 +25,7 @@ export function editsOf(live: Live, api: Api): Edits {
         for (const task of live.getState().tasks.values()) if (task.ref === ref) return task;
         return undefined;
       },
+      space: () => live.getState().space?.id,
       newRequest: requestId,
       alive: () => !live.stopped,
       ...(live.spaceId === undefined ? {} : { keeper: unsavedKeeper(live.spaceId) }),

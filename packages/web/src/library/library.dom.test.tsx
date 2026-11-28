@@ -9,6 +9,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
+import { areaNode, nodesOf, projectNode } from "@ttasks/client/test/nodes";
 import {
   PAGE_CONFLICT_EXAMPLE,
   PAGE_FEED_EXAMPLES,
@@ -59,11 +60,12 @@ const snapshot = {
   space: { id: SPACE_ID, name: "Mira", ref_prefix: "M" },
   cursor: CURSOR,
   tasks: [],
-  areas: [{ id: AREA, title: "Client work", position: "a" }],
-  projects: [
-    { id: PROJECT, area_id: AREA, title: "Lumen Health", position: "a" },
-    { id: BILLING, area_id: AREA, title: "Billing", position: "b" },
-  ],
+  nodes: nodesOf(
+    SPACE_ID,
+    areaNode({ id: AREA, title: "Client work", position: "a" }, SPACE_ID),
+    projectNode(AREA, { id: PROJECT, title: "Lumen Health", position: "a" }),
+    projectNode(AREA, { id: BILLING, title: "Billing", position: "b" }),
+  ),
   pages: PAGE_FEED_EXAMPLES.snapshotPages,
   instances: [
     { key: "codex-work", app: "Codex", label: "Codex", glyph: "C", ring: 1, route: "terminal" },
@@ -513,8 +515,7 @@ describe("[A5.pages.web.card] a task's card shows its Knowledge", () => {
       position: "a",
       created_at: 0,
       version: 1,
-      area_id: AREA,
-      project_id: PROJECT,
+      parent: PROJECT,
     } as unknown as TaskRow;
     await mount(<Knowledge task={task} />, `/s/${SPACE_ID}/open?task=M-14`);
     const own = parts("knowledge-page");

@@ -59,8 +59,13 @@ export function affects(def: QueryDef, change: Change): boolean {
     case "search": {
       if (SEARCH_CHILDREN.has(change.type)) return true;
       const fields = def.fields ?? [];
-      if (change.type === "area" || change.type === "project") {
-        return fields.includes(change.type) && touches(change, ["title", "slug", "deleted"]);
+      // An area or a project, renamed, moved, trashed or brought back: a filter that names one
+      // by name may now match other tasks.
+      if (change.type === "node") {
+        return (
+          (fields.includes("area") || fields.includes("project")) &&
+          touches(change, ["title", "place", "deleted"])
+        );
       }
       if (change.type !== "task") return false;
       return change.created || touches(change, [...SEARCH_FIELDS, ...fields]);

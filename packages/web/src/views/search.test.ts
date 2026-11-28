@@ -2,6 +2,7 @@
 // expired cursor that starts the search again, the two groups and how they keep their rows, and
 // what an older space without the word index can still search.
 import { describe, expect, test } from "vitest";
+import { areaNode, projectNode, treeOf } from "@ttasks/client/test/nodes";
 import { PagedQuery } from "../store/queries.ts";
 import { withTaskRow, type TaskRow } from "@ttasks/client/store";
 import {
@@ -20,10 +21,10 @@ import {
   type SearchRow,
 } from "./search.ts";
 
-const AREAS = new Map([["a_home", { id: "a_home", title: "Home", position: "a" }]]);
-const PROJECTS = new Map([
-  ["p_garden", { id: "p_garden", area_id: "a_home", title: "Garden", position: "a" }],
-]);
+const NODES = treeOf(
+  areaNode({ id: "a_home", title: "Home", position: "a" }),
+  projectNode("a_home", { id: "p_garden", title: "Garden", position: "a" }),
+);
 
 const taskRow = (n: number, more: Partial<SearchRow> = {}): SearchRow =>
   ({
@@ -70,7 +71,7 @@ function fakeSearch(total: number, options: { expireOnce?: boolean } = {}) {
 }
 
 const rowOf = (row: SearchRow, found: "open" | "finished", read = 1) =>
-  rowOfFound(row, found, AREAS, PROJECTS, read);
+  rowOfFound(row, found, NODES, read);
 
 describe("[A5.3.13.web.search] search results read in pages, frozen, in two groups", () => {
   test("the open tasks are read at once; finished ones a page at a time with their cursor", async () => {
@@ -134,7 +135,7 @@ describe("[A5.3.13.web.search] search results read in pages, frozen, in two grou
     const done = [
       rowOf(taskRow(3, { lifecycle: "completed", area: "Home", project: "Garden" }), "finished"),
     ] as FoundRow[];
-    expect(done[0]).toMatchObject({ area_id: "a_home", project_id: "p_garden", version: 1 });
+    expect(done[0]).toMatchObject({ parent: "p_garden", version: 1 });
     expect(rowOf({ kind: "deleted", id: "t_x", ref: "M-9" }, "open")).toBeUndefined();
     const live = new Map<string, TaskRow>([
       [open[0]?.id ?? "", { ...(open[0] as TaskRow), title: "Edited at once", version: 3 }],

@@ -1,5 +1,5 @@
 // A model of the service's change feed (A5 3.15; A1 3.7) for the live store's property tests:
-// a space whose commits change tasks, areas and children, a filter that hides some commits, and a
+// a space whose commits change tasks, nodes and children, a filter that hides some commits, and a
 // subscription that sends what the service's feed sends, `snapshot` and `batch` with coverage
 // intervals, as packages/service/src/http/feed.ts and ws.ts build them:
 //
@@ -29,17 +29,17 @@ import {
 /** The columns of each logical field, by kind of row: storage's own map for tasks. */
 const COLUMNS: Record<ModelRow["type"], Readonly<Record<string, readonly string[]>>> = {
   task: TASK_FIELD_COLUMNS,
-  area: { title: ["title"], deleted: ["deleted_at"] },
-  project: { title: ["title"], deleted: ["deleted_at"] },
+  node: { title: ["title"], deleted: ["deleted_at"] },
 };
 
 export const SPACE = "sp_0000000000000000000000000a";
 export const OTHER_SPACE = "sp_0000000000000000000000000b";
+const SPACE_NODE = { id: SPACE, kind: "space", title: "Mira", state: "active" };
 
 type Fields = Record<string, string | number | boolean>;
 
 interface ModelRow {
-  readonly type: "task" | "area" | "project";
+  readonly type: "task" | "node";
   readonly fields: Fields;
   /** Tasks only: whether this subscriber's audience sees it. */
   readonly hidden: boolean;
@@ -111,15 +111,24 @@ export class FeedModel {
     return state;
   }
 
-  #ids(type: "task" | "area" | "project", filter: (row: ModelRow) => boolean = () => true) {
+  #ids(type: "task" | "node", filter: (row: ModelRow) => boolean = () => true) {
     return [...this.state.rows.entries()]
       .filter(([k, row]) => k.startsWith(`${type}:`) && filter(row))
       .map(([k]) => k.slice(type.length + 1));
   }
 
-  #pick(type: "task" | "area" | "project", n: number, filter?: (row: ModelRow) => boolean) {
+  #pick(type: "task" | "node", n: number, filter?: (row: ModelRow) => boolean) {
     const ids = this.#ids(type, filter);
     return ids.length === 0 ? undefined : ids[n % ids.length];
+  }
+
+  /** A project at the top: what the page calls an area. */
+  #area(n: number, live = false) {
+    return this.#pick(
+      "node",
+      n,
+      (r) => r.fields["parent"] === SPACE && (!live || r.fields["deleted_at"] === undefined),
+    );
   }
 
   /** A new authority (a claim elsewhere): the same rows, a new epoch and incarnation. */
@@ -172,7 +181,7 @@ export class FeedModel {
       case "add": {
         this.#n += 1;
         const id = `t_${String(this.#n).padStart(26, "0")}`;
-        const area = op.area % 3 === 0 ? undefined : this.#pick("area", op.area);
+        const area = op.area % 3 === 0 ? undefined : this.#area(op.area);
         const fields: Fields = {
           id,
           ref: `M-${String(this.#n)}`,
@@ -185,7 +194,7 @@ export class FeedModel {
           created_at: seq * 1000,
           version: seq,
           touched: seq,
-          ...(area === undefined ? {} : { area_id: area }),
+          parent: area ?? SPACE,
         };
         rows.set(key("task", id), { type: "task", fields, hidden: op.hidden });
         entities.push({ type: "task", id, task: id, changed: [], created: true });
@@ -262,63 +271,62 @@ export class FeedModel {
       }
       case "move": {
         const id = task(op.task);
-        const area = this.#pick("area", op.area);
+        const area = this.#area(op.area);
         if (id === undefined || area === undefined) return false;
-        // `grouping` is written whole: the area, no project, the place it keeps.
+        // `grouping` is written whole: the parent and the place it keeps.
         const position = rows.get(key("task", id))?.fields["position"] ?? "a";
-        set("task", id, { area_id: area, position, inbox: false }, ["grouping", "inbox"]);
+        set("task", id, { parent: area, position, inbox: false }, ["grouping", "inbox"]);
         break;
       }
       case "area": {
         this.#n += 1;
         const id = `ar_${String(this.#n).padStart(25, "0")}`;
-        rows.set(key("area", id), {
-          type: "area",
+        rows.set(key("node", id), {
+          type: "node",
           hidden: false,
           fields: {
             id,
-            slug: `a${String(this.#n)}`,
+            kind: "project",
+            parent: SPACE,
             title: `Area ${String(this.#n)}`,
             position: `a${String(this.#n)}`,
-            lifecycle: "active",
-            version: seq,
+            state: "active",
           },
         });
-        entities.push({ type: "area", id, changed: [], created: true });
-        touched.add(key("area", id));
+        entities.push({ type: "node", id, changed: [], created: true });
+        touched.add(key("node", id));
         break;
       }
       case "rename_area": {
-        const id = this.#pick("area", op.area, (r) => r.fields["deleted_at"] === undefined);
+        const id = this.#area(op.area, true);
         if (id === undefined) return false;
-        set("area", id, { title: `Area at ${String(seq)}` }, ["title"]);
+        set("node", id, { title: `Area at ${String(seq)}` }, ["title"]);
         break;
       }
       case "delete_area": {
-        const id = this.#pick("area", op.area, (r) => r.fields["deleted_at"] === undefined);
+        const id = this.#area(op.area, true);
         if (id === undefined) return false;
-        set("area", id, { deleted_at: seq * 1000 }, ["deleted"]);
+        set("node", id, { deleted_at: seq * 1000 }, ["deleted"]);
         break;
       }
       case "project": {
-        const area = this.#pick("area", op.area);
+        const area = this.#area(op.area);
         this.#n += 1;
         const id = `pj_${String(this.#n).padStart(25, "0")}`;
-        rows.set(key("project", id), {
-          type: "project",
+        rows.set(key("node", id), {
+          type: "node",
           hidden: false,
           fields: {
             id,
-            slug: `p${String(this.#n)}`,
+            kind: "project",
+            parent: area ?? SPACE,
             title: `Project ${String(this.#n)}`,
             position: `p${String(this.#n)}`,
-            lifecycle: "active",
-            version: seq,
-            ...(area === undefined ? {} : { area_id: area }),
+            state: "active",
           },
         });
-        entities.push({ type: "project", id, changed: [], created: true });
-        touched.add(key("project", id));
+        entities.push({ type: "node", id, changed: [], created: true });
+        touched.add(key("node", id));
         break;
       }
     }
@@ -345,26 +353,20 @@ export class FeedModel {
     return this.commits.at(-1)?.request_id ?? "";
   }
 
-  /** What this subscriber may see at `seq`, as the store holds it: open tasks, live areas and projects. */
-  visibleAt(seq: number): {
-    tasks: Map<string, Fields>;
-    areas: Map<string, Fields>;
-    projects: Map<string, Fields>;
-  } {
+  /** What this subscriber may see at `seq`, as the store holds it: open tasks and live nodes. */
+  visibleAt(seq: number): { tasks: Map<string, Fields>; nodes: Map<string, Fields> } {
     const state = this.states[seq];
     if (state === undefined) throw new Error(`no state at ${String(seq)}`);
     const out = {
       tasks: new Map<string, Fields>(),
-      areas: new Map<string, Fields>(),
-      projects: new Map<string, Fields>(),
+      nodes: new Map<string, Fields>([[SPACE, SPACE_NODE]]),
     };
     for (const row of state.rows.values()) {
       const f = row.fields;
       if (f["deleted_at"] !== undefined || row.hidden) continue;
       const id = String(f["id"]);
       if (row.type === "task" && f["lifecycle"] === "active") out.tasks.set(id, f);
-      if (row.type === "area") out.areas.set(id, f);
-      if (row.type === "project") out.projects.set(id, f);
+      if (row.type === "node") out.nodes.set(id, f);
     }
     return out;
   }
@@ -387,8 +389,7 @@ export class FeedModel {
       space: { id: SPACE, name: "Mira", ref_prefix: "M" },
       cursor: this.head,
       tasks: [...visible.tasks.values()] as unknown as SnapshotMessage["tasks"],
-      areas: [...visible.areas.values()] as unknown as SnapshotMessage["areas"],
-      projects: [...visible.projects.values()] as unknown as SnapshotMessage["projects"],
+      nodes: [...visible.nodes.values()] as unknown as SnapshotMessage["nodes"],
       instances: [],
     };
   }

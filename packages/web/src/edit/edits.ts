@@ -168,6 +168,8 @@ export interface EditDeps {
   readonly onChanges: (listener: (changes: Changes) => void) => () => void;
   /** The live row of a task, by its reference (a conflict names tasks by reference). */
   readonly rowOf: (ref: string) => TaskRow | undefined;
+  /** The space's ID: the parent of a task in no area. */
+  readonly space: () => string | undefined;
   /** The effort levels the screen shows, keyed as a kept size remembers them (levelsKey). */
   readonly levels?: () => string;
   readonly newRequest: () => string;
@@ -424,13 +426,10 @@ const STEP_FIELDS: ReadonlySet<string> = new Set(["title", "summary"]);
  * value the page offers no way to choose again (the Inbox, no area). Any other value is put back by
  * choosing it again.
  */
-function isStep(task: Pick<TaskRow, "inbox" | "area_id" | "project_id">, change: Change): boolean {
+function isStep(task: Pick<TaskRow, "inbox" | "parent">, change: Change, space?: string): boolean {
   if (change.fields.every((field) => STEP_FIELDS.has(field))) return true;
   const outOfInbox = task.inbox && change.set?.["inbox"] === false;
-  const firstArea =
-    change.fields.includes("grouping") &&
-    task.area_id === undefined &&
-    task.project_id === undefined;
+  const firstArea = change.fields.includes("grouping") && task.parent === space;
   return outOfInbox || firstArea;
 }
 
@@ -687,7 +686,7 @@ export class Edits {
     };
     void sent.settled.then(shown, shown);
     // Any other change shows its value at once and needs no toast: it is put back by choosing again.
-    const step = options.undo === true || isStep(task, change);
+    const step = options.undo === true || isStep(task, change, this.#deps.space());
     if (!step) this.#moved();
     const saved: Omit<Toast, "key"> | undefined = step
       ? { kind: "undo", text: change.said, action: this.#stepped(sent) }

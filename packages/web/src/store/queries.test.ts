@@ -187,6 +187,30 @@ describe("[A5.3.15.web.store.queries] query-level invalidation", () => {
     });
   });
 
+  test("a search filtered by an area or a project is changed when a group is renamed; another search is not", async () => {
+    const renamed: Change = {
+      type: "node",
+      id: "p_indigo",
+      changed: ["title"],
+      created: false,
+      kind: "ops",
+      actor: { kind: "human", label: "user" },
+      request_id: "",
+    };
+    expect(affects({ kind: "search", fields: ["project", "grouping"] }, renamed)).toBe(true);
+    expect(affects({ kind: "search", fields: ["area", "grouping"] }, renamed)).toBe(true);
+    expect(affects({ kind: "search", fields: ["priority"] }, renamed)).toBe(false);
+    expect(
+      affects({ kind: "search", fields: ["project"] }, { ...renamed, changed: ["color"] }),
+    ).toBe(false);
+    const filtered = new PagedQuery({ kind: "search", fields: ["project", "grouping"] }, () =>
+      Promise.resolve({ rows: [] as Row[] }),
+    );
+    await filtered.refresh();
+    filtered.apply({ changes: [renamed], reset: false });
+    expect(filtered.getState().changed).toBe(true);
+  });
+
   test("changes name the service's logical fields, and a cleared field clears all its columns", async () => {
     const change = (patch: Partial<Change>): Change => ({
       type: "task",

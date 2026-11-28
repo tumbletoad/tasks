@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { areaNode, projectNode, treeOf } from "@ttasks/client/test/nodes";
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { mergePages, PAGES, readDetail, readOlder, rowOfFacts, type TaskFacts } from "./detail.ts";
 
@@ -99,16 +100,17 @@ describe("[A5.3.7.web.detail] the expanded task's detail from the pages of a sec
   test("a task the live rows do not hold becomes a row with its area and project by name", () => {
     const row = rowOfFacts(
       FACTS,
-      new Map([["ar_1", { id: "ar_1", title: "Client work", position: "a" }]]),
-      new Map([["pj_1", { id: "pj_1", area_id: "ar_1", title: "Lumen Health", position: "a" }]]),
+      treeOf(
+        areaNode({ id: "ar_1", title: "Client work", position: "a" }),
+        projectNode("ar_1", { id: "pj_1", title: "Lumen Health", position: "a" }),
+      ),
       "2026-11-14",
     );
     expect(row).toMatchObject({
       id: FACTS.id,
       ref: "M-3",
       lifecycle: "completed",
-      area_id: "ar_1",
-      project_id: "pj_1",
+      parent: "pj_1",
       due_date: "2026-11-13",
       position: "",
       created_at: Date.parse("2026-11-09T08:00:00.000Z"),

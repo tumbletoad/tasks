@@ -49,8 +49,7 @@ function show(scales: Partial<Scales>, seq = 10): void {
       space: SPACE,
       cursor: { epoch: 1, incarnation: INCARNATION, seq },
       tasks: [],
-      areas: [],
-      projects: [],
+      nodes: [],
       instances: [],
       scales: { statuses: ["open"], efforts: [...EFFORT_LEVELS], ...scales },
     });

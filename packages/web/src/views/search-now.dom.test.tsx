@@ -6,6 +6,7 @@
 // reconnect says how the task is now, the result shows that, in its place, with the controls that
 // fit it.
 import { act } from "react";
+import { areaNode, nodesOf } from "@ttasks/client/test/nodes";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Api } from "../api.ts";
@@ -33,7 +34,7 @@ function live1(n: number, fields: Partial<TaskRow> = {}): TaskRow {
     status: "open",
     inbox: false,
     lifecycle: "active",
-    area_id: "a_1",
+    parent: "a_1",
     position: `p${String(n).padStart(5, "0")}`,
     created_at: Date.UTC(2026, 10, 1),
     version: 4,
@@ -92,8 +93,7 @@ function snapshot(tasks: readonly TaskRow[], seq: number): SnapshotMessage {
     space: SPACE,
     cursor: { ...CURSOR, seq },
     tasks,
-    areas: [{ id: "a_1", title: "Lumen", position: "a" }],
-    projects: [],
+    nodes: nodesOf(SPACE.id, areaNode({ id: "a_1", title: "Lumen", position: "a" }, SPACE.id)),
     instances: [],
   };
 }

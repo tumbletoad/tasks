@@ -23,6 +23,7 @@ function done(
     title: `Task ${ref}`,
     status: "open",
     inbox: false,
+    parent: "sp_0123456789abcdefghjkmnpqrs",
     lifecycle: how === "dropped" ? "archived" : "completed",
     position: "a0",
     created_at: at - 86_400_000,

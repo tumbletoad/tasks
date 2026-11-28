@@ -2942,11 +2942,6 @@
             "items": {
               "additionalProperties": false,
               "properties": {
-                "area_id": {
-                  "description": "Its area, also through its task",
-                  "pattern": "^a_[0-9a-hjkmnp-tv-z]{26}$",
-                  "type": "string"
-                },
                 "at": {
                   "description": "When, in milliseconds since 1970",
                   "maximum": 9007199254740991,
@@ -2977,23 +2972,8 @@
                   "type": "string"
                 },
                 "owner_id": {
-                  "description": "The space's, area's, project's or task's ID",
+                  "description": "The space's, a project's or a task's ID",
                   "maxLength": 40,
-                  "type": "string"
-                },
-                "owner_kind": {
-                  "description": "What holds it",
-                  "enum": [
-                    "space",
-                    "area",
-                    "project",
-                    "task"
-                  ],
-                  "type": "string"
-                },
-                "project_id": {
-                  "description": "Its project, also through its task",
-                  "pattern": "^p_[0-9a-hjkmnp-tv-z]{26}$",
                   "type": "string"
                 },
                 "ref": {
@@ -3068,6 +3048,11 @@
                   "description": "Title",
                   "type": "string"
                 },
+                "under": {
+                  "description": "The node it lies under, also through its task",
+                  "maxLength": 40,
+                  "type": "string"
+                },
                 "version": {
                   "description": "Row version: the commit that changed it last",
                   "maximum": 9007199254740991,
@@ -3084,8 +3069,8 @@
                 "ref",
                 "title",
                 "brief",
-                "owner_kind",
                 "owner_id",
+                "under",
                 "version",
                 "by",
                 "at",
@@ -6326,10 +6311,6 @@
             "items": {
               "additionalProperties": false,
               "properties": {
-                "area_id": {
-                  "description": "Area ID",
-                  "type": "string"
-                },
                 "completed_at": {
                   "description": "When it was completed",
                   "maximum": 8640000000000000,
@@ -6422,10 +6403,6 @@
                   "description": "The node it sits under: a task, a project or the space",
                   "type": "string"
                 },
-                "parent_id": {
-                  "description": "Parent task ID",
-                  "type": "string"
-                },
                 "place": {
                   "anyOf": [
                     {
@@ -6480,10 +6457,6 @@
                   "maximum": 4,
                   "minimum": 1,
                   "type": "integer"
-                },
-                "project_id": {
-                  "description": "Project ID",
-                  "type": "string"
                 },
                 "questions": {
                   "description": "Questions agents asked that wait for the person, newest first",
@@ -9536,10 +9509,6 @@
                   "description": "Its area's name, a deleted one too",
                   "type": "string"
                 },
-                "area_id": {
-                  "description": "Area ID",
-                  "type": "string"
-                },
                 "completed_at": {
                   "description": "When it was completed",
                   "maximum": 8640000000000000,
@@ -9627,10 +9596,6 @@
                   "description": "The node it sits under: a task, a project or the space",
                   "type": "string"
                 },
-                "parent_id": {
-                  "description": "Parent task ID",
-                  "type": "string"
-                },
                 "place": {
                   "anyOf": [
                     {
@@ -9688,10 +9653,6 @@
                 },
                 "project": {
                   "description": "Its project's name, a deleted one too",
-                  "type": "string"
-                },
-                "project_id": {
-                  "description": "Project ID",
                   "type": "string"
                 },
                 "questions": {

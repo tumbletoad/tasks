@@ -10,7 +10,7 @@ import {
 } from "./queries.ts";
 import type { LiveState } from "./store.ts";
 
-/** The tab's live state: open rows, areas, projects, instances and the feed's phase. */
+/** The tab's live state: open rows, the tree, instances and the feed's phase. */
 export function useLive(): LiveState {
   const { live } = useContext(Session);
   return useSyncExternalStore(live.subscribe, live.getState);

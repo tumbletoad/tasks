@@ -158,9 +158,6 @@ export const FEED_TASK: Spec = {
     "focus_on",
     "owner",
     "waiting_on",
-    "area_id",
-    "project_id",
-    "parent_id",
     "parent",
     "position",
     "wrap_state",
@@ -179,19 +176,6 @@ export const FEED_TASK: Spec = {
   run: keep("id", "state"),
   questions: [{ ...keep("ref", "text", "at"), by: "author" }],
 };
-/** An area's or a project's row in a phone's feed. */
-export const FEED_GROUP: Spec = keep(
-  "id",
-  "area_id",
-  "slug",
-  "title",
-  "position",
-  "color",
-  "lifecycle",
-  "deleted_at",
-  "version",
-);
-
 /** A node of the space's tree in a phone's feed: the space or a project, as the page gets it. */
 export const FEED_NODE: Spec = keep(
   "id",
