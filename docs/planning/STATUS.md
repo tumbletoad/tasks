@@ -31,7 +31,7 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 1.4 | Agent tools: `read`, `write_page`, the trail in `get_task` within one budget, search over pages, `complete_task` asking for pages updated | done (#251) |
 | 1.5 | The skill `keeping-the-library`, and a brief explained as "what this is" | done (#251) |
 | 1.6 | The app: the project screen with its Library, the page screen with History and Restore, page edits under Changes | done (#255, #257) |
-| 1.7 | The trial: twenty scripted tasks with Claude Code and Codex, and the bytes of history per page edit | review: ran with real agents, the result is under [Step 1's trial](#step-1s-trial) |
+| 1.7 | The trial: twenty scripted tasks with Claude Code and Codex, and the bytes of history per page edit | done (#275, #278): the result is under [Step 1's trial](#step-1s-trial) |
 | 1.8 | The harvest of one real project, and a walk through it as a person | todo: 1.7 |
 | 2.1 | The short design for one tree, reviewed before code (#237) | done |
 | 2.2 | (i) The feed sends a tree, today's areas and projects as parent rows at its edge, and the page's store reads it | done (#261, #268) |
@@ -46,15 +46,15 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 2b.4 | The schedule calculator: the stored form, the next date and due time through daylight saving, the claim after an absence, and a schedule's words | done (#241, #253) |
 | 2b.2 | Routines: one task of a kind of its own that comes back on a schedule, its runs logged under it, a page of the active ones | doing: the node kind, its tables and commands with Undo in the tree's storage (#269); the app todo: 2.4 |
 | 2b.3 | Agent runs on a schedule (Refresh, tidying), Refresh in the top bar, Continue interactively | todo: 2.4 |
-| 3.1 | The projector for the tree on disk, written on the tree schema of 2.3 and switched on in 2.5 | doing: the files rendered from a snapshot (#276); the pass that writes them and its record in review; the service running it next |
+| 3.1 | The projector for the tree on disk, written on the tree schema of 2.3 and switched on in 2.5 | review: the files rendered from a snapshot (#276) and the pass that writes them with its record (#281) are merged; the service running the pass for a tree space, with `ttasks view rebuild`, is in review; today's spaces keep today's projector until the switch |
 | 3.2 | Inherited default folders, other folders as hints, Open says when a folder is set only on another machine | todo: 2.9 |
 | 3.3 | The trial's tasks again, tools only against tools with the tree, and a rename's rebuild timed on Windows | todo: 3.1 |
 | 4.1 | Budgets that speak in a write's answer, and tidying a project's library | ready: the budgets; tidying todo: 2b.3 |
 | 4.2 | Ingestion: a run makes tasks and sources from the person's sources by itself | todo: 2b.3 |
-| 4.3 | The library skill's later versions, from the trial | todo: 1.7 |
+| 4.3 | The library skill's later versions, from the trial | ready |
 | 5.1 | The phone's listener apart from the page's, in the same process: it reaches only the operations, the feed and a task's runs | done (#245) |
 | 5.2 | An endpoint for paired phones over pinned TLS, with rights per phone and space, and pairing by a QR code from Settings > Phones | done (#245, #252) |
-| 5.3 | The phone app as a development build in the workspace, and its first proof; Today and capture shared with the page once step 1's page work has merged | review: the Android app's pinned link, built in CI and tried on an emulator (#270); Today, capture and the store shared with the page (#264); the first screen next |
+| 5.3 | The phone app as a development build in the workspace, and its first proof; Today and capture shared with the page once step 1's page work has merged | doing: Today, capture and the feed's store shared in `packages/client` (#264); the app with its pinned link, built in CI and tried on an emulator against the real service (#270); scan, name and reopen through the one screen, with one owner of the link, in review (#283); next: Today on the phone |
 | 5.4 | The stores' test tracks, the relay for use away from home, push messages | todo: 5.3 |
 | 6.1 | Differences between versions of a page and of a description | todo: 2.8 |
 
@@ -81,6 +81,24 @@ step 2 builds on it. The trail stays whole rather than shrinking to titles: it a
 characters to a digest, and the runs without it did worse on (a), (e) and (f). The library stayed
 clean (no duplicates, no needless edits), but no agent put the decision found in a finished
 task's log on a page, which is what `keeping-the-library` should ask next.
+
+The second run, the same day, after `get_task` with `sections` carries the trail, library search
+finds pages by any word and `keeping-the-library` names a decision from a finished task's log
+(#278). Read only, with the trail on, on the tasks that decide:
+
+| agent | tasks | runs | succeeded | checks passed | result |
+|---|---|---|---|---|---|
+| Codex, Luna | 1, 4, 6, 10, 13, 16, 19, and 1 in three fresh worlds | 10 | 10/10 | 10/10 | (a) applied 10/10, read the area page 10/10 |
+| Codex, Luna | 2, 9 | 2 | 2/2 | 2/2 | (b) corrected in place, then used from the page |
+| Codex, Luna | 3, 7, 8, 11, 17, 18 | 6 | 6/6 | 5/6 | the searches that found nothing now find it; (f) found, searched, not on a page |
+| Claude Code, Haiku | 11, 18 | 2 | 2/2 | 0/2 | (f) searched the library only, not found |
+
+Codex still reads with `sections`, and now gets the trail there: (a) reaches 10 of 10 and (b)
+holds, so step 2 builds on the trail as it is. Nobody put the decision on a page: Codex found it
+in the finished task's log, logged it and left the task open to ask for the visit data, and Haiku
+searched only the library, which does not hold a log's decisions. Whether a finished task's
+decisions should count as lessons in a library search is the next question for the skill and
+search (row 4.3); it does not hold the trail.
 
 ## Before 1.0, beside the steps
 

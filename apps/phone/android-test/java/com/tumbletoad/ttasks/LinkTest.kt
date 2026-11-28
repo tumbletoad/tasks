@@ -1,10 +1,15 @@
 package com.tumbletoad.ttasks
 
+import android.content.Intent
 import android.os.ParcelFileDescriptor
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.UiObject2
+import androidx.test.uiautomator.Until
 import expo.modules.ttaskslink.Failure
-import expo.modules.ttaskslink.LinkStore
+import expo.modules.ttaskslink.Scans
 import expo.modules.ttaskslink.PinTrust
 import expo.modules.ttaskslink.failureOf
 import expo.modules.ttaskslink.openLink
@@ -13,27 +18,27 @@ import java.util.concurrent.TimeUnit
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The link from inside the installed app, against the real service that tests/phone/emulator.ts
- * runs on the computer: it pushes the pairing code to the emulator and counts, on the computer's
- * side, what each method makes reach the listener. Each method is run on its own, in this order.
+ * The installed app against the real service that tests/phone/emulator.ts runs on the computer: it
+ * pushes the pairing code to the emulator and counts, on the computer's side, what each method makes
+ * reach the listener. Each method is run on its own, in this order.
  */
 @RunWith(AndroidJUnit4::class)
 class LinkTest {
   private val instrumentation = InstrumentationRegistry.getInstrumentation()
 
-  /** The QR code's JSON the harness pushed, its addresses as the emulator reaches the computer. */
-  private fun pairing(): JSONObject {
+  /** The QR code's text the harness pushed, its addresses as the emulator reaches the computer. */
+  private fun pairingText(): String {
     val fd = instrumentation.uiAutomation.executeShellCommand("cat $PAIRING_FILE")
-    val text = ParcelFileDescriptor.AutoCloseInputStream(fd).use { it.readBytes().toString(Charsets.UTF_8) }
-    return JSONObject(text.trim().removePrefix("TTASKS1:"))
+    return ParcelFileDescriptor.AutoCloseInputStream(fd).use { it.readBytes().toString(Charsets.UTF_8) }.trim()
   }
+
+  private fun pairing(): JSONObject = JSONObject(pairingText().removePrefix("TTASKS1:"))
 
   private sealed interface Event {
     data object Open : Event
@@ -74,32 +79,38 @@ class LinkTest {
     assertEquals(Event.Failed(Failure.PIN), events.next())
   }
 
-  /** The right pin and the code: the computer's hello names the space, and the app keeps the pairing. */
+  /**
+   * The screen a person meets: the app starts unpaired, Scan the code opens the scanner, the code
+   * arrives there (from here, as an emulator has no camera to see it), the phone is named and
+   * paired, and the screen says Connected.
+   */
   @Test
-  fun pairs() {
-    val qr = pairing()
-    val space = qr.getJSONObject("space")
-    val (socket, events) = connect(qr.getJSONArray("addrs").getString(0), qr.getString("pin"))
-    assertEquals(Event.Open, events.next())
-    val pair = JSONObject().put("code", qr.getString("code")).put("name", "Emulator").put("platform", "android")
-    socket.send(
-      JSONObject().put("type", "open").put("protocol", 1).put("space", space.getString("id")).put("pair", pair).toString(),
-    )
-    val hello = JSONObject((events.next() as Event.Message).text)
-    assertEquals("hello", hello.getString("type"))
-    val link = hello.getJSONObject("link")
-    assertEquals(1, link.getInt("protocol"))
-    assertEquals(space.getString("id"), link.getJSONObject("space").getString("id"))
-    socket.close(1000, null)
-    // What the app reads on its next start (src/link/open.ts readSaved).
-    val saved = JSONObject()
-      .put("addrs", JSONArray(listOf(qr.getJSONArray("addrs").getString(0))))
-      .put("pin", qr.getString("pin"))
-      .put("space", JSONObject().put("id", space.getString("id")).put("name", space.getString("name")))
-    LinkStore.save(instrumentation.targetContext, saved.toString())
+  fun pairsThroughTheScreen() {
+    val text = pairingText()
+    val device = UiDevice.getInstance(instrumentation)
+    val context = instrumentation.targetContext
+    val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
+      ?: throw AssertionError("the app has no launcher activity")
+    context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+    shown(device, "Scan the code").click()
+    shown(device, "Cancel")
+    // The scanner listens from its first frame on: hand the code in until the name screen shows.
+    val name = (1..20).firstNotNullOfOrNull {
+      Scans.read(text)
+      device.wait(Until.findObject(By.clazz("android.widget.EditText")), 1_000L)
+    } ?: throw AssertionError("no field for the phone's name")
+    name.text = "Emulator"
+    // For the pull request's pictures; the harness pulls it.
+    context.getExternalFilesDir(null)?.let { device.takeScreenshot(java.io.File(it, "name.png")) }
+    shown(device, "Pair").click()
+    shown(device, "Connected")
   }
+
+  private fun shown(device: UiDevice, text: String): UiObject2 =
+    device.wait(Until.findObject(By.text(text)), WAIT_MS) ?: throw AssertionError("\"$text\" is not on the screen")
 
   companion object {
     const val PAIRING_FILE = "/data/local/tmp/ttasks-pairing.txt"
+    const val WAIT_MS = 60_000L
   }
 }

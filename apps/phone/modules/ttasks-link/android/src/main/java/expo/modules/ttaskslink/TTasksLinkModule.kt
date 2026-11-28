@@ -1,5 +1,10 @@
 package expo.modules.ttaskslink
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.os.Build
+import android.provider.Settings
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.util.concurrent.ConcurrentHashMap
@@ -10,15 +15,35 @@ import okhttp3.WebSocketListener
 
 /**
  * The link to JS: connections by number, and four events, each naming its connection. Every
- * connection ends with one `close`; one that failed says why first, with `error`.
+ * connection ends with one `close`; one that failed says why first, with `error`. Besides: the
+ * saved pairing, the phone's own name, `network` when the phone moves to another network, and
+ * `scan` for a code handed to the open scanner (Scans).
  */
 class TTasksLinkModule : Module() {
   private val sockets = ConcurrentHashMap<Int, WebSocket>()
   private val next = AtomicInteger(1)
+  private var network: ConnectivityManager.NetworkCallback? = null
 
   override fun definition() = ModuleDefinition {
     Name("TTasksLink")
-    Events("open", "message", "close", "error")
+    Events("open", "message", "close", "error", "network", "scan")
+
+    OnCreate {
+      Scans.deliver = { text -> sendEvent("scan", mapOf("text" to text)) }
+      val connectivity = appContext.reactContext?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+      val callback = object : ConnectivityManager.NetworkCallback() {
+        private var current: Network? = null
+
+        // The first call names the network there is; each later one, another.
+        override fun onAvailable(available: Network) {
+          val moved = current != null && current != available
+          current = available
+          if (moved) sendEvent("network", emptyMap<String, Any>())
+        }
+      }
+      connectivity?.registerDefaultNetworkCallback(callback)
+      network = callback
+    }
 
     Function("connect") { url: String, pin: String ->
       val id = next.getAndIncrement()
@@ -46,9 +71,27 @@ class TTasksLinkModule : Module() {
       Unit
     }
 
+    Function("savePairing") { json: String ->
+      appContext.reactContext?.let { LinkStore.save(it, json) }
+      Unit
+    }
+
+    /** The name the person gave the phone in Android's settings, else its model. */
+    Function("deviceName") {
+      val context = appContext.reactContext
+      context?.let { Settings.Global.getString(it.contentResolver, Settings.Global.DEVICE_NAME) }
+        ?.takeIf { it.isNotBlank() } ?: Build.MODEL
+    }
+
     // A module destroyed while the process lives (a reload) must not leave an authenticated
     // connection behind with nobody to hear it.
     OnDestroy {
+      Scans.deliver = null
+      network?.let { callback ->
+        val connectivity = appContext.reactContext?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        runCatching { connectivity?.unregisterNetworkCallback(callback) }
+      }
+      network = null
       // Forgotten first, so their endings send no event to a module that is gone.
       val open = sockets.values.toList()
       sockets.clear()
