@@ -18,6 +18,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { basename, join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { envVar, FOLDER_MARKER, MCP_SERVER_KEY, PRODUCT_NAME } from "@ttasks/brand";
@@ -45,6 +46,7 @@ import { LaunchService } from "../src/launch/service.ts";
 import { homeDigest, physicalHome } from "../src/setup/agents.ts";
 import { configOf, instanceToml, readLog, stateOf, tempRoot, waitFor } from "./harness.ts";
 import { errorOf, classSession } from "./ops-helpers.ts";
+import { shell, written } from "./agents.ts";
 import { LONG_MS, ShimLab } from "./shim-harness.ts";
 import { holdNextWrite } from "./slow-marker.ts";
 
@@ -1518,12 +1520,16 @@ const conversation =
     };
   };
 
-/** A background run of `task` in `instance`, its agent a Node that ends at once or waits. */
+/**
+ * A background run of `task` in `instance`, its agent a Node that ends at once or waits. It
+ * records what a real run's start records: the folder it worked in and its agent home.
+ */
 async function runOf(
   r: Rig,
   task: string,
-  instance: "claude" | "codex",
+  instance: string,
   id: string | null,
+  evidence: { readonly folder_id: string; readonly home: string },
   holds = false,
 ): Promise<string> {
   const queued = await r.lab.running.runs.start(
@@ -1532,7 +1538,7 @@ async function runOf(
       task,
       routine: null,
       instance,
-      adapter: instance === "claude" ? "claude-print" : "codex",
+      adapter: instance === "codex" ? "codex" : "claude-print",
       place: null,
       request: "Look into the export.",
       briefHash: "0a1b2c3d".repeat(8),
@@ -1546,57 +1552,147 @@ async function runOf(
       env: Object.fromEntries(
         Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
       ),
+      evidence,
       ...(id === null ? {} : { open: conversation(id, holds) }),
     }),
   );
+  if (holds) {
+    await waitFor(
+      async () =>
+        (await r.lab.running.runs.read(r.lab.spaceId, queued.id))?.state === "running"
+          ? true
+          : undefined,
+      LONG_MS,
+      "the run works",
+    );
+  } else {
+    await r.lab.running.runs.ended(r.lab.spaceId, queued.id);
+  }
   return queued.id;
 }
 
+/** Continue's refusal of `asked`, with its reason. */
+const refusedFor = (r: Rig, asked: Record<string, unknown>) =>
+  open(r, asked).then(
+    () => undefined,
+    (error: unknown) => {
+      const body = errorOf(error);
+      return { code: body.code, reason: body.data?.["reason"] };
+    },
+  );
+
 describe("[A4.5.routes.continue] Continue opens a background run's own conversation in its app's terminal, as Open starts it", () => {
   test(
-    "an ended Claude Code run opens with --resume in the task's folder with the ticket; a working Codex run is stopped first and opens with codex resume; a run without a conversation is refused",
+    "Claude Code opens its run's conversation with --resume in the run's folder and home, and the session writes as itself; a conversation already open is that session, another opens beside it; a working Codex run is stopped first; nothing is stopped for a Continue that cannot open",
     { timeout: 300_000 },
     async () => {
-      const r = await rig("continue");
-      const task = await addTask(r, "Look into the export", "portal-continue");
-      const folder = realpathSync.native(join(r.lab.work, "portal-continue"));
-
-      const claudeId = "4f1d2c3b-5a69-4e7d-8c0b-1a2b3c4d5e6f";
-      const ended = await runOf(r, task.id, "claude", claudeId);
-      expect(await r.lab.running.runs.ended(r.lab.spaceId, ended)).toMatchObject({
-        state: "succeeded",
+      const homes = tempRoot("continue-homes");
+      cleanups.push(homes.cleanup);
+      const claudeHome = join(homes.root, "claude-home");
+      mkdirSync(claudeHome);
+      const r = await rig("continue", 0, {
+        instances: [
+          // Its agent stays open until the test ends, as a person's terminal does.
+          { id: "claude-a", config_home: claudeHome, env: { FAKE_CLI_HOLD_MS: "200000" } },
+        ],
       });
+      const { spaceId } = r.lab;
+      const platform = process.platform;
+      const task = await addTask(r, "Look into the export", "portal-continue");
+      const stored = task.folder ?? "";
+      const folder = realpathSync.native(join(r.lab.work, "portal-continue"));
+      const found = await r.lab.running.launches.runFolder(spaceId, {
+        kind: "task",
+        path: stored,
+        owner: task.id,
+      });
+      if (!("identity" in found)) throw new Error("the task's folder did not resolve");
+      const claude = {
+        folder_id: found.identity,
+        home: homeDigest(platform, await physicalHome(platform, claudeHome)),
+      };
+      const codex = {
+        folder_id: found.identity,
+        home: homeDigest(platform, await physicalHome(platform, r.codexHome)),
+      };
+      const runs = r.lab.running.runs;
+      const stateOf = async (id: string) => (await runs.read(spaceId, id))?.state;
+
+      // Nothing is stopped for a Continue that cannot open: another task's run, a run without a
+      // conversation, and a run whose instance now runs in another home are refused while they
+      // still work. One task runs one run at a time: each is stopped before the next starts.
+      const other = await addTask(r, "Another task");
+      const cases = [
+        [other.id, randomUUID(), claude, { code: "not_found", reason: undefined }],
+        [task.id, null, claude, { code: "invalid_input", reason: "conversation" }],
+        [
+          task.id,
+          randomUUID(),
+          { ...claude, home: "0".repeat(64) },
+          { code: "invalid_input", reason: "home" },
+        ],
+      ] as const;
+      for (const [owner, conversationId, recorded, refusal] of cases) {
+        const working = await runOf(r, owner, "claude-a", conversationId, recorded, true);
+        expect(await refusedFor(r, { task: task.ref, run: working })).toEqual(refusal);
+        expect(await stateOf(working)).toBe("running");
+        await runs.stop(spaceId, working);
+        await runs.ended(spaceId, working);
+      }
+      // Words go in the agent app.
+      const first = randomUUID();
+      const ended = await runOf(r, task.id, "claude-a", first, claude);
+      expect(await refusedFor(r, { task: task.ref, run: ended, text: "Go on." })).toMatchObject({
+        code: "invalid_input",
+      });
+
+      // The run's conversation opens in its folder, with the launch's own ticket.
       const { result } = await open(r, { task: task.ref, run: ended });
-      expect(result.launch).toMatchObject({ route: "terminal", instance: "claude" });
+      expect(result.launch).toMatchObject({ route: "terminal", instance: "claude-a" });
       expect(result.text).toBe("none");
-      const report = await reportAt(r.report("claude"));
-      expect(report.argv).toEqual(["--resume", claudeId, "--permission-mode", "bypassPermissions"]);
+      const report = await reportAt(r.report("claude-a"));
+      expect(report.argv).toEqual(["--resume", first]);
       const id = statSync(folder, { bigint: true });
       expect(report.cwdId).toBe(`${id.dev.toString()}:${id.ino.toString()}`);
-      // The session binds as an Open's does: by the launch's ticket, and its conversation is the run's.
-      expect(report.envNames).toContain(envVar("TICKET"));
       const confirmed = await r.lab.waitIntent(
         result.launch.id,
-        (i) => i.state === "confirmed",
+        (i) => i.state === "confirmed" && i.evidence.pid !== undefined,
         "Confirmed",
       );
-      expect(confirmed.evidence.preset).toBe(claudeId);
+      expect(confirmed.evidence).toMatchObject({ preset: first, resumes: first });
+      // What the resumed session writes is its own, not the run's.
+      const world = {
+        service: r.lab.running,
+        home: r.lab.home,
+        path: r.lab.running.endpoint.path,
+      };
+      const sh = await shell(world, {
+        [envVar("TICKET")]: r.lab.tickets.get(result.launch.id) ?? "",
+      });
+      const note = { task: task.id, text: "Went on with it.", request_id: rid() };
+      await sh.call("entry.add", note, { space: spaceId });
+      await sh.close();
+      expect((await written(world, spaceId, note.request_id)).map((w) => w.scope)).toEqual([
+        `session:se_${result.launch.id.slice("la_".length)}`,
+      ]);
 
+      // While it is open, Continue of the same conversation is that session, also as "another";
+      // another run's conversation opens beside it.
+      const again = await open(r, { task: task.ref, run: ended, another: true });
+      expect(again.result.launch.id).toBe(result.launch.id);
+      rmSync(r.report("claude-a"));
+      const second = randomUUID();
+      const next = await runOf(r, task.id, "claude-a", second, claude);
+      const beside = await open(r, { task: task.ref, run: next });
+      expect(beside.result.launch.id).not.toBe(result.launch.id);
+      expect((await reportAt(r.report("claude-a"))).argv).toEqual(["--resume", second]);
+
+      // A working Codex run is stopped and ended before its conversation opens.
       const codexId = "019a3f2c-7c41-7d20-9b6e-3f1c2a4b5d6e";
-      const working = await runOf(r, task.id, "codex", codexId, true);
-      await waitFor(
-        async () =>
-          (await r.lab.running.runs.read(r.lab.spaceId, working))?.state === "running"
-            ? true
-            : undefined,
-        LONG_MS,
-        "the run works",
-      );
-      const second = await open(r, { task: task.ref, instance: "codex", run: working });
-      // The answer comes once nothing of the run runs: it was stopped, never two writers.
-      expect((await r.lab.running.runs.read(r.lab.spaceId, working))?.state).toBe("cancelled");
-      const codex = await reportAt(r.report("codex"));
-      expect(codex.argv).toEqual([
+      const working = await runOf(r, task.id, "codex", codexId, codex, true);
+      const stopped = await open(r, { task: task.ref, instance: "codex", run: working });
+      expect(await stateOf(working)).toBe("cancelled");
+      expect((await reportAt(r.report("codex"))).argv).toEqual([
         "resume",
         codexId,
         "-C",
@@ -1607,27 +1703,29 @@ describe("[A4.5.routes.continue] Continue opens a background run's own conversat
         "--dangerously-bypass-approvals-and-sandbox",
       ]);
       const codexLaunch = await r.lab.waitIntent(
-        second.result.launch.id,
+        stopped.result.launch.id,
         (i) => i.state === "confirmed",
         "Confirmed",
       );
-      expect(codexLaunch.evidence.thread).toBe(codexId);
+      expect(codexLaunch.evidence).toMatchObject({ thread: codexId, resumes: codexId });
 
-      // A run whose agent never said its conversation, or another task's run, opens nothing.
-      const none = await runOf(r, task.id, "claude", null);
-      await r.lab.running.runs.ended(r.lab.spaceId, none);
-      const other = await addTask(r, "Another task");
-      for (const [asked, code] of [
-        [{ task: task.ref, run: none }, "invalid_input"],
-        [{ task: other.ref, run: ended }, "not_found"],
-        [{ task: task.ref, run: ended, text: "Go on." }, "invalid_input"],
-      ] as const) {
-        const refused = await open(r, asked).then(
-          () => undefined,
-          (error: unknown) => errorOf(error),
-        );
-        expect(refused?.code).toBe(code);
-      }
+      // A task whose folder is another one now than the run's opens nothing there.
+      mkdirSync(join(r.lab.work, "portal-elsewhere"));
+      const seen = (await r.user.call(
+        "op/call",
+        { space: spaceId, op: "task.get", input: { task: task.ref } },
+        { timeoutMs: 60_000 },
+      )) as { as_of: string };
+      await write(r, "folder.manage", {
+        action: "set",
+        task: task.ref,
+        folder: join(r.lab.work, "portal-elsewhere"),
+        base: seen.as_of,
+      });
+      const third = await runOf(r, task.id, "claude-a", randomUUID(), claude);
+      expect(await refusedFor(r, { task: task.ref, run: third })).toMatchObject({
+        reason: "folder_moved",
+      });
     },
   );
 });

@@ -141,6 +141,20 @@ export function RunBody({ run, label, onStop, onContinue }: RunBodyProps) {
             {t("run.stop")}
           </button>
         ) : null}
+        {/* A run that may still work offers its two ways out together, whatever it said below. */}
+        {view.continues === "after_stop" && onContinue !== undefined ? (
+          <button
+            type="button"
+            className={styles.stop}
+            data-part="run-continue"
+            aria-label={t("run.stopAndContinueLabel", { label })}
+            onClick={() => {
+              onContinue(run);
+            }}
+          >
+            {t("run.stopAndContinue")}
+          </button>
+        ) : null}
         {view.quiet === undefined ? null : (
           <span data-part="run-quiet">{sayMsg(t, view.quiet)}</span>
         )}
@@ -167,22 +181,19 @@ export function RunBody({ run, label, onStop, onContinue }: RunBodyProps) {
           {said.cut ? <p className={styles.asked}>{t("run.cut")}</p> : null}
         </>
       )}
-      {view.continues === undefined || onContinue === undefined ? null : (
+      {view.continues === "now" && onContinue !== undefined ? (
         <button
           type="button"
           className={styles.again}
           data-part="run-continue"
-          aria-label={t(
-            view.continues === "now" ? "run.continueLabel" : "run.stopAndContinueLabel",
-            { label },
-          )}
+          aria-label={t("run.continueLabel", { label })}
           onClick={() => {
             onContinue(run);
           }}
         >
-          {t(view.continues === "now" ? "run.continue" : "run.stopAndContinue")}
+          {t("run.continue")}
         </button>
-      )}
+      ) : null}
     </div>
   );
 }

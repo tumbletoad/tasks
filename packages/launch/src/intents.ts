@@ -268,6 +268,11 @@ export const EVIDENCE_FIELDS = {
    * codes (`read-only`, `home`) joined by `.`. Known at Prepared, so every later answer says it.
    */
   left_out: "id",
+  /**
+   * Continue: the agent app's own conversation the launch opens again, a background run's. A click
+   * joins a launch still opening only when both continue the same conversation, or neither does.
+   */
+  resumes: "id",
 } as const satisfies Record<string, EvidenceKind>;
 
 export type EvidenceKey = keyof typeof EVIDENCE_FIELDS;

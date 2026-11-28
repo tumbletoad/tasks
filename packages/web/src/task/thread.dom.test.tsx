@@ -606,7 +606,7 @@ describe("[M6.page.run-continue] a run that holds its agent's conversation offer
   };
   const buttons = () => [...host.querySelectorAll<HTMLElement>("[data-part='run-continue']")];
 
-  test("an ended run's Continue opens it in the run's instance; a working one says it stops first", () => {
+  test("an ended run's Continue opens it in the run's instance; a working one offers Stop and continue beside Stop", () => {
     const pressed: [string, string][] = [];
     draw([run({ resumable: true })], (r, instance) => pressed.push([r.id, instance.key]));
     expect(buttons().map((b) => b.textContent)).toEqual(["Continue"]);
@@ -618,8 +618,24 @@ describe("[M6.page.run-continue] a run that holds its agent's conversation offer
     });
     expect(pressed).toEqual([["ru_00r5mfcw5rfzxb9enb2vg50z3g", "claude"]]);
 
-    draw([run({ state: "running", ended_at: null, resumable: true })], () => undefined);
+    // A run that may still work: its two ways out stand together on its state's line.
+    draw(
+      [
+        run({
+          state: "running",
+          ended_at: null,
+          resumable: true,
+          answer: "Long work. ".repeat(400),
+        }),
+      ],
+      () => undefined,
+    );
     expect(buttons().map((b) => b.textContent)).toEqual(["Stop and continue"]);
+    const line = buttons()[0]?.closest("[data-part='run-state']");
+    expect([...(line?.querySelectorAll("button") ?? [])].map((b) => b.dataset["part"])).toEqual([
+      "run-stop",
+      "run-continue",
+    ]);
   });
 
   test("a run without its agent's conversation, or of an instance this machine no longer has, offers none", () => {

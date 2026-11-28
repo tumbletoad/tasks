@@ -66,7 +66,7 @@ export function runPermission(instance: Instance): RunPermission {
 
 /** The folder a run of a task uses, as Open would, or why it has none here. */
 export type RunFolder =
-  | { readonly ok: true; readonly path: string }
+  | { readonly ok: true; readonly path: string; readonly identity: string }
   | { readonly ok: false; readonly reason: "other_machine"; readonly machine: string }
   | {
       readonly ok: false;
@@ -89,12 +89,25 @@ export async function runFolder(
     return { ok: false, reason: "other_machine", machine: folder.machine };
   }
   const found = await agents.folder(space, folder);
-  if ("path" in found) return { ok: true, path: found.path };
+  if ("path" in found) return { ok: true, path: found.path, identity: found.identity };
   return {
     ok: false,
     reason: found.refused,
     ...(found.folder === undefined ? {} : { folder: found.folder }),
   };
+}
+
+/**
+ * The digest of the agent home an instance runs in now (`homeDigest`), as a run records it: a
+ * run's conversation is kept in that home. Undefined for an instance with no home TTasks knows.
+ */
+export async function homeEvidence(
+  instance: Instance,
+  account: string | undefined,
+  platform: NodeJS.Platform,
+): Promise<string | undefined> {
+  const home = instanceHome(instance, account, platform)?.path;
+  return home === undefined ? undefined : homeDigest(platform, await physicalHome(platform, home));
 }
 
 /** The CLI verb that reads a task, for the brief: `ttasks show`. */
@@ -228,12 +241,10 @@ export async function buildRun(
   );
   if (!program.ok) return "spawn_failed";
   const request = runBrief(task.ref, task.title, run.request, await readReplied(reader, run.id));
-  // The home the app keeps the run's session in, as the link to the monitor's agents reads it.
-  const home = instanceHome(instance, agents.home, agents.platform)?.path;
-  const evidence =
-    home === undefined
-      ? {}
-      : { home: homeDigest(agents.platform, await physicalHome(agents.platform, home)) };
+  // The home the app keeps the run's session in, as the link to the monitor's agents and Continue
+  // read it, and the folder it works in, which Continue opens again: never its path.
+  const home = await homeEvidence(instance, agents.home, agents.platform);
+  const evidence = { ...(home === undefined ? {} : { home }), folder_id: folder.identity };
   const tools = (app: string) => ({
     command: command[0] ?? "",
     args: [...command.slice(1), "mcp", "--space", space, "--instance", instance.id, "--app", app],

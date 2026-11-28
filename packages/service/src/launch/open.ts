@@ -5,7 +5,6 @@
 import { join } from "node:path";
 import { CLI_NAME, envVar, MCP_SERVER_KEY } from "@ttasks/brand";
 import { cliFaces, findEntry } from "@ttasks/contracts";
-import type { RunAdapterId } from "@ttasks/contracts/runs";
 import {
   instanceHome,
   isBuiltInTarget,
@@ -202,11 +201,11 @@ export interface OpenTaskRequest {
    */
   readonly another?: boolean;
   /**
-   * Continue: the instance's terminal opens the agent's own conversation of a background run that
-   * ended, by its ID, in place of a new one with a brief. `adapter` is the run's: an instance that
-   * now names another app has no such conversation.
+   * Continue: this background run's own conversation opens again in its instance's terminal, in
+   * the folder it worked in, in place of a new one with a brief. A run that may still work is
+   * stopped first, once every check passed.
    */
-  readonly resume?: { readonly id: string; readonly adapter: RunAdapterId };
+  readonly continues?: string;
 }
 
 /** What the context pack takes of the task (A4 3.15.5); the launch adds its reference and folder. */

@@ -1994,7 +1994,7 @@
     },
     {
       "id": "A4.5.routes.continue",
-      "title": "Continue through the service with a real shim and a fake Claude Code and Codex: an ended run's own conversation opens in its instance's terminal with the app's resume command, the instance's permission and no brief, in the task's folder with the launch's ticket, and the launch records the conversation; a run that works is stopped and ended before anything opens; a run without a conversation, another task's run and words are refused",
+      "title": "Continue through the service with a real shim and fake Claude Code and Codex: a run's own conversation opens in its instance's terminal with the app's resume command, the instance's permission and no brief, in the folder the run worked in, with the launch's ticket, and what the resumed session writes is its own; a conversation already open is that session, also as another, and another run's opens beside it; a working run is stopped and ended before anything opens; another task's run, one without a conversation and one whose instance now uses another home are refused without being stopped, and a task whose folder is another one now opens nothing",
       "source": "A4 3.4.2, A4 3.4.3, A4 3.11",
       "owner": "M6",
       "kind": "ci",
@@ -2766,7 +2766,7 @@
     },
     {
       "id": "M6.page.run-continue",
-      "title": "A run that holds its agent's conversation offers Continue, which opens it in the run's instance: a run that may still work offers Stop and continue; one with no conversation, and one whose instance this machine no longer has, offer none",
+      "title": "A run the service says can continue offers Continue under what it said, which opens it in the run's instance; a run that may still work offers Stop and continue beside its Stop; one with no conversation, and one whose instance this machine no longer has, offer none",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

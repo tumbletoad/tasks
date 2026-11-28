@@ -187,6 +187,7 @@ describe("[M6.page.run-view] the page's view of a run", () => {
       list: () => Promise.resolve([]),
       stop: () => Promise.resolve(undefined),
       live: () => ({}),
+      continuable: () => Promise.resolve({ ok: false }),
     };
     const launches = new UiLaunches({
       host: {
@@ -279,6 +280,7 @@ describe("[M6.page.run-view] the page's view of a run", () => {
         list: () => Promise.resolve(listed.map((run) => ({ run }))),
         stop: () => Promise.resolve(undefined),
         live: () => ({}),
+        continuable: () => Promise.resolve({ ok: false }),
       },
       log: () => undefined,
       changed: () => undefined,
@@ -349,6 +351,7 @@ describe("[A5.agents.run-nudge] a run a person queues or stops anywhere reaches 
         list: () => Promise.resolve([]),
         stop: () => Promise.resolve(undefined),
         live: () => ({}),
+        continuable: () => Promise.resolve({ ok: false }),
         onChange: (heard) => {
           listener = heard;
           return () => {

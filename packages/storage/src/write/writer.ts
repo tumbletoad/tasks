@@ -1462,7 +1462,10 @@ export class SpaceWriter {
      */
     const boundOwners = new Set<string>();
     const clearedPlaces = new Set<string>();
-    /** Launches that earlier operations create, by task and instance, and their references. */
+    /**
+     * Launches that earlier operations create, by task, instance and the conversation they
+     * continue, and their references.
+     */
     const draftLaunches = new Map<string, Id<"la">>();
     /** Runs that earlier operations create. */
     const draftRuns = new Set<Id<"ru">>();
@@ -2314,11 +2317,16 @@ export class SpaceWriter {
           }
           const record = { task: parent, ...inputOf(op, "task") };
           // A second click on the same task and instance while an intent of it is still opening
-          // gets that intent, in this request or before it.
-          const key = `${parent}|${op.instance}`;
+          // gets that intent, in this request or before it, when both continue the same agent
+          // conversation or neither does.
+          const given = op.evidence?.["resumes"];
+          const resumes = typeof given === "string" ? given : null;
+          const key = `${parent}|${op.instance}|${String(resumes)}`;
           const found = drafts.has(parent)
             ? undefined
-            : conn.prepare(LAUNCH_SQL.focus).get({ task: parent, instance: op.instance, machine });
+            : conn
+                .prepare(LAUNCH_SQL.focus)
+                .get({ task: parent, instance: op.instance, machine, resumes });
           const focus =
             draftLaunches.get(key) ??
             (found === undefined ? undefined : new RowReader("launches", found).id("id", "la"));
