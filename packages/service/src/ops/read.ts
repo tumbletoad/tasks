@@ -1006,18 +1006,21 @@ export async function readAgentSessions(
   return { space: facts, rows };
 }
 
-/** How many of a machine's newest T3 launches are looked at for their tasks' threads. */
+/** How many of a machine's newest T3 launches the space's list looks at, for the Agents page. */
 const T3_LOOKED_AT = 20;
 
-const T3_THREADS: Statement = {
-  sql:
-    "SELECT l.id, l.task_id, l.instance_id, l.detail, t.ref AS task_ref FROM launches l " +
-    "JOIN tasks t ON t.id = l.task_id " +
-    "JOIN space s ON s.one = 1 AND l.created_seq >= s.authority_since " +
-    "WHERE l.machine_id = $machine AND l.route = 't3-mcp' AND l.state = 'confirmed' " +
-    "AND ($task IS NULL OR l.task_id = $task) " +
-    "AND json_extract(l.detail, '$.evidence.lost_at') IS NULL " +
-    `ORDER BY l.created_at DESC, l.id DESC LIMIT ${String(T3_LOOKED_AT)}`,
+const T3_LAUNCHES =
+  "SELECT l.id, l.task_id, l.instance_id, l.detail, t.ref AS task_ref FROM launches l " +
+  "JOIN tasks t ON t.id = l.task_id " +
+  "JOIN space s ON s.one = 1 AND l.created_seq >= s.authority_since " +
+  "WHERE l.machine_id = $machine AND l.route = 't3-mcp' AND l.state = 'confirmed' " +
+  "AND json_extract(l.detail, '$.evidence.lost_at') IS NULL ";
+const T3_THREADS_OF_TASK: Statement = {
+  sql: `${T3_LAUNCHES}AND l.task_id = $task ORDER BY l.created_at DESC, l.id DESC`,
+  mode: "all",
+};
+const T3_THREADS_NEWEST: Statement = {
+  sql: `${T3_LAUNCHES}ORDER BY l.created_at DESC, l.id DESC LIMIT ${String(T3_LOOKED_AT)}`,
   mode: "all",
 };
 
@@ -1032,18 +1035,19 @@ export interface T3ThreadRow {
 }
 
 /**
- * The T3 threads of `machine`'s launches, of one task or of the space's newest ones: per task and
- * instance the newest Confirmed launch, unless the service found its thread gone. A launch from
- * before the space's last claim or restore is history and holds none.
+ * The T3 threads of `machine`'s launches, of one task (all of them) or among the space's newest
+ * launches: per task and instance the newest Confirmed launch, unless the service found its thread
+ * gone. A launch from before the space's last claim or restore is history and holds none.
  */
 export async function readT3Threads(
   reader: WorkerConnection,
   query: { readonly machine: string; readonly task?: string },
 ): Promise<T3ThreadRow[]> {
-  const [space, rows] = await snapshot(reader, [SPACE, T3_THREADS], {
-    machine: query.machine,
-    task: query.task ?? null,
-  });
+  const [space, rows] = await snapshot(
+    reader,
+    [SPACE, query.task === undefined ? T3_THREADS_NEWEST : T3_THREADS_OF_TASK],
+    { machine: query.machine, task: query.task ?? null },
+  );
   const facts = spaceFacts(space);
   const seen = new Set<string>();
   const out: T3ThreadRow[] = [];
