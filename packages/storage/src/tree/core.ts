@@ -94,7 +94,7 @@ export interface TreeResult {
   commit?: Id<"op">;
   /** What the command did, as it said: stored with the receipt and returned on a retry. */
   result?: unknown;
-  error?: { code: string; message: string; field?: string; data?: unknown };
+  error?: { code: string; message: string; field?: string; at?: number; data?: unknown };
   conflicts?: TreeConflict[];
   /** What the caller found before the writer, said with an accepted result and replayed. */
   warnings?: string[];
@@ -417,8 +417,8 @@ export class TreeWriter {
           code: "REQUEST_ID_REUSED",
           message: "This request ID was used for another change: review it, then use a new ID",
           field: "request_id",
-          // When the first use was decided, so the caller can find it.
-          data: { at: prior["at"] },
+          // When the first use was decided, so the caller can find it, as today's writer says it.
+          at: Number(prior["at"]),
         },
       });
     }

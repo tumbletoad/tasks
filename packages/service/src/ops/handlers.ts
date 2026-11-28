@@ -123,7 +123,6 @@ import { HERE_ROWS, hereOf, hereRows, type Here, type Match } from "./here.ts";
 import {
   checkFolder,
   deepestProject,
-  folderState,
   expanded,
   folderName,
   folderRefused,
@@ -215,7 +214,9 @@ import {
 import { readFinished } from "./task-rows.ts";
 import { readChangeTasks, readTrash } from "./trash.ts";
 import { readActivity } from "./activity.ts";
-import { isTree, treeEntry, type TreeCall } from "./tree.ts";
+import { digestFolderOf } from "./digest-folder.ts";
+import { isTree, type TreeCall } from "./tree.ts";
+import { treeEntry } from "./tree-entries.ts";
 import { trailOff } from "../trial.ts";
 import {
   holderName,
@@ -1565,28 +1566,8 @@ async function hereFor(
  * Where a task opens on this machine, for the digest: its folder, whether it is there now and the
  * repository it holds.
  */
-async function digestFolder(call: Call, folder: TaskFolder): Promise<DigestFolder | undefined> {
-  switch (folder.kind) {
-    case "task":
-    case "project": {
-      const platform = call.host.platform ?? process.platform;
-      const state = await folderState(folder.path, call.host.home, platform);
-      const open = openPath(folder.path, call.host.home, platform);
-      const repo =
-        state === "missing" || open === undefined ? undefined : await repoName(open, platform);
-      return {
-        path: folder.path,
-        of: folder.kind,
-        ...(state === "missing" ? { missing: true } : {}),
-        ...(repo === undefined ? {} : { repo }),
-      };
-    }
-    case "other_machine":
-      return { machine: folder.machine };
-    case "none":
-      return undefined;
-  }
-}
+const digestFolder = (call: Call, folder: TaskFolder): Promise<DigestFolder | undefined> =>
+  digestFolderOf(call.host, folder);
 
 function due(value: unknown, today: string, path: string): { date: string } | undefined {
   if (typeof value !== "string") return undefined;

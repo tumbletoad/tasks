@@ -29,6 +29,8 @@ export interface TreeSpace {
 export interface TreeCall {
   readonly host: {
     readonly machine: { readonly id: string };
+    readonly platform?: NodeJS.Platform;
+    readonly home?: string;
     readonly homes?: HomeGate;
     readonly sessions?: SessionPort;
   };
@@ -40,29 +42,19 @@ export interface TreeCall {
   readonly today: string;
 }
 
-type TreeEntry = (call: TreeCall) => Promise<unknown>;
+export type TreeEntry = (call: TreeCall) => Promise<unknown>;
 
 /** Whether a space is served by a tree's writer. */
 export const isTree = (space: Pick<TreeSpace, "writer">): boolean =>
   space.writer?.backend === "tree";
 
-/** The entries moved to the tree, by name. */
-const TREE_ENTRIES: Readonly<Record<string, TreeEntry>> = {};
-
-/** The entry's tree handler, or a refusal: its family has not moved to the tree yet. */
-export function treeEntry(name: string): TreeEntry {
-  return (
-    TREE_ENTRIES[name] ??
-    (() =>
-      Promise.reject(
-        new AppError({
-          code: "op_unknown",
-          message: "This operation does not work on a tree space yet.",
-          hint: "Use a space made before the tree, or wait for the step that moves it.",
-        }),
-      ))
-  );
-}
+/** The refusal of a field or a form whose family has not moved to the tree yet. */
+export const notOnTreeYet = (what: string): AppError =>
+  new AppError({
+    code: "op_unknown",
+    message: `${what} does not work on a tree space yet.`,
+    hint: "Use a space made before the tree, or wait for the step that moves it.",
+  });
 
 /** The space's reader, while it is served. */
 export function treeReader(call: TreeCall): WorkerConnection {

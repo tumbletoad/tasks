@@ -414,7 +414,9 @@ const taskReopen: Run = (tx, input) => {
     },
     wrap: { wrap_state: null },
   });
-  return { task: { id, ref: refText(tx, task["ref"]), lifecycle: "active", status: task["status"] } };
+  return {
+    task: { id, ref: refText(tx, task["ref"]), lifecycle: "active", status: task["status"] },
+  };
 };
 
 const nodesTrash: Run = (tx, input) => {

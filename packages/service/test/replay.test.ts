@@ -22,7 +22,7 @@ beforeAll(async () => {
   const checked = await CheckedDriver.check(await loadDriver(DEFAULT_DRIVER));
   const folder = join(w.root, "s", "tree");
   createSpace(checked, folder, {
-    name: "Mira tree",
+    name: "Mira",
     refPrefix: "T",
     machineId: w.service.ops.machine.id as `m_${string}`,
     ownerLabel: "user",
@@ -51,6 +51,8 @@ interface Step {
   as?: string;
   user?: true;
   base?: true;
+  /** A stale base: the as_of after that earlier step (1 is the first). */
+  baseFrom?: number;
   /** The request ID of an earlier step, sent again as a client whose reply was lost does. */
   again?: number;
 }
@@ -61,7 +63,14 @@ interface Session {
   asOf: string | undefined;
   ids: Map<string, string>;
   sent: string[];
+  /** The as_of after each step. */
+  after: (string | undefined)[];
+  /** This sequence's run in its space: request IDs are a space's, across sequences. */
+  run: number;
 }
+
+/** How many sequences each space has run. */
+const runs = new Map<string, number>();
 
 /** Each space's own IDs, references and times, as tokens in order of first appearance. */
 function normal(value: unknown, s: Session): unknown {
@@ -80,7 +89,10 @@ function normal(value: unknown, s: Session): unknown {
   }
   if (Array.isArray(value)) return value.map((v) => normal(v, s));
   if (typeof value === "object" && value !== null) {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, normal(v, s)]));
+    // A version is a seq of its space's own commits.
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, k === "version" ? "<version>" : normal(v, s)]),
+    );
   }
   return value;
 }
@@ -96,7 +108,8 @@ const filled = (value: unknown, s: Session): unknown => {
   return value;
 };
 
-type Sent = { ok: Record<string, unknown>; error?: undefined } | { ok?: undefined; error: ErrorBody };
+type Sent =
+  { ok: Record<string, unknown>; error?: undefined } | { ok?: undefined; error: ErrorBody };
 
 async function send(
   s: Session,
@@ -123,22 +136,37 @@ const refIn = (answer: unknown): string | undefined =>
 /** One backend: the steps sent to its space, and the tasks they named read after each. */
 const backend = (space: () => string): Side<Step, Session> => ({
   open: () =>
-    Promise.resolve({ space: space(), names: new Map(), asOf: undefined, ids: new Map(), sent: [] }),
+    Promise.resolve({
+      space: space(),
+      names: new Map(),
+      asOf: undefined,
+      ids: new Map(),
+      sent: [],
+      after: [],
+      run: (() => {
+        const n = (runs.get(space()) ?? 0) + 1;
+        runs.set(space(), n);
+        return n;
+      })(),
+    }),
   step: async (s, step) => {
     const id =
       step.again === undefined
-        ? `replay-request-${String(s.sent.length + 1).padStart(6, "0")}`
+        ? `replay-${String(s.run)}-request-${String(s.sent.length + 1).padStart(6, "0")}`
         : (s.sent[step.again - 1] ?? "");
     s.sent.push(id);
     const input = {
       ...(filled(step.input, s) as Record<string, unknown>),
       ...(step.op === "task.get" ? {} : { request_id: id }),
       ...(step.base === true && s.asOf !== undefined ? { base: s.asOf } : {}),
+      ...(step.baseFrom === undefined ? {} : { base: s.after[step.baseFrom - 1] }),
     };
     const got = await send(s, step.op, input, step.user === true ? USER : AGENT);
+    s.after.push(undefined);
     if (got.ok !== undefined) {
       const asOf = (got.ok as { as_of?: unknown }).as_of;
       if (typeof asOf === "string") s.asOf = asOf;
+      s.after[s.after.length - 1] = s.asOf;
       const ref = refIn(got.ok);
       if (step.as !== undefined && ref !== undefined) s.names.set(step.as, ref);
       return { status: "ok", said: normal(got.ok, s) };
@@ -168,10 +196,69 @@ const TASKS: Sequence<Step> = [
     input: { task: "{passport}", set: { title: "Renew both passports", priority: 2 } },
     base: true,
   },
-  { op: "task.add", input: { tasks: [{ title: "Book the van", summary: "Before the move" }] }, as: "van" },
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "Book the van", summary: "Before the move" }] },
+    as: "van",
+  },
   { op: "task.finish", input: { task: "{van}", outcome: "Booked for Monday" }, base: true },
   { op: "task.reopen", input: { task: "{van}" }, base: true, user: true },
   { op: "task.delete", input: { tasks: ["{passport}"] }, base: true, user: true },
+];
+
+const ticket = (key: string) => ({ key, kind: "ticket", title: "Fixture ticket" });
+
+/** Captures, a lost reply after a rename, a request ID reused, a stale base and repeats. */
+const AGAIN: Sequence<Step> = [
+  {
+    op: "task.add",
+    input: {
+      tasks: [{ title: "Keyed before", sources: [ticket("fixture:meanwhile-1")], log: "Asked" }],
+    },
+    as: "keyed",
+  },
+  {
+    op: "task.add",
+    input: {
+      tasks: [{ title: "Keyed again", sources: [ticket("fixture:meanwhile-1")], log: "Asked" }],
+    },
+  },
+  {
+    op: "task.update",
+    input: { task: "{keyed}", set: { title: "Keyed and renamed" } },
+    base: true,
+  },
+  {
+    step: {
+      op: "task.add",
+      input: {
+        tasks: [{ title: "Keyed again", sources: [ticket("fixture:meanwhile-1")], log: "Asked" }],
+      },
+      again: 2,
+    },
+    differs: "a retry: today answers with the title now, the tree with what the write did (C-3)",
+  },
+  { op: "task.add", input: { tasks: [{ title: "Second under its ID" }] }, again: 1 },
+  {
+    op: "task.update",
+    input: { task: "{keyed}", set: { title: "From a stale read" } },
+    baseFrom: 1,
+  },
+  { op: "task.update", input: { task: "{keyed}", set: { priority: 1 } }, base: true },
+  { op: "task.update", input: { task: "{keyed}", set: { priority: 1 } }, base: true },
+  { op: "task.finish", input: { task: "{keyed}", outcome: "Answered" }, base: true, user: true },
+  { op: "task.finish", input: { task: "{keyed}", outcome: "Answered" }, base: true, user: true },
+  {
+    op: "task.add",
+    input: {
+      tasks: [
+        { title: "Keyed later", sources: [ticket("fixture:meanwhile-1")], log: "Asked again" },
+      ],
+    },
+  },
+  { op: "task.delete", input: { tasks: ["{keyed}"] }, base: true, user: true },
+  { op: "task.delete", input: { tasks: ["{keyed}"] }, base: true, user: true },
+  { op: "task.get", input: { task: "X-999" } },
 ];
 
 describe("[S2.replay.tasks] today's service requests through both backends: the tasks family", () => {
@@ -179,6 +266,14 @@ describe("[S2.replay.tasks] today's service requests through both backends: the 
     "add, a lost reply sent again, update, finish, reopen and the Trash, with what a reader then sees",
     async () => {
       await replay(TASKS);
+    },
+    LONG,
+  );
+
+  test(
+    "captures by source with their log, a lost reply after a rename, a request ID reused, a stale base and repeats",
+    async () => {
+      await replay(AGAIN);
     },
     LONG,
   );
