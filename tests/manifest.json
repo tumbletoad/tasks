@@ -175,6 +175,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.pages.budget",
+      "title": "An agent's write that leaves a page over 16 KB or what holds it over 12 pages says so, on each write while it stays over, never to the person and never once under; a library search in which no row holds every word, or no row at all, names scope all",
+      "source": "Step 1's trial",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.pages.trail",
       "title": "get_task's first answer lists what is known above the task, nearest first, within its budget: the request and the user's texts for agents count first, older log entries go before page rows above, every level keeps its count and read target, and the user's texts for agents stand outside the data block under an ID",
       "source": "Step 1 design, pull request 228",
@@ -192,7 +200,7 @@
     },
     {
       "id": "A3.pages.render",
-      "title": "read is sized before its cursor, so following the cursor gives a whole body in any script and every row of a node once, in order; a section read on names no stored heading; write_page's acknowledgement names the page by its reference only",
+      "title": "read is sized before its cursor, so following the cursor gives a whole body in any script and every row of a node once, in order; a section read on names no stored heading; write_page's acknowledgement names the page by its reference only, also where it says the library is over its budget; a library search that no row answers whole points to scope all",
       "source": "Step 1 design, pull request 228; review of pull request 251",
       "owner": "M4",
       "kind": "ci",

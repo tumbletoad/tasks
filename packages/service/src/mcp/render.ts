@@ -4,6 +4,7 @@
 // contract suite holds the two equal. text.ts frames stored text and fits the budget.
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import {
+  LIBRARY_BUDGET,
   LIMITS,
   findEntry,
   messageWithHint,
@@ -789,6 +790,13 @@ function searchRendered(result: Search, search: string): Rendered {
       ...(result.cursor === undefined
         ? []
         : [fixed(`Next page: ${search} with cursor "${result.cursor}" and nothing else.`)]),
+      ...(result.try_scope === undefined
+        ? []
+        : [
+            fixed(
+              `No page or lesson holds every word: scope "${result.try_scope}" also searches finished tasks' logs and outcomes.`,
+            ),
+          ]),
     ],
     more: `Call ${search} again with a smaller limit.`,
   };
@@ -1287,8 +1295,19 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
       };
     }
     const word = result.result === "no_change" ? "no change" : result.result;
+    const over = result.over ?? [];
     return {
-      parts: [fixed(`${word} ${result.target} · as_of ${result.as_of}${replayed(result)}`)],
+      parts: [
+        fixed(
+          `${word} ${result.target} · as_of ${result.as_of}${replayed(result)}`,
+          over.includes("page")
+            ? `${result.target} is over ${String(LIBRARY_BUDGET.pageBytes / 1024)} KB: split it by subject into pages a reader takes in at once.`
+            : undefined,
+          over.includes("holder")
+            ? `What holds ${result.target} has over ${String(LIBRARY_BUDGET.nodePages)} pages: merge pages that cover one subject, or move a page up a level when a second project needs it.`
+            : undefined,
+        ),
+      ],
       more: "",
     };
   },

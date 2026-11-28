@@ -20,6 +20,13 @@ export const PAGE_LIMITS = {
   agent: { title: 200, brief: 160, body: 8_000, words: 4_000, why: 200 },
 } as const;
 
+/**
+ * Where a library starts to cost its readers: a page a reader cannot take in at once, a node whose
+ * list no longer shows what it holds. An agent's write that leaves either over is told so; nothing
+ * is refused.
+ */
+export const LIBRARY_BUDGET = { pageBytes: 16_384, nodePages: 12 } as const;
+
 /** The most rows of one list in one answer: a longer list pages with its cursor. */
 export const PAGE_LIST = 25;
 /** The characters of a page an unapplied edit shows: the rest is read with its cursor. */

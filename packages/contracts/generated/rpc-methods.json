@@ -3252,6 +3252,19 @@
             "description": "What holds the page now, by name",
             "type": "string"
           },
+          "over": {
+            "description": "An agent's write: the page is over 16 KB, or what holds it has over 12 pages",
+            "items": {
+              "enum": [
+                "page",
+                "holder"
+              ],
+              "type": "string"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "type": "array"
+          },
           "replayed": {
             "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
@@ -9516,6 +9529,11 @@
               }
             ],
             "description": "Matches: exact up to 10,000"
+          },
+          "try_scope": {
+            "const": "all",
+            "description": "library: no row holds every word; all also searches finished tasks' logs",
+            "type": "string"
           }
         },
         "required": [

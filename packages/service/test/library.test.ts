@@ -4,7 +4,8 @@
 // pages, with its filters applied before the limit and the bound task's trail first; complete_task
 // keeps the pages a session updated with its outcome, refuses one the space does not show and tells
 // an agent that named none; a page in the Trash is not read as live; the feed's snapshot carries
-// the pages. Fixture text only.
+// the pages. An agent's write that leaves a page or what holds it over the library's budget says
+// so, and a library search that no page answers whole points to scope all. Fixture text only.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, TaskGetResult } from "@ttasks/contracts";
 import { readSnapshot } from "../src/http/feed.ts";
@@ -259,5 +260,87 @@ describe("[A3.pages.service] the library through the request path", () => {
     expect(await refused("page.read", { target: visa })).toBe("not_found");
     const history = await call("page.history", { target: visa }, USER);
     expect((history["versions"] as Json[]).length).toBeGreaterThan(0);
+  });
+});
+
+describe("[A3.pages.budget] an agent's write and search say how to keep the library", () => {
+  let asOf = "";
+  // A set writes from the as_of the last write gave.
+  const write = async (input: Json, caller: Caller = AGENT) => {
+    const base = input["action"] === "set" ? { base: asOf } : {};
+    const answer = await call(
+      "page.write",
+      { why: "keep the library", request_id: rid(), ...base, ...input },
+      caller,
+    );
+    asOf = String(answer["as_of"]);
+    return answer;
+  };
+  const words = (chars: number) => "word ".repeat(chars / 5);
+  let task = "";
+
+  test("a page over 16 KB is told so on each write that leaves it there, and not once under", async () => {
+    const added = await call(
+      "task.add",
+      {
+        tasks: [{ title: "Sort the receipts", area: "Home", project: "Budget" }],
+        request_id: rid(),
+      },
+      USER,
+    );
+    task = String((added["tasks"] as Json[])[0]?.["ref"]);
+    const made = await write({
+      action: "create",
+      task,
+      title: "Receipts",
+      brief: "How",
+      body: words(7_000),
+    });
+    const page = String(made["target"]);
+    expect(made["over"]).toBeUndefined();
+    for (const _ of [1, 2]) {
+      expect(
+        (await write({ action: "append", target: page, text: words(4_000) }))["over"],
+      ).toBeUndefined();
+    }
+    expect((await write({ action: "append", target: page, text: words(2_000) }))["over"]).toEqual([
+      "page",
+    ]);
+    expect((await write({ action: "set", target: page, title: "All receipts" }))["over"]).toEqual([
+      "page",
+    ]);
+    // The person in the app is never told: this is for agents.
+    expect(
+      (await write({ action: "append", target: page, text: "Done." }, USER))["over"],
+    ).toBeUndefined();
+    expect(
+      (await write({ action: "set", target: page, body: words(1_000) }))["over"],
+    ).toBeUndefined();
+  });
+
+  test("a node with more than 12 pages is told so on a write there, and not once it holds 12", async () => {
+    // The project holds Receipts already.
+    const made: string[] = [];
+    for (let i = 1; i <= 12; i += 1) {
+      const answer = await write({
+        action: "create",
+        task,
+        title: `Shop ${String(i)}`,
+        brief: "Its receipts",
+      });
+      expect(answer["over"]).toEqual(i === 12 ? ["holder"] : undefined);
+      made.push(String(answer["target"]));
+    }
+    expect((await write({ action: "trash", target: made[0] }))["over"]).toBeUndefined();
+  });
+
+  test("a library search that finds no page with every word says scope all searches finished tasks' logs", async () => {
+    const search = (q: string) => call("task.search", { q, scope: "library" });
+    expect((await search("zeppelin"))["try_scope"]).toBe("all");
+    const some = await search("receipts zeppelin");
+    expect((some["rows"] as Json[]).length).toBeGreaterThan(0);
+    expect(some["try_scope"]).toBe("all");
+    expect((await search("receipts"))["try_scope"]).toBeUndefined();
+    expect((await search("shop receipts"))["try_scope"]).toBeUndefined();
   });
 });
