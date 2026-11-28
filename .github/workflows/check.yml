@@ -1,9 +1,8 @@
 name: check
 
 # pnpm verify and the 5-minute crash run, on Linux and Windows, spread over parallel jobs so a pull
-# request has its answer in about ten minutes: the static checks, the product tests and the lab
-# tests in shards (a lab job skips when verify's rule skips the lab tests) and the crash run. Each
-# job's name is the command that repeats it locally. The job named "check" passes only when all
+# request has its answer in about ten minutes: the static checks, the product tests in shards and
+# the crash run. Each job's name is the command that repeats it locally. The job named "check" passes only when all
 # of them did: it is the one to read.
 #
 # A draft pull request runs nothing: drafts are pushed to many times a day, and a run on each push
@@ -34,15 +33,14 @@ jobs:
       fail-fast: false
       matrix:
         # Windows is about twice as slow, so it gets more shards: on windows-2025 the longest
-        # product test file takes about 3.5 minutes and the longest lab test file 4. Each job takes
-        # a runner, and the account's runners are shared by every open pull request, so a shard
-        # that would save little is not worth one.
+        # product test file takes about 3.5 minutes. Each job takes a runner, and the account's
+        # runners are shared by every open pull request, so a shard that would save little is not
+        # worth one.
         include:
           - { os: ubuntu-24.04, run: verify --part checks }
           - { os: ubuntu-24.04, run: verify --part product --shard 1/3 }
           - { os: ubuntu-24.04, run: verify --part product --shard 2/3 }
           - { os: ubuntu-24.04, run: verify --part product --shard 3/3 }
-          - { os: ubuntu-24.04, run: verify --part lab }
           # Not part of verify, whose own slice of it takes seconds; the 30-minute run is the
           # nightly workflow's.
           - { os: ubuntu-24.04, run: crash --minutes 5 }
@@ -51,19 +49,16 @@ jobs:
           - { os: windows-2025, run: verify --part product --shard 2/4 }
           - { os: windows-2025, run: verify --part product --shard 3/4 }
           - { os: windows-2025, run: verify --part product --shard 4/4 }
-          - { os: windows-2025, run: verify --part lab --shard 1/3 }
-          - { os: windows-2025, run: verify --part lab --shard 2/3 }
-          - { os: windows-2025, run: verify --part lab --shard 3/3 }
           - { os: windows-2025, run: crash --minutes 5 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # pnpm verify runs the lab tests only when lab files changed since the base
-          # (scripts/lab-tests.ts). Depth 2 holds HEAD and its parents: on a pull request the merge
-          # commit's first parent is the base branch tip. On a push the base is the commit the
-          # ref pointed at before, from the event: after a merged pull request that is HEAD's
-          # first parent. A base that is missing here makes verify run the lab tests anyway.
+          # pnpm verify gives the projection model its random runs when the projection changed
+          # since the base (scripts/verify-base.ts). Depth 2 holds HEAD and its parents: on a pull
+          # request the merge commit's first parent is the base branch tip. On a push the base is
+          # the commit the ref pointed at before, from the event: after a merged pull request that
+          # is HEAD's first parent. A base that is missing here makes verify run them anyway.
           fetch-depth: 2
 
       # pnpm comes from packageManager in package.json. pnpm install then downloads Node 26.13.1
@@ -111,7 +106,7 @@ jobs:
           persist-credentials: false
           sparse-checkout: .github/gate.sh
           sparse-checkout-cone-mode: false
-      # 15 is the number of part jobs: one added or removed without changing it fails the gate.
+      # 11 is the number of part jobs: one added or removed without changing it fails the gate.
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: bash .github/gate.sh check 15
+        run: bash .github/gate.sh check 11

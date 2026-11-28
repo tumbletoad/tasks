@@ -1,11 +1,5 @@
-// Whether `pnpm verify` runs the M0 lab self-tests (the "lab" Vitest project, spikes/).
-//
-// The product tests always run. The lab tests run when
-//   1. `--lab` is given or TTASKS_VERIFY_LAB=1 is set,
-//   2. the base cannot be determined (fail safe), or
-//   3. lab code or a file it imports changed since the base, or, in CI, also a shared file the
-//      lab tests depend on (the configuration, the verify scripts, the dependencies, the pin).
-// Otherwise verify skips them and says so in one line.
+// The base `pnpm verify` judges a change against, and the change since it: a change to the
+// projection or a package it uses gets the projection model's random runs.
 //
 // The base:
 //   - TTASKS_VERIFY_BASE, when set: any git revision. Meant for tests and for checking the rule.
@@ -20,52 +14,6 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { repoRoot } from "./run.ts";
-
-/** Folders the lab tests load: lab code, and the stand-ins the shared setup puts on PATH. */
-const LAB_FOLDERS = ["spikes/", "packages/testkit/stand-ins/"];
-
-/** Files outside spikes/ that lab code imports. */
-const LAB_IMPORTS = ["tests/stream-content.ts", "tests/stream-schema.ts"];
-
-/**
- * Files outside spikes/ that the lab tests depend on, which CI runs them for: the test
- * configuration and the setup file it runs in every worker, the verify scripts, the TypeScript
- * settings, the dependencies and Node pin, the files the packaging spike copies into a version
- * folder, and the workflows that run the lab. The lockfile is on the list because an update that
- * moves only it can change what the lab bundles, and the UI spike tests its bundle's size.
- */
-const LAB_SHARED_FILES = [
-  "vitest.config.ts",
-  "packages/testkit/src/setup.ts",
-  "scripts/verify.ts",
-  "scripts/lab-tests.ts",
-  "scripts/run.ts",
-  "scripts/manifest.ts",
-  "scripts/generated.ts",
-  "package.json",
-  "pnpm-lock.yaml",
-  "pnpm-workspace.yaml",
-  ".node-version",
-  "LICENSE",
-  "NOTICE",
-  ".github/workflows/check.yml",
-  ".github/workflows/m0-packaging.yml",
-];
-const LAB_SHARED_PATTERNS = [/^tsconfig[^/]*\.json$/];
-
-/**
- * Whether a changed path (relative to the repository root, any slash) can affect the lab tests:
- * lab code and what it imports, or with `shared` also a file the lab shares with the product.
- */
-export function isLabPath(path: string, shared = true): boolean {
-  const p = path.replaceAll("\\", "/").replace(/^\.\//, "");
-  return (
-    LAB_FOLDERS.some((folder) => p.startsWith(folder)) ||
-    LAB_IMPORTS.includes(p) ||
-    (shared &&
-      (LAB_SHARED_FILES.includes(p) || LAB_SHARED_PATTERNS.some((pattern) => pattern.test(p))))
-  );
-}
 
 /**
  * The folders whose change gets the projection model its random runs: the projection package, and
@@ -102,38 +50,29 @@ export function isProjectionPath(path: string, folders: readonly string[]): bool
 export type Base =
   { found: true; label: string; changed: readonly string[] } | { found: false; why: string };
 
-export interface LabDecision {
-  run: boolean;
-  /** One line that names the rule that applied. */
-  reason: string;
-}
-
 export type Env = Readonly<Record<string, string | undefined>>;
 
 /**
- * A slice of verify, so CI can spread it over several machines: the static checks, the product
- * tests or the lab tests. Together the parts are every step.
+ * A slice of verify, so CI can spread it over several machines: the static checks or the product
+ * tests. Together the parts are every step.
  */
-export const VERIFY_PARTS = ["checks", "product", "lab"] as const;
+export const VERIFY_PARTS = ["checks", "product"] as const;
 export type VerifyPart = (typeof VERIFY_PARTS)[number];
 
 export interface VerifyOptions {
-  lab: boolean;
   /** Null runs every part. */
   part: VerifyPart | null;
-  /** Vitest's `index/count`, for the product or lab part. */
+  /** Vitest's `index/count`, for the product part. */
   shard: string | null;
 }
 
 /** The verify options. Throws on an argument it does not know, so a typo never skips anything. */
 export function parseVerifyArgs(args: readonly string[]): VerifyOptions {
-  const options: VerifyOptions = { lab: false, part: null, shard: null };
+  const options: VerifyOptions = { part: null, shard: null };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--") continue;
-    if (arg === "--lab") {
-      options.lab = true;
-    } else if (arg === "--part") {
+    if (arg === "--part") {
       const value = args[++i] ?? "";
       const part = VERIFY_PARTS.find((p) => p === value);
       if (part === undefined) {
@@ -156,47 +95,13 @@ export function parseVerifyArgs(args: readonly string[]): VerifyOptions {
       }
       options.shard = value;
     } else {
-      throw new Error(`unknown argument ${JSON.stringify(arg)}. Use --lab, --part or --shard.`);
+      throw new Error(`unknown argument ${JSON.stringify(arg)}. Use --part or --shard.`);
     }
   }
-  if (options.shard !== null && options.part !== "product" && options.part !== "lab") {
-    throw new Error("--shard needs --part product or --part lab");
+  if (options.shard !== null && options.part !== "product") {
+    throw new Error("--shard needs --part product");
   }
   return options;
-}
-
-const MAX_LISTED = 5;
-
-/** The selection rule itself: no I/O, every input passed in. */
-export function decideLab(options: { lab: boolean }, env: Env, base: () => Base): LabDecision {
-  if (options.lab) return { run: true, reason: "lab tests run: --lab was given" };
-  if (env["TTASKS_VERIFY_LAB"] === "1") {
-    return { run: true, reason: "lab tests run: TTASKS_VERIFY_LAB=1 is set" };
-  }
-  const b = base();
-  if (!b.found) {
-    return { run: true, reason: `lab tests run: the base could not be determined (${b.why})` };
-  }
-  // Locally a shared file alone leaves them to CI, which runs them for it.
-  const ci = inCi(env);
-  const changed = [...new Set(b.changed.map((p) => p.replaceAll("\\", "/")))];
-  const lab = changed.filter((p) => isLabPath(p, ci)).sort();
-  if (lab.length === 0) {
-    const shared = ci ? 0 : changed.filter((p) => isLabPath(p)).length;
-    return {
-      run: false,
-      reason:
-        shared === 0
-          ? `lab tests skipped: no lab files changed since ${b.label}`
-          : `lab tests skipped: no lab code changed since ${b.label}; CI runs them for the ${String(shared)} shared file(s) that did`,
-    };
-  }
-  const listed = lab.slice(0, MAX_LISTED).join(", ");
-  const more = lab.length > MAX_LISTED ? ` and ${String(lab.length - MAX_LISTED)} more` : "";
-  return {
-    run: true,
-    reason: `lab tests run: ${String(lab.length)} lab file(s) changed since ${b.label}: ${listed}${more}`,
-  };
 }
 
 /** Runs git and returns its stdout, or null when it fails. */
@@ -263,7 +168,7 @@ export function findBaseCommit(
   const override = env["TTASKS_VERIFY_BASE"];
   if (override !== undefined && override !== "") {
     // The override is for tests and for checking the rule by hand. In CI it could make a run
-    // skip the lab tests silently, so it is refused there and the lab tests run.
+    // skip the projection model's random runs silently, so it is refused there.
     if (inCi(env)) return { why: "TTASKS_VERIFY_BASE is set, and CI does not honour it" };
     const sha = commit(run, override);
     return sha === null
@@ -288,8 +193,8 @@ export function findBaseCommit(
     }
     if (event === "push") {
       // A push can carry several commits (a rebase merge, a direct push). The base is the commit
-      // the ref pointed at before, from the event, never just HEAD's parent: with A, B (a lab
-      // change) and C (a product change) pushed together, the parent of C would hide B.
+      // the ref pointed at before, from the event, never just HEAD's parent: with A, B (a
+      // projection change) and C (another change) pushed together, the parent of C would hide B.
       const before = eventSha(env, read, (e) => e.before);
       if (before === null) return { why: "the push event names no previous commit" };
       const present = commit(run, before);

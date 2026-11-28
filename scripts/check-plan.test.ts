@@ -14,7 +14,7 @@ import {
   SLOW,
   type Cruise,
 } from "./check-plan.ts";
-import { git } from "./lab-tests.ts";
+import { git } from "./verify-base.ts";
 import { binPath, runNode } from "./run.ts";
 
 const SETUP = "packages/testkit/src/setup.ts";

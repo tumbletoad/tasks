@@ -4,17 +4,11 @@ import { defineConfig } from "vitest/config";
 import { BaseSequencer, type TestSpecification } from "vitest/node";
 import { SLOW } from "./scripts/check-plan.ts";
 
-/**
- * Every test file in the repository, so none can escape the manifest check. The two projects below
- * split exactly this set: "lab" takes spikes/, "product" takes the rest.
- */
+/** Every test file in the repository, so none can escape the manifest check. */
 export const testFiles = {
   include: ["**/*.test.{ts,tsx}"],
   exclude: ["**/node_modules/**", "**/dist/**", "planning/**", "local/**", ".claude/**"],
 };
-
-/** The M0 lab code (A7 3.7). Its self-tests start services, compile C and install archives. */
-export const LAB_DIR = "spikes";
 
 /**
  * Half the threads, at most sixteen, and never fewer than the older cap of eight (or every core
@@ -68,27 +62,12 @@ export default defineConfig({
           ...shared,
           name: "product",
           include: testFiles.include,
-          exclude: [...testFiles.exclude, `${LAB_DIR}/**`],
+          exclude: testFiles.exclude,
           globalSetup: ["tests/run-builds-setup.ts"],
           // A time limit only ends a test that hangs: it says nothing about how fast the code is.
           // On a loaded machine, tests that take a second or two alone have taken more than 30 s
           // beside every other file. A test's own explicit timeout still wins: give one only to
           // a test that needs longer than this.
-          testTimeout: 120_000,
-          hookTimeout: 120_000,
-        },
-      },
-      {
-        extends: false,
-        test: {
-          ...shared,
-          name: "lab",
-          include: testFiles.include.map((pattern) => `${LAB_DIR}/${pattern}`),
-          exclude: testFiles.exclude,
-          // One file at a time: the lab tests start processes, and under a parallel run on a
-          // loaded CI runner they timed out (A7 3.3).
-          fileParallelism: false,
-          // A process-heavy default. A test's own explicit timeout still wins.
           testTimeout: 120_000,
           hookTimeout: 120_000,
         },
