@@ -42,6 +42,7 @@ export const ID_PREFIXES = {
   remoteCommand: "rc",
   incarnation: "ai",
   transfer: "tr",
+  link: "lk",
 } as const;
 
 export type IdKind = keyof typeof ID_PREFIXES;
