@@ -2996,8 +2996,8 @@ export class SpaceWriter {
     const answered = readChanges(conn, target.applied);
     const newer = newerOn(conn, answered, target.applied, principal, space.refPrefix);
     if (newer.length > 0) return kept(conn, space, target, answered, newer, asOf);
-    const { base: _base, ...rest } = request;
-    const checked: CheckedRequest = { ...rest, ops: oppositeOf(conn, answered) };
+    // A request of its own, with no base (request.ts): the guard above is newer work.
+    const checked: CheckedRequest = { ...request, ops: oppositeOf(conn, answered) };
     const plan = this.#stage(conn, checked, space, at, wall);
     return this.#execute(conn, checked, space, plan, asOf, at, { kind: op.kind, target });
   }

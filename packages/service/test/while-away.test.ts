@@ -529,12 +529,11 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
     submit(fx.human, [{ kind: "note.restore", task: id, ordinal: 1 }], (clock += 60_000));
     expect(await replied(kept)).toEqual([one]);
     move(kept, "cancelled");
-    // None stays none: a Dismiss undone after the reply was queued.
+    // None: the question was dismissed before the reply was queued.
     const asked = queue(id);
     asks(asked, two);
     await call("task.update", { task: id, set: { reviewed: asked }, request_id: rid() });
     const none = queue(id, "Fixture go on");
-    await call("history.undo", { request_id: rid() });
     expect(await replied(none)).toEqual([]);
     // None stays none: an earlier queued reply carried the question, and is cancelled.
     const later = queue(id, "Fixture also");

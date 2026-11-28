@@ -182,7 +182,10 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
       expectStatus(late, "unchanged");
       expect(late.kept, what).toBe(true);
       expect(late.newer?.work, what).toEqual([
-        expect.objectContaining({ task: target, by: expect.objectContaining({ kind: "agent" }) }),
+        expect.objectContaining({
+          task: target,
+          by: expect.objectContaining({ kind: "agent" }) as unknown,
+        }),
       ]);
       expect(deleted(target), what).toBe(false);
       // The person still wants it gone: one removal, from what they see now.

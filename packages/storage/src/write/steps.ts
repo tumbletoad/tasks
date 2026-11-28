@@ -10,7 +10,7 @@ import { misuse } from "../errors.ts";
 import { isId, type Id } from "../ids.ts";
 import { formatTaskRef } from "../refs.ts";
 import { invalidValue, RowReader } from "../rows.ts";
-import type { NewerWork, Operation, TaskValues } from "./request.ts";
+import type { NewerWork, Operation } from "./request.ts";
 
 /** A change row of commit `c` whose task `c` also changed `field`. */
 const sameTask = (field: string): string =>
@@ -216,8 +216,7 @@ export function oppositeOf(conn: Connection, changes: readonly StoredChange[]): 
           } else if (c.field === "inbox") set["inbox"] = parsed(c.before) === 1;
           else if (c.field !== null) set[c.field] = parsed(c.before);
         }
-        if (Object.keys(set).length > 0)
-          ops.push({ kind: "task.patch", task: id, set: set as TaskValues });
+        if (Object.keys(set).length > 0) ops.push({ kind: "task.patch", task: id, set });
         continue;
       }
       case "notes":
