@@ -1,9 +1,7 @@
-// The shape of the recorded stream fixtures (fixtures/streams/, A7 3.7 M0.11 and N05). One schema
-// serves two sides:
-// - the lab's sanitiser (spikes/m0/runs/sanitise.ts) writes every fixture value by it, and
-// - the structural check (tests/stream-content.ts) asserts that every value in a committed fixture
-//   is one its treatment can produce. That check, not the text scan, is what keeps private data
-//   out of the fixtures: a field never lets an observed value through because the field is known.
+// The shape of the recorded stream fixtures (fixtures/streams/, A7 3.7 M0.11 and N05). The
+// structural check (tests/stream-content.ts) asserts that every value in a committed fixture is
+// one its treatment can produce. That check, not the text scan, is what keeps private data out of
+// the fixtures: a field never lets an observed value through because the field is known.
 //
 // Every allow-listed field has exactly one treatment, and each treatment fixes its output:
 //   enum      a value from an explicit vocabulary; anything else (any type) becomes "unknown-value"
@@ -106,21 +104,6 @@ export const ERROR_CLASSES = [
   "other",
 ] as const;
 
-export function errorClassOf(text: string): (typeof ERROR_CLASSES)[number] {
-  const classes: [RegExp, (typeof ERROR_CLASSES)[number]][] = [
-    [/input must be provided|no prompt/i, "no input"],
-    [/model/i, "model"],
-    [/interrupt|cancel|abort/i, "interrupted"],
-    [/max.?turns|maximum number of turns/i, "max turns"],
-    [/approval/i, "approval"],
-    [/rate.?limit|usage limit|429/i, "rate limit"],
-    [/not logged in|login|unauthor|401/i, "auth"],
-    [/mcp|server|tool/i, "tool"],
-  ];
-  for (const [re, label] of classes) if (re.test(text)) return label;
-  return "other";
-}
-
 // ---------------------------------------------------------------------------------------------
 // Fixture values.
 export const FIXTURE_TEXT = "Fixture text.";
@@ -128,7 +111,6 @@ export const FIXTURE_SIGNATURE = "fixture-signature";
 export const BASE_TIME = Date.parse("2026-01-01T00:00:00.000Z");
 export const BASE_EPOCH = 1_767_225_600;
 export const VERSION = /^\d{1,4}\.\d{1,4}\.\d{1,6}(?:-[a-z0-9]{1,12})?$/;
-export const VERSION_PLACEHOLDER = "0.0.0";
 
 /** Fixture numbers: the type stays, the measurement goes. */
 export const NUMBERS = {
@@ -156,23 +138,6 @@ export const CONSTS = {
 export type ConstKind = keyof typeof CONSTS;
 
 export type IdKind = "session" | "event" | "thread" | "message" | "tool-use" | "request" | "item";
-const pad = (n: number, w: number) => String(n).padStart(w, "0");
-export function syntheticId(kind: IdKind, n: number): string {
-  switch (kind) {
-    case "session":
-    case "event":
-    case "thread":
-      return `00000000-0000-4000-8000-${pad(n, 12)}`;
-    case "message":
-      return `msg_fixture${pad(n, 4)}`;
-    case "tool-use":
-      return `toolu_fixture${pad(n, 4)}`;
-    case "request":
-      return `req_fixture${pad(n, 4)}`;
-    case "item":
-      return `item_${String(n)}`;
-  }
-}
 const ID_PATTERN: Record<IdKind, RegExp> = {
   session: /^00000000-0000-4000-8000-\d{12}$/,
   event: /^00000000-0000-4000-8000-\d{12}$/,
@@ -189,10 +154,6 @@ export const NAME_KEEP: Record<NameTable, readonly string[]> = {
   model: ["<synthetic>"],
   window: [],
 };
-export function syntheticName(table: NameTable, n: number): string {
-  const base = table === "model" ? "fixture-model" : "fixture_window";
-  return n === 1 ? base : `${base}${table === "model" ? "-" : "_"}${String(n)}`;
-}
 const NAME_PATTERN: Record<NameTable, RegExp> = {
   model: /^fixture-model(?:-\d{1,4})?$/,
   window: /^fixture_window(?:_\d{1,4})?$/,
@@ -200,9 +161,6 @@ const NAME_PATTERN: Record<NameTable, RegExp> = {
 
 /** Keys of maps whose keys are data. */
 export type KeyKind = "model" | "window" | "tool-use" | "memory" | "agent-type";
-export function syntheticKey(kind: "memory" | "agent-type", n: number): string {
-  return `fixture-${kind}-${String(n)}`;
-}
 function keyOk(kind: KeyKind, key: string): boolean {
   switch (kind) {
     case "model":
@@ -219,9 +177,6 @@ function keyOk(kind: KeyKind, key: string): boolean {
 /** A fixture path: `C:\fixture\<leaf>` on Windows, `/fixture/<leaf>` on Linux. */
 export function fixturePath(os: Os, leaf: string): string {
   return os === "windows" ? `C:\\fixture\\${leaf}` : `/fixture/${leaf}`;
-}
-export function pathLeaf(n: number): string {
-  return n === 1 ? "work" : `path-${String(n)}`;
 }
 function pathOk(os: Os, v: string): boolean {
   if (v === "") return true;
@@ -714,32 +669,6 @@ export function specFor(cli: CliKind, event: Record<string, unknown>): Spec | un
   }
   // The `system/<subtype>` keys are reached through `system` only.
   return !type.includes("/") && Object.hasOwn(CLAUDE, type) ? CLAUDE[type] : undefined;
-}
-
-/**
- * The key of an event for inventories and results, from schema values only: `type`,
- * `type/subtype` (Claude), `type:item.type` (Codex), or `unknown-event`. A subtype or item type
- * outside its vocabulary shows as `unknown-value`; nothing of the input passes.
- */
-export function eventKeyOf(cli: CliKind, event: unknown): string {
-  if (!isObject(event)) return UNKNOWN_EVENT.type;
-  const spec = specFor(cli, event);
-  if (spec === undefined) return UNKNOWN_EVENT.type;
-  const type = event["type"] as string;
-  if (cli === "claude-print") {
-    if (type === "system") return `system/${event["subtype"] as string}`;
-    if (type === "result") {
-      const sub = event["subtype"];
-      const known = (VOCAB["result-subtype"] as readonly string[]).includes(String(sub));
-      return `result/${typeof sub === "string" && known ? sub : UNKNOWN_VALUE}`;
-    }
-    return type;
-  }
-  const item = event["item"];
-  if (!isObject(item)) return type;
-  const t = item["type"];
-  const cases = (codexItem as { cases: Record<string, unknown> }).cases;
-  return `${type}:${typeof t === "string" && Object.hasOwn(cases, t) ? t : UNKNOWN_VALUE}`;
 }
 
 /** Every field path a spec allows, in the inventory's notation (`a.b`, `a[]`, `a.<map-key>`). */
