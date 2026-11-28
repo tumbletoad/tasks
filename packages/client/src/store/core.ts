@@ -33,6 +33,7 @@ import {
   type BatchMessage,
   type NodeRow,
   type PageRow,
+  type RoutineRow,
   type Cursor,
   type RowType,
   type Scales,
@@ -104,6 +105,8 @@ export interface Held {
   readonly nodes: ReadonlyMap<string, NodeRow>;
   /** The pages shown: the Library's lists, without bodies. */
   readonly pages: ReadonlyMap<string, PageRow>;
+  /** The routines that are not finished, by ID: each one task that comes back on a schedule. */
+  readonly routines: ReadonlyMap<string, RoutineRow>;
   readonly instances: readonly Instance[];
   readonly scales: Scales;
 }
@@ -112,6 +115,7 @@ interface Maps {
   task: Map<string, AnyRow>;
   node: Map<string, AnyRow>;
   page: Map<string, AnyRow>;
+  routine: Map<string, AnyRow>;
   asking: Map<string, TaskRow>;
 }
 
@@ -217,10 +221,11 @@ export class LiveCore {
       task: mapOf("task", message.tasks),
       node: mapOf("node", message.nodes),
       page: mapOf("page", message.pages ?? []),
+      routine: mapOf("routine", message.routines ?? []),
       asking: new Map((message.asking ?? []).filter(asksOutside).map((row) => [row.id, row])),
     };
     this.#awaiting = false;
-    this.#dirty.add("task").add("node").add("page");
+    this.#dirty.add("task").add("node").add("page").add("routine");
     this.#askingDirty = true;
     this.#published = undefined;
     return { kind: "snapshot", agentChanges: message.agent_changes ?? [] };
@@ -305,6 +310,8 @@ export class LiveCore {
         if (inWorkingSet(type, after)) map.set(entity.id, after);
         else map.delete(entity.id);
         this.#dirty.add(type);
+        // A task that became a routine leaves the tasks: the feed sends it as a routine from then on.
+        if (type === "routine" && maps.task.delete(entity.id)) this.#dirty.add("task");
         if (type === "task") {
           const row = after as TaskRow;
           if (asksOutside(row)) maps.asking.set(row.id, row);
@@ -347,6 +354,7 @@ export class LiveCore {
       tasks: copy<TaskRow>("task", before?.tasks),
       nodes: copy<NodeRow>("node", before?.nodes),
       pages: copy<PageRow>("page", before?.pages),
+      routines: copy<RoutineRow>("routine", before?.routines),
       asking: before !== undefined && !this.#askingDirty ? before.asking : new Map(maps.asking),
       instances: this.#instances,
       scales: this.#scales,

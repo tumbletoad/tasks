@@ -7270,6 +7270,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.routines.store",
+      "title": "The live store holds a tree space's routines as the feed sends them: from the snapshot, moved on by each batch's routine row, gone once finished or in the Trash, and a task that became a routine leaves the tasks",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.routines.web.lists",
+      "title": "A routine's row and the Routines page's lists: Due (late since a day, or today, with Skip), Coming (next on a day) and Paused with its count, each line its schedule in words, who does it and its newest entry; a finished routine in none; the round box with its loop checks off this time, and no box is a task's checkbox",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "S2.tree.routines.service",
       "title": "A routine a person does, through the request path on a tree space with a clock the test moves: made, checked off early, a week away and two missed Saturdays as one open time and one entry, read by an agent with its schedule in words, its next time and its entries, skipped and that Skip undone, a Done whose Undo a later change of schedule keeps back, paused and resumed at the next time after now, extra times without a due time, finished for good and back by Undo, the Trash pausing it and Restore bringing it back paused, made in a project the person names; the feed's routine rows after each change equal a fresh snapshot's; an agent makes one with repeat, turns a task into one keeping its notes, changes and pauses it, and is refused two drafts, words that are no schedule and a check-off; a space on today's storage refuses a routine's calls in one plain sentence",
       "source": "Routines design, pull request 235",
