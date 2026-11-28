@@ -12,7 +12,14 @@ import { both, type Sequence } from "../../storage/test/both-helpers.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 import { classSession } from "./ops-helpers.ts";
 import { readBatch, readSnapshot } from "../src/http/feed.ts";
-import { backend, normal, type Session, type Side, type Step } from "./replay-helpers.ts";
+import {
+  backend,
+  newSpaces,
+  normal,
+  type Session,
+  type Side,
+  type Step,
+} from "./replay-helpers.ts";
 
 const LONG = 180_000;
 let w: ContractWorld & { root: string };
@@ -741,7 +748,12 @@ const feedBackend = (space: () => string): Side<Step, Session & { seq: number }>
       // Tasks at one position under different parents come in the order of their random IDs; a
       // page places each under its parent, so they are compared in the order they were made.
       const byRef = (row: { ref?: unknown }) => Number(String(row.ref).split("-")[1]);
-      const snapshot = { ...read, tasks: [...read.tasks].sort((a, b) => byRef(a) - byRef(b)) };
+      // Projects at one position in different areas, likewise, so nodes are compared by title.
+      const snapshot = {
+        ...read,
+        tasks: [...read.tasks].sort((a, b) => byRef(a) - byRef(b)),
+        nodes: [...read.nodes].sort((a, b) => a.title.localeCompare(b.title)),
+      };
       const { batch } = await readBatch(reader(s), s.seq);
       const from = s.seq;
       s.seq = snapshot.cursor.seq;
@@ -776,7 +788,13 @@ describe("[S2.replay.feed] the feed of both backends: the snapshot and each batc
   test(
     "the tree of areas and projects, a task's row, a question waiting, a finish and the Trash",
     async () => {
-      await both({ today: feedBackend(() => w.space), tree: feedBackend(() => tree) }, FEED);
+      // A space of each backend of its own: the feed sends all of a space, and the order of what
+      // other sequences left at one position or one instant is chance.
+      const spaces = await newSpaces(w, "feed");
+      await both(
+        { today: feedBackend(() => spaces.today), tree: feedBackend(() => spaces.tree) },
+        FEED,
+      );
     },
     LONG,
   );

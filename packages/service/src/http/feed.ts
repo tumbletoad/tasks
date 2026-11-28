@@ -253,8 +253,8 @@ const PROJECT_ROWS = `SELECT ${PROJECT_COLUMNS} FROM projects p WHERE p.id IN ($
 const TREE_NODE_COLUMNS =
   "n.id, n.parent_id, n.title, n.position, n.color, n.archived_at, n.deleted_at";
 const LIVE_TREE_NODES =
-  `SELECT ${TREE_NODE_COLUMNS} FROM nodes n WHERE n.kind = 'project' AND n.deleted_at IS NULL ` +
-  "ORDER BY n.position, n.id";
+  `SELECT ${TREE_NODE_COLUMNS} FROM nodes n JOIN nodes p ON p.id = n.parent_id ` +
+  "WHERE n.kind = 'project' AND n.deleted_at IS NULL ORDER BY p.kind <> 'space', n.position, n.id";
 const TREE_NODE_ROWS =
   `SELECT ${TREE_NODE_COLUMNS}, CASE p.kind WHEN 'space' THEN 'areas' ELSE 'projects' END ` +
   "AS entity FROM nodes n JOIN nodes p ON p.id = n.parent_id WHERE n.kind = 'project' AND n.id IN " +
