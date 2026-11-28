@@ -155,9 +155,7 @@ export const ReceiptGetResult = z.union([
     commit: z.string().regex(idPattern("op")).describe("The commit it wrote").optional(),
     kept: z
       .literal(true)
-      .describe(
-        "An undo or redo that newer work kept: nothing changed, and the change left the stack",
-      )
+      .describe("An undo or redo that newer work kept: nothing changed, and it left the stack")
       .optional(),
     ...NewerWorkFields,
     results: z

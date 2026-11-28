@@ -86,14 +86,6 @@ export const Moved = z
   )
   .describe("A change of the effort levels: the tasks each move moved, by state");
 
-/** What an undo or redo of a change of the effort levels wrote: never more than this. */
-export const LevelsWritten = z
-  .strictObject({
-    list: z.boolean().describe("It wrote the list of levels"),
-    tasks: Count.describe("How many sizes of tasks it wrote"),
-  })
-  .describe("A change of the effort levels: what it wrote");
-
 /** A stored or default value in a result: null is a default of none. */
 const PrefValueOutput = z.union([
   z.string(),

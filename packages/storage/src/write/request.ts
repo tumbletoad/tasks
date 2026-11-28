@@ -140,8 +140,8 @@ export interface WriteProblem {
   /**
    * SPACE_READ_ONLY: why the space takes no write, a word A3 3.5's `read_only` passes on:
    * `not_authority` (A2 3.1) now, `held` and `transfer_pending` with their steps (A1 3.6, 3.18).
-   * NOT_FOUND of a `task.restore`: `creation_undone`, a task whose creation was undone, which is
-   * not in the Trash and which Redo brings back.
+   * NOT_FOUND of a `task.restore`: `creation_undone`, a task whose creation an earlier version
+   * undid, which is not in the Trash.
    */
   reason?: string;
   /** A change of levels that drops sizes tasks hold, without a move: each such size's tasks. */

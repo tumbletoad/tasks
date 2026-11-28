@@ -3057,7 +3057,7 @@
     },
     {
       "id": "A4.5.routes.request-task",
-      "title": "A launch's request is task data from the click: it is on the task after a service stopped right after the click; a get_task the agent never got marks nothing and a launch past its day loses nothing; a second click that got an earlier launch keeps its words as a plain note, also on a retry; every agent that reads the pointer gets the request, and one that loads the task sees it as history with its launch; one undo takes back the request and nothing else, and Open again with the note writes no second one; a refused click (no route, no folder, no marker) writes nothing; a read by the pointer that fails before its whole answer is ready marks nothing, and the next one marks it Connected",
+      "title": "A launch's request is task data from the click: it is on the task after a service stopped right after the click; a get_task the agent never got marks nothing and a launch past its day loses nothing; a second click that got an earlier launch keeps its words as a plain note, also on a retry; every agent that reads the pointer gets the request, and one that loads the task sees it as history with its launch; taking the note back takes back the request and nothing else, and Open again with the note writes no second one; a refused click (no route, no folder, no marker) writes nothing; a read by the pointer that fails before its whole answer is ready marks nothing, and the next one marks it Connected",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -4327,14 +4327,6 @@
       "title": "The page's Undo of a change of the effort levels says the levels were put back and names tasks left off them, leaves a checked row checked, and a refused one offers Undo the rest",
       "source": "A5 3.12",
       "owner": "M5",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A1.3.10.history.effort-stored-rows",
-      "title": "A change of levels with a move over a list of names an earlier build stored, or over a reset it left, undone, leaves the stored row exactly as it was, its version included, and the moved task back on its size",
-      "source": "A1 3.10.1, A1 3.16",
-      "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },
@@ -6316,14 +6308,6 @@
       "id": "A3.3.4.prefs.moves-said",
       "title": "What a change of levels and its undo say is what they wrote: a dry run answers as the write and writes nothing, the write's receipt by lookup keeps its moves, an undo says whether it wrote the list and how many sizes, and names only the tasks it checked off or reopened",
       "source": "A1 3.10.1, A3 3.4.11",
-      "owner": "M3",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A3.3.4.prefs.undo-said",
-      "title": "ttasks undo says what an undo of a change of levels wrote: after a script sized the renamed level's task, a partial undo says the levels went back",
-      "source": "A3 3.4.11",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]

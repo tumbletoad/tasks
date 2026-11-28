@@ -210,16 +210,18 @@ const REQUEST_FOR =
   "FROM launches l WHERE l.task_id = n.task_id " +
   "AND json_extract(l.detail, '$.evidence.request') = 'n' || n.ordinal)";
 /**
- * Entry `e`'s words as someone corrected them: the commit whose write its body holds, when that is
- * not the one that wrote the entry, as `{at, by}`. An undo of the correction gives the body its
- * writing back, and with it no mark.
+ * Entry `e` of `table`'s words as someone corrected them: the commit whose write its body holds, as
+ * `{at, by}`, while the words differ from those it was written with. An undo of the correction
+ * gives the words back, and with them no mark.
  */
-const EDITED = (e: string): string =>
+const EDITED = (e: string, table: "notes" | "log_entries"): string =>
   "(SELECT json_object('at', c.at, 'by', CASE WHEN c.origin = 'import' THEN 'import' " +
   "WHEN a.kind = 'human' THEN 'user' ELSE a.label END) FROM commits c " +
   `JOIN actors a ON a.id = c.author_id WHERE c.seq = json_extract(${e}.fp, '$.body') ` +
-  `AND c.seq <> ${e}.created_seq)`;
-const NOTE_COLUMNS = `n.ordinal, n.addressee, n.body, n.created_at, ${authorOf("n")} AS author, ${REQUEST_FOR} AS request_for, ${EDITED("n")} AS edited`;
+  `AND c.seq <> ${e}.created_seq AND ${e}.body IS NOT (SELECT json_extract(w.after, '$.body') ` +
+  `FROM changes w WHERE w.seq = ${e}.created_seq AND w.entity = '${table}' ` +
+  `AND w.entity_id = ${e}.id AND w.action = 'create'))`;
+const NOTE_COLUMNS = `n.ordinal, n.addressee, n.body, n.created_at, ${authorOf("n")} AS author, ${REQUEST_FOR} AS request_for, ${EDITED("n", "notes")} AS edited`;
 const NOTES_FROM = `FROM notes n JOIN actors x ON x.id = n.author_id WHERE n.task_id = ${MATCH} AND n.deleted_at IS NULL`;
 /** Newest first, from ordinal `$iupto` down (all when null), at most `$ilimit`. */
 const INSTRUCTIONS: Statement = {
@@ -244,8 +246,7 @@ const NAMED: Statement = {
 
 /**
  * The notes taken back from the task, newest removal first, with who removed them: the person's
- * alone to see and put back. A note removed by an undo of its writing is not one: Redo brings it
- * back with the rest of that change.
+ * alone to see and put back. A note whose writing an earlier version undid is not one.
  */
 const REMOVED_NOTE_ROWS: Statement = {
   sql:
@@ -254,7 +255,7 @@ const REMOVED_NOTE_ROWS: Statement = {
     "FROM notes n JOIN actors x ON x.id = n.author_id " +
     "JOIN commits c ON c.seq = json_extract(n.fp, '$.deleted') " +
     `JOIN actors rx ON rx.id = c.author_id WHERE n.task_id = ${MATCH} ` +
-    "AND n.deleted_at IS NOT NULL AND c.undo_of IS NULL " +
+    "AND n.deleted_at IS NOT NULL AND c.undo_of IS NOT n.created_seq " +
     `ORDER BY n.deleted_at DESC, n.ordinal DESC LIMIT ${String(REMOVED_NOTES)}`,
   mode: "all",
 };
@@ -265,7 +266,7 @@ const NOTE_COUNTS: Statement = {
 const LOG: Statement = {
   sql:
     `SELECT l.ordinal, l.kind, l.body, l.created_at, ${authorOf("l")} AS author, ` +
-    `${EDITED("l")} AS edited FROM log_entries l ` +
+    `${EDITED("l", "log_entries")} AS edited FROM log_entries l ` +
     `JOIN actors x ON x.id = l.author_id WHERE l.task_id = ${MATCH} AND l.deleted_at IS NULL ` +
     "AND ($lupto IS NULL OR l.ordinal <= $lupto) ORDER BY l.ordinal DESC LIMIT $llimit",
   mode: "all",
@@ -299,8 +300,8 @@ const SOURCES: Statement = {
   mode: "all",
 };
 /**
- * The links detached from the task, newest first, with who detached them. A link removed by an
- * undo of its creation is not one: Redo brings it back with the rest of that change.
+ * The links detached from the task, newest first, with who detached them. A link whose creation an
+ * earlier version undid is not one.
  */
 const REMOVED_SOURCES: Statement = {
   sql:
@@ -309,7 +310,7 @@ const REMOVED_SOURCES: Statement = {
     "ELSE x.label END AS removed_by FROM task_sources ts JOIN sources s ON s.id = ts.source_id " +
     "JOIN commits c ON c.seq = json_extract(ts.fp, '$.removed') " +
     `JOIN actors x ON x.id = c.author_id WHERE ts.task_id = ${MATCH} ` +
-    "AND ts.removed_at IS NOT NULL AND s.deleted_at IS NULL AND c.undo_of IS NULL " +
+    "AND ts.removed_at IS NOT NULL AND s.deleted_at IS NULL AND c.undo_of IS NOT ts.created_seq " +
     "ORDER BY ts.removed_at DESC, s.id",
   mode: "all",
 };

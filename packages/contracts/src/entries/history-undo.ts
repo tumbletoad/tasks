@@ -1,42 +1,19 @@
-// history.undo: undo the user's newest change in the space (A1 3.10.1, A5 3.12). The user's only
-// (A3 3.2.3): one undo stack per human, shared by every tab and the user's CLI. It is guarded by
-// each field's provenance, never by a base or a value (R2): a field another actor changed since
-// makes it a conflict that names the field, unless `partial` asks to undo the rest. M3.03's
-// revert and the page's toast (M5.08) build on it.
+// history.undo: undo the user's newest step in the space (A1 3.10.1, A5 3.12). The user's only
+// (A3 3.2.3): one undo stack per human, shared by every tab and the user's CLI. A step is what Undo
+// is for: a check-off or a reopen, the Trash and out of it, a removed note, words, out of the
+// Inbox, a first filing, a new area or project, an unarchive. Another actor's newer work on what
+// it would change keeps the step as they left it: `kept`, and the next undo reaches the step
+// before it.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { WriteAsOf, idPattern, patterns, Replayed, RequestId, TaskRef } from "../schemas.ts";
 import { AS_OF_NEXT, requestId } from "./fixture.ts";
-import { LevelsWritten, OffList } from "./prefs-manage.ts";
 
 /** A commit (`op_` ID): what the feed's events and a write's receipt name. */
 export const CommitId = z.string().regex(idPattern("op")).describe("A change's commit ID");
 
 /** A commit the caller names: its format is the writer's to check. */
 export const CommitInput = z.string().max(40);
-
-/** One field an undo left as another actor set it (A1 3.10.1). */
-export const Unresolved = z.strictObject({
-  entity: z
-    .string()
-    .max(20)
-    .describe("Table of the row: tasks, or a child such as notes or log_entries"),
-  id: z
-    .string()
-    .max(60)
-    .regex(
-      /^(?:[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\|(?:s|lb)_[0-9a-hjkmnp-tv-z]{26})?|tasks\.effort_scale)$/u,
-    )
-    .describe("A row other than the task: its ID, task_id|source_id, or tasks.effort_scale")
-    .optional(),
-  task: TaskRef.optional(),
-  field: z
-    .string()
-    .max(40)
-    .describe("Logical field; deleted or removed for a child row, state for a run"),
-  by: z.string().describe("Who changed it since: user, import or the actor's label"),
-  at: z.string().regex(patterns.instant).describe("When"),
-});
 
 /** One author who changed one task since the change (A1 3.10.1): who, and when last. */
 export const NewerWork = z.strictObject({
@@ -45,7 +22,7 @@ export const NewerWork = z.strictObject({
   at: z.string().regex(patterns.instant).describe("When that author last changed it"),
 });
 
-/** Who changed what an undo or a redo met since: one entry per task and author. */
+/** Who changed what a kept undo or redo would have changed: one entry per task and author. */
 export const NewerWorkFields = {
   newer_work: z
     .array(NewerWork)
@@ -59,13 +36,11 @@ export const HistoryResultFields = {
   tasks: z.array(TaskRef).max(50).describe("The tasks it changed, the first 50"),
   // A space never holds more tasks than its references number.
   task_count: z.int().min(0).max(9_999_999_999).describe("How many tasks it changed"),
-  levels: LevelsWritten.optional(),
   lifecycles: z
     .array(TaskRef)
     .max(50)
     .describe("The tasks it checked off or reopened, the first 50")
     .optional(),
-  off_list: OffList.optional(),
   as_of: WriteAsOf,
   replayed: Replayed.optional(),
 };
@@ -74,10 +49,6 @@ export const HistoryUndoInput = z.strictObject({
   commit: CommitInput.describe(
     "The change you mean: refused when a newer one of yours stands before it",
   ).optional(),
-  partial: z
-    .boolean()
-    .describe("Undo the fields nobody changed since, and keep the others' changes")
-    .optional(),
   check_script: z
     .boolean()
     // Without commit: a conflict naming both changes instead of undoing one older than a script's.
@@ -101,10 +72,9 @@ export const ScriptChange = z.strictObject({
 
 export const HistoryUndoResult = z.strictObject({
   result: z
-    .enum(["undone", "partial"])
-    .describe("undone: all of it; partial: the unresolved fields stay as others set them"),
+    .enum(["undone", "kept"])
+    .describe("undone: back as before; kept: someone changed it since, and it stays theirs"),
   ...HistoryResultFields,
-  unresolved: z.array(Unresolved).describe("Fields left as others set them").optional(),
   ...NewerWorkFields,
   script_change: ScriptChange.describe(
     "A newer change by a script, which is not on the undo stack",
@@ -113,7 +83,8 @@ export const HistoryUndoResult = z.strictObject({
 
 export const historyUndo = defineEntry({
   name: "history.undo",
-  summary: "Undo your newest change in the space, field by field as long as nobody changed it.",
+  summary:
+    "Undo your newest check-off, Trash, removed note, text edit or filing, unless someone changed it since.",
   kind: "write",
   actors: "user",
   scope: "space:write",

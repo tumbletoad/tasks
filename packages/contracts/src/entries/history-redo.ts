@@ -1,12 +1,10 @@
-// history.redo: redo the change the user undid last (A1 3.10.1, A5 3.12). The user's only (A3
-// 3.2.3). It brings back exactly what the undo set back, with the change's own provenance, and is
-// all or nothing. A change it cannot redo (another actor changed what it would change since, or
-// what it belongs to is not there) is passed over: it stays, the next redo tries it again, and
-// this one redoes the next change it can. A new change of the user's ends what can be redone.
+// history.redo: redo the step the user undid last (A1 3.10.1, A5 3.12). The user's only (A3
+// 3.2.3). Another actor's newer work on what it would change keeps it as they left it: `kept`, and
+// the next redo reaches the step undone before it. A new step of the user's ends what can be redone.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { RequestId } from "../schemas.ts";
-import { CommitId, CommitInput, HistoryResultFields, NewerWorkFields } from "./history-undo.ts";
+import { CommitInput, HistoryResultFields, NewerWorkFields } from "./history-undo.ts";
 import { requestId } from "./fixture.ts";
 
 export const HistoryRedoInput = z.strictObject({
@@ -17,18 +15,16 @@ export const HistoryRedoInput = z.strictObject({
 });
 
 export const HistoryRedoResult = z.strictObject({
-  result: z.enum(["redone"]).describe("The change is back"),
+  result: z
+    .enum(["redone", "kept"])
+    .describe("redone: the change is back; kept: someone changed it since, and it stays theirs"),
   ...HistoryResultFields,
-  passed_over: z
-    .array(CommitId)
-    .describe("Older changes it could not redo: they stay, and the next redo tries them again")
-    .optional(),
   ...NewerWorkFields,
 });
 
 export const historyRedo = defineEntry({
   name: "history.redo",
-  summary: "Redo the change you undid last, as long as nobody changed its fields since.",
+  summary: "Redo the change you undid last, unless someone changed it since.",
   kind: "write",
   actors: "user",
   scope: "space:write",

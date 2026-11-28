@@ -158,7 +158,7 @@ describe("[A3.note.retract] a note taken back through real requests", () => {
     expect(texts(read)).toHaveLength(3);
   });
 
-  test("an agent's shell and a script are refused in words; a note whose writing was undone is Redo's", async () => {
+  test("an agent's shell and a script are refused in words", async () => {
     const task = await noted("d");
     for (const who of [SHELL, SCRIPT]) {
       const refused = await refusal(
@@ -171,15 +171,5 @@ describe("[A3.note.retract] a note taken back through real requests", () => {
         "Only the user takes back a note or puts one back: agents cannot remove notes.",
       );
     }
-    await note(task, "Fixture typed by mistake");
-    await call("history.undo", { request_id: rid() });
-    const redo = await refusal("note.remove", {
-      task,
-      put_back: "4",
-      base: await asOf(),
-      request_id: rid(),
-    });
-    expect(redo.message).toContain("Redo brings it back");
-    expect(await call("task.get", { task })).not.toHaveProperty("removed_notes");
   });
 });

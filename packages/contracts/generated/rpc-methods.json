@@ -1128,27 +1128,6 @@
             "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
             "type": "string"
           },
-          "levels": {
-            "additionalProperties": false,
-            "description": "A change of the effort levels: what it wrote",
-            "properties": {
-              "list": {
-                "description": "It wrote the list of levels",
-                "type": "boolean"
-              },
-              "tasks": {
-                "description": "How many sizes of tasks it wrote",
-                "maximum": 9999999999,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "list",
-              "tasks"
-            ],
-            "type": "object"
-          },
           "lifecycles": {
             "description": "The tasks it checked off or reopened, the first 50",
             "items": {
@@ -1187,57 +1166,15 @@
             },
             "type": "array"
           },
-          "off_list": {
-            "description": "Live tasks on a size that is not a level now: give each of them a level",
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "count": {
-                  "description": "How many",
-                  "maximum": 9999999999,
-                  "minimum": 0,
-                  "type": "integer"
-                },
-                "effort": {
-                  "description": "The size",
-                  "maxLength": 20,
-                  "type": "string"
-                },
-                "tasks": {
-                  "description": "Their references, the first 10",
-                  "items": {
-                    "type": "string"
-                  },
-                  "maxItems": 10,
-                  "type": "array"
-                }
-              },
-              "required": [
-                "effort",
-                "tasks",
-                "count"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "passed_over": {
-            "description": "Older changes it could not redo: they stay, and the next redo tries them again",
-            "items": {
-              "description": "A change's commit ID",
-              "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
-              "type": "string"
-            },
-            "type": "array"
-          },
           "replayed": {
             "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
-            "description": "The change is back",
+            "description": "redone: the change is back; kept: someone changed it since, and it stays theirs",
             "enum": [
-              "redone"
+              "redone",
+              "kept"
             ],
             "type": "string"
           },
@@ -1269,7 +1206,7 @@
       },
       "remote": "write",
       "scope": "space:write",
-      "summary": "Redo the change you undid last, as long as nobody changed its fields since."
+      "summary": "Redo the change you undid last, unless someone changed it since."
     },
     {
       "actorKinds": [
@@ -1296,10 +1233,6 @@
             "description": "The change you mean: refused when a newer one of yours stands before it",
             "maxLength": 40,
             "type": "string"
-          },
-          "partial": {
-            "description": "Undo the fields nobody changed since, and keep the others' changes",
-            "type": "boolean"
           },
           "request_id": {
             "description": "New per intended change; reuse it only to retry that call",
@@ -1330,27 +1263,6 @@
             "description": "The change undone or redone",
             "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
             "type": "string"
-          },
-          "levels": {
-            "additionalProperties": false,
-            "description": "A change of the effort levels: what it wrote",
-            "properties": {
-              "list": {
-                "description": "It wrote the list of levels",
-                "type": "boolean"
-              },
-              "tasks": {
-                "description": "How many sizes of tasks it wrote",
-                "maximum": 9999999999,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "list",
-              "tasks"
-            ],
-            "type": "object"
           },
           "lifecycles": {
             "description": "The tasks it checked off or reopened, the first 50",
@@ -1390,49 +1302,15 @@
             },
             "type": "array"
           },
-          "off_list": {
-            "description": "Live tasks on a size that is not a level now: give each of them a level",
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "count": {
-                  "description": "How many",
-                  "maximum": 9999999999,
-                  "minimum": 0,
-                  "type": "integer"
-                },
-                "effort": {
-                  "description": "The size",
-                  "maxLength": 20,
-                  "type": "string"
-                },
-                "tasks": {
-                  "description": "Their references, the first 10",
-                  "items": {
-                    "type": "string"
-                  },
-                  "maxItems": 10,
-                  "type": "array"
-                }
-              },
-              "required": [
-                "effort",
-                "tasks",
-                "count"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
           "replayed": {
             "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
-            "description": "undone: all of it; partial: the unresolved fields stay as others set them",
+            "description": "undone: back as before; kept: someone changed it since, and it stays theirs",
             "enum": [
               "undone",
-              "partial"
+              "kept"
             ],
             "type": "string"
           },
@@ -1478,52 +1356,6 @@
             },
             "maxItems": 50,
             "type": "array"
-          },
-          "unresolved": {
-            "description": "Fields left as others set them",
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "at": {
-                  "description": "When",
-                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
-                  "type": "string"
-                },
-                "by": {
-                  "description": "Who changed it since: user, import or the actor's label",
-                  "type": "string"
-                },
-                "entity": {
-                  "description": "Table of the row: tasks, or a child such as notes or log_entries",
-                  "maxLength": 20,
-                  "type": "string"
-                },
-                "field": {
-                  "description": "Logical field; deleted or removed for a child row, state for a run",
-                  "maxLength": 40,
-                  "type": "string"
-                },
-                "id": {
-                  "description": "A row other than the task: its ID, task_id|source_id, or tasks.effort_scale",
-                  "maxLength": 60,
-                  "pattern": "^(?:[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\\|(?:s|lb)_[0-9a-hjkmnp-tv-z]{26})?|tasks\\.effort_scale)$",
-                  "type": "string"
-                },
-                "task": {
-                  "description": "Task reference",
-                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "entity",
-                "field",
-                "by",
-                "at"
-              ],
-              "type": "object"
-            },
-            "type": "array"
           }
         },
         "required": [
@@ -1537,7 +1369,7 @@
       },
       "remote": "write",
       "scope": "space:write",
-      "summary": "Undo your newest change in the space, field by field as long as nobody changed it."
+      "summary": "Undo your newest check-off, Trash, removed note, text edit or filing, unless someone changed it since."
     },
     {
       "actorKinds": [
@@ -2911,6 +2743,11 @@
                 "pattern": "^ai_[0-9a-hjkmnp-tv-z]{26}$",
                 "type": "string"
               },
+              "kept": {
+                "const": true,
+                "description": "An undo or redo that newer work kept: nothing changed, and it left the stack",
+                "type": "boolean"
+              },
               "newer_work": {
                 "description": "Who changed which task since, one entry per task and author",
                 "items": {
@@ -2936,14 +2773,6 @@
                     "at"
                   ],
                   "type": "object"
-                },
-                "type": "array"
-              },
-              "passed_over": {
-                "description": "A redo's: the undone changes it could not redo, which stay for the next redo",
-                "items": {
-                  "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
-                  "type": "string"
                 },
                 "type": "array"
               },
@@ -3005,27 +2834,6 @@
                         }
                       ],
                       "description": "The row it acted on, or a preference's key"
-                    },
-                    "levels": {
-                      "additionalProperties": false,
-                      "description": "A change of the effort levels: what it wrote",
-                      "properties": {
-                        "list": {
-                          "description": "It wrote the list of levels",
-                          "type": "boolean"
-                        },
-                        "tasks": {
-                          "description": "How many sizes of tasks it wrote",
-                          "maximum": 9999999999,
-                          "minimum": 0,
-                          "type": "integer"
-                        }
-                      },
-                      "required": [
-                        "list",
-                        "tasks"
-                      ],
-                      "type": "object"
                     },
                     "lifecycle": {
                       "description": "The matched task's lifecycle",
@@ -3193,11 +3001,6 @@
                   "conflict",
                   "rejected"
                 ],
-                "type": "string"
-              },
-              "target": {
-                "description": "An undo or redo's UNDO_CONFLICT: the commit it met, to name in the next undo",
-                "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
                 "type": "string"
               },
               "warnings": {

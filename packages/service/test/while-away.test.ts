@@ -70,12 +70,11 @@ const rid = () => `fixture-away-${String((n += 1)).padStart(6, "0")}`;
 const call = (op: string, input: Record<string, unknown>) =>
   opCall(host(), PERSON, { op, input }) as Promise<Record<string, unknown>>;
 
-/** `ops` as `actor` at `at`; the person's change goes on their undo stack, and an undo has no base. */
+/** `ops` as `actor` at `at`; an undo has no base. */
 function submit(actor: Credential, ops: Operation[], at: number): void {
   clock = at;
   const undo = ops.some((op) => op.kind === "undo");
-  const own = actor === fx.human && !undo ? { undoable: true } : {};
-  const result = fx.writer.submit(fx.request(actor, ops, undo ? {} : { base: fx.base(), ...own }));
+  const result = fx.writer.submit(fx.request(actor, ops, undo ? {} : { base: fx.base() }));
   if (result.status !== "applied") throw new Error(JSON.stringify(result.error));
 }
 
@@ -195,7 +194,7 @@ describe("[A5.while-away.service.question] the questions agents asked wait on th
     expect(await refs()).toEqual([]);
   });
 
-  test("Dismiss sets aside the question it names and those before it; one asked after it still waits, an Undo brings them back, and the answer names the field", async () => {
+  test("Dismiss sets aside the question it names and those before it; one asked after it still waits, and the answer names the field", async () => {
     const { task, ask, refs } = asking();
     ask(fx.codex, "Fixture first?");
     ask(fx.codex, "Fixture second?");
@@ -212,8 +211,6 @@ describe("[A5.while-away.service.question] the questions agents asked wait on th
     expect(await refs()).toEqual(["l2"]);
     await call("task.update", { task, set: { reviewed: "l2" }, request_id: rid() });
     expect(await refs()).toEqual([]);
-    await call("history.undo", { request_id: rid() });
-    expect(await refs()).toEqual(["l2"]);
     // An entry that is no question of the task is refused and changes nothing.
     const refused: unknown = await call("task.update", {
       task,
@@ -225,7 +222,7 @@ describe("[A5.while-away.service.question] the questions agents asked wait on th
     );
     expect(refused).toBeInstanceOf(AppError);
     expect((refused as AppError).toBody().code).toBe("invalid_input");
-    expect(await refs()).toEqual(["l2"]);
+    expect(await refs()).toEqual([]);
   });
 
   test("a log reference names its question with leading zeros too", async () => {
@@ -438,7 +435,7 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
     expect(await row()).not.toHaveProperty("run");
   });
 
-  test("the person's note answers it, Dismiss sets it aside and Undo brings it back, on a finished task too", async () => {
+  test("the person's note answers it, and Dismiss sets it aside, on a finished task too", async () => {
     const { task: id, row } = task();
     const run = queue(id);
     asks(run);
@@ -458,11 +455,6 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
       call("task.update", { task: id, set: { reviewed: later }, request_id: rid() }),
     ).resolves.toMatchObject({ result: "updated", fields: ["reviewed"] });
     expect(await asking()).toBeUndefined();
-    await call("history.undo", { request_id: rid() });
-    expect(await asking()).toMatchObject({
-      questions: [{ ref: later }],
-      run: { id: later, state: "needs_you" },
-    });
   });
 
   test("[A4.3.11.run.reply-brief] the run that carries the reply is given the question it answers, as the agent asked it, before the person's words", async () => {

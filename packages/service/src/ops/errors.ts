@@ -8,7 +8,6 @@ import {
   cliFaces,
   findEntry,
   laterIn,
-  newerWorkJson,
   ReceiptGetResult,
   receiptResult,
   type ErrorBody,
@@ -297,13 +296,6 @@ function hintOf(code: string, face: Face): string | undefined {
   switch (code) {
     case "TASK_NOT_ACTIVE":
       return said("Reopen it first", way(face, "task.reopen", "<task> --reason <why>"));
-    // The person chooses; nothing is overwritten unseen.
-    case "UNDO_CONFLICT":
-      return face === "mcp"
-        ? "Pass partial to undo the rest, or set the value again."
-        : face === "cli"
-          ? `Undo the rest with ${CLI_NAME} undo --partial, or set the value again.`
-          : "Undo the rest, or set the value again.";
     case "UNDO_BEFORE_FLOOR":
       return "Changes from before the space's last format change stay as they are.";
     default:
@@ -355,8 +347,7 @@ function heldWrapUp(result: WriteResult, op: number | undefined): boolean {
 
 /**
  * A conflict or a refusal the writer decided, as its body (A3 3.5). `hints` replaces a code's hint
- * where one entry's remedy differs: a redo's UNDO_CONFLICT has no partial form, and `conflict` is
- * the hint of a change made since the base to something other than a task. `wrapUp` is the
+ * where one entry's remedy differs, and `conflict` is the hint of a change made since the base to something other than a task. `wrapUp` is the
  * index of complete_task's `once` wrap-up operation, the only one the writer holds whatever the
  * base. `face` is where the caller reads the hint: a command names commands, a tool tools. `own`
  * turns the request's operation index into the caller's own, undefined for one it did not ask for.
@@ -428,15 +419,6 @@ export function resultFailure(
       ...base.data,
       ...(wrapped ? { reason: ALREADY_WRAPPED } : {}),
       as_of: result.as_of,
-      // An undo or redo's UNDO_CONFLICT names the commit it met: a caller that named none (Ctrl+Z)
-      // passes it to Undo the rest, so it never reaches a newer change instead.
-      ...(result.target === undefined ? {} : { commit: result.target }),
-      // That commit is a change of the effort levels: its rest is the list and the tasks.
-      ...(result.levels === true ? { levels: true } : {}),
-      // A refused redo's: every undone change it tried, which stay for the next redo.
-      ...(result.passed === undefined ? {} : { passed_over: result.passed }),
-      // An undo's or a redo's: who changed which task since.
-      ...(result.newer === undefined ? {} : newerWorkJson(result.newer)),
       conflicts,
       ...(result.replayed === true ? { replayed: true } : {}),
     },

@@ -23,14 +23,14 @@ and `cwd`.
 | `ttasks note` | `note.remove` | Take back a note on a task, or put a removed one back. Nothing is deleted for good. |
 | `ttasks prefs` | `prefs.manage` | Read and change the space's preferences that are not policy. |
 | `ttasks receipt` | `receipt.get` | The stored result of a write, by its request_id, in the caller's own writer scope. |
-| `ttasks redo` | `history.redo` | Redo the change you undid last, as long as nobody changed its fields since. |
+| `ttasks redo` | `history.redo` | Redo the change you undid last, unless someone changed it since. |
 | `ttasks reopen` | `task.reopen` | Reopen a completed or archived task. Its earlier outcome and learnings stay. |
 | `ttasks restore` | `task.delete` | Move tasks to the Trash, or restore them. Nothing is deleted for good. |
 | `ttasks set` | `task.update` | Change a task's fields, summary, context, group or sources; a finished one's sources only. |
 | `ttasks show` | `task.get` | Load a task as a bounded digest, or selected sections in full, by task or launch reference. |
 | `ttasks status` | `space.status` | Orientation: date, autonomy, whether this is a task's session, a folder's tasks, counts. |
 | `ttasks trash` | `task.trash` | What is in the Trash, newest change first, a page at a time. |
-| `ttasks undo` | `history.undo` | Undo your newest change in the space, field by field as long as nobody changed it. |
+| `ttasks undo` | `history.undo` | Undo your newest check-off, Trash, removed note, text edit or filing, unless someone changed it since. |
 
 ## `ttasks add`
 
@@ -206,7 +206,7 @@ Usage: `ttasks receipt <request> [flags]`
 
 ## `ttasks redo`
 
-Redo the change you undid last, as long as nobody changed its fields since.
+Redo the change you undid last, unless someone changed it since.
 
 Usage: `ttasks redo [flags]`
 
@@ -311,11 +311,10 @@ Usage: `ttasks trash [<q>] [flags]`
 
 ## `ttasks undo`
 
-Undo your newest change in the space, field by field as long as nobody changed it.
+Undo your newest check-off, Trash, removed note, text edit or filing, unless someone changed it since.
 
 Usage: `ttasks undo [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
 | `--commit` | `commit` | string | The change you mean: refused when a newer one of yours stands before it |
-| `--partial` | `partial` | boolean | Undo the fields nobody changed since, and keep the others' changes |
