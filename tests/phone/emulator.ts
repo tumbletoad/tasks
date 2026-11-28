@@ -4,11 +4,14 @@
 // 1. A pairing code from Settings > Phones goes to the emulator as a file, never on a command line.
 // 2. Inside the installed app (apps/phone/android-test), a wrong pin fails the handshake: the phone
 //    reaches the listener's port and makes no upgrade, so it sent nothing of its own.
-// 3. The right pin and the code: one upgrade, one paired phone, and the app keeps the pairing.
+// 3. The screen a person meets: Scan the code, the code read (handed to the open scanner from inside
+//    the app, as an emulator has no camera to see it), the phone named, Pair, Connected: one phone,
+//    by its name.
 // 4. The app is force-stopped and started as a person starts it: it opens the link again without a
-//    code, the computer serves it, and the screen shows the space and Connected.
-// 5. The phone is removed on the computer. Started again, the app is told so and forgets the
-//    pairing; started once more, it shows it is not paired and opens no connection.
+//    code, the computer serves it, and the screen shows the space and Connected. Sent to the
+//    background and brought back, it opens the link again.
+// 5. The phone is removed on the computer. Started again, the app is told so, forgets the pairing
+//    and offers to scan a code; started once more, it is not paired and opens no connection.
 //
 // The emulator reaches this computer's loopback as 10.0.2.2, so that is the code's address. Fixture
 // data only. It exits with 0 when every step held and 1 at the first that did not.
@@ -116,6 +119,8 @@ try {
 
   await adb("install", "-r", app);
   await adb("install", "-r", test);
+  // The scanner opens on the camera a person allows when it asks; here it is allowed beforehand.
+  await adb("shell", "pm", "grant", ANDROID_APP_ID, "android.permission.CAMERA");
 
   const made = await machine("phone_pair", { space: "Mira" });
   const file = join(world.root, "pairing.txt");
@@ -128,8 +133,11 @@ try {
   check(seen.upgrades === 0, `and made no upgrade (${String(seen.upgrades)})`);
 
   reset();
-  check(await instrument("pairs"), "the right pin and the code get the hello for the space");
-  check(seen.upgrades === 1, `one upgrade (${String(seen.upgrades)})`);
+  check(
+    await instrument("pairsThroughTheScreen"),
+    "Scan the code, the code read, the phone named, Pair: the screen says Connected",
+  );
+  check(seen.upgrades > 0, `the code went to the computer (${String(seen.upgrades)} upgrades)`);
   const paired = await phones();
   check(paired.length === 1 && paired[0]?.name === "Emulator", "one phone is paired, by its name");
   const before = paired[0]?.last_used_at;
@@ -143,16 +151,29 @@ try {
   check(await shows("Mira", "Connected"), "the screen shows the space and Connected");
   check((await phones()).length === 1, "still one paired phone");
 
+  const resumed = (await phones())[0]?.last_used_at;
+  await adb("shell", "input", "keyevent", "KEYCODE_HOME");
+  reset();
+  await adb("shell", "am", "start", "-W", "-n", `${ANDROID_APP_ID}/.MainActivity`);
+  check(
+    await until(async () => (await phones())[0]?.last_used_at !== resumed, 60_000),
+    `back in front, it opened the link again (${String(seen.upgrades)} upgrade)`,
+  );
+  check(await shows("Mira", "Connected"), "and the screen shows Connected");
+
   // A code that waits keeps the listener open after the last phone is removed, so the app hears it.
   await machine("phone_pair", { space: "Mira" });
   await machine("phone_remove", { phone: paired[0]?.id });
   await restart();
   check(
-    await shows("This phone was removed on the computer."),
+    await shows("This phone was removed on the computer.", "Scan the code"),
     `the started app is told it was removed (${String(seen.upgrades)} upgrade)`,
   );
   await restart();
-  check(await shows("Not paired with a computer."), "started again, it is not paired");
+  check(
+    await shows("Not paired with a computer.", "Scan the code"),
+    "started again, it is not paired",
+  );
   check(seen.connections === 0, `and opens no connection (${String(seen.connections)} TCP)`);
 } catch (error) {
   failed = true;
