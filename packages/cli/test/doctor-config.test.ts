@@ -1,4 +1,4 @@
-// `ttasks doctor`'s config row (A2 3.13, A2 3.2.4): machine.toml as the service reads it, with the
+// `ttasks doctor`'s config row: machine.toml as the service reads it, with the
 // command that fixes a file or folder another user could change. Fixture text only.
 import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -96,7 +96,7 @@ describe("[A2.3.2.2.permissions.rule] ttasks doctor's config row", () => {
       const { io, dir, file } = home();
       writeFileSync(file, '[log]\nlevel = "warn"\n', { mode: 0o600 });
       // As an editor makes it under umask 002, in this account's group: that group may write it
-      // only when it is the account's own private group (A2 3.2.2 rule 5).
+      // only when it is the account's own private group.
       chmodSync(file, 0o664);
       const group = configCheck(io);
       if (currentPerson()?.ownGroup() === statSync(file).gid) {

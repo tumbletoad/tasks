@@ -1,13 +1,13 @@
-// A place's Git remote (A1 3.15: read from the repository's config file, never by starting git).
+// A place's Git remote, read from the repository's config file, never by starting git.
 // The remote is a check of which repository a folder holds, so reading it wrongly is worse than not
 // reading it. It is read step by step (`.git`, a git folder, `commondir`, the config), each read at
-// its own moment: an observation, not an identity (A1 3.15). The config
+// its own moment: an observation, not an identity. The config
 // file is read by git's own syntax (git-config(1), CONFIGURATION FILE; git's config.c), within
 // explicit bounds, and everything this reader does not support makes the config unreadable: an
 // include, a URL rewrite that would apply, a per-worktree config, a syntax error git refuses, a
 // NUL character, text that is not UTF-8, a file or a URL beyond its bound. Unreadable is never a
 // guess: binding records no remote then (and says so), and a place that recorded one does not
-// match (A1 3.15).
+// match.
 import { lstat, open } from "node:fs/promises";
 import { posix, win32 } from "node:path";
 
@@ -29,7 +29,7 @@ const UNREADABLE: GitRemote = { status: "unreadable" };
 /** The bounds of the files read: a `.git` file and `commondir`, and the config itself. */
 const MAX_GIT_FILE = 4096;
 const MAX_GIT_CONFIG = 256 * 1024;
-/** The longest remote a place records, the space's writer's bound (A1 3.15). */
+/** The longest remote a place records, the space's writer's bound. */
 const MAX_REMOTE = 2048;
 
 // ---------------------------------------------------------------------------------------------

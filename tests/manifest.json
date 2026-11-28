@@ -2167,7 +2167,21 @@
     },
     {
       "id": "S2.undo.walk",
-      "title": "One walk of Undo's kinds against today's writer and the tree's: for a check-off, a drop, a reopen, the Trash, a restore, a removed note, a note put back, a title and a note's words edited twice, out of the Inbox and a dismissal, the action, its opposite by hand, two Undos and two Redos walk the state back and forth exactly; a first filing, and a filing into a project made just before, walk back and forth",
+      "title": "One walk of Undo's kinds against today's writer and the tree's: for a check-off, a drop, a reopen, the Trash, a restore, a removed note, a note put back, a title and a note's words edited twice, out of the Inbox and a dismissal, the action, its opposite by hand, two Undos and two Redos walk the state back and forth exactly; a first filing, and a filing into a project made just before, walk back and forth; a page's body, its title and brief, the Trash and out of it, and the space's description, brief and text for agents walk back and forth exactly",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.pages.both",
+      "title": "A page's and a node's texts by the same rules on today's writer and the tree's, the same sequences compared: a move, the Trash, a restore and a first text need no base, and a restore of a live page changes nothing; a save on a stale read is a conflict, also for the field whose words match; a restore gives the body or the version it comes from, not both; someone else's newer note keeps the Undo that would put it out of sight again, and on the tree a page's newer comment keeps it too",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.tree.pages",
+      "title": "Notes, pages and a node's texts on the tree writer: notes on a task, a project, the space and a page, one thread per owner of any kind, a page's comments belonging to its node; a page takes the space's next reference on any node, and edits of different passages from one read both stand; old words gone or standing twice write nothing and the answer holds the page's start; an append, a set and a Restore that meets newer words as a conflict; a page under a task in the Trash is not found and comes back unwritten; a node's brief and description, and a text for agents that only a person writes and never on a task; text stored as today's writer stores it; a page's change rows belong to the node that holds it; a page larger than a page may be is refused, also when an append or an edit would make it so",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]

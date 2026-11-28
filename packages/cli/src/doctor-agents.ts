@@ -1,4 +1,4 @@
-// `ttasks doctor`, the agent side (A3 3.14; M4.05). Doctor reads and probes: it never launches an
+// `ttasks doctor`, the agent side. Doctor reads and probes: it never launches an
 // interactive agent app, opens a deep link or starts a login, and it writes into no agent home.
 // What it reads is setup's own record (`<state>/setup/agents.json`), the homes' files through the
 // reader setup uses (@ttasks/service/setup), and the service's agent-home rows (`setup/homes`).
@@ -28,7 +28,7 @@
 //   manual                an entry of TTasks's name that setup did not write: without --instance it
 //                         is a hand-made entry (print's), which reaches only the default space; with
 //                         one, the grant gate refuses it until setup registers that instance
-//   block                 each instruction block setup wrote is there and current (A3 3.12):
+//   block                 each instruction block setup wrote is there and current:
 //                         an older or a missing one warns; none chosen, or a file managed
 //                         elsewhere now, is information only. Reads only the recorded files
 //   approvals             setup never writes approval rules
@@ -97,7 +97,7 @@ export interface Check {
   readonly detail: string;
 }
 
-/** A `status` round trip through the bridge must take less than this (A3 3.14). */
+/** A `status` round trip through the bridge must take less than this. */
 export const BRIDGE_ROUND_TRIP_MS = 2_000;
 /** How long one bridge probe may take in all, its start included. */
 const BRIDGE_PROBE_MS = 20_000;
@@ -162,7 +162,7 @@ function envCheck(env: Env): Check {
 }
 
 /**
- * `block` (A3 3.12): each instruction block setup wrote is still there and the current version.
+ * `block`: each instruction block setup wrote is still there and the current version.
  * Only the files of setup's block record are read, so with none it reads nothing. No block at all
  * is information only, because the server instructions carry the workflow on their own, and so is
  * a file that is managed elsewhere now. A block the person changed is theirs, and passes.
@@ -249,7 +249,7 @@ const SKIPPED_ROWS: readonly Check[] = [
   },
 ];
 
-/** The agent-side rows of `ttasks doctor` (A3 3.14). */
+/** The agent-side rows of `ttasks doctor`. */
 export async function agentChecks(
   io: Io,
   state: string,
@@ -602,7 +602,7 @@ async function mcpCheck(
     default:
       break;
   }
-  // The app's own view of its entry (A3 3.14: "according to the app's own mcp get").
+  // The app's own view of its entry, according to the app's own `mcp get`.
   const exec = commandFor(input, view.home);
   if (exec !== undefined) {
     const args =
@@ -774,7 +774,7 @@ function grantsCheck(
 }
 
 /**
- * `manual` (A3 3.7.8): an entry of TTasks's name in a home that setup did not write. Without
+ * `manual`: an entry of TTasks's name in a home that setup did not write. Without
  * `--instance` it is a hand-made entry, as `print` writes one: not a mistake, so the row says what
  * it reaches (the machine's default space only). With one, the grant gate refuses its calls until
  * setup registers that instance, whose refusal sends the person to setup, which leaves the home
@@ -911,7 +911,7 @@ function t3Check(input: SetupInput, views: readonly HomeView[]): Check {
   return { id: "t3.homes", status: "warn", detail: parts.join(" ") };
 }
 
-/** `desktop.restart`: Claude Desktop loads its configuration only when it starts (A3 3.13.3). */
+/** `desktop.restart`: Claude Desktop loads its configuration only when it starts. */
 async function restartCheck(
   view: HomeView,
   started: () => Promise<number | "not_running" | undefined>,
@@ -977,7 +977,7 @@ async function desktopStarted(io: Io): Promise<number | "not_running" | undefine
 // ---------------------------------------------------------------------------------------------
 // Programs doctor starts (the entries' commands for the bridge probe, the apps for --live, the
 // apps' own `mcp get`, Windows PowerShell for desktop.restart) are all helpers of the runner in
-// @ttasks/launch (helpers.ts, A3 3.14): it ends each with what it started at its deadline, on stop,
+// @ttasks/launch (helpers.ts): it ends each with what it started at its deadline, on stop,
 // and when doctor exits, so a headless run never goes on, and spends tokens, after the person
 // stopped doctor. This file imports no child_process (dependency-cruiser checks it).
 
@@ -1074,7 +1074,7 @@ const MODERN_META = {
   },
 };
 
-/** The error code at the start of a tool's error text (A3 3.5: `error <code> …`), or a word. */
+/** The error code at the start of a tool's error text (`error <code> …`), or a word. */
 const errorCode = (text: unknown): string =>
   /^error ([a-z_]+)/u.exec(typeof text === "string" ? text : "")?.[1] ?? "error";
 
@@ -1163,7 +1163,7 @@ async function bridgeCheck(
 // ---------------------------------------------------------------------------------------------
 // --live
 
-/** The headless call of an app (A3 3.14 `live`), or undefined for an app without one. */
+/** The headless call of an app (doctor's `live`), or undefined for an app without one. */
 function liveArgv(app: HomeView["home"]["app"], exec: readonly string[]): string[] | undefined {
   if (app === "claude-code") {
     return [

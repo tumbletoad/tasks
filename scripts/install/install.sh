@@ -1,5 +1,5 @@
 #!/bin/sh
-# @@PRODUCT_NAME@@ install script for Linux, version @@VERSION@@ (A2 3.12.4).
+# @@PRODUCT_NAME@@ install script for Linux, version @@VERSION@@.
 # Rendered from scripts/install/install.sh by scripts/install/render.ts (@@BUILD_KIND@@ build).
 # Do not edit it: the release keys below are what it trusts.
 #
@@ -8,8 +8,8 @@
 #   --source <folder>  the release files, in one local folder: @@PRODUCT@@-@@VERSION@@-<platform>.tar.gz,
 #                      SHA256SUMS, SHA256SUMS.sig and SHA256SUMS.sshsig.
 #   --root <folder>    the install root, an absolute path whose parent folder exists. Default:
-#                      $@@HOME_VAR@@. The whole install lives in it (a separate install, A2 3.2.2
-#                      rule 3): versions/, current, bin/@@PRODUCT@@, config/, state/, cache/ and
+#                      $@@HOME_VAR@@. The whole install lives in it (a separate
+#                      install): versions/, current, bin/@@PRODUCT@@, config/, state/, cache/ and
 #                      home.marker. This installer makes separate installs only. It writes nothing
 #                      outside the root: no PATH entry, no shell profile, no desktop entry.
 #   --verifier <tool>  ssh-keygen or openssl: the tool that checks the signature. Default:
@@ -22,7 +22,7 @@
 # (util-linux), sha256sum, base64, gzip and tar; and ssh-keygen or openssl. Each is checked first, with a message naming what is
 # missing.
 #
-# The order is the point (A2 3.12.4, review SL-13). Nothing from the archive is unpacked, run,
+# The order is the point. Nothing from the archive is unpacked, run,
 # sourced or loaded until the Ed25519 signature of SHA256SUMS verifies against a pinned key and
 # the archive's SHA-256 matches its line in SHA256SUMS. Then its entries are checked (plain files
 # and folders, relative names without . or .. segments), it is unpacked into a staging folder
@@ -32,7 +32,7 @@
 # rows) and, only once that passed, switches `current`. A failure at any point leaves the previous
 # install as it was and removes what this run created, and nothing else.
 
-# A clean start (review M1.14): no function a parent shell exported may stand in for a tool or a
+# A clean start: no function a parent shell exported may stand in for a tool or a
 # builtin (bash, which is sh on some systems, imports them even in POSIX mode), and no option or
 # loader variable may change what GNU tar, gzip, grep or OpenSSL read and write, or what cd prints.
 unset -f printf command cd pwd read test [ echo umask readlink uname getconf id mkdir mktemp cp \
@@ -50,7 +50,7 @@ PRODUCT_NAME='@@PRODUCT_NAME@@'
 VERSION='@@VERSION@@'
 BUILD_KIND='@@BUILD_KIND@@'
 NAMESPACE="$PRODUCT-release"
-# A2 3.12.3, path length: the Windows launchers' longest path below the root must stay under
+# Path length: the Windows launchers' longest path below the root must stay under
 # MAX_PATH. The same limit holds here, in bytes, so a root works on both systems alike.
 MAX_ROOT=168
 
@@ -90,7 +90,7 @@ has_current() {
 # folders go: current names this version (a crash or a signal after the finish's switch), the
 # version an earlier install made current, or one an update made current after the finish let go
 # of update.lock. An update may also use, meanwhile, a version folder this run renamed into place
-# (it takes an equal folder that is there, A2 3.12.4 step 7, and holds update.lock, not this
+# (it takes an equal folder that is there, and holds update.lock, not this
 # script's lock), so that folder stays too, verified and unused.
 cleanup() {
   if [ -n "$root_new$target_new$marker_new$versions_new" ] && has_current; then
@@ -196,7 +196,7 @@ esac
 [ "$(id -u)" != 0 ] || fail "Run the installer as yourself, not as root: $PRODUCT_NAME installs per user."
 ARCHIVE="$PRODUCT-$VERSION-$PLATFORM.tar.gz"
 
-# ---- The install root (A2 3.2.2 rules 3 and 5, A2 3.12.4) --------------------------------------
+# ---- The install root --------------------------------------------------------------------------
 [ -n "$root" ] || fail "Set @@HOME_VAR@@ or pass --root <folder>. This installer makes separate installs only, into a folder you name."
 case $root in
   /*) ;;
@@ -211,7 +211,7 @@ case "$root/" in
 esac
 [ "$root" != / ] || fail 'The install root cannot be / itself.'
 
-# Its length: A2 3.12.3, path length.
+# Its length, under the launchers' path limit.
 too_long() {
   length=$(printf '%s' "$1" | wc -c | tr -d ' ')
   [ "$length" -gt "$MAX_ROOT" ]
@@ -219,7 +219,7 @@ too_long() {
 too_long "$root" &&
   fail "The install root is $length bytes long. At most $MAX_ROOT are allowed, so every path the launchers use below it stays short enough."
 
-# Safe for code (A2 3.2.2 rule 5, A2 3.12.4): nothing from the archive may run from, or write
+# Safe for code: nothing from the archive may run from, or write
 # to, a folder that someone else can change. The root and the folders the install uses in it
 # (versions, bin with the stable command, state, config, cache) must be this user's plain folders;
 # every folder above the root must belong to this user or to root, because an account that can
@@ -366,7 +366,7 @@ if [ ! -e "$root" ] && [ ! -L "$root" ]; then
 fi
 [ -d "$root" ] && [ ! -L "$root" ] || fail "The install root $root is not a folder (or is a link). Nothing was installed."
 # From here on the root is its real path, as the launchers resolve it (readlink -f) and the install
-# ID is computed from it (A2 3.2.1). Its length and the folders above it are checked again.
+# ID is computed from it. Its length and the folders above it are checked again.
 real=$(cd -- "$root" && pwd -P) || fail "Cannot read the install root $root."
 if [ "$real" != "$root" ]; then
   [ -z "$root_made" ] || root_made=$real
@@ -375,7 +375,7 @@ if [ "$real" != "$root" ]; then
     fail "The install root's real path is $length bytes long. At most $MAX_ROOT are allowed."
 fi
 
-# One install into a root at a time, from here to the end of the clean-up (A2 3.2.3 holds
+# One install into a root at a time, from here to the end of the clean-up (an update holds
 # update.lock for a whole install; a script cannot take a SQLite lock). flock on the root folder
 # itself, which the system lets go when this script ends, however it ends. Only while it holds the
 # lock may a failure remove the root it made: until then another install may be using it.
@@ -536,7 +536,7 @@ verify_folder "$staging" "$staging/manifest.json" ||
 
 # ---- 5. Into versions/<version> ------------------------------------------------------------------
 if [ -e "$target" ] || [ -L "$target" ]; then
-  # The same version is already there (A2 3.12.4 step 7). It runs only if it is exactly this signed
+  # The same version is already there. It runs only if it is exactly this signed
   # release: a plain folder that only this user can change, all through (checked before its files
   # are, so none can change after), its manifest.json byte for byte the staged one, every file
   # checked against that. Otherwise it is left as it is: a running TTasks may use it.
@@ -562,13 +562,13 @@ staging=''
 rm -rf -- "$work"
 work=''
 
-# ---- 6. home.marker: the launchers set @@HOME_VAR@@ to the root (A2 3.2.2 rule 3) --------------
+# ---- 6. home.marker: the launchers set @@HOME_VAR@@ to the root --------------------------------
 if [ ! -e "$root/home.marker" ]; then
   : > "$root/home.marker" || fail "Cannot write $root/home.marker."
   marker_new="$root/home.marker"
 fi
 
-# ---- 7. The new version's own launcher: self-test, then current (A2 3.12.4 step 4) ---------------
+# ---- 7. The new version's own launcher: self-test, then current ----------------------------------
 set -- install --finish
 [ -z "$root_new" ] || set -- "$@" --created .
 [ -z "$versions_new" ] || set -- "$@" --created versions

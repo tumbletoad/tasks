@@ -26,7 +26,7 @@
 // path, because Node has no `mkdirat` or `openat`. A link put in place of a checked `workdirs`
 // before the space's folder is made makes that one empty folder (0700) where the link leads; the
 // check after it refuses the launch, so nothing is started or written there. Only this user (or an
-// administrator) can do that: the machine state folder is the user's own and user-only (A2 3.2.2),
+// administrator) can do that: the machine state folder is the user's own and user-only,
 // so the window gives no one anything they could not already do.
 import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
 import type { BigIntStats } from "node:fs";
@@ -52,7 +52,7 @@ export const WORK_ROOT = "<state>";
 export const workFolderPath = (space: string): string => `workdirs/space-${space}`;
 
 export interface LaunchFolderOptions {
-  /** The install's machine state folder (A2 3.2.1 `<state>`), which holds the work folders. */
+  /** The install's machine state folder (`<state>`), which holds the work folders. */
   readonly stateDir: string;
   readonly platform?: NodeJS.Platform;
 }
@@ -141,7 +141,7 @@ function look(
  * Makes `<state>/workdirs/space-<space>/` when it is not there and checks every folder of it before
  * anything is made in it or below it, as the head of this file says. Each folder it makes is 0700,
  * set on the folder itself so the umask cannot loosen it; on Windows the state folder's user-only
- * ACL is inherited (A2 3.2.1). A folder that is there is never changed: it passes or is refused.
+ * ACL is inherited. A folder that is there is never changed: it passes or is refused.
  */
 export function ensureWorkFolder(stateDir: string, space: string): WorkFolderCheck {
   // The file system's own rules, whatever OS's path rules a caller resolves places with.

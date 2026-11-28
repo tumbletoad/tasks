@@ -35,11 +35,16 @@ const KINDS: KindRows = {
   finish:
     "(c.entity = 'tasks' AND c.field = 'lifecycle') " +
     `OR (c.entity = 'tasks' AND c.field = 'wrap' AND ${sameNode("lifecycle")})`,
-  trash: `c.entity = 'nodes' AND c.field = 'deleted' AND ${IS_TASK}`,
+  trash:
+    `(c.entity = 'nodes' AND c.field = 'deleted' AND ${IS_TASK}) ` +
+    "OR (c.entity = 'pages' AND c.field = 'deleted')",
   note: "c.entity = 'notes' AND c.field = 'deleted'",
   words:
     `(c.entity = 'nodes' AND c.field IN ('title', 'brief', 'description') AND ${IS_TASK}) ` +
-    "OR (c.entity = 'notes' AND c.field = 'body')",
+    "OR (c.entity = 'notes' AND c.field = 'body') " +
+    // A page's words; the space's and a project's words and their text for agents.
+    "OR (c.entity = 'pages' AND c.field IN ('title', 'brief', 'body')) " +
+    `OR (c.entity = 'nodes' AND c.field IN ('brief', 'description', 'for_agents') AND NOT ${IS_TASK})`,
   inbox:
     "(c.entity = 'tasks' AND c.field = 'inbox') " +
     `OR (c.entity = 'tasks' AND c.field = 'status' AND ${sameNode("inbox")})`,
@@ -67,6 +72,7 @@ const SQL = {
     "WHERE n.kind = 'task' AND n.deleted_at IS NULL) SELECT id FROM down",
   ref: "SELECT ref FROM tasks WHERE id = $id",
   /** Who changed, after `$since`, field `$field` of row `$entity` `$id` (every field when null), or anything of node `$task`. */
+  comments: "SELECT id FROM notes WHERE owner_id = $id",
   newer:
     "SELECT c.node_id AS task, k.author_id AS actor, a.kind AS kind, a.label AS label, " +
     "k.origin AS origin, max(k.at) AS at FROM changes c JOIN commits k ON k.seq = c.seq " +
@@ -135,7 +141,24 @@ function oppositeOf(conn: Connection, changes: readonly Stored[]): Call[] {
     const of = (field: string) => group.find((c) => c.field === field);
     if (first.entity === "nodes") {
       const node = conn.prepare(SQL.node).get({ id });
-      if (node?.["kind"] === "project") {
+      if (node?.["kind"] !== "task") {
+        // The space's or a project's words, and its text for agents, are written back as they were.
+        const words: Record<string, unknown> = {};
+        for (const field of ["brief", "description"]) {
+          const c = of(field);
+          if (c !== undefined) words[field] = parsed(c.before);
+        }
+        if (Object.keys(words).length > 0) {
+          calls.push({ command: "node.set", input: { node: id, ...words } });
+        }
+        const agents = of("for_agents");
+        if (agents !== undefined) {
+          calls.push({
+            command: "node.instruct",
+            input: { node: id, text: parsed(agents.before) },
+          });
+        }
+        if (first.action !== "create" && of("archived") === undefined) continue;
         // A new project is undone by its archive; an archive by an unarchive, and back.
         const archiveAgain =
           first.action === "create" || parsed(of("archived")?.before ?? null) !== null;
@@ -147,7 +170,7 @@ function oppositeOf(conn: Connection, changes: readonly Stored[]): Call[] {
       }
       const deleted = of("deleted");
       if (deleted !== undefined) {
-        if (!trashed.has(String(node?.["parent_id"]))) {
+        if (!trashed.has(String(node["parent_id"]))) {
           const command = tombstoned(deleted.before) ? "nodes.trash" : "nodes.restore";
           calls.push({ command, input: { task: id } });
         }
@@ -199,6 +222,22 @@ function oppositeOf(conn: Connection, changes: readonly Stored[]): Call[] {
       }
       if (Object.keys(set).length > 0)
         calls.push({ command: "task.update", input: { task: id, set } });
+      continue;
+    }
+    if (first.entity === "pages") {
+      const deleted = of("deleted");
+      if (deleted !== undefined) {
+        const command = tombstoned(deleted.before) ? "page.trash" : "page.restore";
+        calls.push({ command, input: { page: id } });
+        continue;
+      }
+      const set: Record<string, unknown> = {};
+      for (const field of ["title", "brief", "body"]) {
+        const c = of(field);
+        if (c !== undefined) set[field] = parsed(c.before);
+      }
+      if (Object.keys(set).length > 0)
+        calls.push({ command: "page.set", input: { page: id, ...set } });
       continue;
     }
     if (first.entity === "notes") {
@@ -262,7 +301,8 @@ function stateOf(c: Stored, json: string | undefined): string | undefined {
     case "place":
       return fieldJson(value["parent_id"] ?? null);
     case "body":
-      return fieldJson(value["body"] ?? null);
+      // A note's words, not when they were edited; a page's body is its words alone.
+      return c.entity === "notes" ? fieldJson(value["body"] ?? null) : json;
     case "archived":
       return String(parsed(json) !== null);
     default:
@@ -387,6 +427,15 @@ function newerOn(
     const task = c.entity === "nodes" || c.entity === "tasks" ? c.id : null;
     const own = { since, principal, anyone: false, field: null };
     if (work.add({ ...own, entity: c.entity, id: c.id, task })) hidden = true;
+    // A page put back in the Trash takes its comments along, as a task takes its notes: one someone
+    // else wrote or changed since keeps the step.
+    if (c.entity === "pages") {
+      for (const note of conn.prepare(SQL.comments).all({ id: c.id })) {
+        const id = String(note["id"]);
+        if (work.add({ ...own, entity: "notes", id, task: null })) hidden = true;
+      }
+      continue;
+    }
     // A task put back in the Trash takes the tasks below it along: one someone else made or
     // changed since, outside what the step wrote, keeps the step.
     if (c.entity !== "nodes" || c.field !== "deleted") continue;

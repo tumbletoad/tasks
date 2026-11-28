@@ -1,5 +1,5 @@
-// resolve() while the tree changes under it, and the in-folder check after it (A1
-// 3.15). Every file system call of resolvePlace is interposed, the reads of the Git remote
+// resolve() while the tree changes under it, and the in-folder check after it.
+// Every file system call of resolvePlace is interposed, the reads of the Git remote
 // and of an open file included, and a change is made just before call N, for every N; or after
 // the last call; or a change before call N and its undoing before call M, for every N < M (A-B-A).
 // The changes are real, with junctions (Windows) or symbolic links (elsewhere). Before each call
@@ -526,7 +526,7 @@ describe("[A1.3.15.places.race] the remote is read step by step", () => {
     // The folder's `.git` is a file naming git folder A; A and B both name WRONG. Between the read
     // of `.git` and the reads in A, `.git` is pointed at B and A is given RIGHT. The reader
     // follows `.git` as it was and reads A as it is: RIGHT, although the folder never held a
-    // repository naming RIGHT. A1 3.15 states the remote check as this observation, not as
+    // repository naming RIGHT. The remote check is this observation, not
     // an identity; the directory's identity is the guarantee.
     const base = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-race-")));
     temps.push(base);

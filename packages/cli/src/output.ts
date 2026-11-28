@@ -1,4 +1,4 @@
-// What the CLI prints (A2 3.10.2, 3.10.3; A3 3.5). With --json, stdout holds exactly one JSON
+// What the CLI prints. With --json, stdout holds exactly one JSON
 // document: the operation's result, or `{"error": {code, class, message, hint, data}}`. Without
 // it, stdout holds plain text for a person and every write names its space. Diagnostics go to
 // stderr. The exit code follows the error's class.
@@ -87,7 +87,7 @@ function levelsReport(result: Result): string[] {
   ];
 }
 
-/** Any failure as A3's error body. A JSON-RPC protocol error is the service's `internal`. */
+/** Any failure as the TTasks error body. A JSON-RPC protocol error is the service's `internal`. */
 export function bodyOf(error: unknown): ErrorBody {
   if (error instanceof AppError) return error.toBody();
   if (error instanceof RpcError) {
@@ -106,7 +106,7 @@ export function bodyOf(error: unknown): ErrorBody {
   return { code: "internal", message: "Something went wrong.", hint: "Run: ttasks doctor" };
 }
 
-/** A2 3.10.3's class of an error body: `service_unavailable` for a version is class `version`. */
+/** The class of an error body: `service_unavailable` for a version is class `version`. */
 export function classOf(body: ErrorBody): ErrorClass {
   const reason = body.data?.["reason"];
   return isErrorCode(body.code)
@@ -124,7 +124,7 @@ export function printError(io: Io, json: boolean, body: ErrorBody): number {
       `${JSON.stringify({ error: { code: body.code, class: cls, message: body.message, ...(body.hint === undefined ? {} : { hint: body.hint }), ...(body.data === undefined ? {} : { data: body.data }) } })}\n`,
     );
   } else {
-    // A3 3.5's text form: error <code>: <one sentence>. <hint>
+    // The text form: error <code>: <one sentence>. <hint>
     io.stderr(`error ${body.code}: ${messageWithHint(body.message, body.hint, CLI_NAME)}\n`);
     const issues = body.data?.["issues"];
     if (Array.isArray(issues)) {
@@ -133,7 +133,7 @@ export function printError(io: Io, json: boolean, body: ErrorBody): number {
       }
     }
     // An undo's or a redo's refusal says who changed which tasks since. Another conflict names its
-    // task and field, and who wrote it when (A3 3.5), never the value.
+    // task and field, and who wrote it when, never the value.
     const newer = newerOf(body.data);
     const conflicts = body.data?.["conflicts"];
     if (newer !== undefined) {
@@ -322,7 +322,7 @@ function trashLines(result: Result, space: string): string[] {
   return lines;
 }
 
-/** A row's due commitment: a date, or a time with its zone (A1 3.4); empty without one. */
+/** A row's due commitment: a date, or a time with its zone; empty without one. */
 function dueText(due: unknown): string {
   if (typeof due === "string") return `due ${due}`;
   if (typeof due === "object" && due !== null) {
@@ -394,7 +394,7 @@ function searchLines(result: Result): string[] {
 }
 
 /**
- * A task draft's row (A3 3.4.5): added, or found by its source key (A1 3.6), with the lifecycle it
+ * A task draft's row: added, or found by its source key, with the lifecycle it
  * was found in, or the tasks that share its keys, and whether its log entry was added. `its` names
  * the draft: a follow-up's draft is not the task the line is about.
  */
@@ -444,7 +444,7 @@ const SCRIPT_VERBS: Readonly<Record<string, string>> = {
   "note.add": "added a note to",
 };
 
-/** Plain text for a person, per entry. `space` names the space a write went to (A2 3.10.2). */
+/** Plain text for a person, per entry. `space` names the space a write went to. */
 /** What `ttasks area` says a write did, by its result. */
 const GROUP_DONE: Readonly<Record<string, string>> = {
   created: "Created",
@@ -613,7 +613,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
         break;
       }
       lines.push(`${redo ? "Redid" : "Undid"} your change${which} in ${space}${replay(result)}`);
-      // A3 3.7.4: a newer change by a script of the same person, which no undo reaches.
+      // A newer change by a script of the same person, which no undo reaches.
       const scripted = result["script_change"] as Result | undefined;
       if (scripted !== undefined) {
         lines.push(
@@ -799,7 +799,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       lines.push(...searchLines(result));
       break;
     case "group.manage": {
-      // `ttasks area list` (A3 3.4.10): each area with its active tasks, its projects below it. A
+      // `ttasks area list`: each area with its active tasks, its projects below it. A
       // write says what it did to which group first.
       const group = result["group"] as Result | undefined;
       if (typeof result["result"] === "string" && group !== undefined) {
@@ -844,7 +844,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       break;
     }
     case "prefs.manage":
-      // `ttasks prefs` (A3 3.4.11): one key a line, its value or what it takes; a set says what
+      // `ttasks prefs`: one key a line, its value or what it takes; a set says what
       // it changed from and to, or that the value was so already.
       if (result["action"] === "set" && Array.isArray(result["changed"])) {
         for (const change of result["changed"] as Result[]) {

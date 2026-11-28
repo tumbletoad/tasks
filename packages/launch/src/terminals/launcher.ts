@@ -1,12 +1,12 @@
-// The terminal route's start (A4 3.6.2, 3.7): the chain of this machine's terminals, each command
+// The terminal route's start: the chain of this machine's terminals, each command
 // line built with the launch's ticket, wrapped in a transient scope on Linux, started by the
 // spawner, and judged by its adapter's acceptance rule (accept.ts).
 //
-// Linux scopes: the first launch after a start probes `systemd-run --user --scope … true` (A4
-// 3.6.2); when the probe fails, or there is no systemd-run, terminals start detached in a session
-// of their own instead (`setsid`, A4 3.7's fallback), and doctor will say a restart may end them.
+// Linux scopes: the first launch after a start probes `systemd-run --user --scope … true`;
+// when the probe fails, or there is no systemd-run, terminals start detached in a session
+// of their own instead (`setsid`), and doctor will say a restart may end them.
 // Windows: Windows Terminal's client is a normal child (it hands off at once, and the tab belongs
-// to Windows Terminal, measured by M0 S04); the console's starter is a hidden normal child too,
+// to Windows Terminal, as measured); the console's starter is a hidden normal child too,
 // and the shim it starts through ShellExecute gets a console of its own, outside the service's
 // kill-on-close job (libuv's job lets a child's children break away silently).
 import { posix } from "node:path";
@@ -44,7 +44,7 @@ export const SCOPE_PROBE_MS = 5_000;
 export interface TerminalLauncherOptions {
   readonly platform: NodeJS.Platform;
   readonly settings: TerminalSettings;
-  /** The install ID, for scope unit names (A4 3.7). */
+  /** The install ID, for scope unit names. */
   readonly install: string;
   /**
    * The product's own command, absolute program first: the stable launcher (`<root>/bin/ttasks`),
@@ -111,7 +111,7 @@ export class TerminalLauncher {
 
   /**
    * Whether a terminal launch can start at all: the product's command is known on an OS the
-   * adapters serve. Which terminal opens is decided at the launch (A4 3.6.2's chain).
+   * adapters serve. Which terminal opens is decided at the launch (the terminal chain).
    */
   ready(): boolean {
     return this.#o.shimCommand !== undefined && this.#o.platform !== "darwin";

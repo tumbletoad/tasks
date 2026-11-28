@@ -27,7 +27,7 @@ const CONTRACTS = "../../contracts/src/index.ts";
 const STORAGE = "../../storage/src/index.ts";
 const TESTKIT = "../../testkit/src/index.ts";
 
-// A fixture tree with the package layout of A7 3.2 and two fake npm packages. Each production
+// A fixture tree with the package layout and two fake npm packages. Each production
 // file breaks at most one rule, so the expected violations name the rule that must fire. The
 // allowed imports, including the test files that use testkit, I/O and other packages, must not.
 const files: Record<string, string> = {

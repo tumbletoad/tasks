@@ -1,4 +1,4 @@
-// The Verify line of A7 3.9 M2.05 (A4 5.1 "Launch state machine (property test)", 5.2): random
+// The launch state machine's property test: random
 // clicks, confirmations, claims (the same claim ID again included), reports, time passing, wall
 // clock steps either way, sweeps, start-up recoveries, T3 re-pairings, calls that overlap (each
 // call stays under way while it waits on time, and two can start at once), calls to the store or

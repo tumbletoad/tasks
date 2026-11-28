@@ -1,5 +1,5 @@
-// `ttasks undo` and `ttasks redo` as a person reads them (A1 3.10.1, A2 3.10.2, 3.10.3; A7 3.10
-// M3.02): the change taken back and redone, named with its tasks and the space, the part a partial
+// `ttasks undo` and `ttasks redo` as a person reads them:
+// the change taken back and redone, named with its tasks and the space, the part a partial
 // undo kept, and the exit codes of the user-only rule and of nothing to redo. The CLI in this
 // process against a service in this process; fixture text and temporary folders only.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";

@@ -1,4 +1,4 @@
-// Fuzzing the stream parsers over mutated recordings (A4 5.1 "Parsers (fuzzing)", A7 3.18.1).
+// Fuzzing the stream parsers over mutated recordings.
 // Each case takes a recording of lab run N, mutates its lines and bytes (cut, drop, repeat, swap,
 // insert noise, unknown events, retyped fields, invalid UTF-8, lines around the cap), feeds it in
 // random chunks and ends it with a random exit. The parser must never throw, never log, keep its

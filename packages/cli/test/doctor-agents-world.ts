@@ -101,7 +101,7 @@ export function useDoctorWorld(): void {
       join(desktopFolder, "claude_desktop_config.json"),
       '{\n  "mcpServers": {},\n  "preferences": {}\n}\n',
     );
-    // T3 Code with its default Codex instance renamed, in T3's own shape (A3 3.13.6), and its default
+    // T3 Code with its default Codex instance renamed, in T3's own shape, and its default
     // Claude instance, which the file does not list: both on the default homes.
     mkdirSync(join(user, ".t3", "userdata"), { recursive: true, mode: 0o700 });
     writeFileSync(

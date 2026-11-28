@@ -1,8 +1,8 @@
-// `ttasks shim <ticket>` (A4 3.6.3): the launch shim. A terminal runs it and nothing else; it claims
+// `ttasks shim <ticket>`: the launch shim. A terminal runs it and nothing else; it claims
 // its launch once with the ticket, verifies what the claim's reply says, starts the agent as its
 // child, reports the agent's start, settle and exit, and stays attached across service restarts.
 //
-// Steps (A4 3.6.3's numbering):
+// Steps:
 // 1. Start. The ticket's pattern is checked; the process title becomes `ttasks shim`, which on Linux
 //    overwrites the argv area, so from here the ticket no longer shows in /proc/<pid>/cmdline.
 //    Until the claim, a hang-up ends the shim without claiming.
@@ -10,16 +10,16 @@
 // 3. Claim: `launch.claim {ticket, role, pid, start_time}`. The ticket is not used again.
 // 4. Verify the protocol, then the folder before anything else is done there: the service started
 //    the shim's terminal in the folder it resolved right before the launch, and the reply's check
-//    (A4 3.3) must find that very directory as the shim's own working directory
+//    must find that very directory as the shim's own working directory
 //    (`checkWorkingFolder`, through `.`), then the executable. A failure is reported as
 //    `launch.failed`, with the folder check's reason, and nothing starts.
 // 5. Announce: the terminal's title and one line.
-// 6. Spawn the agent (agent.ts, the seam M2.09 replaces) and report `launch.started`. The agent
+// 6. Spawn the agent (agent.ts) and report `launch.started`. The agent
 //    gets no working-directory option, so it inherits the checked directory, and the shim never
 //    changes its own working directory.
 // 7. Settle: after 3 s, if the agent still runs, `launch.settled`.
 // 9. Exit report: `launch.exited`, or `exit.json` when the service cannot be reached.
-// 10. After exit: `close`, `close-on-success`, `pause`. `shell` waits like `pause` until M2.09.
+// 10. After exit: `close`, `close-on-success`, `pause`. `shell` waits like `pause`.
 // 11. Exit with the agent's exit code (128 + the signal's number for a signal).
 //
 // Nothing of the ticket, the credential, the environment or the argv is printed or logged: the
@@ -74,7 +74,7 @@ import {
 
 /** How long the shim waits for its exit report to be taken before it writes exit.json. */
 export const FINISH_MS = 10_000;
-/** A4 3.6.3 step 8: after a hang-up the agent gets this long before the shim exits. */
+/** Step 8: after a hang-up the agent gets this long before the shim exits. */
 export const HANGUP_GRACE_MS = 2_000;
 
 /** The usage error (exit 2) never repeats the arguments. */
@@ -112,7 +112,7 @@ export interface ShimIo extends Place {
   write(text: string): void;
   /** Resolves on Enter or the end of stdin. Never called while the agent runs. */
   waitEnter(): Promise<void>;
-  /** Sets the process title (A4 3.6.3 step 1). */
+  /** Sets the process title. */
   setTitle(title: string): void;
   /**
    * Makes `folder` this process's working directory (step 4, before the folder check). Throws
@@ -187,7 +187,7 @@ function processIo(): ShimIo {
   };
 }
 
-/** The title and the announce line hold no control characters (A4 3.6.3 step 5, sanitised). */
+/** The title and the announce line hold no control characters (step 5, sanitised). */
 export const printable = (text: string): string =>
   // eslint-disable-next-line no-control-regex -- removing control characters is the point
   text.replace(/[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g, "").slice(0, 200);
@@ -198,7 +198,7 @@ export type VerifyProblem =
   | { readonly what: "folder"; readonly reason: ResolveReason };
 
 /**
- * A4 3.6.3 step 4. Undefined when everything holds, else what failed. The protocol first (the
+ * Step 4. Undefined when everything holds, else what failed. The protocol first (the
  * reply's shape is that version's), then the folder, before anything else touches it: the shim
  * enters the folder's real path itself (no terminal decides where it starts), and the check reads
  * the directory it is then in through `.` (places.ts checkWorkingFolder), never the path. Then the
@@ -287,7 +287,7 @@ const isAbsoluteOn = (value: string, platform: NodeJS.Platform): boolean =>
   (platform === "win32" ? win32 : posix).isAbsolute(value);
 
 /**
- * The claim's reply, read strictly (A4 3.6.3 step 4's first part): exactly the fields of this
+ * The claim's reply, read strictly (step 4's first part): exactly the fields of this
  * protocol's reply, each of its type and within its bound (wire.ts REPLY_BOUNDS, which the service
  * keeps too). Anything else is a reply this shim cannot follow, which it reports like a failed
  * verification, so the claim it made is never left without an answer. The parts of the envelope a
@@ -326,7 +326,7 @@ export function readReply(value: unknown, platform: NodeJS.Platform): ReplyRead 
     return fail("reply");
   }
   if (!argv.every((a): a is string => isBoundedText(a, REPLY_BOUNDS.arg))) return fail("reply");
-  // The folder the shim enters itself (M2.09): an absolute path of this OS.
+  // The folder the shim enters itself: an absolute path of this OS.
   const folder = value["folder"];
   if (!isBoundedText(folder, REPLY_BOUNDS.path) || !isAbsoluteOn(folder, platform)) {
     return fail("reply");
@@ -418,7 +418,7 @@ export async function runShim(argv: readonly string[], options: ShimOptions = {}
   const cleanup = (): void => {
     for (const remove of removers.splice(0)) remove();
   };
-  // Ctrl+C belongs to the agent (A4 3.6.3 step 8): the shim ignores it, and SIGQUIT on Unix.
+  // Ctrl+C belongs to the agent: the shim ignores it, and SIGQUIT on Unix.
   removers.push(io.on("SIGINT", () => undefined));
   if (io.platform !== "win32") removers.push(io.on("SIGQUIT", () => undefined));
   // Until the agent runs, a hang-up (window closed) ends the shim at once, so before the claim it
@@ -511,7 +511,7 @@ export async function runShim(argv: readonly string[], options: ShimOptions = {}
       }
     }
     // The claim was answered: the service took it, and this connection holds its attachment. From
-    // here every way out reports the launch's end (A4 3.6.3 step 4), a reply this shim cannot read
+    // here every way out reports the launch's end, a reply this shim cannot read
     // included: on this connection, again after a reattach when the reply gave a credential, or in
     // exit.json when it named one.
     const read = readReply(answered, io.platform);
@@ -640,7 +640,7 @@ async function afterClaim(
       return code;
     case "shell": {
       // The person's own shell in the checked folder (the shim's working directory, inherited),
-      // with the product's variables removed (A4 3.6.3 step 10).
+      // with the product's variables removed.
       io.say(`The agent exited with code ${String(code)}.`);
       const shell = shellAfterExit(env, io.platform);
       try {
@@ -681,7 +681,7 @@ export function shellAfterExit(
   return [powershellPath(env), "-NoLogo"];
 }
 
-/** An environment without the product's own variables (A4 3.6.3 step 10). */
+/** An environment without the product's own variables. */
 export function withoutProduct(
   env: Readonly<Record<string, string>>,
   platform: NodeJS.Platform,
@@ -711,7 +711,7 @@ function writeExit(where: ExitPlace, fields: Omit<ExitFile, "format" | "launch">
 }
 
 /**
- * A claimed launch that starts no agent (A4 3.6.3 step 4, a spawn error in step 6): reported as
+ * A claimed launch that starts no agent (step 4, a spawn error in step 6): reported as
  * `launch.failed`, or written into `exit.json` when the service does not take it within `finishMs`,
  * then one line for the person, then Enter.
  */

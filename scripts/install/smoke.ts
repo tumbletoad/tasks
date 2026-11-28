@@ -1,8 +1,8 @@
-// pnpm smoke --dist <folder> --work <new folder> (A2 3.12.8 "smoke", A7 3.18.4; M1.14): the
+// pnpm smoke --dist <folder> --work <new folder>: the
 // install script on a build that `pnpm build --sign test` made, on this machine:
 //   1. this system's test install script, pinned to the build's throwaway key
 //      (SHA256SUMS.test-key.pub; the key itself is gone with the build), written into <work>,
-//   2. an install into <work>/home through each verifier path of A2 3.12.4 (the first is the root
+//   2. an install into <work>/home through each verifier path (the first is the root
 //      the acceptance then takes; the others go beside it), each checked: current, the stable
 //      command, install.json and its install ID, `ttasks version` through the stable command,
 //   3. the tampered downloads of the Verify line through each verifier path: a look-alike archive
@@ -11,7 +11,7 @@
 //      the canary folder empty and nothing left,
 //   4. the command that runs the installed acceptance next: pnpm accept m1 --installed <work>/home.
 // <work> must not exist: it is made user-only (on Windows: this user, SYSTEM and Administrators
-// alone, so the roots in it are trusted, A2 3.2.2 rule 5) and left in place for the acceptance.
+// alone, so the roots in it are trusted) and left in place for the acceptance.
 // It must lie below folders that no other account can rename (the install script refuses a root
 // otherwise): a folder in the home or profile folder, not one in a shared temporary folder.
 // Nothing outside <work> is written: no PATH, profile, start-up entry or registry value.

@@ -1,4 +1,4 @@
-// Lets a process end through `process.exit` without hanging in it (A2 3.12.1). Every script that
+// Lets a process end through `process.exit` without hanging in it. Every script that
 // ends through `process.exit` and runs the product's code imports this module before any other:
 // the CLI's entries (bin.ts, the build's lib/ttasks.mjs), the bridge's and the service's script
 // entries, and the test scripts that run the product's code. tests/runtime/safe-exit-entries.test.ts
@@ -22,7 +22,7 @@
 // V8 reads both flags each time it starts such a job, so turning them off here stops every later
 // one. Worker threads share the flags.
 //
-// What a run-time flag cannot reach (A2 3.12.1): a TurboFan job can still allocate on its worker
+// What a run-time flag cannot reach: a TurboFan job can still allocate on its worker
 // when it folds a constant string, and TurboFan's concurrency is fixed when the isolate starts; a
 // job started before this module ran, during Node's start-up and the loading of the entry's
 // modules, is not stopped. Both are rarer than the Sparkplug and Maglev jobs and were not seen to

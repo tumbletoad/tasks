@@ -8,6 +8,15 @@ import { newId, osRandom, type Id, type RandomSource } from "../ids.ts";
 /** The tree's format: a build before the tree meets it as a newer revision and refuses to write. */
 export const TREE_FORMAT = { major: 1, minor: 0 } as const;
 
+/** Columns a create change leaves out: each follows from the change's seq. */
+export const DERIVED: ReadonlySet<string> = new Set([
+  "created_seq",
+  "version",
+  "touched",
+  "fv",
+  "fp",
+]);
+
 const VERSIONS =
   "created_seq INTEGER NOT NULL, version INTEGER NOT NULL, " +
   "fv TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(fv)), " +
@@ -98,13 +107,24 @@ export const TREE_STATEMENTS: readonly string[] = [
   "CREATE INDEX tasks_open ON tasks(lifecycle, status)",
   "CREATE INDEX tasks_due ON tasks(due_date) WHERE lifecycle = 'active'",
   "CREATE INDEX tasks_done ON tasks(completed_at) WHERE lifecycle = 'completed'",
+  // Knowledge written in the space, on one node. Its earlier versions are its change rows.
+  `CREATE TABLE pages (
+  id TEXT PRIMARY KEY, ref INTEGER NOT NULL UNIQUE, owner_id TEXT NOT NULL REFERENCES nodes(id),
+  title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 300 AND instr(title, char(10)) = 0),
+  brief TEXT NOT NULL DEFAULT '' ${ONE_LINE("brief", 400)}, body TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL, created_by TEXT NOT NULL REFERENCES actors(id),
+  deleted_at INTEGER, deleted_by TEXT REFERENCES actors(id),
+  ${VERSIONS}
+) STRICT`,
+  "CREATE INDEX pages_owner ON pages(owner_id) WHERE deleted_at IS NULL",
   // The prototype import's task IDs, which text written before may hold: a task is found by them.
   `CREATE TABLE aliases (
   namespace TEXT NOT NULL CHECK (namespace IN ('planning')), alias TEXT NOT NULL,
   entity_id TEXT NOT NULL REFERENCES nodes(id), created_at INTEGER NOT NULL,
   PRIMARY KEY (namespace, alias)
 ) STRICT, WITHOUT ROWID`,
-  // Notes, log entries and learnings in one thread, numbered per owner.
+  // Notes, log entries and learnings in one thread on a node, and a page's comments; numbered per
+  // owner.
   `CREATE TABLE notes (
   id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, ordinal INTEGER NOT NULL,
   kind TEXT NOT NULL DEFAULT 'note' CHECK (kind IN ('note','progress','evidence','blocker',
@@ -135,8 +155,8 @@ export interface CreatedTreeSpace {
 
 /**
  * Makes an empty tree space on an empty database: the tables, the space row, its person and its
- * system actor, and the root node. The root is the space's own row, made before any commit, like
- * the space row: it has no change row.
+ * system actor, and the root node. The root is made by the space's first commit, a system commit
+ * with its create row, so the space's brief and description have a history like every node's.
  */
 export function createTreeSpace(
   conn: Connection,
@@ -175,9 +195,31 @@ export function createTreeSpace(
     conn
       .prepare(
         "INSERT INTO nodes (id, kind, parent_id, position, title, created_at, created_by, " +
-          "touched, created_seq, version) VALUES ($id, 'space', NULL, 'a0', $title, $at, $by, 0, 0, 0)",
+          "touched, created_seq, version) VALUES ($id, 'space', NULL, 'a0', $title, $at, $by, 1, 1, 1)",
       )
       .run({ id: made.spaceId, title: space.name, at: space.at, by: made.system });
+    conn
+      .prepare(
+        "INSERT INTO commits (seq, id, epoch, incarnation, at, actor_kind, principal_id, author_id, " +
+          "scope_id, machine_id, origin, request_id, kind, ops) VALUES (1, $id, 1, $incarnation, " +
+          "$at, 'system', $by, $by, 'system', $machine, 'system', 'space.create', 'space.create', '[]')",
+      )
+      .run({
+        id: newId("op", random),
+        incarnation: made.incarnation,
+        at: space.at,
+        by: made.system,
+        machine: space.machineId,
+      });
+    const root = conn.prepare("SELECT * FROM nodes WHERE id = $id").get({ id: made.spaceId }) ?? {};
+    const after = Object.fromEntries(Object.entries(root).filter(([c]) => !DERIVED.has(c)));
+    conn
+      .prepare(
+        "INSERT INTO changes (seq, n, entity, entity_id, node_id, action, after, after_prov) " +
+          "VALUES (1, 1, 'nodes', $id, $id, 'create', $after, 1)",
+      )
+      .run({ id: made.spaceId, after: JSON.stringify(after) });
+    conn.exec("UPDATE space SET last_seq = 1 WHERE one = 1");
   });
   return made;
 }

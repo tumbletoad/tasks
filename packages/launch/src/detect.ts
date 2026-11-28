@@ -1,9 +1,9 @@
-// Instance detection (A4 3.2: "Detection proposes, the user confirms"). Finds the agent commands
+// Instance detection: detection proposes, the person confirms. Finds the agent commands
 // (Claude Code, Codex, T3), their config homes and the user's wrapper scripts, and proposes one
 // instance per wrapper or home. Nothing is created: a proposal becomes an `[[instance]]` only when
 // the person confirms it, through the service's machine.toml editor.
 //
-// What detection may read (A4 3.2): a folder's presence, a file's presence and
+// What detection may read: a folder's presence, a file's presence and
 // executable bit, a link's target, names in a folder, and a command's version from running it
 // with `--version`. It never opens a file in an agent home (no sign-in file, token, settings or
 // session history), never reads a wrapper script, never runs a wrapper (a wrapper may select a
@@ -62,8 +62,8 @@ export interface FoundCommand {
   /** The executable and the arguments before TTasks's (`[node, entry]` for npm). Empty: unusable. */
   readonly exec: readonly string[];
   /**
-   * Why it cannot be run directly: a Windows `.cmd` shim with no npm entry beside it (A4 3.2:
-   * never through `cmd.exe`), an npm entry without
+   * Why it cannot be run directly: a Windows `.cmd` shim with no npm entry beside it (never
+   * through `cmd.exe`), an npm entry without
    * Node on the PATH, or a name that resolves to one of the user's wrappers (a wrapper is never
    * run by detection and selects its own home, so it is no raw command).
    */
@@ -136,7 +136,7 @@ export function envValue(env: Env, name: string, platform: NodeJS.Platform): str
 }
 
 /**
- * The config home an instance's agent runs with (A4 3.2): the one rule that launch
+ * The config home an instance's agent runs with: the one rule that launch
  * (the `claude-cli://` link's default home, Codex's `env_vars` check and reference match) and
  * setup (`ttasks setup agents`) share.
  * 1. The home variable in the instance's own `env` (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`; in any
@@ -315,7 +315,7 @@ function findCommand(
       };
     }
     // A link into node_modules (npm and nvm on Linux and macOS): run the entry with Node, never
-    // through its `#!/usr/bin/env node` line (A4 3.2).
+    // through its `#!/usr/bin/env node` line.
     const real = host.realpath(file);
     // A name that is (a link to) one of the user's wrappers: running it, even for `--version`,
     // runs the wrapper, and it selects a home of its own.
@@ -422,7 +422,7 @@ export function resolveProgram(
   return { ok: true, command: file, args: [...argsPrefix] };
 }
 
-/** Wrapper scripts in `~/.local/bin` (A4 3.2). Linux and macOS only: Windows wrappers are shims. */
+/** Wrapper scripts in `~/.local/bin`. Linux and macOS only: Windows wrappers are shims. */
 function findWrappers(host: DetectHost, def: TargetDef): FoundWrapper[] {
   const prefix = def.detect.wrapperPrefix;
   if (prefix === undefined || host.platform === "win32") return [];
@@ -470,7 +470,7 @@ function proposalsFor(
   const proposals: Proposal[] = [];
   const target = def.id as Extract<DetectableTarget, "claude-cli" | "codex-cli">;
   const envName = def.detect.homes?.env ?? "";
-  // Wrappers win (A4 3.2): a wrapper and a home with the same suffix are one account, offered as
+  // Wrappers win: a wrapper and a home with the same suffix are one account, offered as
   // the wrapper. Which home a wrapper selects is inside the script, which detection never reads,
   // so a wrapper without a home of its suffix asks the person for the home.
   for (const wrapper of wrappers) {
@@ -617,7 +617,7 @@ export interface ProposalChoices {
 }
 
 /**
- * The `[[instance]]` entry a confirmed proposal becomes, keys in A4 3.2's order, or the needs still
+ * The `[[instance]]` entry a confirmed proposal becomes, keys in their order, or the needs still
  * open. Only the person's confirmation calls this; detection never writes.
  */
 export function instanceEntry(
@@ -678,7 +678,7 @@ export interface NodeHostOptions {
 const VERSION_OUTPUT_CHARS = 64 * 1024;
 
 /**
- * The real file system and processes. `env` is the agent environment the caller built (A4 3.8):
+ * The real file system and processes. `env` is the agent environment the caller built:
  * detection never falls back to this process's own. A `--version` run goes through the helper
  * runner (helpers.ts): only that environment, no stdin, no shell and no window, killed with what it
  * started at its time bound or when this process exits.

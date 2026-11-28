@@ -1,12 +1,12 @@
-// `ttasks open [<space>] [--task <ref>] [--tab] [--print-url]` (A2 3.9, 3.8.4), and
-// `ttasks service port <n> [--reuse [--yes]]` (A2 3.8.2 step 5).
+// `ttasks open [<space>] [--task <ref>] [--tab] [--print-url]`, and
+// `ttasks service port <n> [--reuse [--yes]]`.
 //
 // `ttasks open`:
 //   0. names its space as every command does (namedSpace: the argument, --space, TTASKS_SPACE),
 //      and settles it to one space's ID by the service's rule before anything opens;
 //   1. connects over the socket and asks for a one-time code (`ui/mint_code`). An agent's shell
 //      (`cli-agent`) may not: "Ask the user to open TTasks". When another user holds or held the
-//      UI's port, the service refuses with A2's message and no code exists;
+//      UI's port, the service refuses with its message and no code exists;
 //   2. proves the listener before trusting its port: `POST /api/v1/auth/probe` must answer the
 //      HMAC of ipc.key over this instance, the port and a fresh nonce. A process squatting on the
 //      port cannot, and never sees the code;
@@ -14,17 +14,16 @@
 //      browser never sends, and the page removes it at once. `--print-url` prints the link
 //      instead, with a warning that it holds a one-time sign-in code.
 //
-// A service that is not running is started first (A2 3.3.6, 3.9 step 1), the same way `tasks
+// A service that is not running is started first, the same way `tasks
 // service start` starts it (`startService` of @ttasks/service/install: through the OS, and only a
 // ready service counts), with one line on stderr that says so, and a second when Linux started it
-// by hand because its unit is not installed (A2 3.3.3). Only `not_running` starts it: a
+// by hand because its unit is not installed. Only `not_running` starts it: a
 // service that is starting, stopping, unreachable or untrusted is reported as every command
 // reports it. An agent's shell never starts it: it is told to ask the user, as when the service
-// runs (A2 S6, 3.6.5). A start that fails says why and names the command to look further.
+// runs. A start that fails says why and names the command to look further.
 //
-// The browser is opened with the OS's own opener (A2 3.9: rundll32's FileProtocolHandler,
-// explorer.exe in a packaged context, `gio open` then `xdg-open`, `open`); A4's opener module
-// takes this over when it exists.
+// The browser is opened with the OS's own opener (rundll32's FileProtocolHandler,
+// explorer.exe in a packaged context, `gio open` then `xdg-open`, `open`).
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -67,7 +66,7 @@ export class StartFailed extends Error {
 /**
  * Starts this install's service as `ttasks service start` does, and resolves once it is ready:
  * `started`, `started_by_hand` when it was started without the Linux unit a user manager could
- * start it through (A2 3.3.3), or `already_running` when another start got there first. Throws
+ * start it through, or `already_running` when another start got there first. Throws
  * StartFailed.
  */
 export type StartService = (io: Io) => Promise<"started" | "started_by_hand" | "already_running">;
@@ -90,7 +89,7 @@ const startAsServiceStart: StartService = async (io) => {
   }
 };
 
-/** An agent's shell (A2 3.6.5's `cli-agent`): a marker the service would read in the bind. */
+/** An agent's shell (`cli-agent`): a marker the service would read in the bind. */
 const agentShell = (io: Io): boolean => Object.keys(rpcContextEnv(io.env)).some(isAgentMarker);
 
 const askTheUser = () => ({
@@ -127,7 +126,7 @@ const PROBE_MS = 5_000;
 const PROBE_MAX_BYTES = 4096;
 
 /**
- * Whether the listener on `port` is this service's: the HMAC probe of A2 3.8.4 step 2, within one
+ * Whether the listener on `port` is this service's: the HMAC probe, within one
  * deadline for the whole exchange (`deadlineMs`, 5 s), whatever answers on the port.
  */
 export async function probeListener(
@@ -190,7 +189,7 @@ function launch(file: string, args: readonly string[]): Promise<boolean> {
   });
 }
 
-/** The OS's opener (A2 3.9 step 3), tried in order. */
+/** The OS's opener, tried in order. */
 export const openInBrowser: OpenUrl = async (url, io) => {
   const candidates: [string, string[]][] = [];
   if (io.platform === "win32") {
@@ -211,7 +210,7 @@ export const openInBrowser: OpenUrl = async (url, io) => {
 };
 
 /**
- * The page's route for the tab (A5 3.3): `/s/<space ID>`, and `/task/<ref>` below it for a task; a
+ * The page's route for the tab: `/s/<space ID>`, and `/task/<ref>` below it for a task; a
  * task without a space is `/task/<ref>`, which the page opens in the machine's default space.
  */
 function routeOf(id: string | undefined, task: string | undefined): string | undefined {
@@ -471,7 +470,7 @@ export async function openCommand(
 /**
  * `ttasks service port <n> [--reuse [--yes]]`: a new persisted port, the sightings cleared, a
  * restart. `--reuse` (the blocked port again) asks the person to confirm that every tab and app
- * window is closed (A2 3.8.2 step 5); `--yes` confirms without asking, where no terminal can ask.
+ * window is closed; `--yes` confirms without asking, where no terminal can ask.
  */
 export async function servicePortCommand(
   io: Io,

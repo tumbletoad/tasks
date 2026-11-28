@@ -1,20 +1,20 @@
-// The bundles of a version folder's lib/ (A2 3.12.2), made with esbuild. Four builds:
+// The bundles of a version folder's lib/, made with esbuild. Four builds:
 //
 //   lib/ttasks.mjs       packages/cli/src/entry.ts on its own, no code splitting: it turns on the
 //                       compile cache before it imports a chunk. Its import of ./run.ts becomes
 //                       ./chunks/cli.mjs, of @ttasks/bridge/mcp ./bridge.mjs, and of the shim's
 //                       ./shim/run.ts ./shim.mjs.
 //   lib/chunks/*.mjs    the CLI (cli.mjs, from packages/cli/src/run.ts) and the four worker threads
-//                       the service starts from their own module files, each an entry of its own
-//                       (A2 3.12.2): storage-worker.mjs, maintenance-worker.mjs,
+//                       the service starts from their own module files, each an entry of its own:
+//                       storage-worker.mjs, maintenance-worker.mjs,
 //                       space-admin-worker.mjs and projection-worker.mjs, with the code they share
 //                       in chunk-<hash>.mjs. Every
 //                       file of the split build sits in this one folder, so a module's URL relative
 //                       to import.meta.url resolves the same from whichever chunk holds its code.
 //                       The CLI's own route to the bridge (mcp.ts) imports ../bridge.mjs.
-//   lib/bridge.mjs      the bridge (A2 3.7.1): one file of the Node built-ins it is
+//   lib/bridge.mjs      the bridge: one file of the Node built-ins it is
 //                       allowed, shared with no chunk, with lib/mcp-offline.json beside it.
-//   lib/shim.mjs        the launch shim (A4 3.6.3): `ttasks shim <ticket>`, one file
+//   lib/shim.mjs        the launch shim: `ttasks shim <ticket>`, one file
 //                       of the built-ins it is allowed, shared with no chunk, so the shim loads
 //                       nothing of the CLI or the service.
 //
@@ -23,7 +23,7 @@
 // except for the edits below, made while esbuild loads them (no file in the tree changes), each
 // found exactly once in a file the build loads, or the build fails:
 //   - the build identity: CLI_BUILD, the service's BUILD, storage's app version, BRIDGE_BUILD and
-//     SHIM_BUILD (A2 3.12.2);
+//     SHIM_BUILD;
 //   - the worker entries: `new URL("./entry.ts", import.meta.url)` and its kind become the worker's
 //     bundle file; the bridge's offline file becomes the one beside lib/bridge.mjs.
 // A guard then refuses any other use of import.meta (a module URL, dirname, filename, main) or of
@@ -57,13 +57,13 @@ export const ENTRY_SOURCE = "packages/cli/src/entry.ts";
 /** The CLI, as the chunk lib/chunks/cli.mjs that the entry imports. */
 export const CLI_SOURCE = "packages/cli/src/run.ts";
 
-/** The bridge (M2.01) and its offline answers, which `pnpm gen` writes. */
+/** The bridge and its offline answers, which `pnpm gen` writes. */
 export const BRIDGE_MODULE = "@ttasks/bridge/mcp";
 export const BRIDGE_RUN = "packages/bridge/src/mcp/run.ts";
 export const BRIDGE_NAMES = "packages/bridge/src/mcp/names.ts";
 export const BRIDGE_OFFLINE = "packages/bridge/lib/mcp-offline.json";
 
-/** The bridge's only allowed imports (A2 3.7.1; packages/bridge/src/mcp/imports.test.ts). */
+/** The bridge's only allowed imports (packages/bridge/src/mcp/imports.test.ts). */
 export const BRIDGE_BUILTINS: readonly string[] = [
   "node:crypto",
   "node:fs",
@@ -74,7 +74,7 @@ export const BRIDGE_BUILTINS: readonly string[] = [
   "node:url",
 ];
 
-/** The launch shim (M2.08): its entry, and the file that names its build. */
+/** The launch shim: its entry, and the file that names its build. */
 export const SHIM_RUN = "packages/cli/src/shim/run.ts";
 export const SHIM_LINK = "packages/cli/src/shim/link.ts";
 /** How the entry names the shim: a dynamic import, which becomes lib/shim.mjs. */
@@ -159,7 +159,7 @@ export function chunkEdits(id: BuildIdentity): SourceEdit[] {
       replace: `export const CLI_BUILD = { version: ${literal(id.version)}, build: ${literal(id.build)} } as const;`,
     },
     {
-      // Apart from the hub's lifecycle, so the MCP endpoint and its offline file can name it (M2.02).
+      // Apart from the hub's lifecycle, so the MCP endpoint and its offline file can name it.
       file: "packages/service/src/hub/build.ts",
       find: 'export const BUILD = { version: SOURCE_APP_VERSION, build: "source" } as const;',
       replace: `export const BUILD = { version: SOURCE_APP_VERSION, build: ${literal(id.build)} } as const;`,
@@ -428,15 +428,15 @@ function externalPlugin(
 }
 
 /**
- * `ws`'s optional native add-ons (A2 3.8.1: "pure JavaScript, without its optional native
- * add-ons"). ws loads each inside a try/catch and falls back to its own JavaScript when the load
+ * `ws`'s optional native add-ons, left out: the bundle carries `ws` as pure
+ * JavaScript. ws loads each inside a try/catch and falls back to its own JavaScript when the load
  * throws. They are not installed, so esbuild would leave each as an import from outside lib/.
  */
 const ABSENT_ADDONS = /^(?:bufferutil|utf-8-validate)$/;
 const IN_PACKAGE = /[\\/]node_modules[\\/]/;
 
 /**
- * The CommonJS packages in the bundle (`ws`, the UI listener's WebSocket server, A2 3.8.1).
+ * The CommonJS packages in the bundle (`ws`, the UI listener's WebSocket server).
  * esbuild keeps a CommonJS `require()` of a Node built-in as a call of require(), which an ES
  * module does not have. Each such require gets a CommonJS module of the bundle instead, which takes
  * the built-in from an ES module of the bundle that imports it statically: lib/ still loads
@@ -619,7 +619,7 @@ export function thirdPartyText(
 }
 
 /**
- * lib/bridge.mjs's own entry: the bridge's runMcp, with the offline answers beside it (A2 3.7.3).
+ * lib/bridge.mjs's own entry: the bridge's runMcp, with the offline answers beside it.
  * The entry and the CLI call it as they call @ttasks/bridge/mcp's runMcp from source.
  */
 const BRIDGE_GLUE = `import { fileURLToPath } from "node:url";
@@ -724,8 +724,7 @@ export async function bundle(options: BundleOptions): Promise<BundleResult> {
   writeFileSync(join(lib, "mcp-offline.json"), `${JSON.stringify(offline, null, 2)}\n`);
 
   // Only Node's built-ins stay outside the bundles, and the files of lib/ they name on purpose;
-  // the bridge's and the shim's bundles import only the built-ins each is allowed (A2 3.7.1,
-  // A4 3.6.3).
+  // the bridge's and the shim's bundles import only the built-ins each is allowed.
   const linked = new Set(["./chunks/cli.mjs", "./bridge.mjs", "../bridge.mjs", "./shim.mjs"]);
   const outside = [
     ...externals(entry).filter((e) => !linked.has(e.path) && !isBuiltin(e.path)),

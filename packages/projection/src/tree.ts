@@ -1,4 +1,4 @@
-// The projection's acts on its tree, the space's `view/` (A1 3.13 rules 2, 3, 4 and 6). Nothing
+// The projection's acts on its tree, the space's `view/`. Nothing
 // here reads the database or the trusted state: the caller hands in what the record holds for a
 // path (state.ts).
 //
@@ -27,7 +27,7 @@
 //   only when its content hashes to its name, or when it is empty and the trusted journal names it
 //   (a name alone proves nothing: a person may type into a leftover); any other leftover stays.
 //
-// Not covered, and the contract says so (A1 3.13): a program that replaces a folder of the tree
+// Not covered, and the contract says so: a program that replaces a folder of the tree
 // with a link between the check and the act (the runtime has no handle-anchored file operations),
 // and a save that lands between the ownership check and the rename.
 import { createHash, randomBytes } from "node:crypto";
@@ -60,7 +60,7 @@ const TEMP_NAME = /^\.(.+)\.([0-9a-f]{32})\.([0-9a-f]{8})\.tmp$/;
 const CHUNK_BYTES = 1024 * 1024;
 const FILE_MODE = 0o400;
 const FOLDER_MODE = 0o700;
-/** A1 3.13: on a Windows sharing violation the check and the act run again, 5 times over 1 s. */
+/** On a Windows sharing violation the check and the act run again, 5 times over 1 s. */
 const TRIES = 5;
 const PAUSE_MS = 200;
 const NOFOLLOW = (constants as { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;

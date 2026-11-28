@@ -1,5 +1,5 @@
-// pnpm seed (A7 3.3; A7 3.8 M1.03 Verify: "pnpm seed with a fixed seed gives the same space
-// twice"). Runs the script itself, twice, into fresh folders, and compares the content digests
+// pnpm seed with a fixed seed gives the same space twice.
+// Runs the script itself, twice, into fresh folders, and compares the content digests
 // with each other and with the known sample's, which CI asserts on Windows and Ubuntu.
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";

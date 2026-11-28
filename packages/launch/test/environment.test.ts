@@ -1,4 +1,4 @@
-// The agent's environment (A4 3.8; A7 3.9 M2.09): the layers, the login-shell snapshot with its
+// The agent's environment: the layers, the login-shell snapshot with its
 // deadline and its defined results, the scrub list. A fake login shell from testkit stands in for a
 // person's profile; one test on Linux runs a real bash with a home of its own, and one on Windows
 // reads the real registry (read only).
@@ -146,7 +146,7 @@ describe("[A4.5.environment.scrub] A4 3.8's scrub and the two kinds of base", ()
       ["AWS_PROFILE", true, true],
       ["OPENAI_API_KEY", true, true],
       ["GOPATH", true, true],
-      // A Claude session's own leftover, scrubbed for every home (A4 3.8).
+      // A Claude session's own leftover, scrubbed for every home.
       ["CLAUDE_CODE_ENTRYPOINT", false, false],
     ] as const;
     const base: Record<string, string> = { PATH: "/usr/bin" };

@@ -11,9 +11,7 @@ import { columnsValue, fieldJson } from "../write/fields.ts";
 import { Fields, type Credential, type Envelope } from "../write/request.ts";
 import { provenanceOf, rowState, versionOf, type RowState } from "../write/row-state.ts";
 import { columnsOf, FIELDS, KEYS, TreeProblem, type Entity, type FieldOf } from "./fields.ts";
-
-/** Columns a create change leaves out: each follows from the change's seq. */
-const DERIVED = new Set(["created_seq", "version", "touched", "fv", "fp"]);
+import { DERIVED } from "./schema.ts";
 
 const SQL = {
   lifecycle: "SELECT lifecycle FROM tasks WHERE id = $id",
@@ -140,7 +138,7 @@ export class Tx {
     return takeTaskRef(this.conn);
   }
 
-  newId<P extends "t" | "p" | "n">(prefix: P): Id<P> {
+  newId<P extends "t" | "p" | "n" | "pg">(prefix: P): Id<P> {
     return newId(prefix, this.random);
   }
 
@@ -233,6 +231,15 @@ export class Tx {
    */
   guard(entity: Entity, id: string, node: string | null): void {
     this.#newer(this.#touch(entity, id, node), Object.keys(FIELDS[entity]));
+  }
+
+  /**
+   * Holds the request to `fields` of a row as they stood at the base, written or not; true when
+   * one changed since, and the request then writes nothing.
+   */
+  held(entity: Entity, id: string, node: string | null, fields: readonly string[]): boolean {
+    if (fields.length === 0) return false;
+    return this.#newer(this.#touch(entity, id, node), fields).length > 0;
   }
 
   /**

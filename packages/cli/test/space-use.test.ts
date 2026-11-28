@@ -1,4 +1,4 @@
-// `ttasks space use <space>` (A2 3.1, 3.10.5; M5.01): the person makes a space the machine's
+// `ttasks space use <space>`: the person makes a space the machine's
 // default, which an unbound command of the person then uses; scripts and agents cannot change it.
 // Fixture text only.
 import { join } from "node:path";

@@ -1,7 +1,7 @@
-// `ttasks space` through the service (A2 3.10.1, A1 3.18): a person at a terminal
+// `ttasks space` through the service: a person at a terminal
 // (in this process, with a TTY as the class says) creates, backs up, restores, claims and closes
 // spaces; the script and agent classes are refused the user-only verbs; a space read-only for its
-// synced or network folder names the ways out (A1 3.2). Fixture text only.
+// synced or network folder names the ways out. Fixture text only.
 import {
   existsSync,
   linkSync,
@@ -259,7 +259,7 @@ describe("[A2.3.10.cli.space] ttasks space through the service", () => {
     expect(closed.code, closed.stdout).toBe(0);
     expect(parsed(closed.stdout)["space"]).toMatchObject({ name: "Life", state: "closed" });
 
-    // TTASKS_SPACE comes after an argument and --space, before the one open space (A2 3.10.5):
+    // TTASKS_SPACE comes after an argument and --space, before the one open space:
     // naming the closed Life refuses, never backs up another space.
     const env = (value: string) =>
       runMain(["space", "backup", "--json"], {
@@ -479,7 +479,7 @@ const EXCLUDED_WAY = `If this folder is excluded from sync, open it for writing:
 
 describe("[A1.5.sync.way-out] a space read-only for its synced or network folder names the ways out", () => {
   test("in a synced folder: both ways under A1's words, and the commands work as printed", async () => {
-    // A Syncthing folder: its marker makes the folders under it synced (A1 3.2).
+    // A Syncthing folder: its marker makes the folders under it synced.
     const synced = join(world.root, "Sync");
     mkdirSync(join(synced, ".stfolder"), { recursive: true });
     const folder = join(synced, "notes");
@@ -532,7 +532,7 @@ describe("[A1.5.sync.way-out] a space read-only for its synced or network folder
       EXCLUDED_WAY,
       ...BACKUP_WAY,
     ]);
-    // A database that failed its check takes no new backup: its two actions are A1 3.2's.
+    // A database that failed its check takes no new backup: it has its two actions.
     expect(wayOut({ entry: 0, state: "read_only", reason: "check_failed" })).toEqual([
       "Restore the newest backup that verifies into a new local folder, or keep the rows that can still be read:",
       `  ${CLI_NAME} space restore latest <folder> --to <new folder>`,

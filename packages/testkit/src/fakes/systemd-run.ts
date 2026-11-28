@@ -1,4 +1,4 @@
-// A fake `systemd-run` (A4 3.7; M2.09). No test ever runs the real one against the person's user
+// A fake `systemd-run`. No test ever runs the real one against the person's user
 // manager: a test's spawner maps the path the service found to `node <this file>`.
 //
 // It records its argv as a JSON line in FAKE_SYSTEMD_LOG, then, like `systemd-run --user --scope`,

@@ -1,4 +1,4 @@
-// `ttasks doctor`'s launch rows and sessions row (A3 3.14; A4 3.4.1, 3.7, 3.8; A7 3.11 M4.05b):
+// `ttasks doctor`'s launch rows and sessions row:
 // each row passes and fails against fake answers of the service, and says nothing but words,
 // counts, dates and instance IDs. The rows' wiring through a real service is in doctor.test.ts.
 import { describe, expect, test } from "vitest";

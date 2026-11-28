@@ -1,4 +1,4 @@
-// The parser for `claude -p --output-format stream-json --verbose` (A4 3.11.3, 3.11.4), shaped on
+// The parser for `claude -p --output-format stream-json --verbose`, shaped on
 // the Claude Code 2.1.322 recordings of lab run N (fixtures/streams/claude-print/) and the 2.1.325
 // ones of the run driver (fixtures/claude-stream/).
 //
@@ -12,7 +12,7 @@
 //
 // The run is judged by the last turn's `result` event's `is_error`, not by the exit code: Claude
 // exits 0 after Ctrl+C with `is_error: true`, and 1 after an invalid model with `subtype: success`
-// and `is_error: true` (A4 3.11.3). A program kept open for more input starts turns of its own (a
+// and `is_error: true`. A program kept open for more input starts turns of its own (a
 // queued message, a finished background job): a turn that begins after a result makes that
 // result's answer provisional, and a run whose last turn has no result has none.
 // A helper agent's lines (`parent_tool_use_id`) report progress only: its words are not the run's.

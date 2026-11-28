@@ -1,8 +1,8 @@
-// The layers of the agent's environment (A4 3.8), as pure functions over what the helpers wrote:
+// The layers of the agent's environment, as pure functions over what the helpers wrote:
 // - Linux and macOS: the session (`systemctl --user show-environment`, a fixed list of names) and
 //   the login-shell snapshot (`$SHELL -lic` printing `env -0` between two random markers);
 // - Windows: the user and system environment from the registry, REG_EXPAND_SZ expanded.
-// What row E01 of the M0 lab measured (A7 3.7): the Linux snapshot from a transient user
+// What lab row E01 measured: the Linux snapshot from a transient user
 // unit took 736 ms and found every tool a hand-opened shell found (nvm's `node` and `codex`
 // included, which the unit's own environment missed); the Windows registry layers took 36 to
 // 47 ms and found what a fresh `pwsh` found.
@@ -13,11 +13,11 @@ import { base64Text, REGISTRY_READS } from "../windows-reads.ts";
 
 type Env = Record<string, string>;
 
-/** Set while the snapshot's shell runs, so a profile can tell (A4 3.8). Never reaches an agent. */
+/** Set while the snapshot's shell runs, so a profile can tell. Never reaches an agent. */
 export const RESOLVING = envVar("RESOLVING_ENVIRONMENT");
 
 /**
- * The session variables layer 1 takes (A4 3.8): the display, the bus, XDG's session variables, the
+ * The session variables layer 1 takes: the display, the bus, XDG's session variables, the
  * X authority, the SSH agent and the person's chosen terminal.
  */
 export const SESSION_NAMES =
@@ -187,7 +187,7 @@ export function unquoteAnsiC(quoted: string): string | undefined {
 }
 
 /**
- * A4 3.8's merge of layers 1 and 2: session variables beat the snapshot, which may be from an
+ * The merge of layers 1 and 2: session variables beat the snapshot, which may be from an
  * earlier login, except `SSH_AUTH_SOCK`: the snapshot's wins when that socket exists (a profile
  * that starts its own agent), else the session's, else none.
  */
@@ -277,7 +277,7 @@ export const ACCOUNT_NAMES = [
 ] as const;
 
 /**
- * A4 3.8's Windows layers, in the order Windows builds a logon's environment (The Old New Thing,
+ * The Windows layers, in the order Windows builds a logon's environment (The Old New Thing,
  * 2023-12-12, "What order does Windows use…"): the machine's derived names, the system's `REG_SZ`
  * values, the system's `REG_EXPAND_SZ` values, the account's profile names, the user's `REG_SZ`
  * values, the user's `REG_EXPAND_SZ` values, then the account's logon names. Each step may replace
