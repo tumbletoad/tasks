@@ -7455,6 +7455,20 @@
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
+    },
+    {
+      "id": "S2.tree.web.unserved",
+      "title": "The page remembers, by entry or route, a call the service answered it does not do for the space yet (op_unknown), and nothing else",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.tree.e2e",
+      "title": "A space on the new storage, four levels of projects deep, against the real service at 1,440 and 390 px: the side menu, each level's screen with its crumbs, brief and status line, Today, the lists, a card, a capture into the screen's own project, a move, a check-off and Undo, search, the Library and a page; the brief changed with its pen reaches another tab; what the space cannot do yet stays quiet",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
     }
   ]
 }
