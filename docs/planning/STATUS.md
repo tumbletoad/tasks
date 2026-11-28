@@ -26,8 +26,8 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 0.5 | The general inversion engine and `partial` removed from the service, the contract, the command line and the app | doing (#225) |
 | 1b | The Activity log (#224) | done |
 | 1.1 | The contract for pages, the trail, `read` and `write_page` | done (#229, #231) |
-| 1.2 | Storage: the migration step for pages and the new fields, the search tables rebuilt, an older backup's index rebuilt by its own version | todo: 1.1 |
-| 1.3 | The page edit as the first named command of the new write path | todo: 1.2 |
+| 1.2 | Storage: the migration step for pages and the new fields, the search tables rebuilt, an older backup's index rebuilt by its own version | done (#240) |
+| 1.3 | The page edit as the first named command of the new write path | done (#240) |
 | 1.4 | Agent tools: `read`, `write_page`, the trail in `get_task` within one budget, search over pages, `complete_task` asking for pages updated | todo: 1.3 |
 | 1.5 | The skill `keeping-the-library`, and a brief explained as "what this is" | todo: 1.1 |
 | 1.6 | The app: the project screen with its Library, the page screen with History and Restore, page edits under Changes | todo: 1.1 |
