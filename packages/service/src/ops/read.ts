@@ -1006,6 +1006,65 @@ export async function readAgentSessions(
   return { space: facts, rows };
 }
 
+/** How many of a machine's newest T3 launches are looked at for their tasks' threads. */
+const T3_LOOKED_AT = 20;
+
+const T3_THREADS: Statement = {
+  sql:
+    "SELECT l.id, l.task_id, l.instance_id, l.detail, t.ref AS task_ref FROM launches l " +
+    "JOIN tasks t ON t.id = l.task_id " +
+    "JOIN space s ON s.one = 1 AND l.created_seq >= s.authority_since " +
+    "WHERE l.machine_id = $machine AND l.route = 't3-mcp' AND l.state = 'confirmed' " +
+    "AND ($task IS NULL OR l.task_id = $task) " +
+    "AND json_extract(l.detail, '$.evidence.lost_at') IS NULL " +
+    `ORDER BY l.created_at DESC, l.id DESC LIMIT ${String(T3_LOOKED_AT)}`,
+  mode: "all",
+};
+
+/** A task's T3 Code thread: the newest Confirmed T3 launch of the task and instance. */
+export interface T3ThreadRow {
+  /** The `la_` ID. */
+  readonly launch: string;
+  readonly task: string;
+  readonly ref: string;
+  readonly instance: string;
+  readonly thread: string;
+}
+
+/**
+ * The T3 threads of `machine`'s launches, of one task or of the space's newest ones: per task and
+ * instance the newest Confirmed launch, unless the service found its thread gone. A launch from
+ * before the space's last claim or restore is history and holds none.
+ */
+export async function readT3Threads(
+  reader: WorkerConnection,
+  query: { readonly machine: string; readonly task?: string },
+): Promise<T3ThreadRow[]> {
+  const [space, rows] = await snapshot(reader, [SPACE, T3_THREADS], {
+    machine: query.machine,
+    task: query.task ?? null,
+  });
+  const facts = spaceFacts(space);
+  const seen = new Set<string>();
+  const out: T3ThreadRow[] = [];
+  for (const row of rows as Row[]) {
+    const thread = evidenceOf(row["detail"])["thread"];
+    const task = text(row["task_id"]);
+    const instance = text(row["instance_id"]);
+    const key = `${task}\n${instance}`;
+    if (typeof thread !== "string" || seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      launch: text(row["id"]),
+      task,
+      ref: formatTaskRef(facts.refPrefix, Number(row["task_ref"])),
+      instance,
+      thread,
+    });
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Runs
 

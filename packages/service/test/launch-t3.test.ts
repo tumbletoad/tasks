@@ -189,8 +189,9 @@ describe("[A4.3.4.1.t3.open] Open in T3 Code through the service, against a fake
       expect(r.fake.threads.size).toBe(1);
 
       // A slow answer that is lost: the one repeat with the same key gives the same thread.
+      const other = await addTask(r, "Second fixture task", "lumen");
       r.fake.dropNext("t3_thread_launch", "after");
-      const lost = await open(r, { task: task.ref });
+      const lost = await open(r, { task: other.ref });
       expect(lost.launch.state).toBe("confirmed");
       expect(threadsOf(r, lost.launch.id)).toHaveLength(1);
 
@@ -227,6 +228,76 @@ describe("[A4.3.4.1.t3.open] Open in T3 Code through the service, against a fake
       expect(new URL(opener.urls.at(-1) ?? "").search).toBe("");
       expect(threadsOf(r, opened.launch.id)).toHaveLength(1);
       expect(r.fake.threads.size).toBe(1);
+    },
+  );
+
+  test(
+    "the task's thread is its session: a second Open brings it forward with its state, and one T3 no longer has is noticed and made again",
+    { timeout: 300_000 },
+    async () => {
+      const r = await rig();
+      await pair(r);
+      const task = await addTask(r, "Fixture T3 task", "lumen");
+      r.fake.addProject(join(r.lab.work, "lumen"), "lumen");
+      const launches = r.lab.running.launches;
+      const first = await open(r, { task: task.ref });
+      expect(first.launch.state).toBe("confirmed");
+      const [thread] = threadsOf(r, first.launch.id);
+      if (thread === undefined) throw new Error("no thread");
+
+      // Open again, with words: the same thread comes forward, without the brief, and the words
+      // stay on the task.
+      const words = "Fixture request: also check the appendix.";
+      const again = await open(r, { task: task.ref, text: words });
+      expect(again.launch.id).toBe(first.launch.id);
+      expect(again.link_opened).toBe(true);
+      // The thread was briefed already: the words are a note on the task, not its request.
+      expect(again.text).toBe("note");
+      const url = new URL(opener.urls.at(-1) ?? "");
+      expect(decodeURIComponent(url.pathname)).toBe(`/${r.fake.environmentId}/${thread.id}`);
+      expect(url.search).toBe("");
+      expect(r.fake.callsOf("t3_thread_launch")).toHaveLength(1);
+      const page = (await call(r, "task.get", {
+        task: task.ref,
+        sections: ["instructions", "notes"],
+      })) as { sections: { instructions?: Note[]; notes?: Note[] } };
+      const notes = [...(page.sections.instructions ?? []), ...(page.sections.notes ?? [])];
+      expect(notes.find((n) => n.ref === again.note)?.text).toBe(words);
+
+      // Its state as T3 tells: on the task's entry and on the Agents page.
+      const activity = () => launches.t3Activity(r.lab.spaceId, task.id);
+      expect(await activity()).toEqual(new Map([[first.launch.id, "idle"]]));
+      thread.status = "running";
+      expect(await activity()).toEqual(new Map([[first.launch.id, "working"]]));
+      thread.pendingRequestCount = 1;
+      expect(await launches.t3Agents()).toEqual([
+        {
+          task: expect.objectContaining({
+            id: task.id,
+            ref: task.ref,
+            started: "t3",
+            of: first.launch.id,
+          }),
+          activity: "waiting",
+        },
+      ]);
+
+      // T3 does not answer whether the thread is there: nothing new is made on a guess.
+      r.fake.errorNext("t3_thread_read", -32603, "before");
+      expect(await refusal(r, task.ref)).toMatchObject({ data: { t3: "no_answer" } });
+      expect(r.fake.threads.size).toBe(1);
+
+      // The person deleted the thread in T3: the next Open notices and makes a new one, which is
+      // the task's thread from then on.
+      r.fake.threads.delete(thread.id);
+      const made = await open(r, { task: task.ref });
+      expect(made.launch.id).not.toBe(first.launch.id);
+      expect(made.launch.state).toBe("confirmed");
+      expect(threadsOf(r, made.launch.id)).toHaveLength(1);
+      expect(await activity()).toEqual(new Map([[made.launch.id, "idle"]]));
+      const after = await open(r, { task: task.ref });
+      expect(after.launch.id).toBe(made.launch.id);
+      expect(r.fake.callsOf("t3_thread_launch")).toHaveLength(2);
     },
   );
 });

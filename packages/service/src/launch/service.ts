@@ -15,6 +15,7 @@ import { basename, isAbsolute, join, win32 } from "node:path";
 import { PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError } from "@ttasks/contracts";
+import type { AgentsThread } from "@ttasks/contracts/monitor";
 import {
   agentSetup,
   appName,
@@ -102,6 +103,7 @@ import {
   type ReportMethod,
   type Route,
   type SpawnPlan,
+  type T3Activity,
   type T3Route,
   type T3Unavailable,
 } from "@ttasks/launch";
@@ -110,7 +112,7 @@ import type { Logger } from "../hub/log.ts";
 import type { OpeningSpace } from "../hub/spaces.ts";
 import type { ConnectionInfo, RpcContext, RpcHandlers } from "../local/index.ts";
 import type { SpaceWriterHandle } from "@ttasks/storage";
-import type { ServedSpace } from "../ops/index.ts";
+import { readT3Threads, type ServedSpace, type T3ThreadRow } from "../ops/index.ts";
 import { bounded, openPath } from "../ops/folders.ts";
 import type { FolderMarkers } from "../ops/marker.ts";
 import { readRestoredLaunches, type TaskFolder } from "../ops/read.ts";
@@ -317,6 +319,9 @@ export interface LaunchServiceOptions extends LaunchOptions {
   /** T3 Code's paired route (A4 3.4.1). None: a T3 instance opens nothing. */
   readonly t3?: T3Route;
 }
+
+/** How long an idle T3 thread T3 has not changed still shows on the Agents page. */
+const T3_HELD_MS = 24 * 60 * 60_000;
 
 /** At most this many T3 briefs whose thread did not come up are kept for a second try. */
 const UNSENT_MAX = 64;
@@ -976,6 +981,10 @@ export class LaunchService {
       const running = available.state === "not_running" || (await t3.running());
       throw refuse(running ? available.state : "not_running");
     }
+    if (request.another !== true) {
+      const thread = await this.#t3Thread(space, hosted, request, instance);
+      if (thread !== undefined) return thread;
+    }
     const { task, requestId } = request;
     const set = this.#planFolder(task.folder);
     const where = await this.resolveFolder(space, set);
@@ -1040,6 +1049,125 @@ export class LaunchService {
       removed: probe.removed,
       ...(linkOpened === undefined ? {} : { linkOpened }),
     };
+  }
+
+  /**
+   * An Open of a task whose T3 thread T3 still has brings that thread forward, as an Open of a
+   * terminal agent that runs joins its session: the click's words stay on the task as the person's
+   * note. A thread T3 no longer has is recorded gone, and the Open makes a new one. Undefined when
+   * the Open makes a new thread.
+   */
+  async #t3Thread(
+    space: string,
+    hosted: Launching,
+    request: OpenTaskRequest,
+    instance: Instance,
+  ): Promise<OpenTaskResult | undefined> {
+    const t3 = this.#options.t3;
+    if (t3 === undefined) return undefined;
+    const row = (await this.#t3Threads(space, hosted.copy, request.task.id)).find(
+      (r) => r.instance === instance.id,
+    );
+    if (row === undefined) return undefined;
+    const state = await t3.thread(row.thread);
+    // Unsure whether the thread is there: a second thread is not made on a guess.
+    if (state === undefined) {
+      this.#log("launch.unavailable", "t3");
+      throw new LaunchUnavailable("t3", undefined, "no_answer");
+    }
+    const intent = await hosted.store.readIntent(row.launch);
+    if (intent === undefined) return undefined;
+    if (state.activity === "gone") {
+      await hosted.machine.report(intent.id, {
+        kind: "evidence",
+        evidence: { lost_at: (this.#options.now ?? Date.now)() },
+      });
+      this.#changed(space);
+      return undefined;
+    }
+    const words = request.composer;
+    const given = words !== undefined && words.trim() !== "";
+    const note = given
+      ? await this.#saveWords(request, { composer: "request", composerText: words })
+      : undefined;
+    const { opened } = await t3.openThread(intent, this.#unsent.get(intent.id));
+    if (opened) this.#unsent.delete(intent.id);
+    return {
+      intent,
+      copy: undefined,
+      composer: composerOf(given ? "request" : "none", note, intent),
+      ...(note === undefined ? {} : { note }),
+      removed: false,
+      linkOpened: opened,
+    };
+  }
+
+  /** The T3 threads of a space's tasks here, of one task or the newest ones, in copy `copy`. */
+  async #t3Threads(space: string, copy: string | undefined, task?: string): Promise<T3ThreadRow[]> {
+    const served = this.#options
+      .spaces()
+      .find((s) => s.id === space && s.copy === copy && isOpen(s));
+    if (served?.reader === undefined || served.restored !== undefined) return [];
+    return readT3Threads(served.reader, {
+      machine: this.#options.machine,
+      ...(task === undefined ? {} : { task }),
+    });
+  }
+
+  /**
+   * What T3 says of each T3 thread of a task here, by its launch: what the task's entries show.
+   * None when T3 cannot be asked now.
+   */
+  async t3Activity(space: string, task: string): Promise<ReadonlyMap<string, T3Activity>> {
+    const t3 = this.#options.t3;
+    const hosted = await this.#space(space).catch(() => undefined);
+    if (t3 === undefined || hosted === undefined) return new Map();
+    const rows = await this.#t3Threads(space, hosted.copy, task);
+    const read = await Promise.all(
+      rows.map(async (row) => [row.launch, (await t3.thread(row.thread))?.activity] as const),
+    );
+    return new Map(
+      read.flatMap(([launch, activity]) => (activity === undefined ? [] : [[launch, activity]])),
+    );
+  }
+
+  /**
+   * The T3 threads of this machine's launches in every open space, with what T3 says each does:
+   * what the Agents page shows with their tasks. A thread T3 has not changed for a day is left out,
+   * as an ended terminal agent is.
+   */
+  async t3Agents(): Promise<AgentsThread[]> {
+    const t3 = this.#options.t3;
+    if (t3 === undefined || !(await t3.running())) return [];
+    const now = (this.#options.now ?? Date.now)();
+    const spaces = this.#options.spaces().filter(isOpen);
+    const found = await Promise.all(
+      spaces.map(async (served): Promise<AgentsThread[]> => {
+        const id = served.id ?? "";
+        const rows = await this.#t3Threads(id, served.copy).catch(() => []);
+        const read = await Promise.all(
+          rows.map(async (row): Promise<AgentsThread | undefined> => {
+            const state = await t3.thread(row.thread);
+            if (state === undefined || state.activity === "gone") return undefined;
+            const quiet = state.updatedAt === undefined ? 0 : now - state.updatedAt;
+            if (state.activity === "idle" && quiet > T3_HELD_MS) return undefined;
+            return {
+              task: {
+                space: id,
+                spaceName: served.name ?? id,
+                id: row.task,
+                ref: row.ref,
+                started: "t3",
+                of: row.launch,
+              },
+              activity: state.activity,
+            };
+          }),
+        );
+        return read.filter((agent) => agent !== undefined);
+      }),
+    );
+    return found.flat();
   }
 
   #keepUnsent(launch: string, brief: string): void {

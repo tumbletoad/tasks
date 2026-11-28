@@ -3485,15 +3485,23 @@
     },
     {
       "id": "A4.3.4.1.t3.open",
-      "title": "Open in T3 Code through the service against a fake T3: one click makes one thread at a project root or a nested folder registered as its own project, with the brief in its composer and the typed words only in the launch's request; a double click and a lost answer give the same thread; a link that did not come up opens again with its brief, then bare; T3 not paired or not running refuses with its reason",
+      "title": "Open in T3 Code through the service against a fake T3: one click makes one thread at a project root or a nested folder registered as its own project, with the brief in its composer and the typed words only in the launch's request; a double click and a lost answer give the same thread; a link that did not come up opens again with its brief, then bare; a second Open brings the task's thread forward with the words as a note, a thread T3 no longer has is noticed and made again, and T3 that does not say refuses with nothing made; T3 not paired or not running refuses with its reason",
       "source": "A4 3.4.1, A7 M2.10t",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.4.1.t3.thread",
+      "title": "A task's T3 Code thread as T3 Code tells it: its entry shows it running with what its agent does (working, needs you, idle) while T3 has it and ended once T3 no longer has it; the Agents page shows it as an agent of its task in that state",
+      "source": "A4 3.4.1, A5 3.9",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.4.1.t3.e2e",
-      "title": "Against the real service in Chromium and Firefox with a fake T3: T3 not running offers Start, which opens its link; not paired offers Pair, which opens T3's approval page; a read-only pairing fails one press at once with Pair again and no thread; then Open makes one thread at a project root with the brief in its composer and the typed words only in the request, Open in T3 on its entry brings it up without the brief, and a folder inside the project opens as a project of its own (screenshots in Chromium only)",
+      "title": "Against the real service in Chromium and Firefox with a fake T3: T3 not running offers Start, which opens its link; not paired offers Pair, which opens T3's approval page; a read-only pairing fails one press at once with Pair again and no thread; then Open makes one thread at a project root with the brief in its composer and the typed words only in the request, Open in T3 on its entry brings it up without the brief, Open again brings the same thread forward, its entry and the Agents page say that its agent needs the person as T3 tells, a thread deleted in T3 is made again at the next Open, and a folder inside the project opens as a project of its own (screenshots in Chromium only)",
       "source": "A4 3.4.1, A5 3.8, A5 3.9, A7 M2.10t",
       "owner": "M2",
       "kind": "ci",
