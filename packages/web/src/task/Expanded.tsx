@@ -633,6 +633,8 @@ interface CardWrites {
   readonly text: TextWrites;
   /** Opens a note of the person's again in an agent, as its request. */
   readonly openAgain: (note: DetailNote, instance: Instance) => void;
+  /** Opens a background run's own conversation in its agent app, the run stopped first. */
+  readonly continueRun: (run: Run, instance: Instance) => void;
 }
 
 /**
@@ -821,6 +823,9 @@ export function Expanded({
           openAgain: (note, instance) => {
             void actions.open(task, instance, { request: note.ref });
           },
+          continueRun: (run, instance) => {
+            void actions.open(task, instance, { run: run.id });
+          },
         }
       : undefined;
   // A row read from search knows no creation time (Completed, A5 3.5): the digest's says it.
@@ -950,6 +955,7 @@ export function Expanded({
                     actions.stop(task, run);
                   },
                 })}
+            {...(ended || writes === undefined ? {} : { onContinue: writes.continueRun })}
           />
         )}
         {failed && detail !== undefined ? (

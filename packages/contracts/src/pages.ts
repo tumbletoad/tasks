@@ -26,7 +26,11 @@ export const PAGE_LIST = 25;
 export const EXCERPT_CHARS = 1_200;
 
 export const PageId = z.string().regex(idPattern("pg")).describe("Page ID");
-export const PageRef = z.string().regex(patterns.taskRef).describe("Page reference, such as M-180");
+export const PageRef = z
+  .string()
+  .max(20)
+  .regex(patterns.taskRef)
+  .describe("Page reference, such as M-180");
 const NodeId = z
   .string()
   .regex(/^(?:sp|a|p)_[0-9a-hjkmnp-tv-z]{26}$/u)

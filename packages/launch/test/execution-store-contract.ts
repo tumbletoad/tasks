@@ -217,6 +217,21 @@ export function executionStoreContract(
       expect((await store.createIntent(input, requestId())).id).not.toBe(next.id);
     });
 
+    test("a click that continues a conversation joins only a launch still opening that continues the same one", async () => {
+      const input = await intentInput();
+      const continues = (id: string) => ({ ...input, evidence: { resumes: id } });
+      const opening = await store.createIntent(input, requestId());
+      const first = await store.createIntent(continues("conversation-a"), requestId());
+      expect(first.id).not.toBe(opening.id);
+      expect((await store.createIntent(continues("conversation-a"), requestId())).id).toBe(
+        first.id,
+      );
+      const second = await store.createIntent(continues("conversation-b"), requestId());
+      expect([opening.id, first.id]).not.toContain(second.id);
+      // An Open that continues nothing still joins the one that continues nothing.
+      expect((await store.createIntent(input, requestId())).id).toBe(opening.id);
+    });
+
     test("a link or T3 launch that asked its app holds no click", async () => {
       for (const route of ["link", "t3-mcp"] as const) {
         const input = await intentInput({ route });

@@ -194,6 +194,7 @@ const extraSamples = [
   "pr_5k2m8q0w3z7r1c9d4f6h8j0n2p",
   "ui.theme",
   "lr_6p1r4t7v0x3z6b9d2f5h8k1m4n",
+  "ru_00r5mfcw5rfzxb9enb2vg50z3g",
   "ac_3k7m1q5t9w3z7c1f5h9k3n7r1v",
   "c_7m2k9q4w1z8r3c6d",
   "1047.14",

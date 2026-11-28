@@ -227,6 +227,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 
 - An agent that uses TTasks cannot start other agents, raise its own permissions or change your
   settings for what agents may do.
+- An agent that loads a task is shown what is known above it: the pages of its project, its area
+  and the space, with who changed each and when, and your texts for agents there, which are the
+  only words of the library it takes as instructions. Pages and descriptions are read as data.
 - An agent that TTasks opened in a terminal, and a background run, works on its task without naming
   it. What it changes through its tools and through `ttasks` in its shell is that task's session,
   also across a restart of TTasks.
@@ -389,6 +392,15 @@ the behaviour it describes, and keep each one to a sentence or two.
   and is given the questions that waited when you started it, each quoted as the agent asked it,
   then your words; one dismissed or answered after that stays in it. Nothing else of the earlier
   run's conversation comes along.
+- Continue opens a run's own conversation in its agent app's terminal, in the folder the run worked
+  in and in the agent home it used, as Open opens a task, and the agent there works as that
+  session. Every check comes first: a Continue that cannot open stops nothing. A run that may
+  still work is then stopped, and the app opens only once nothing of the run runs; a conversation
+  already open in a terminal is that one, so two agents never write one conversation. Continue is
+  offered for Claude Code and Codex once the agent named its conversation, on the computer the run
+  worked on, while its instance uses the same home. A task whose folder is another one now than
+  the run's does not continue, and a conversation the agent app's own history has removed does
+  not open.
 - Stop ends the agent and everything it started, and the run is called ended only once the system
   confirms none of it is left. Where no process group can hold a run, it starts anyway, and Stop
   ends what TTasks could find of it: the run is called ended once the agent itself is gone, and a

@@ -1,17 +1,10 @@
-// The step-1 entries that are not in the registry yet, and the examples both lanes build against
-// that no entry's example can hold: the feed's page rows and a Restore that meets a newer body.
-// An entry moves into the registry in the pull request that brings its handler.
+// The examples both lanes build against that no entry's example can hold: the feed's page rows
+// and a Restore that meets a newer body.
 import type { ErrorBody } from "../errors.ts";
 import type { z } from "zod";
 import type { CompactPage } from "../pages.ts";
 import { AS_OF_NEXT } from "./fixture.ts";
-import { nodeInstruct } from "./node-instruct.ts";
-import { pageHistory } from "./page-history.ts";
-import { LUMEN, M180, pageRead } from "./page-read.ts";
-import { pageTrashed } from "./page-trashed.ts";
-import { pageWrite } from "./page-write.ts";
-
-export const PAGE_ENTRIES = [pageRead, pageWrite, pageHistory, pageTrashed, nodeInstruct] as const;
+import { LUMEN, M180 } from "./page-read.ts";
 
 const live: z.input<typeof CompactPage> = {
   ...M180,
