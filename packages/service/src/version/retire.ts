@@ -9,8 +9,9 @@
 // process runs a program of it.
 //
 // A removal is recorded in install.json (`retiring`) before the folder is renamed to
-// `.retiring-<v>-<hex>`, which no launcher starts, and cleared once that folder is deleted; the
-// next pass finishes one that was cut off. A folder with that prefix that install.json does not
+// `.retiring-<v>-<hex>`, which no launcher starts, and cleared once that folder is deleted, its
+// manifest.json last. The next pass finishes one that was cut off, once what is left in the
+// folder is still only that manifest's files. A folder with that prefix that install.json does not
 // name is never touched. Not update.json: its presence means an update was cut off, to the
 // launchers, doctor and the service of an older version.
 import { randomBytes } from "node:crypto";
@@ -21,17 +22,24 @@ import {
   readdirSync,
   realpathSync,
   renameSync,
-  rmSync,
   statSync,
 } from "node:fs";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { compareAppVersions, isAppVersion } from "@ttasks/storage";
 import { acquireLock, LockBusy } from "../hub/lock.ts";
 import { canonicalStatePath, installId } from "../hub/paths.ts";
-import { checkVersionFolder, readVersionManifest } from "./folder.ts";
+import {
+  checkVersionFolder,
+  listFolder,
+  MANIFEST_FILE,
+  readVersionManifest,
+  sha256File,
+} from "./folder.ts";
 import { journalPresent } from "./journal.ts";
 import {
   currentVersion,
+  exists,
   pendingRetiring,
   readInstallRecord,
   retiringName,
@@ -48,13 +56,14 @@ export type KeptFor = "current" | "rollback" | "newer" | "pinned";
 export type VersionVerdict =
   | { readonly version: string; readonly kind: "kept"; readonly why: KeptFor }
   | { readonly version: string; readonly kind: "in_use" }
-  /** The folder is not as the installer left it: `problem` says how. */
+  /** The folder is not as the installer left it, or cannot be read: `problem` says how. */
   | { readonly version: string; readonly kind: "foreign"; readonly problem: string }
   | { readonly version: string; readonly kind: "retire" };
 
 export interface RetirePlan {
   readonly verdicts: readonly VersionVerdict[];
-  readonly pending?: Retiring;
+  /** A removal that was cut off, and why its folder is left as it is, when it is. */
+  readonly pending?: Retiring & { readonly problem?: string };
 }
 
 /** Whether a process may run a program of the version folder. Any doubt is true. */
@@ -76,137 +85,164 @@ const isDir = (path: string): boolean => {
   }
 };
 
-/**
- * Windows refuses to open a running program, or a library a process has loaded, for writing
- * (measured on Windows 11). Opening one for writing changes nothing in it.
- */
-function inUseWindows(folder: string): boolean {
-  const files = Object.keys(readVersionManifest(folder).files);
-  for (const path of files.filter((p) => /\.(?:exe|dll|node)$/i.test(p))) {
-    try {
-      closeSync(openSync(join(folder, ...path.split("/")), "r+"));
-    } catch {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Linux: a process whose program is one of the version's files (its runtime, in a release), by
- * device and inode, so another path to the same file matches too.
- */
-function inUseLinux(folder: string): boolean {
-  const files = new Set(
-    Object.keys(readVersionManifest(folder).files).map((path) => {
-      const { dev, ino } = statSync(join(folder, ...path.split("/")));
-      return `${String(dev)}:${String(ino)}`;
-    }),
-  );
-  const uid = process.getuid?.();
-  for (const pid of readdirSync("/proc").filter((name) => /^\d+$/.test(name))) {
-    try {
-      const exe = statSync(`/proc/${pid}/exe`);
-      if (files.has(`${String(exe.dev)}:${String(exe.ino)}`)) return true;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === "ENOENT" || code === "ESRCH") continue;
-      // One of the person's own processes that cannot be looked at: it might run this version.
-      try {
-        if (statSync(`/proc/${pid}`).uid === uid) return true;
-      } catch {
-        // Gone meanwhile.
-      }
-    }
-  }
-  return false;
-}
-
-export const osInUse: InUse = (folder, platform) => {
-  try {
-    if (platform === "win32") return inUseWindows(folder);
-    if (platform === "linux") return inUseLinux(folder);
-  } catch {
-    // What cannot be looked at counts as in use.
-  }
-  return true;
+const codeOf = (error: unknown): string => {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return typeof code === "string" && /^[A-Z0-9_]{1,40}$/.test(code) ? code : "error";
 };
 
 /**
- * What a pass would do, changing nothing: undefined when the install is not provably this one
- * (install.json's root and install ID, a plain `versions` folder, a readable current) or a journal
- * is there. Doctor shows it; retireLocked acts on it.
+ * Opens each program of the version for writing and closes it, changing nothing: Windows refuses
+ * that for a running program or a loaded library (EBUSY), Linux for a running program (ETXTBSY),
+ * both measured. The programs are the `.exe`, `.dll` and `.node` files on Windows, the files with
+ * an execute bit elsewhere.
  */
-export function planRetirement(options: RetireOptions): RetirePlan | undefined {
-  const { root, state, platform } = options;
-  const inUse = options.inUse ?? osInUse;
-  const record = readInstallRecord(state);
-  const canon = (path: string) => canonicalStatePath(path, platform);
-  let id: string;
+export const osInUse: InUse = (folder, platform) => {
+  if (platform !== "win32" && platform !== "linux") return true;
   try {
-    id = installId(canon(realpathSync.native(state)));
+    for (const path of Object.keys(readVersionManifest(folder).files)) {
+      const file = join(folder, ...path.split("/"));
+      const program =
+        platform === "win32"
+          ? /\.(?:exe|dll|node)$/i.test(path)
+          : (statSync(file).mode & 0o111) !== 0;
+      if (program) closeSync(openSync(file, "r+"));
+    }
+    return false;
+  } catch {
+    return true;
+  }
+};
+
+interface Owned {
+  readonly record: Record<string, unknown>;
+  readonly current: string;
+  readonly versions: string;
+}
+
+/**
+ * The install, when it is provably this one: install.json's root and install ID, a plain
+ * `versions` folder, a readable current, and no journal.
+ */
+function owned({ root, state, platform }: RetireOptions): Owned | undefined {
+  const canon = (path: string) => canonicalStatePath(path, platform);
+  try {
+    const record = readInstallRecord(state);
+    const current = currentVersion(root, platform);
+    const versions = join(root, VERSIONS);
+    return !journalPresent(state) &&
+      record?.["method"] === "script" &&
+      typeof record["root"] === "string" &&
+      canon(record["root"]) === canon(root) &&
+      record["install_id"] === installId(canon(realpathSync.native(state))) &&
+      isDir(versions) &&
+      current !== undefined
+      ? { record, current, versions }
+      : undefined;
   } catch {
     return undefined;
   }
-  const current = currentVersion(root, platform);
-  if (
-    journalPresent(state) ||
-    record?.["method"] !== "script" ||
-    typeof record["root"] !== "string" ||
-    canon(record["root"]) !== canon(root) ||
-    record["install_id"] !== id ||
-    !isDir(join(root, VERSIONS)) ||
-    current === undefined
-  ) {
-    return undefined;
-  }
+}
+
+/** One version's verdict, its use checked last. A folder that cannot be read stays. */
+function judge(
+  options: RetireOptions,
+  install: Owned,
+  version: string,
+): VersionVerdict | undefined {
+  const { record, current } = install;
   // Windows does not tell `0.4.0-RC1` from `0.4.0-rc1`: one folder.
-  const same = (a: string, b: unknown) =>
-    typeof b === "string" && (platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
-  const pinned = strings(record["pinned"]);
-  const verdicts: VersionVerdict[] = [];
-  for (const version of new Set(strings(record["versions"]))) {
-    const folder = join(root, VERSIONS, version);
-    const keep: KeptFor | undefined = same(version, current)
-      ? "current"
-      : same(version, record["previous"])
-        ? "rollback"
-        : pinned.some((p) => same(version, p))
-          ? "pinned"
-          : isAppVersion(version) &&
-              isAppVersion(current) &&
-              compareAppVersions(version, current) > 0
-            ? "newer"
-            : undefined;
-    let problem: string | undefined;
-    if (keep !== undefined) {
-      verdicts.push({ version, kind: "kept", why: keep });
-      continue;
+  const same = (b: unknown) =>
+    typeof b === "string" &&
+    (options.platform === "win32" ? version.toLowerCase() === b.toLowerCase() : version === b);
+  const why: KeptFor | undefined = same(current)
+    ? "current"
+    : same(record["previous"])
+      ? "rollback"
+      : strings(record["pinned"]).some(same)
+        ? "pinned"
+        : isAppVersion(version) && isAppVersion(current) && compareAppVersions(version, current) > 0
+          ? "newer"
+          : undefined;
+  if (why !== undefined) return { version, kind: "kept", why };
+  const folder = join(install.versions, version);
+  if (!exists(folder)) return undefined;
+  const foreign = (problem: string): VersionVerdict => ({ version, kind: "foreign", problem });
+  try {
+    if (!isDir(folder)) return foreign("it is a link, not a folder");
+    if (!isAppVersion(version)) return foreign("its name is no release version");
+    if (readVersionManifest(folder).version !== version) {
+      return foreign("its manifest names another version");
     }
-    try {
-      lstatSync(folder);
-    } catch {
-      continue;
-    }
-    if (!isDir(folder)) problem = "it is a link, not a folder";
-    else if (!isAppVersion(version)) problem = "its name is no release version";
-    else {
-      let named: string | undefined;
-      try {
-        named = readVersionManifest(folder).version;
-      } catch {
-        named = undefined;
-      }
-      const found =
-        named === version ? checkVersionFolder(folder) : ["its manifest names another version"];
-      problem = found[0];
-    }
-    if (problem !== undefined) verdicts.push({ version, kind: "foreign", problem });
-    else if (inUse(folder, platform)) verdicts.push({ version, kind: "in_use" });
-    else verdicts.push({ version, kind: "retire" });
+    const problem = checkVersionFolder(folder)[0];
+    if (problem !== undefined) return foreign(problem);
+    return (options.inUse ?? osInUse)(folder, options.platform)
+      ? { version, kind: "in_use" }
+      : { version, kind: "retire" };
+  } catch (error) {
+    return foreign(`it cannot be read (${codeOf(error)})`);
   }
-  const pending = pendingRetiring(record);
-  return { verdicts, ...(pending === undefined ? {} : { pending }) };
+}
+
+/**
+ * Why the folder of a removal that was cut off may hold what is not the version's; undefined when
+ * what is left is that version's manifest and files it lists, or nothing but empty folders.
+ */
+function leftoverProblem(folder: string, version: string): string | undefined {
+  if (!isDir(folder)) return "it is a link, not a folder";
+  try {
+    const listing = listFolder(folder);
+    if (listing.problems[0] !== undefined) return listing.problems[0];
+    if (!listing.files.includes(MANIFEST_FILE)) {
+      return listing.files.length === 0 ? undefined : "it holds files but no manifest.json";
+    }
+    const manifest = readVersionManifest(folder);
+    if (manifest.version !== version) return "its manifest names another version";
+    for (const path of listing.files) {
+      if (path === MANIFEST_FILE) continue;
+      if (!Object.hasOwn(manifest.files, path)) return `not in manifest.json: ${path}`;
+      if (sha256File(join(folder, ...path.split("/"))) !== manifest.files[path]) {
+        return `changed: ${path}`;
+      }
+    }
+    return undefined;
+  } catch (error) {
+    return `it cannot be read (${codeOf(error)})`;
+  }
+}
+
+/**
+ * A removal that was cut off: undefined when there is none or nothing is left of it, else its
+ * folder's path and what stands against deleting it. A version still under its own name was never
+ * renamed, so a folder at the recorded name is not the removal's.
+ */
+function pendingOf(install: Owned): { pending: Retiring; problem?: string } | undefined {
+  const pending = pendingRetiring(install.record);
+  if (pending === undefined) return undefined;
+  const left = join(install.versions, pending.folder);
+  if (exists(join(install.versions, pending.version)) || !exists(left)) return { pending };
+  const problem = leftoverProblem(left, pending.version);
+  return problem === undefined ? { pending } : { pending, problem };
+}
+
+/** What a pass would do, changing nothing, for doctor: undefined when the install is not provably this one. */
+export function planRetirement(options: RetireOptions): RetirePlan | undefined {
+  const install = owned(options);
+  if (install === undefined) return undefined;
+  const verdicts = [...new Set(strings(install.record["versions"]))].flatMap(
+    (version) => judge(options, install, version) ?? [],
+  );
+  const cut = pendingOf(install);
+  return {
+    verdicts,
+    ...(cut === undefined
+      ? {}
+      : {
+          pending: {
+            ...cut.pending,
+            ...(cut.problem === undefined ? {} : { problem: cut.problem }),
+          },
+        }),
+  };
 }
 
 export interface Retired {
@@ -215,49 +251,56 @@ export interface Retired {
   readonly failed?: string;
 }
 
-const codeOf = (error: unknown): string => {
-  const code = (error as NodeJS.ErrnoException | undefined)?.code;
-  return typeof code === "string" && /^[A-Z0-9_]{1,40}$/.test(code) ? code : "error";
-};
+/** Deletes a version folder, its manifest.json last, so what is left can still be proved. */
+async function removeVersion(folder: string): Promise<void> {
+  const options = { recursive: true, force: true, maxRetries: 5, retryDelay: 100 } as const;
+  for (const name of readdirSync(folder)) {
+    if (name !== MANIFEST_FILE) await rm(join(folder, name), options);
+  }
+  await rm(folder, options);
+}
 
-const removeFolder = (path: string): void => {
-  rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-};
+/** Lets the service answer between one folder's checks and the next. */
+const turn = () => new Promise((resolve) => setImmediate(resolve));
 
-/** One pass, with update.lock held. It never throws: a failure stops it and is returned. */
-export function retireLocked(options: RetireOptions): Retired {
+/**
+ * One pass, with update.lock held. Each version is checked, its use last, right before its rename.
+ * It never throws: a failure stops it and is returned.
+ */
+export async function retireLocked(options: RetireOptions): Promise<Retired> {
   const { root, state, platform } = options;
   const removed: string[] = [];
   const record = (change: Parameters<typeof writeInstallRecord>[3]) =>
     writeInstallRecord(state, root, platform, change);
   try {
-    const plan = planRetirement(options);
-    if (plan === undefined) return { removed };
-    const versions = join(root, VERSIONS);
-    if (plan.pending !== undefined) {
-      const { version, folder } = plan.pending;
-      if (isDir(join(versions, folder))) removeFolder(join(versions, folder));
-      // The rename never happened when the version is still under its own name.
-      const renamed = !isDir(join(versions, version));
+    const install = owned(options);
+    if (install === undefined) return { removed };
+    const cut = pendingOf(install);
+    if (cut !== undefined) {
+      // Left as it is while what is in it cannot be proved the version's: doctor names it.
+      if (cut.problem !== undefined) return { removed };
+      const { version, folder } = cut.pending;
+      const renamed = !exists(join(install.versions, version));
+      if (renamed && exists(join(install.versions, folder))) {
+        await removeVersion(join(install.versions, folder));
+      }
       record({ retiring: null, ...(renamed ? { retired: version } : {}) });
       if (renamed) removed.push(version);
     }
-    for (const verdict of plan.verdicts) {
-      if (verdict.kind !== "retire") continue;
-      const retiring = {
-        version: verdict.version,
-        folder: retiringName(verdict.version, randomBytes(8).toString("hex")),
-      };
+    for (const version of new Set(strings(install.record["versions"]))) {
+      await turn();
+      if (judge(options, install, version)?.kind !== "retire") continue;
+      const retiring = { version, folder: retiringName(version, randomBytes(8).toString("hex")) };
       record({ retiring });
       try {
-        renameSync(join(versions, verdict.version), join(versions, retiring.folder));
+        renameSync(join(install.versions, version), join(install.versions, retiring.folder));
       } catch (error) {
         record({ retiring: null });
         throw error;
       }
-      removeFolder(join(versions, retiring.folder));
-      record({ retiring: null, retired: verdict.version });
-      removed.push(verdict.version);
+      await removeVersion(join(install.versions, retiring.folder));
+      record({ retiring: null, retired: version });
+      removed.push(version);
     }
     return { removed };
   } catch (error) {
@@ -275,7 +318,7 @@ export async function retireWhenIdle(options: RetireOptions): Promise<Retired | 
     return { removed: [], failed: codeOf(error) };
   }
   try {
-    return retireLocked(options);
+    return await retireLocked(options);
   } finally {
     lock.release();
   }

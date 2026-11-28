@@ -498,6 +498,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   keeps the version that runs, the one `ttasks update --rollback` goes back to, and any newer one.
   It never deletes a version a program still runs from: that one goes at a later start. A version
   folder that holds anything TTasks did not put there stays whole, and `ttasks doctor` names it.
+- A version of TTasks from before old versions were removed forgets a removal that was cut off:
+  after a rollback to such a version, that half-removed folder stays until you delete it.
 
 ## Where the protection stops
 

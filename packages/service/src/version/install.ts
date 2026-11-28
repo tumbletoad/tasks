@@ -334,7 +334,7 @@ export async function finishInstall(options: FinishOptions): Promise<Finished> {
       // then switched past, and a journal no repair could finish, are all done with.
       removeJournal(state, "install");
       if (repair.kind === "stuck") removeJournal(state);
-      retireLocked({ root: target.root, state, platform });
+      await retireLocked({ root: target.root, state, platform });
       return {
         root: target.root,
         version: target.version,

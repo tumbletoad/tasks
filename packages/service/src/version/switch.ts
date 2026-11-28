@@ -767,7 +767,13 @@ export function writeInstallRecord(
 ): InstallRecord {
   const before = readInstallRecord(state);
   const id = installId(canonicalStatePath(realpathSync.native(state), platform));
-  const versions = strings(before?.["versions"]);
+  // A receipt of another root or install (a copied state folder) names none of this install's
+  // versions: they are what a removal deletes (retire.ts).
+  const own =
+    before?.["install_id"] === id &&
+    typeof before["root"] === "string" &&
+    canonicalStatePath(before["root"], platform) === canonicalStatePath(root, platform);
+  const versions = own ? strings(before["versions"]) : [];
   const had = typeof before?.["previous"] === "string" ? before["previous"] : undefined;
   const newly = (change.seen ?? []).filter(
     (v): v is string => v !== undefined && isInstalled(root, v),
@@ -783,9 +789,11 @@ export function writeInstallRecord(
   const lastUpdate = change.lastUpdate ?? lastUpdateOf(before?.["last_update"]);
   const retiring =
     change.retiring === undefined
-      ? retiringOf(before?.["retiring"])
+      ? own
+        ? retiringOf(before["retiring"])
+        : undefined
       : (change.retiring ?? undefined);
-  const pinned = Array.isArray(before?.["pinned"]) ? strings(before["pinned"]) : undefined;
+  const pinned = own && Array.isArray(before["pinned"]) ? strings(before["pinned"]) : undefined;
   const gone = (entry: string) =>
     change.retired !== undefined &&
     (entry === change.retired || entry === `${VERSIONS}/${change.retired}`);

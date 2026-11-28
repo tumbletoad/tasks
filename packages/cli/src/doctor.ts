@@ -630,20 +630,27 @@ export function withVersions(
   state: string,
   platform: NodeJS.Platform,
 ): Check {
-  const plan = planRetirement({ root, state, platform });
+  let plan;
+  try {
+    plan = planRetirement({ root, state, platform });
+  } catch {
+    plan = undefined;
+  }
   if (plan === undefined) return check;
   const kept = plan.verdicts.flatMap((v) =>
     v.kind === "kept" ? [`${v.version} (${KEPT_FOR[v.why]})`] : [],
   );
+  const pending = plan.pending;
   const waiting = [
-    ...(plan.pending === undefined ? [] : [plan.pending.version]),
+    ...(pending === undefined || pending.problem !== undefined ? [] : [pending.version]),
     ...plan.verdicts.flatMap((v) =>
       v.kind === "in_use" || v.kind === "retire" ? [v.version] : [],
     ),
   ];
-  const left = plan.verdicts.flatMap((v) =>
-    v.kind === "foreign" ? [`versions/${v.version} was left as it is: ${v.problem}.`] : [],
-  );
+  const left = [
+    ...plan.verdicts.flatMap((v) => (v.kind === "foreign" ? [[v.version, v.problem]] : [])),
+    ...(pending?.problem === undefined ? [] : [[pending.folder, pending.problem]]),
+  ].map(([folder, problem]) => `versions/${folder ?? ""} was left as it is: ${problem ?? ""}.`);
   const detail = [
     check.detail,
     ...(kept.length > 0 ? [`Kept: ${kept.join(", ")}.`] : []),

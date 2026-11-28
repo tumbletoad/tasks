@@ -1280,14 +1280,14 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
   removeJournal(state);
   await at(options, "done");
   cleanLaunchers(root);
-  retireOld(install, options);
+  await retireOld(install, options);
   const spaces = await checkSpaces(install, options, to, restarted ? note : undefined, restarted);
   return { outcome: "updated", from, to, ...(spaces === undefined ? {} : { spaces }) };
 }
 
 /** Old versions go once the install is complete; one that cannot go yet waits for a later pass. */
-function retireOld(install: Install, options: UpdateOptions): void {
-  const { removed } = retireLocked(install);
+async function retireOld(install: Install, options: UpdateOptions): Promise<void> {
+  const { removed } = await retireLocked(install);
   if (removed.length > 0) say(options, `Removed old versions: ${removed.join(", ")}.`);
 }
 
@@ -1580,7 +1580,7 @@ export async function repairUpdate(options: UpdateOptions): Promise<UpdateResult
     if (current === undefined) throw new InstallError("current names no installed version.", 1);
     if (repair.kind === "nothing") {
       cleanLaunchers(install.root);
-      retireOld(install, options);
+      await retireOld(install, options);
     }
     const spaces = await checkSpaces(install, options, current, undefined, seen);
     return {

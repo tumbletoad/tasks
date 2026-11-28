@@ -4,6 +4,7 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -131,7 +132,7 @@ describe("[A2.3.12.6.update.retire] an update removes the old version folders it
       { version: "0.4.0", kind: "kept", why: "current" },
       { version: "0.5.0", kind: "kept", why: "newer" },
     ]);
-    expect(retireLocked(w.options)).toEqual({ removed: ["0.2.0"] });
+    expect(await retireLocked(w.options)).toEqual({ removed: ["0.2.0"] });
     expect(readdirSync(w.versions).sort()).toEqual([
       ".retiring-0.2.0-0123456789abcdef",
       "0.0.9",
@@ -146,7 +147,7 @@ describe("[A2.3.12.6.update.retire] an update removes the old version folders it
     expect(record?.["pinned"]).toEqual(["0.1.0"]);
     expect(record?.["retiring"]).toBeUndefined();
     // Nothing is left to do: a second pass changes nothing.
-    expect(retireLocked(w.options)).toEqual({ removed: [] });
+    expect(await retireLocked(w.options)).toEqual({ removed: [] });
   });
 
   test("a folder with anything the installer did not put there stays whole, and doctor names it", async () => {
@@ -156,7 +157,7 @@ describe("[A2.3.12.6.update.retire] an update removes the old version folders it
     rmSync(join(w.versions, "0.2.0"), { recursive: true });
     writeFolder(join(w.versions, "0.2.0"), "0.2.1", os, fixtureFiles("0.2.1", os));
     const before = tree(w.versions);
-    expect(retireLocked(w.options)).toEqual({ removed: [] });
+    expect(await retireLocked(w.options)).toEqual({ removed: [] });
     expect(tree(w.versions)).toEqual(before);
     const row = withVersions(
       { id: "update", status: "ok", detail: "Updated." },
@@ -181,7 +182,7 @@ describe("[A2.3.12.6.update.retire] an update removes the old version folders it
       const elsewhere = join(w.dir, "elsewhere");
       renameSync(join(w.versions, "0.2.0"), elsewhere);
       symlinkSync(elsewhere, join(w.versions, "0.2.0"));
-      expect(retireLocked(w.options)).toEqual({ removed: ["0.1.0"] });
+      expect(await retireLocked(w.options)).toEqual({ removed: ["0.1.0"] });
       expect(checkVersionFolder(elsewhere)).toEqual([]);
       expect(existsSync(join(w.versions, "0.2.0"))).toBe(true);
     },
@@ -207,7 +208,7 @@ describe("[A2.3.12.6.update.retire] an update removes the old version folders it
       make(w);
       const before = tree(w.versions);
       expect(planRetirement(w.options)).toBeUndefined();
-      expect(retireLocked(w.options)).toEqual({ removed: [] });
+      expect(await retireLocked(w.options)).toEqual({ removed: [] });
       expect(tree(w.versions)).toEqual(before);
     }
   });
@@ -215,7 +216,7 @@ describe("[A2.3.12.6.update.retire] an update removes the old version folders it
   test("a version in use stays whole and waits; doctor says it waits", async () => {
     const w = await world("busy");
     const options = { ...w.options, inUse: (folder: string) => folder.endsWith("0.2.0") };
-    expect(retireLocked(options)).toEqual({ removed: ["0.1.0"] });
+    expect(await retireLocked(options)).toEqual({ removed: ["0.1.0"] });
     expect(checkVersionFolder(join(w.versions, "0.2.0"))).toEqual([]);
     expect(listed(w.state)).toContain("0.2.0");
     expect(planRetirement(options)?.verdicts).toContainEqual({ version: "0.2.0", kind: "in_use" });
@@ -223,20 +224,24 @@ describe("[A2.3.12.6.update.retire] an update removes the old version folders it
 
   test("a removal cut off before its rename leaves the version whole; one cut off after it is finished by the next pass", async () => {
     const w = await world("cut");
-    // Cut before the rename: install.json names the removal, the folder is still at its name.
+    // Cut before the rename: install.json names the removal, the version is still at its name,
+    // and a folder of someone else's has the recorded name: it is not the removal's.
+    const stranger = join(w.versions, ".retiring-0.1.0-00000000000000aa");
+    mkdirSync(stranger);
+    writeFileSync(join(stranger, "keep.txt"), "mine");
     edit(w.state, (r) => ({
       ...r,
       retiring: { version: "0.1.0", folder: ".retiring-0.1.0-00000000000000aa" },
     }));
+    expect(await retireLocked({ ...w.options, inUse: () => true })).toEqual({ removed: [] });
     expect(checkVersionFolder(join(w.versions, "0.1.0"))).toEqual([]);
-    expect(retireLocked({ ...w.options, inUse: () => true })).toEqual({ removed: [] });
-    expect(checkVersionFolder(join(w.versions, "0.1.0"))).toEqual([]);
+    expect(readFileSync(join(stranger, "keep.txt"), "utf8")).toBe("mine");
     expect(readInstallRecord(w.state)?.["retiring"]).toBeUndefined();
-    // Cut after the rename: the folder is at the recorded name, half deleted.
+    // Cut after the rename: the folder is at the recorded name, half deleted, its manifest last.
     const recorded = ".retiring-0.2.0-00000000000000bb";
     edit(w.state, (r) => ({ ...r, retiring: { version: "0.2.0", folder: recorded } }));
     renameSync(join(w.versions, "0.2.0"), join(w.versions, recorded));
-    writeFileSync(join(w.versions, recorded, "manifest.json"), "");
+    rmSync(join(w.versions, recorded, "lib"), { recursive: true });
     const row = withVersions(
       { id: "update", status: "ok", detail: "Updated." },
       w.root,
@@ -244,10 +249,101 @@ describe("[A2.3.12.6.update.retire] an update removes the old version folders it
       os,
     );
     expect(row.detail).toMatch(/ 0\.2\.0, 0\.1\.0 wait to be removed/);
-    expect(retireLocked({ ...w.options, inUse: () => true })).toEqual({ removed: ["0.2.0"] });
+    expect(await retireLocked({ ...w.options, inUse: () => true })).toEqual({ removed: ["0.2.0"] });
     expect(existsSync(join(w.versions, recorded))).toBe(false);
     expect(listed(w.state)).not.toContain("0.2.0");
     expect(readInstallRecord(w.state)?.["retiring"]).toBeUndefined();
+  });
+
+  test("a removal cut off in a folder that now holds anything else is left whole, and doctor names it", async () => {
+    const w = await world("cut-foreign");
+    const recorded = ".retiring-0.2.0-00000000000000cc";
+    edit(w.state, (r) => ({ ...r, retiring: { version: "0.2.0", folder: recorded } }));
+    renameSync(join(w.versions, "0.2.0"), join(w.versions, recorded));
+    writeFileSync(join(w.versions, recorded, "notes.txt"), "a person's file");
+    const before = tree(w.versions);
+    expect(await retireLocked(w.options)).toEqual({ removed: [] });
+    expect(tree(w.versions)).toEqual(before);
+    expect(readInstallRecord(w.state)?.["retiring"]).toEqual({
+      version: "0.2.0",
+      folder: recorded,
+    });
+    const row = withVersions(
+      { id: "update", status: "ok", detail: "Updated." },
+      w.root,
+      w.state,
+      os,
+    );
+    expect(row.status).toBe("warn");
+    expect(row.detail).toContain(
+      `versions/${recorded} was left as it is: not in manifest.json: notes.txt.`,
+    );
+  });
+
+  test("a receipt of another root or install lends this one none of its versions, removal or pins", async () => {
+    const w = await world("foreign-receipt", ["0.1.0"]);
+    edit(w.state, (r) => ({
+      ...r,
+      root: join(w.dir, "other"),
+      retiring: { version: "0.2.0", folder: ".retiring-0.2.0-00000000000000dd" },
+    }));
+    const record = writeInstallRecord(w.state, w.root, os, { installed: "0.4.0" });
+    expect(record.versions).toEqual(["0.4.0"]);
+    expect(record.retiring).toBeUndefined();
+    expect(record.pinned).toBeUndefined();
+  });
+
+  test("a folder that cannot be read stays and is named, and the others still go", async () => {
+    const w = await world("unreadable");
+    const options = {
+      ...w.options,
+      inUse: (folder: string) => {
+        if (folder.endsWith("0.2.0")) throw Object.assign(new Error("denied"), { code: "EACCES" });
+        return false;
+      },
+    };
+    expect(planRetirement(options)?.verdicts).toContainEqual({
+      version: "0.2.0",
+      kind: "foreign",
+      problem: "it cannot be read (EACCES)",
+    });
+    expect(await retireLocked(options)).toEqual({ removed: ["0.1.0"] });
+    expect(checkVersionFolder(join(w.versions, "0.2.0"))).toEqual([]);
+  });
+
+  test.skipIf(os === "win32" || process.getuid?.() === 0)(
+    "a file in an old version that cannot be read does not break doctor, and that version stays",
+    async () => {
+      const w = await world("unreadable-file");
+      const file = join(w.versions, "0.2.0", "lib", "chunks", "cli.mjs");
+      chmodSync(file, 0o000);
+      try {
+        const row = withVersions(
+          { id: "update", status: "ok", detail: "Updated." },
+          w.root,
+          w.state,
+          os,
+        );
+        expect(row.detail).toContain(
+          "versions/0.2.0 was left as it is: it cannot be read (EACCES).",
+        );
+        expect(await retireLocked(w.options)).toEqual({ removed: ["0.1.0"] });
+        expect(existsSync(file)).toBe(true);
+      } finally {
+        chmodSync(file, 0o644);
+      }
+    },
+  );
+
+  test("each version's use is checked right before its own rename", async () => {
+    const w = await world("order");
+    // 0.2.0 starts while 0.1.0 is being removed.
+    const options = {
+      ...w.options,
+      inUse: (folder: string) => folder.endsWith("0.2.0") && !existsSync(join(w.versions, "0.1.0")),
+    };
+    expect(await retireLocked(options)).toEqual({ removed: ["0.1.0"] });
+    expect(checkVersionFolder(join(w.versions, "0.2.0"))).toEqual([]);
   });
 });
 
@@ -284,7 +380,7 @@ describe("[A2.3.12.6.update.retire-probe] a version that a process runs keeps ev
         const options = { root: w.root, state: w.state, platform: os };
         const child = await run(join(folder, ...path));
         try {
-          expect(retireLocked(options)).toEqual({ removed: ["0.1.0"] });
+          expect(await retireLocked(options)).toEqual({ removed: ["0.1.0"] });
           expect(checkVersionFolder(folder)).toEqual([]);
         } finally {
           child.kill();
@@ -293,7 +389,7 @@ describe("[A2.3.12.6.update.retire-probe] a version that a process runs keeps ev
         // The OS lets go of a program once its process is gone, which can lag the exit event.
         const end = Date.now() + 20_000;
         while (existsSync(folder) && Date.now() < end) {
-          retireLocked(options);
+          await retireLocked(options);
           if (existsSync(folder)) await new Promise((resolve) => setTimeout(resolve, 50));
         }
         expect(existsSync(folder)).toBe(false);
@@ -301,4 +397,22 @@ describe("[A2.3.12.6.update.retire-probe] a version that a process runs keeps ev
       },
     );
   }
+
+  test.skipIf(os !== "win32" && os !== "linux")(
+    "a program that runs from outside the versions does not keep any of them",
+    async () => {
+      const w = await world("unrelated");
+      const program = join(w.dir, os === "win32" ? "other.exe" : "other");
+      copyFileSync(process.execPath, program);
+      const child = await run(program);
+      try {
+        expect(await retireLocked({ root: w.root, state: w.state, platform: os })).toEqual({
+          removed: ["0.1.0", "0.2.0"],
+        });
+      } finally {
+        child.kill();
+        await once(child, "exit");
+      }
+    },
+  );
 });
