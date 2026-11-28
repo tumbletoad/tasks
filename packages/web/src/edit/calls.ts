@@ -194,11 +194,12 @@ export class Call<T> implements Turn {
     this.#learning ??= (async () => {
       const deadline = after(this.#deps.timers, ASK_MS);
       let over = false;
+      const done = () => over || this.#decision !== undefined || !this.#deps.alive();
       const asking = async () => {
-        while (!over && this.#decision === undefined && this.#deps.alive()) {
+        while (!done()) {
           await Promise.all([this.#attempt(), this.#ask()]);
-          if (over || this.#decision !== undefined) return;
-          await new Promise((resolve) => this.#deps.timers.set(resolve, AGAIN_MS));
+          if (done()) return;
+          await new Promise<void>((resolve) => this.#deps.timers.set(resolve, AGAIN_MS));
         }
       };
       try {
