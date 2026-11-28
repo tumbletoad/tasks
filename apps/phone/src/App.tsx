@@ -132,7 +132,8 @@ function Paired(props: {
       if (next.kind === "removed") removed.current();
     });
     owner.current = link;
-    link.start();
+    // A pairing that ended after the app went to the background waits for the front.
+    if (AppState.currentState !== "background") link.start();
     const app = AppState.addEventListener("change", (now) => {
       if (now === "active") link.start();
       else if (now === "background") link.stop();
@@ -172,7 +173,7 @@ function Paired(props: {
  */
 function Scanner(props: { colors: Colors; onRead: (qr: Pairing) => void; onCancel: () => void }) {
   const { colors, onRead, onCancel } = props;
-  const [permission, request] = useCameraPermissions();
+  const [permission, request, reread] = useCameraPermissions();
   const [note, setNote] = useState<string | undefined>(undefined);
   const taken = useRef(false);
   const handlers = useRef({ onRead });
@@ -189,9 +190,22 @@ function Scanner(props: { colors: Colors; onRead: (qr: Pairing) => void; onCance
     handlers.current.onRead(qr);
   }).current;
 
+  // Asked once, as the scanner opens; after that only the button asks. Back from Android's
+  // settings, the answer there is read again.
+  const asked = useRef(false);
   useEffect(() => {
-    if (permission !== null && !permission.granted && permission.canAskAgain) void request();
+    if (asked.current || permission === null) return;
+    asked.current = true;
+    if (!permission.granted && permission.canAskAgain) void request();
   }, [permission, request]);
+  useEffect(() => {
+    const app = AppState.addEventListener("change", (now) => {
+      if (now === "active") void reread();
+    });
+    return () => {
+      app.remove();
+    };
+  }, [reread]);
   useEffect(() => {
     const scanned = native.addListener("scan", ({ text }) => {
       read(text);
@@ -280,7 +294,8 @@ function Name(props: {
         ? "This code no longer works. Show a new one in Settings > Phones and scan it."
         : paired.pin
           ? "The computer at this code's address has another key. Scan a new code."
-          : "Can't reach the computer. Check that this phone is on the same network or VPN, then try again.",
+          : // An expired or used code is refused without a word, so it reads like no answer.
+            "Couldn't pair. Check the network or scan a fresh code from Settings > Phones.",
     );
   };
 

@@ -35,6 +35,8 @@ if (values.app === undefined || values.test === undefined) {
   process.exit(2);
 }
 const { app, test, shots } = values;
+// adb pull writes only into a folder that is there.
+if (shots !== undefined) mkdirSync(shots, { recursive: true });
 
 const PAIRING_FILE = "/data/local/tmp/ttasks-pairing.txt";
 const RUNNER = `${ANDROID_APP_ID}.test/androidx.test.runner.AndroidJUnitRunner`;
@@ -61,7 +63,6 @@ const adb = async (...args: string[]): Promise<string> =>
 /** A picture of the screen as it is, for the pull request, when `--shots` names a folder. */
 async function shot(name: string): Promise<void> {
   if (shots === undefined) return;
-  mkdirSync(shots, { recursive: true });
   const png = await run("adb", ["exec-out", "screencap", "-p"], {
     encoding: "buffer",
     maxBuffer: 64 * 1024 * 1024,

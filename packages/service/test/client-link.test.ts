@@ -5,7 +5,8 @@
 import { parsePairing, type Pairing } from "@ttasks/contracts/link";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { WebSocket } from "ws";
-import { createServer } from "node:net";
+import { createServer, type Socket } from "node:net";
+import { connect as tlsConnect } from "node:tls";
 import {
   linkOwner,
   openLink,
@@ -17,7 +18,8 @@ import {
 } from "@ttasks/client/link";
 import { post } from "./http-client.ts";
 import { httpWorld, signIn, type HttpWorld } from "./http-world.ts";
-import { phoneKey, tlsTo, type PhoneKey } from "./phone-client.ts";
+import { certPin } from "../src/link/cert.ts";
+import { phoneKey, type PhoneKey } from "./phone-client.ts";
 
 const SLOW = { timeout: 120_000 };
 
@@ -25,18 +27,45 @@ interface Phone {
   readonly connect: Connect;
   /** Every `open` the phone sent, in order. */
   readonly opens: Record<string, unknown>[];
+  /** Every address the phone connected to, in order. */
+  readonly dialled: string[];
+  /** Sockets open now, and the most there ever were at once. */
+  readonly sockets: { live: number; most: number };
 }
 
 /**
  * A phone with its own key. The first `lose` connections that get an answer lose it: the socket
- * closes before the phone reads it, as when the network drops just then.
+ * closes before the phone reads it, as when the network drops just then. Closing a socket ends it
+ * at once, also in the middle of its handshake.
  */
 function phone(key: PhoneKey = phoneKey(), lose = 0): Phone {
   const opens: Record<string, unknown>[] = [];
+  const dialled: string[] = [];
+  const sockets = { live: 0, most: 0 };
   let losing = lose;
   const connect: Connect = (url, pin, events) => {
+    const { hostname, port } = new URL(url);
+    dialled.push(`${hostname}:${port}`);
+    sockets.live += 1;
+    sockets.most = Math.max(sockets.most, sockets.live);
     let ws: WebSocket | undefined;
     let closed = false;
+    const tls = tlsConnect({
+      host: hostname,
+      port: Number(port),
+      key: key.key,
+      cert: key.cert,
+      rejectUnauthorized: false,
+      minVersion: "TLSv1.3",
+    });
+    const end = () => {
+      if (closed) return false;
+      closed = true;
+      sockets.live -= 1;
+      ws?.terminate();
+      tls.destroy();
+      return true;
+    };
     const socket: LinkSocket = {
       events,
       send: (text) => {
@@ -44,57 +73,92 @@ function phone(key: PhoneKey = phoneKey(), lose = 0): Phone {
         ws?.send(text);
       },
       close: () => {
-        closed = true;
-        ws?.terminate();
+        end();
       },
     };
     const ended = (code: number) => {
-      if (closed) return;
-      closed = true;
-      socket.events.close(code);
+      if (end()) socket.events.close(code);
     };
     const lost = losing > 0;
     if (lost) losing -= 1;
-    tlsTo(new URL(url).host, pin, key).then(
-      ({ socket: tls, pinned }) => {
-        if (!pinned) {
-          tls.destroy();
-          socket.events.error("pin");
+    tls.once("error", () => {
+      if (closed) return;
+      socket.events.error("network");
+      ended(1006);
+    });
+    tls.once("secureConnect", () => {
+      const peer = tls.getPeerX509Certificate();
+      if (peer === undefined || certPin(peer.raw) !== pin) {
+        socket.events.error("pin");
+        ended(1006);
+        return;
+      }
+      const opened = new WebSocket(url, {
+        createConnection: () => tls,
+        perMessageDeflate: false,
+        rejectUnauthorized: false,
+      });
+      ws = opened;
+      opened.on("open", () => {
+        if (!closed) socket.events.open();
+      });
+      opened.on("message", (data: Buffer) => {
+        if (closed) return;
+        if (lost) {
           ended(1006);
           return;
         }
-        const opened = new WebSocket(url, {
-          createConnection: () => tls,
-          perMessageDeflate: false,
-          rejectUnauthorized: false,
-        });
-        ws = opened;
-        opened.on("open", () => {
-          if (!closed) socket.events.open();
-        });
-        opened.on("message", (data: Buffer) => {
-          if (closed) return;
-          if (lost) {
-            opened.terminate();
-            ended(1006);
-            return;
-          }
-          socket.events.message(data.toString("utf8"));
-        });
-        opened.on("error", () => undefined);
-        opened.on("close", (code: number) => {
-          ended(code);
-        });
-      },
-      () => {
-        socket.events.error("network");
-        ended(1006);
-      },
-    );
+        socket.events.message(data.toString("utf8"));
+      });
+      opened.on("error", () => undefined);
+      opened.on("close", (code: number) => {
+        ended(code);
+      });
+    });
     return socket;
   };
-  return { connect, opens };
+  return { connect, opens, dialled, sockets };
 }
+
+/** An address that takes connections and never answers: an attempt there waits. */
+async function silent() {
+  const counts = { accepted: 0, dropped: 0 };
+  const waits: (() => void)[] = [];
+  const changed = () => {
+    for (const wake of waits.splice(0)) wake();
+  };
+  const held: Socket[] = [];
+  const server = createServer((socket) => {
+    held.push(socket);
+    counts.accepted += 1;
+    socket.on("close", () => {
+      counts.dropped += 1;
+      changed();
+    });
+    changed();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const port = typeof address === "object" && address !== null ? address.port : 0;
+  /** Resolves once `count` says so. */
+  const until = async (holds: () => boolean) => {
+    while (!holds()) {
+      await new Promise<void>((resolve) => waits.push(resolve));
+    }
+  };
+  return {
+    addr: `127.0.0.1:${String(port)}`,
+    counts,
+    until,
+    close: () => {
+      for (const socket of held) socket.destroy();
+      server.close();
+    },
+  };
+}
+
+/** Lets every callback already due run. */
+const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 let world: HttpWorld;
 let token = "";
@@ -196,7 +260,7 @@ describe(
       ]);
       expect((await phones()).filter((x) => x.name === "Pixel")).toHaveLength(1);
 
-      const again = await openLink(p.connect, paired.saved);
+      const again = await openLink(p.connect, paired.saved).done;
       expect(again.kind).toBe("served");
       if (again.kind === "served") again.socket.close();
       expect(p.opens.at(-1)).toEqual({ type: "open", protocol: 1, space: qr.space.id });
@@ -231,7 +295,7 @@ describe(
       const id = (await phones()).find((x) => x.name === "Removed")?.id;
       await machine("phone_remove", { phone: id });
       const saved: Saved = paired.saved;
-      expect(await openLink(p.connect, saved)).toEqual({ kind: "removed" });
+      expect(await openLink(p.connect, saved).done).toEqual({ kind: "removed" });
     });
 
     test("the owner stops for good when the computer says the phone was removed", async () => {
@@ -248,6 +312,54 @@ describe(
       owner.now();
       expect(states.at(-1)?.kind).toBe("removed");
     });
+    test("a stop while an attempt waits ends it and tries no other address", async () => {
+      const key = phoneKey();
+      const paired = await pairWith(phone(key).connect, await code(), "Stopped");
+      if (paired.kind !== "served") throw new Error(`not paired: ${paired.kind}`);
+      paired.socket.close();
+      const quiet = await silent();
+      const p = phone(key);
+      const { owner } = owned(p.connect, {
+        ...paired.saved,
+        addrs: [quiet.addr, ...paired.saved.addrs],
+      });
+      owner.start();
+      await quiet.until(() => quiet.counts.accepted === 1);
+      owner.stop();
+      await quiet.until(() => quiet.counts.dropped === 1);
+      await settle();
+      await settle();
+      expect(p.dialled).toEqual([quiet.addr]);
+      expect(p.sockets.live).toBe(0);
+      quiet.close();
+    });
+
+    test("a new attempt calls off the one under way: never two sockets at once", async () => {
+      const key = phoneKey();
+      const paired = await pairWith(phone(key).connect, await code(), "Replaced");
+      if (paired.kind !== "served") throw new Error(`not paired: ${paired.kind}`);
+      paired.socket.close();
+      const quiet = await silent();
+      const p = phone(key);
+      const { owner } = owned(p.connect, {
+        ...paired.saved,
+        addrs: [quiet.addr, ...paired.saved.addrs],
+      });
+      owner.start();
+      await quiet.until(() => quiet.counts.accepted === 1);
+      // Another network while it still waits.
+      owner.now();
+      await quiet.until(() => quiet.counts.accepted === 2);
+      owner.stop();
+      await quiet.until(() => quiet.counts.dropped === 2);
+      await settle();
+      await settle();
+      expect(p.dialled).toEqual([quiet.addr, quiet.addr]);
+      expect(p.sockets.most).toBe(1);
+      expect(p.sockets.live).toBe(0);
+      quiet.close();
+    });
+
     // Last: it restarts the service, after which the space opens again in its own time.
     test("the owner keeps the pairing while the computer is away and connects again when it is back", async () => {
       const p = phone();

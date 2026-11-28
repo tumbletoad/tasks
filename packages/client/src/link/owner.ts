@@ -1,8 +1,17 @@
 // The one owner of the phone's link: it opens the link, keeps it, and opens it again. While the app
 // is in front it tries again every `retryMs` after a failure or a lost connection, and at once when
 // asked (Try now, the app coming back to the front, another network). In the background it holds
-// no connection. Only the computer's `removed` stops it for good; the pairing stays otherwise.
-import { openLink, type Connect, type Hello, type LinkSocket, type Saved } from "./open.ts";
+// no connection and makes no attempt. It has at most one attempt at a time: a new one, or a stop,
+// calls off the one under way with its walk over the addresses. Only the computer's `removed`
+// stops it for good; the pairing stays otherwise.
+import {
+  openLink,
+  type Connect,
+  type Hello,
+  type LinkSocket,
+  type Opening,
+  type Saved,
+} from "./open.ts";
 
 export type LinkState =
   | { readonly kind: "connecting" }
@@ -12,7 +21,7 @@ export type LinkState =
   | { readonly kind: "removed" };
 
 export interface LinkOwner {
-  /** The app is in front: open the link now. */
+  /** The app is in front: open the link now. Call it only while the app is in front. */
   start(): void;
   /** The app went to the background: close the link and stop trying. */
   stop(): void;
@@ -33,12 +42,15 @@ export function linkOwner(
   let pairing = saved;
   let running = false;
   let generation = 0;
+  let opening: Opening | undefined;
   let socket: LinkSocket | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const drop = () => {
     clearTimeout(timer);
     timer = undefined;
+    opening?.cancel();
+    opening = undefined;
     socket?.close();
     socket = undefined;
   };
@@ -52,11 +64,13 @@ export function linkOwner(
     const run = generation;
     drop();
     report({ kind: "connecting" }, pairing);
-    const opened = await openLink(connect, pairing);
+    opening = openLink(connect, pairing);
+    const opened = await opening.done;
     if (run !== generation || !running) {
       if (opened.kind === "served") opened.socket.close();
       return;
     }
+    opening = undefined;
     if (opened.kind === "removed") {
       running = false;
       report(opened, pairing);

@@ -99,7 +99,23 @@ type Attempt =
   | { readonly kind: "removed" }
   | { readonly kind: "failed"; readonly pin: boolean; readonly sent: boolean };
 
-function attempt(connect: Connect, addr: string, saved: Saved, pair?: Pair): Promise<Attempt> {
+/**
+ * One walk over the computer's addresses. Cancelling it ends its attempt now, closes that socket
+ * and tries no further address.
+ */
+interface Walk {
+  cancelled: boolean;
+  /** Ends the attempt in progress, if there is one. */
+  end?: (() => void) | undefined;
+}
+
+function attempt(
+  connect: Connect,
+  addr: string,
+  saved: Saved,
+  walk: Walk,
+  pair?: Pair,
+): Promise<Attempt> {
   return new Promise((resolve) => {
     let pin = false;
     let sent = false;
@@ -107,6 +123,7 @@ function attempt(connect: Connect, addr: string, saved: Saved, pair?: Pair): Pro
     const finish = (outcome: Attempt) => {
       if (done) return;
       done = true;
+      walk.end = undefined;
       clearTimeout(timer);
       if (outcome.kind !== "served") socket.close();
       resolve(outcome);
@@ -137,6 +154,9 @@ function attempt(connect: Connect, addr: string, saved: Saved, pair?: Pair): Pro
         finish({ kind: "failed", pin, sent });
       },
     });
+    walk.end = () => {
+      finish({ kind: "failed", pin, sent });
+    };
     const timer = setTimeout(() => {
       finish({ kind: "failed", pin, sent });
     }, ATTEMPT_MS);
@@ -154,16 +174,38 @@ function served(outcome: Attempt & { kind: "served" }, addr: string, saved: Save
   };
 }
 
+/** Opening the link, which can be called off. */
+export interface Opening {
+  /** What came of it. Once cancelled: `offline`, with no socket left open. */
+  readonly done: Promise<Opened>;
+  cancel(): void;
+}
+
 /** The link to the paired computer, at the first of its addresses that serves the phone. */
-export async function openLink(connect: Connect, saved: Saved): Promise<Opened> {
-  let pin = false;
-  for (const addr of saved.addrs) {
-    const outcome = await attempt(connect, addr, saved);
-    if (outcome.kind === "served") return served(outcome, addr, saved);
-    if (outcome.kind === "removed") return outcome;
-    pin ||= outcome.pin;
-  }
-  return { kind: "offline", pin };
+export function openLink(connect: Connect, saved: Saved): Opening {
+  const walk: Walk = { cancelled: false };
+  const run = async (): Promise<Opened> => {
+    let pin = false;
+    for (const addr of saved.addrs) {
+      // A cancel comes while an attempt waits: it ends that attempt, and this stops the walk.
+      const outcome = await attempt(connect, addr, saved, walk);
+      if (walk.cancelled) {
+        if (outcome.kind === "served") outcome.socket.close();
+        break;
+      }
+      if (outcome.kind === "served") return served(outcome, addr, saved);
+      if (outcome.kind === "removed") return outcome;
+      pin ||= outcome.pin;
+    }
+    return { kind: "offline", pin };
+  };
+  return {
+    done: run(),
+    cancel: () => {
+      walk.cancelled = true;
+      walk.end?.();
+    },
+  };
 }
 
 /**
@@ -174,13 +216,14 @@ export async function openLink(connect: Connect, saved: Saved): Promise<Opened> 
  */
 export async function pairWith(connect: Connect, qr: Pairing, name: string): Promise<Opened> {
   const pair: Pair = { code: qr.code, name, platform: "android" };
+  const walk: Walk = { cancelled: false };
   let pin = false;
   for (const addr of qr.addrs) {
-    const first = await attempt(connect, addr, qr, pair);
+    const first = await attempt(connect, addr, qr, walk, pair);
     if (first.kind === "served") return served(first, addr, qr);
     if (first.kind === "removed") return first;
     if (first.sent) {
-      const again = await attempt(connect, addr, qr);
+      const again = await attempt(connect, addr, qr, walk);
       if (again.kind === "served") return served(again, addr, qr);
       return again.kind === "removed" ? again : { kind: "offline", pin: false };
     }
