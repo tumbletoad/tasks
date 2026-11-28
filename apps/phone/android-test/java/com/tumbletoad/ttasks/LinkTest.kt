@@ -153,6 +153,19 @@ class LinkTest {
     shown(device, "Focus")
   }
 
+  /** A task an agent changed, under Today's Changes: its card opens with what the agent wrote. */
+  @Test
+  fun opensChange() {
+    val device = launch()
+    shown(device, "Changes")
+    shown(device, "Changed by an agent").click()
+    shown(device, "Fixture: an agent looked into it.")
+    picture(device, "change-card.png")
+    device.pressBack()
+    if (!device.wait(Until.gone(By.text("Back")), WAIT_MS)) throw AssertionError("the card stayed open")
+    shown(device, "Changes")
+  }
+
   private fun checkOff(title: String, device: UiDevice = launch()) {
     shown(device, title)
     val box = device.wait(Until.findObject(By.desc("Done: $title")), WAIT_MS)

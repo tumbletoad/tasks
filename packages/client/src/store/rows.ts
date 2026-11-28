@@ -93,7 +93,7 @@ export interface RowQuestion {
   readonly at: number;
 }
 
-/** A task's newest run as its row shows it, and the instance it runs with. */
+/** A task's newest run as its row shows it, and on the computer the instance it runs with. */
 export interface RowRun {
   readonly id: string;
   /**
@@ -101,7 +101,8 @@ export interface RowRun {
    * made and nothing of it runs now; another state is one this page does not know.
    */
   readonly state: string;
-  readonly instance: string;
+  /** The computer's own: a phone's feed leaves it out. */
+  readonly instance?: string;
 }
 
 /** A source as the row shows it: its kind and its own text, never a label. */
@@ -469,7 +470,7 @@ const isPlace = (v: unknown): boolean =>
 
 /** A state the page does not know yet is shown as no run, never an unreadable row. */
 const isRun = (v: unknown): boolean =>
-  isRecord(v) && isString(v["id"]) && isString(v["state"]) && isString(v["instance"]);
+  isRecord(v) && isString(v["id"]) && isString(v["state"]) && optional(v["instance"], isString);
 
 const isLast = (v: unknown): boolean =>
   isRecord(v) && optional(v["open"], isString) && optional(v["run"], isString);

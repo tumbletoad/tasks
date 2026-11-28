@@ -410,6 +410,7 @@ describe("[S5.link.snapshot] a phone's feed carries the space's data and nothing
       "asking",
       "cursor",
       "nodes",
+      "pages",
       "preferences",
       "space",
       "tasks",
@@ -657,6 +658,74 @@ describe("[S5.link.knowledge] a phone reads a task's pages and what is known abo
       const opened = await link.call("/api/v1/op/page.read", { target: String(own?.["ref"]) });
       expect(opened.status).toBe(200);
       expect(JSON.stringify(opened.body)).toContain("Fixture body of the task's page.");
+    },
+  );
+});
+
+describe("[S5.link.page-rows] a phone's feed carries each page's row with who changed it, and nothing more", () => {
+  test(
+    "the snapshot and a batch name a page's title, brief, owner, task and last change; no body",
+    SLOW,
+    async () => {
+      const p = await page("link-page-rows");
+      const { link } = await paired(p);
+      const added = await link.call("/api/v1/op/task.add", {
+        tasks: [{ title: "Fixture task with a page in the feed" }],
+        request_id: "fixture-request-page-rows-01",
+      });
+      const ref = (added.body["result"] as { tasks: { ref: string }[] }).tasks[0]?.ref ?? "";
+      const user = await p.world.user();
+      const write = (input: Record<string, unknown>) =>
+        user.call("op/call", { op: "page.write", input }, { timeoutMs: 60_000 });
+      await write({
+        action: "create",
+        on: ref,
+        title: "Fixture page in the snapshot",
+        brief: "Seen first",
+        body: "Fixture body never in the feed.",
+        why: "fixture",
+        request_id: "fixture-request-page-rows-02",
+      });
+      link.send({ type: "subscribe" });
+      const snapshot = await link.next((m) => m["type"] === "snapshot");
+      const allowed = [
+        "id",
+        "ref",
+        "title",
+        "brief",
+        "owner_id",
+        "under",
+        "version",
+        "at",
+        "why",
+        "deleted_at",
+        "task",
+        "by",
+      ];
+      const pages = snapshot["pages"] as Record<string, unknown>[];
+      const first = pages.find((row) => row["title"] === "Fixture page in the snapshot");
+      expect(first).toMatchObject({ brief: "Seen first", by: "user", task: { ref } });
+      for (const row of pages) for (const key of Object.keys(row)) expect(allowed).toContain(key);
+      expect(JSON.stringify(snapshot)).not.toContain("Fixture body never in the feed.");
+
+      await write({
+        action: "create",
+        on: ref,
+        title: "Fixture page in a batch",
+        brief: "Seen later",
+        body: "Fixture body never in the feed either.",
+        why: "fixture",
+        request_id: "fixture-request-page-rows-03",
+      });
+      const batch = await link.next(
+        (m) => m["type"] === "batch" && JSON.stringify(m).includes("Fixture page in a batch"),
+      );
+      const entities = (
+        batch["events"] as { entities: { type: string; row: unknown }[] }[]
+      ).flatMap((event) => event.entities.filter((entity) => entity.type === "page"));
+      expect(entities.length).toBeGreaterThan(0);
+      for (const entity of entities) expect(entity.row).not.toBeNull();
+      expect(JSON.stringify(batch)).not.toContain("Fixture body never in the feed either.");
     },
   );
 });

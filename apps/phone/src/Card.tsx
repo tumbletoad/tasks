@@ -5,7 +5,16 @@
 // the phone's last read with its age, or says it has not been loaded.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import type { CardDetail, PageLink, PageText, Read, SpaceSession } from "@ttasks/client/link";
+import {
+  runGoes,
+  runLine,
+  type CardDetail,
+  type PageLink,
+  type PageText,
+  type PhoneRun,
+  type Read,
+  type SpaceSession,
+} from "@ttasks/client/link";
 import { trail, type NodeRow, type TaskRow } from "@ttasks/client/store";
 import { dueWhen, formatDay, formatWhen, type Clock } from "@ttasks/client/today";
 import { ago } from "./time.ts";
@@ -13,6 +22,9 @@ import { Button, shared, type Colors } from "./ui.tsx";
 import { WORDS } from "./words.ts";
 
 const DAY = { weekday: "short", day: "numeric", month: "short" } as const;
+
+/** How often an open card reads a run that goes on again: its row says only queued or working. */
+const RUN_TICK_MS = 15_000;
 
 /** A read from the session, read again whenever `again` changes. */
 function useRead<T>(read: () => Promise<Read<T>>, again: string): Read<T> | undefined {
@@ -83,6 +95,31 @@ export function Card(props: {
     task.waiting_on === undefined ? undefined : WORDS.waitingOn(task.waiting_on),
   ].filter((fact): fact is string => fact !== undefined);
   const detail = read?.kind === "read" ? read.value : undefined;
+  // The task's newest run, read again when its row says the run moved. While it goes on, it is
+  // also read again when the task changes and on a slow tick: its row says working whatever the
+  // run does, and its agent's last words change no row.
+  const [goes, setGoes] = useState(false);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!goes || !live) return undefined;
+    const timer = setInterval(() => {
+      setTick((n) => n + 1);
+    }, RUN_TICK_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [goes, live]);
+  const runs = useRead<readonly PhoneRun[]>(
+    () => session.runs(task.id),
+    `${task.id} ${String(task.run?.id)} ${String(task.run?.state)} ${String(live)}` +
+      (goes ? ` ${String(task.version)} ${String(task.touched)} ${String(tick)}` : ""),
+  );
+  const newest = runs?.kind === "read" ? runs.value[0] : undefined;
+  const run = newest === undefined ? undefined : runLine(newest);
+  const going = run !== undefined && runGoes(run.tone);
+  useEffect(() => {
+    setGoes(going);
+  }, [going]);
 
   return (
     <View style={shared.fill}>
@@ -138,6 +175,30 @@ export function Card(props: {
         )}
         {facts.length === 0 ? null : (
           <Text style={[shared.small, { color: colors.muted }]}>{facts.join(" · ")}</Text>
+        )}
+        {run === undefined ? null : (
+          <Section label={WORDS.runSection} colors={colors}>
+            <Text
+              style={[
+                shared.body,
+                { color: run.tone === "needs_you" ? colors.accent : colors.text },
+              ]}
+            >
+              {WORDS.run[run.tone]}
+            </Text>
+            <Age read={runs} clock={clock} colors={colors} />
+            {run.said === undefined ? null : (
+              <View style={styles.entry}>
+                <Text style={[shared.small, { color: colors.muted }]}>
+                  {WORDS.said[run.said.kind]}
+                </Text>
+                <Text style={[shared.body, { color: colors.text }]}>{run.said.text}</Text>
+                {run.said.cut ? (
+                  <Text style={[shared.small, { color: colors.muted }]}>{WORDS.cut}</Text>
+                ) : null}
+              </View>
+            )}
+          </Section>
         )}
         <Age read={read} clock={clock} colors={colors} />
         {detail?.partial === true ? (

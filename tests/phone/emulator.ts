@@ -13,7 +13,8 @@
 //    background and brought back, it opens the link again.
 // 5. Today: a task the computer adds shows without a pull; its box checks it off, with Undo, and the
 //    check-off reaches the computer; a capture reaches it once. A task's card opens from Today,
-//    shows a note the computer adds while it is open, and Back returns to Today. With the service stopped, a
+//    shows a note the computer adds while it is open, and Back returns to Today. A task an agent
+//    changed shows under Changes, and its card opens from there. With the service stopped, a
 //    check-off waits, outlasts a restart of the app, and arrives once the service is back.
 // 6. The phone is removed on the computer. Started again, the app is told so, forgets the pairing
 //    and offers to scan a code; started once more, it is not paired and opens no connection.
@@ -30,6 +31,7 @@ import { parseArgs, promisify } from "node:util";
 import { ANDROID_APP_ID } from "../../packages/brand/src/index.ts";
 import { SPACE_HEADER } from "../../packages/service/src/http/app.ts";
 import { post } from "../../packages/service/test/http-client.ts";
+import { classSession } from "../../packages/service/test/ops-helpers.ts";
 import { httpWorld, signIn } from "../../packages/service/test/http-world.ts";
 
 const { values } = parseArgs({
@@ -280,6 +282,42 @@ try {
     "the note the computer added shows on the open card, and Back returns to Today",
   );
   await pull("card.png", "7-card");
+  await restart();
+
+  // What an agent did: a task it changed shows under Changes, and its card opens from there.
+  const agentTask = await op("task.add", {
+    tasks: [{ title: "Changed by an agent", inbox: true }],
+    request_id: `fixture-${String(Date.now())}-agent-task`,
+  });
+  const changed = (agentTask.result?.["tasks"] as { ref: string }[] | undefined)?.[0]?.ref ?? "";
+  const agent = await classSession(world.home, world.service.endpoint.path, "cli-agent", {
+    CLAUDECODE: "1",
+  });
+  try {
+    await agent.call(
+      "op/call",
+      {
+        op: "entry.add",
+        input: {
+          task: changed,
+          kind: "progress",
+          text: "Fixture: an agent looked into it.",
+          request_id: `fixture-${String(Date.now())}-agent-entry`,
+        },
+        space: "Mira",
+      },
+      { timeoutMs: 60_000 },
+    );
+  } finally {
+    agent.close();
+  }
+  check(
+    await shows("Changes", "Changed by an agent"),
+    "a task an agent changed shows under Changes",
+  );
+  await shot("10-changes");
+  check(await instrument("opensChange"), "its card opens from Changes, with what the agent wrote");
+  await pull("change-card.png", "11-change-card");
   await restart();
 
   const vet = await added("Call the vet");

@@ -86,20 +86,3 @@ export function taskLists(
   });
   return { own, above };
 }
-
-/**
- * The pages an agent or a routine changed last in the past `days`, newest first, at most `limit`:
- * Today's Changes beside the tasks. A page the person changed after it is the person's again.
- */
-export function agentPages(
-  pages: Iterable<PageRow>,
-  now: number,
-  days: number,
-  limit: number,
-): PageRow[] {
-  const since = now - days * 86_400_000;
-  return [...pages]
-    .filter((page) => page.by !== "user" && page.by !== "import" && page.at >= since)
-    .sort((a, b) => b.at - a.at)
-    .slice(0, limit);
-}
