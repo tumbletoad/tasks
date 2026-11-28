@@ -436,6 +436,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   link and the browser's history list hold the search page but not your words. A reload, Back and
   Forward bring the search back in that tab; the search's link opened in another tab is an empty
   search.
+- A paste into the top field that is more than a title loses no word: its first line becomes the
+  title, and the rest is shown under the field and goes in the new task's context, also after a
+  reload. A search keeps the first 500 characters and says so.
 - The generated folder of readable files is not where tasks are stored. A file you edit or add
   there is kept or moved to a rescue folder, never deleted. A generated file that goes missing,
   removed by hand or by a sync, is written again within seconds while TTasks runs.
