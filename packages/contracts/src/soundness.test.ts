@@ -1,4 +1,4 @@
-// The soundness property test (A3 3.2.1). Values are generated from each generated JSON
+// The soundness property test. Values are generated from each generated JSON
 // Schema itself: valid values at and around every limit, in ASCII and in text that SafeText
 // lengthens or shortens, every enum value, pattern matches and near misses, wrong types, and
 // missing and extra keys. For every entry's input, agent input and output it asserts:
@@ -179,7 +179,7 @@ class Generator {
           near: fc.constantFrom<Json>("true", 0, null),
           smallest: false,
         };
-      // Only as a union option: a preference value's reset (A3 3.4.11).
+      // Only as a union option: a preference value's reset.
       case "null":
         return {
           valid: fc.constant(null),

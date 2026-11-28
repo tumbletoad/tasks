@@ -1,4 +1,4 @@
-// The page's words (A5 3.23): ICU messages in `en.json`, the source catalogue, through FormatJS
+// The page's words: ICU messages in `en.json`, the source catalogue, through FormatJS
 // (`react-intl`). Components never hold a UI string: lint refuses a literal in JSX
 // (eslint-plugin-formatjs), and every message ID is a key of the catalogue, checked by the
 // compiler. Plurals and selects are ICU; nothing is concatenated.

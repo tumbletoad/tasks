@@ -1,4 +1,4 @@
-// Which agent Open uses (M6), in Chromium and Firefox against the real service process with
+// Which agent Open uses, in Chromium and Firefox against the real service process with
 // fixture data: one Open button names its agent, the others are in a menu beside it grouped by
 // app, and the button names the one the person last used, also after a reload. Every agent is the
 // fake agent under its own name; the fake terminal records each launch.

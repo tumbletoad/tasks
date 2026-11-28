@@ -1,5 +1,5 @@
-// entry.add: append to a task's log, or record a note for the user (A3 3.4.7). Only the user can
-// address a note to agents (for_agents, A3 3.2.3).
+// entry.add: append to a task's log, or record a note for the user. Only the user can
+// address a note to agents (for_agents).
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { safeLine, safeText } from "../safe-text.ts";
@@ -24,7 +24,7 @@ export const EntryAddInput = z.strictObject({
     .describe("question: the user sees it until they answer; note: a note for the user")
     .optional(),
   // The user may write a note as long as A1 allows a note. The handler applies A1's log-entry
-  // limit to the log kinds (A1 3.7).
+  // limit to the log kinds.
   text: safeText(USER_LIMITS.note).describe("The entry, in Markdown"),
   links: z
     .array(
@@ -83,7 +83,7 @@ export const entryAdd = defineEntry({
     },
   },
   budget: { typical: 40, max: 80 },
-  // forbidden: an agent that sends for_agents (A3 3.2.1, 3.2.3).
+  // forbidden: an agent that sends for_agents.
   errors: [
     "invalid_input",
     "unbound",

@@ -1,4 +1,4 @@
-// The composer's strip and the text a reload keeps (A7 3.12 M5.07), in Chromium and Firefox
+// The composer's strip and the text a reload keeps, in Chromium and Firefox
 // against the real service process with fixture data and the fake terminal behind Open.
 //
 // Verify line: Note, Open and Copy with and without text; Enter and Ctrl+Enter, never while an

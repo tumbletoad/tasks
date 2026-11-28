@@ -186,4 +186,25 @@ describe("[A5.tree.http.feed] the feed sends the space as a tree: areas as top-l
     const phoneNodes = phone.events.flatMap((e) => e.entities.filter((x) => x.type === "node"));
     expect(phoneNodes.map((x) => x.row)).toEqual([created?.row, moved?.row, archived?.row]);
   });
+
+  test("a batch: a task filed into another project carries its page's row, under the new project", async () => {
+    const start = (await readHead(reader)).cursor.seq;
+    const before = await readSnapshot(reader);
+    const ref = titled(before.tasks, "Fixture fix the login")?.["ref"] as string;
+    await call("task.update", {
+      task: ref,
+      set: { project: "Garden" },
+      base: await asOf(),
+      request_id: rid(),
+    });
+
+    const { batch } = await readBatch(reader, start);
+    const snapshot = await readSnapshot(reader);
+    const garden = idOf(snapshot.nodes, "Garden");
+    const page = batch.events
+      .flatMap((e) => e.entities)
+      .find((x) => x.type === "page" && x.id === idOf(snapshot.pages ?? [], "Fixture login notes"));
+    expect(page?.row).toMatchObject({ under: garden });
+    expect(page?.row).toEqual(titled(snapshot.pages ?? [], "Fixture login notes"));
+  });
 });

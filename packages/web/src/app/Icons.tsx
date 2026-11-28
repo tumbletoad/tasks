@@ -1,4 +1,4 @@
-// The shell's icons (A5 3.20): one set on a 24-unit grid with a 1.6 stroke, round caps and no
+// The shell's icons: one set on a 24-unit grid with a 1.6 stroke, round caps and no
 // fill, inheriting the text colour. Drawn for this page from plain shapes. Every icon is
 // decorative: the control that holds it has its name from the message catalogue.
 import type { ReactNode } from "react";

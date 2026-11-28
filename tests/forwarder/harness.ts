@@ -1,4 +1,4 @@
-// The forwarder conformance suite's harness (A2 3.7.6). The forwarder under test runs as a real
+// The forwarder conformance suite's harness. The forwarder under test runs as a real
 // child process: the binary in TTASKS_BRIDGE_BIN when it is set (a native forwarder takes the
 // same arguments as `ttasks mcp`), otherwise the Node bridge from packages/bridge. Services run as
 // real child processes too: the scripted peer of peer.ts, or the real hub. Every process a test
@@ -273,7 +273,7 @@ export class Procs {
 
   /**
    * The real hub (`ttasks serve` through the service's test entry), in `home`. It hosts the spaces
-   * of `<home>/config/machine.toml` (A2 3.2.4): `hubSpace` registers one. `stop` on its stdin
+   * of `<home>/config/machine.toml`: `hubSpace` registers one. `stop` on its stdin
    * stops it gracefully.
    */
   hub(home: Home): Proc {

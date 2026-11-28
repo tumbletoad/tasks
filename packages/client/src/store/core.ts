@@ -1,4 +1,4 @@
-// The live store's core (A5 3.15; A1 3.7 "Change feed (X8)"): the tab's open working set and the
+// The live store's core: the tab's open working set and the
 // rule that moves it forward. Plain code with no clock, socket or React, so every interleaving of
 // the feed's messages can be tested against a model of the service.
 //
@@ -6,17 +6,17 @@
 //   cursor `(epoch, incarnation, seq)`.
 // - A batch covers `(from, through]`. It applies when it reaches past the cursor without a gap:
 //   `from <= cursor.seq < through` in the same epoch and incarnation. Its events at or below the
-//   cursor are skipped (A1 3.7: they were applied before), the rest apply, and the cursor moves to
+//   cursor are skipped (they were applied before), the rest apply, and the cursor moves to
 //   `through` in one step. An empty batch only moves the cursor. Gaps are judged by coverage,
 //   never by consecutive `seq` values, because a filtered feed leaves out commits.
 // - A batch wholly at or behind the cursor is a repeat: nothing happens.
 // - A gap (`from` beyond the cursor), another epoch or incarnation, a withheld row (`row: null`
-//   for a task, a node or a page: A5 3.15), a changed status or effort scale (its value comes with
+//   for a task, a node or a page), a changed status or effort scale (its value comes with
 //   a snapshot) or a batch the page cannot read asks for a fresh snapshot. Until it arrives, every
 //   batch waits for it and is dropped; the rows stay on screen.
 // - Each batch applies whole or not at all: it is checked first, then applied.
 // - The one value the core works out itself is a task's `touched` when a child row of it (a note,
-//   a log entry, a source) changed: A1 3.5 makes it the commit's seq, and the feed carries the
+//   a log entry, a source) changed: the writer makes it the commit's seq, and the feed carries the
 //   child without the task's row.
 //
 // Rows are held in maps the core changes in place. `publish()` hands out new maps for the kinds
@@ -285,7 +285,7 @@ export class LiveCore {
             continue;
           }
           changes.push({ ...base, task: entity.task });
-          // A1 3.5: a task's `touched` becomes the commit's seq when a child row changes, and
+          // A task's `touched` becomes the commit's seq when a child row changes, and
           // nothing else of the task does. The feed carries the child, not the task's row, so the
           // held row takes the mark here. A launch or a run is no child (it moves no `touched`).
           const held =

@@ -470,6 +470,25 @@ const NOTES: Sequence<Step> = [
   },
 ];
 
+/** A task read by its sections, a page at a time. */
+const SECTIONS: Sequence<Step> = [
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "Read in sections", context: "Why it matters" }] },
+    as: "s",
+  },
+  { op: "entry.add", input: { task: "{s}", kind: "note", text: "First note" }, user: true },
+  { op: "entry.add", input: { task: "{s}", kind: "progress", text: "First step" } },
+  {
+    op: "task.get",
+    input: {
+      task: "{s}",
+      sections: ["instructions", "context", "notes", "log", "sources", "outcome"],
+    },
+  },
+  { op: "task.get", input: { task: "{s}", sections: ["log"], log_limit: 1 } },
+];
+
 /** Undo and Redo of the person's steps, and a step kept by an agent's work since. */
 const HISTORY: Sequence<Step> = [
   { op: "task.add", input: { tasks: [{ title: "Fixture task the person changes" }] }, as: "mine" },
@@ -519,6 +538,14 @@ describe("[S2.replay.notes] today's service requests through both backends: note
     "several tasks to the Trash in one call, again, its Undo, one the space lacks, and one already there",
     async () => {
       await replay(TRASH);
+    },
+    LONG,
+  );
+
+  test(
+    "a task read by its sections",
+    async () => {
+      await replay(SECTIONS);
     },
     LONG,
   );

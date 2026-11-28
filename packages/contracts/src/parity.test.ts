@@ -1,4 +1,4 @@
-// Zod and Ajv agree on every example (A3 5, decision 2): the service validates with Zod, and
+// Zod and Ajv agree on every example: the service validates with Zod, and
 // clients and the CLI see the generated JSON Schema. A disagreement means the conversion lost a
 // constraint. Each example is checked as given and with deterministic mutations, so the test sees
 // rejections as well as acceptances.

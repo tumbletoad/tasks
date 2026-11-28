@@ -1,4 +1,4 @@
-// The status views and the area view as data (A5 3.5): each view's grouping, and the property that
+// The status views and the area view as data: each view's grouping, and the property that
 // the counted views are disjoint, so their counts add up and each view lists exactly its count.
 import fc from "fast-check";
 import { afterEach, describe, expect, test, vi } from "vitest";

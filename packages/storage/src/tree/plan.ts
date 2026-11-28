@@ -622,12 +622,13 @@ function entryDone(tx: Tx, task: Row, note: string, kind: "note" | "log", ordina
 /** A page's result: what holds it now, and of an edit that wrote nothing, what stands there. */
 function pageDone(tx: Tx, said: { page: { id: string }; found?: number; excerpt?: string }): Done {
   const page = tx.get(SQL.page, { id: said.page.id }) as Row;
-  const edited = said.found !== undefined && said.found !== 1;
+  const found = said.found === 1 ? undefined : said.found;
+  const edited = found !== undefined;
   return {
     id: said.page.id,
     ref: refText(tx, page["ref"]),
     // An edit that wrote nothing names what stands there, not what holds the page.
-    ...(edited ? { found: said.found } : { owner: ownerOf(tx, String(page["owner_id"])) }),
+    ...(found !== undefined ? { found } : { owner: ownerOf(tx, String(page["owner_id"])) }),
     ...(edited && said.excerpt !== undefined ? { excerpt: said.excerpt } : {}),
     row: { entity: "page", id: said.page.id },
   };

@@ -1,4 +1,4 @@
-// Paged queries and how the feed invalidates them (A5 3.13, 3.15 "Paged queries"). Completed
+// Paged queries and how the feed invalidates them. Completed
 // tasks, search results and Trash are not in the live store: they are read in pages, and the
 // store's changes invalidate them by query, not only by the rows they show:
 //
@@ -9,7 +9,7 @@
 // | Search    | searchable text, a field it filters or sorts on, creation, | frozen: "Results        |
 // |           | lifecycle and deletion                                     | changed · Refresh"      |
 //
-// The feed names a task's logical fields (A1 3.4: `lifecycle` holds the completion date, `wrap` the
+// The feed names a task's logical fields (`lifecycle` holds the completion date, `wrap` the
 // wrap state and outcome, `deleted` the deletion), so the table is written in them too.
 //
 // A restart reads on to the last row shown, so a row that joins above pushes none of them out,
@@ -28,8 +28,8 @@ export type QueryKind = "completed" | "trash" | "search";
 export interface QueryDef {
   readonly kind: QueryKind;
   /**
-   * The task fields a search filters or sorts on (A3's query language), besides its text, by their
-   * logical names (A1 3.4: `due`, `grouping`, `priority`), or `area` and `project` for their titles.
+   * The task fields a search filters or sorts on (the search's query language), besides its text, by their
+   * logical names (`due`, `grouping`, `priority`), or `area` and `project` for their titles.
    */
   readonly fields?: readonly string[];
 }
@@ -249,7 +249,7 @@ export class PagedQuery<R extends { readonly id: string }> {
     if (rows !== this.#state.rows) this.#set({ rows });
   }
 
-  /** `rows` with the task's newest row in place (A5 3.13, 3.15); a read on its way takes it too. */
+  /** `rows` with the task's newest row in place; a read on its way takes it too. */
   #taken(rows: readonly R[], id: string, after: Readonly<Record<string, unknown>>): readonly R[] {
     if (this.#state.phase === "loading") {
       const known = this.#during.get(id);

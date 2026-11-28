@@ -1,4 +1,4 @@
-// The UI's HTTP rules (A3 3.2.2). The service's HTTP layer (A2) and the typed client share them.
+// The UI's HTTP rules. The service's HTTP layer and the typed client share them.
 import type { ErrorBody } from "./errors.ts";
 
 /** Every entry with a UI face is `POST /api/v1/op/<name>`. */

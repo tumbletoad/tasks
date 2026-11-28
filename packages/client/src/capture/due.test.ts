@@ -1,4 +1,4 @@
-// What the due date's field reads (due.ts): every form A5 3.11 names, as the service reads it.
+// What the due date's field reads (due.ts): every form it takes, as the service reads it.
 import { describe, expect, test } from "vitest";
 import { addMonths, quickPicks, readDue } from "./due.ts";
 

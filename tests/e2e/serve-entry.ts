@@ -10,7 +10,7 @@
 // port is never written. Tests only.
 //
 // A line `stop` on stdin stops it gracefully, on every OS.
-// First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
+// First, as in the product's entries: this script ends through process.exit.
 import "../../packages/bridge/src/safe-exit.ts";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";

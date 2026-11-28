@@ -104,7 +104,7 @@ describe("[A2.3.12.4.install.render] the install scripts pin the release keys, o
     for (const kind of INSTALLER_KINDS) {
       const template = readFileSync(TEMPLATES[kind], "utf8");
       expect(template.match(/@@RELEASE_KEYS@@/g)).toHaveLength(1);
-      expect(template).toContain("The pinned release keys (A2 3.12.5)");
+      expect(template).toContain("The pinned release keys");
     }
     const rendered = (kind: "sh" | "ps1") => {
       const file = join(work, `syntax.${kind}`);

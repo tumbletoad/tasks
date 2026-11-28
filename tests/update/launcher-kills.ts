@@ -1,6 +1,6 @@
-// The stable launchers through an interrupted update, with real builds (A7 3.13 M6.13's Verify line:
-// "Crash injection between the rename and the copy of ttasks.exe and of ttasksw.exe: the next start
-// repairs to a complete version"). Windows only: on Linux and macOS the stable command is a link
+// The stable launchers through an interrupted update, with real builds: a crash
+// between the rename and the copy of ttasks.exe and of ttasksw.exe, and the next start
+// repairs to a complete version. Windows only: on Linux and macOS the stable command is a link
 // to `current/bin/ttasks` that no update replaces, and a journal lists no launcher.
 //
 // The run's two versions, the second one's launchers made to differ from the first's
@@ -22,7 +22,7 @@
 //      the service runs it and the stable command runs. Before the switch that is the old version,
 //      from it on the new one. A supervisor that started from the old ttasksw.exe hands over to the
 //      new one.
-// The candidate's self-test is M6.12's and runs in installed*.test.ts; here a stand-in passes it.
+// The candidate's self-test runs in installed*.test.ts; here a stand-in passes it.
 //
 // Nothing here touches a real install, autostart place, PATH or shell profile, and every process
 // it stops is one it started or one this install's service.json names.

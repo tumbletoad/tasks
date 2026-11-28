@@ -1,4 +1,4 @@
-// The live store (A5 3.15, 3.24 "a small liveStore module on useSyncExternalStore"): the one place
+// The live store: the one place
 // in the page that holds task data. It joins @ttasks/client/store's core (LiveCore: snapshot,
 // batches, cursor) and own writes (Pending: overlays until the feed confirms them) with per-frame
 // batching (frame.ts), and hands every view one immutable state through a small subscription
@@ -131,7 +131,7 @@ export interface StoreOptions {
   readonly onResnapshot: (reason: ResnapshotReason) => void;
   /** The first snapshot named the tab's space. */
   readonly onSpace?: (space: string) => void;
-  /** A fresh request ID (A1 3.8). */
+  /** A fresh request ID. */
   readonly newRequest?: () => string;
   /** The copy the tab loaded is gone (LiveState `gone`): the feed has nothing more to give. */
   readonly onGone?: () => void;
@@ -220,7 +220,7 @@ export class LiveStore {
   }
 
   /**
-   * The applied cursor as an `as_of` (A1 3.5: `epoch.seq.tag`): what the rows on screen show, and
+   * The applied cursor as an `as_of` (`epoch.seq.tag`): what the rows on screen show, and
    * so the base of an edit made from them. None before the first snapshot.
    */
   get asOf(): string | undefined {

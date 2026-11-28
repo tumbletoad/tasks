@@ -1,4 +1,4 @@
-// Fixture installs and releases for the updater's tests (A7 3.13 M6.12): small version folders with
+// Fixture installs and releases for the updater's tests: small version folders with
 // a manifest (nothing in them runs), installed by the install switch itself into a temporary
 // root, and releases of them signed with throwaway keys made here. A stand-in service and a
 // stand-in self-test record what the updater asked. The platform is a parameter, so the Windows

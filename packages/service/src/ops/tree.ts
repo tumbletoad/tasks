@@ -28,7 +28,7 @@ const ON_TREE: Readonly<Record<string, readonly string[]>> = {
   "task.finish": [],
   "task.reopen": [],
   "task.delete": [],
-  "task.get": ["sections", "launch", "notes", "before"],
+  "task.get": ["launch", "notes"],
   "entry.add": [],
   "entry.edit": [],
   "note.remove": [],
@@ -46,9 +46,13 @@ const ON_TREE: Readonly<Record<string, readonly string[]>> = {
 export function checkOnTree(entry: AnyEntry, input: Record<string, unknown>): void {
   const later = ON_TREE[entry.name];
   if (later === undefined) throw notOnTreeYet(entry.name);
+  const listed = (key: string, value: string) =>
+    Array.isArray(input[key]) && (input[key] as unknown[]).includes(value) ? value : undefined;
   const field =
     later.find((key) => input[key] !== undefined) ??
-    (Array.isArray(input["clear"]) && input["clear"].includes("folder") ? "folder" : undefined);
+    listed("clear", "folder") ??
+    // A task's history is read from today's commits; the tree's comes with the reads.
+    (entry.name === "task.get" ? listed("sections", "history") : undefined);
   if (field !== undefined) throw notOnTreeYet(`${entry.name} with ${field}`);
 }
 

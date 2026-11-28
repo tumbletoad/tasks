@@ -1,4 +1,4 @@
-// Themes are token data, never CSS (A5 3.19, U15). This module is the one source of truth for what
+// Themes are token data, never CSS. This module is the one source of truth for what
 // a theme may say and what its colours must achieve:
 //
 // - TOKENS: the allowlist. A theme sets each of them as `#rrggbb`; the styles read them as
@@ -13,7 +13,7 @@
 //
 // Pure functions without the DOM: the build (Node) and the page both use them.
 
-/** Every colour token a theme sets (A5 3.19), in the table's order, then the eight area slots. */
+/** Every colour token a theme sets, in the table's order, then the eight area slots. */
 export const TOKENS = [
   "bg",
   "raised",
@@ -64,7 +64,7 @@ export interface Theme {
   readonly tokens: Readonly<Record<Token, string>>;
 }
 
-/** The five surfaces text sits on (A5 3.19's contrast table). */
+/** The five surfaces text sits on. */
 export const SURFACES = ["bg", "raised", "hover", "selected", "sunken"] as const;
 
 /** AA thresholds (WCAG 2.x): text, and non-text such as controls, focus rings and marks. */
@@ -95,7 +95,7 @@ const TEXT_ON_SURFACES: readonly Token[] = [
 /** Foregrounds that are marks or controls on every surface (3:1). */
 const NON_TEXT_ON_SURFACES: readonly Token[] = ["star", "control", "focus"];
 
-/** Every allowed pair and its threshold: A5 3.19's two contrast tables. */
+/** Every allowed pair and its threshold. */
 export const ALLOWED_PAIRS: readonly Pair[] = [
   ...TEXT_ON_SURFACES.flatMap((fg) => SURFACES.map((bg) => ({ fg, bg, min: TEXT_MIN }))),
   ...NON_TEXT_ON_SURFACES.flatMap((fg) => SURFACES.map((bg) => ({ fg, bg, min: NON_TEXT_MIN }))),
@@ -111,7 +111,7 @@ export const ALLOWED_PAIRS: readonly Pair[] = [
 ];
 
 /**
- * Pairs that must never carry meaning (A5 3.19): hairlines against any surface are decorative,
+ * Pairs that must never carry meaning: hairlines against any surface are decorative,
  * and late against due-soon differs only a little, so the two always differ by text and glyph too.
  * The styles test checks that no rule draws text in a hairline colour.
  */
@@ -122,7 +122,7 @@ export const DECORATIVE_PAIRS: readonly (readonly [Token, Token])[] = [
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
-/** Checks a theme's data (A5 3.19 "validated on write"): the theme, or what is wrong with it. */
+/** Checks a theme's data: the theme, or what is wrong with it. */
 export function validateTheme(data: unknown): { theme?: Theme; problems: string[] } {
   const problems: string[] = [];
   if (typeof data !== "object" || data === null || Array.isArray(data)) {

@@ -1,4 +1,4 @@
-// The expanded task's thread (A5 3.7 item 5, 3.9): notes, log entries, sessions and background
+// The expanded task's thread: notes, log entries, sessions and background
 // runs, oldest first, as a conversation reads. Notes and log
 // entries come from the detail (detail.ts); sessions are the task's launch receipts and runs are
 // its run records, which the feed's launch and run events refresh. The last six entries show,
@@ -48,7 +48,7 @@ const styles = classes(css, [
   "again",
 ]);
 
-/** The entries shown before "Earlier" (A5 3.7). */
+/** The entries shown before "Earlier". */
 export const SHOWN_ENTRIES = 6;
 
 /** An actor as the thread names it: "You" for the person, the agent's label otherwise. */
@@ -90,7 +90,7 @@ export function ranFor(ms: number, t: Translate): string {
 }
 
 /**
- * A launch's entry in the thread (A5 3.9): a record of what happened. Prepared shows nothing yet.
+ * A launch's entry in the thread: a record of what happened. Prepared shows nothing yet.
  * A terminal launch names the terminal and why it was chosen once one was Dispatched. A session
  * that opened says so, and then whether it runs or ended as far as the service knows; where it
  * cannot know, it says only that it opened.
@@ -419,7 +419,7 @@ export function Thread({
       (a.key < b.key ? -1 : 1),
   );
 
-  // Nothing moves under focus (A5 3.15): an entry that holds focus is not pushed out of the last
+  // Nothing moves under focus: an entry that holds focus is not pushed out of the last
   // six by an entry that arrives; the window grows to keep it until focus leaves it.
   const held = focused === undefined ? -1 : items.findIndex((item) => item.key === focused);
   const hidden = all

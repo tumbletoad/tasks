@@ -1,4 +1,4 @@
-// The grant gate through real processes (A3 3.7.8; A2 3.2.5): the real hub (`ttasks serve` with its
+// The grant gate through real processes: the real hub (`ttasks serve` with its
 // UI listener, so the grants table is service.sqlite's) and real bridges started with the
 // arguments setup writes. An agent home registered for one space reaches it and is refused the
 // other, before and after the service restarts: the rows outlive the process and still decide, for
@@ -30,7 +30,7 @@ afterEach(async () => {
 });
 
 /**
- * A3 3.5's text form of the refusal for a bridge whose entry names a space its home may not use:
+ * The text form of the refusal for a bridge whose entry names a space its home may not use:
  * it names the space the home may use, and that the entry has to name it for a restart to move
  * the agent there.
  */

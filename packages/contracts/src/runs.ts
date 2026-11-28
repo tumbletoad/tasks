@@ -1,7 +1,7 @@
-// Background runs (A4 3.11): the normalised run events and the final outcome the stream parsers
-// produce (A4 3.11.1, 3.11.4), and the run record's vocabulary: its states and their edges
-// (3.11.2), its reason codes, its evidence keys, and the shapes every backend of the execution
-// store reads and writes (3.16.1). Plain TypeScript without Zod, so the parsers, the run shim, the
+// Background runs: the normalised run events and the final outcome the stream parsers
+// produce, and the run record's vocabulary: its states and their edges,
+// its reason codes, its evidence keys, and the shapes every backend of the execution
+// store reads and writes. Plain TypeScript without Zod, so the parsers, the run shim, the
 // execution store and the page load it cheaply (`@ttasks/contracts/runs`).
 //
 // Nothing here is free text of TTasks's own making: every label, state and reason is a value from a
@@ -9,7 +9,7 @@
 // `error`, `native-id.id` and `session.cwd`, each capped (ANSWER_CAP_BYTES, TEXT_CAP_BYTES). A run
 // record holds the person's request text and the agent's answer and error, which are task text:
 // they stay in the space and never reach a log, an argv, a URL or a snapshot. A working folder
-// never reaches a record: the space holds no absolute path (A1 3.15).
+// never reaches a record: the space holds no absolute path.
 
 // ---------------------------------------------------------------------------------------------
 // Adapters and caps
@@ -44,15 +44,15 @@ export const ANSWER_CAP_BYTES = 1024 * 1024;
  */
 export const TEXT_CAP_BYTES = 8 * 1024;
 
-/** The person's instruction for a run, in UTF-8 bytes: a note's size (A1 3.7). */
+/** The person's instruction for a run, in UTF-8 bytes: a note's size. */
 export const RUN_REQUEST_MAX_BYTES = 64 * 1024;
 
 // ---------------------------------------------------------------------------------------------
-// Run events (A4 3.11.1, 3.11.4)
+// Run events
 
 /**
  * A progress label is a key, not a sentence: the UI translates it, and no tool name or input
- * reaches it (A4 3.11.1). "Reading the task", "Running a command", "Editing files".
+ * reaches it. "Reading the task", "Running a command", "Editing files".
  */
 export const PROGRESS_LABELS = [
   "tasks", // a TTasks tool call
@@ -66,12 +66,12 @@ export const PROGRESS_LABELS = [
 ] as const;
 export type ProgressLabel = (typeof PROGRESS_LABELS)[number];
 
-/** Whether the run's TTasks MCP server was connected, from Claude's `system/init` (A4 3.11.4). */
+/** Whether the run's TTasks MCP server was connected, from Claude's `system/init`. */
 export const APP_TOOLS_STATES = ["connected", "not-connected", "absent"] as const;
 export type AppToolsState = (typeof APP_TOOLS_STATES)[number];
 
 /**
- * Why a run ended as it did, judged from the stream and the process exit (A4 3.11.4).
+ * Why a run ended as it did, judged from the stream and the process exit.
  * - `success`: the final event said success and the process exited 0.
  * - `agent_error`: the final event said the turn failed (Claude `is_error`, Codex `turn.failed`).
  * - `interrupted`: Claude's final event says the turn was aborted (Ctrl+C or SIGINT).
@@ -105,10 +105,10 @@ export interface Usage {
 }
 
 /**
- * A normalised run event (A4 3.11.1). `progress` carries a label key, never text. `session`
- * reports Claude's `system/init` facts that A4 3.11.4 uses: the working folder, which M6.06
+ * A normalised run event. `progress` carries a label key, never text. `session`
+ * reports Claude's `system/init` facts that the outcome uses: the working folder, which the page
  * compares with the run's folder and which never leaves machine state, and whether the TTasks tools
- * connected. There is no `needs-input`: neither v1 adapter can wait for input (A4 3.11.2).
+ * connected. There is no `needs-input`: neither v1 adapter can wait for input.
  */
 export type RunEvent =
   | { kind: "native-id"; id: string }
@@ -127,7 +127,7 @@ export type RunEvent =
 
 export type RunEventKind = RunEvent["kind"];
 
-/** One event of a run's journal (`events.jsonl`, A4 3.11.5), numbered from 1. */
+/** One event of a run's journal (`events.jsonl`), numbered from 1. */
 export interface RunJournalEntry {
   seq: number;
   event: RunEvent;
@@ -163,15 +163,15 @@ export interface StreamCounts {
   /** Progress and message events produced. */
   progress: number;
   messages: number;
-  /** Codex command executions with status `declined` (A4 3.11.4: counted and shown). */
+  /** Codex command executions with status `declined`: counted and shown. */
   declined: number;
-  /** Claude's `permission_denials` in the last result (A4 3.11.4: shown). */
+  /** Claude's `permission_denials` in the last result: shown. */
   permissionDenials: number;
   /** A defect guard: an exception inside a line handler. Stays 0; the fuzz test checks it. */
   handlerFaults: number;
 }
 
-/** The final run outcome (A4 3.11.5 `exit.json`, without the shim's own fields). */
+/** The final run outcome (without the shim's own fields). */
 export interface RunOutcome {
   ok: boolean;
   reason: OutcomeReason;
@@ -192,9 +192,9 @@ export interface RunOutcome {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Run records (A4 3.11.2, 3.16)
+// Run records
 
-/** A4 3.11.2's states. `reconciling` is a lost shim's record while its files are read. */
+/** A run's states. `reconciling` is a lost shim's record while its files are read. */
 export const RUN_STATES = [
   "queued",
   "starting",
@@ -211,7 +211,7 @@ export const RUN_STATES = [
 export type RunState = (typeof RUN_STATES)[number];
 
 /**
- * The states `openWork` lists (A4 3.11.9, 3.16.1): the queue and every run whose process group may hold
+ * The states `openWork` lists: the queue and every run whose process group may hold
  * processes. It also lists the `unknown` runs not yet confirmed ended (`awaitsConfirmation`).
  */
 export const OPEN_RUN_STATES = [
@@ -296,7 +296,7 @@ export const RUN_EDGES: Readonly<Record<RunState, readonly RunState[]>> = {
 export const isRunEdge = (from: RunState, to: RunState): boolean => RUN_EDGES[from].includes(to);
 
 /**
- * The fixed reason codes of the states that take one (A4 3.11.2, 3.11.4, 3.11.7). A record holds
+ * The fixed reason codes of the states that take one. A record holds
  * a code, never a message: the UI words it. `succeeded` and `cancelled` take none.
  */
 export const RUN_REASONS = {
@@ -357,7 +357,7 @@ export function isRunReason(state: RunState, reason: unknown): reason is RunReas
 /** Whether entering `state` takes a reason code. */
 export const takesReason = (state: RunState): boolean => Object.hasOwn(RUN_REASONS, state);
 
-/** The permission modes a run may use: never `inherit`, which A4 3.11.6 refuses for a run. */
+/** The permission modes a run may use: never `inherit`, which a run refuses. */
 export const RUN_PERMISSIONS = ["full-access", "auto-edit", "read-only"] as const;
 export type RunPermission = (typeof RUN_PERMISSIONS)[number];
 
@@ -394,7 +394,7 @@ export const RUN_EVIDENCE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 export const SIGNAL_NAME = /^SIG[A-Z0-9]{1,12}$/u;
 
 /**
- * A run's text as the space stores it (A1 3.7; storage's `normaliseStored`, which a test compares):
+ * A run's text as the space stores it (storage's `normaliseStored`, which a test compares):
  * well-formed, LF line endings, no C0 control but tab and line feed, NFC. Every execution store
  * measures a run's texts in this form, as the writer does, so the size a store accepts is the size
  * the writer stores. NFC can lengthen a text, so a raw size says nothing.
@@ -415,7 +415,7 @@ const runTextEncoder = new TextEncoder();
 /**
  * An agent's result text or error as a run record keeps it: normalised, then cut to at most `bytes`
  * UTF-8 bytes on a code point boundary. A result is never refused for its texts, because what an
- * agent wrote must never keep its run from settling (A4 3.11.5).
+ * agent wrote must never keep its run from settling.
  */
 export function cutRunText(text: string, bytes: number = TEXT_CAP_BYTES): string {
   let out = normaliseRunText(text);
@@ -435,7 +435,7 @@ export function cutRunAnswer(text: string): { text: string; cut: boolean } {
   return { text: kept, cut: kept.length < normaliseRunText(text).length };
 }
 
-/** A run's limits (A4 3.11.3, 3.11.7), fixed when it is queued. */
+/** A run's limits, fixed when it is queued. */
 export interface RunLimits {
   /** Claude's `--max-turns`. */
   maxTurns: number;
@@ -489,7 +489,7 @@ export const RUN_CLEANUPS = ["confirmed", "ended_leftovers", "ended_found"] as c
 export type RunCleanup = (typeof RUN_CLEANUPS)[number];
 
 /**
- * The final outcome a run record keeps (A4 3.11.5): the outcome's verdict and counts, the answer
+ * The final outcome a run record keeps: the outcome's verdict and counts, the answer
  * (≤ ANSWER_CAP_BYTES) and the error (≤ TEXT_CAP_BYTES), usage and the native ID. Never the working
  * folder.
  */
@@ -508,7 +508,7 @@ export interface RunResult {
   error: string | null;
   usage: Usage | null;
   appTools: AppToolsState | null;
-  /** Codex's declined commands and Claude's permission denials (A4 3.11.4). */
+  /** Codex's declined commands and Claude's permission denials. */
   declined: number;
   permissionDenials: number;
   durationMs: number | null;
@@ -516,7 +516,7 @@ export interface RunResult {
   cleanup?: RunCleanup;
 }
 
-/** What Run records (A4 3.11.2: written in `queued` before anything spawns). */
+/** What Run records: written in `queued` before anything spawns. */
 export interface NewRun {
   /** The task (`t_` ID). */
   task: string;
@@ -525,11 +525,11 @@ export interface NewRun {
   /** The instance's key in this machine's `machine.toml`. */
   instance: string;
   adapter: RunAdapterId;
-  /** The place the folder resolved from (`pl_` ID), or null for a TTasks work folder (A4 3.3). */
+  /** The place the folder resolved from (`pl_` ID), or null for a TTasks work folder. */
   place: string | null;
   /** The session it continues (`se_` ID), when there is one. */
   session?: string;
-  /** The person's instruction (A4 3.11.7). */
+  /** The person's instruction. */
   request: string;
   /** SHA-256 of the brief, lower-case hex. The brief itself is never stored. */
   briefHash: string;
@@ -542,8 +542,7 @@ export interface RunRecord {
   /** `ru_` ID. */
   id: string;
   /**
-   * The task, or null for a run whose task was redacted, which keeps no request and no result text
-   * (A1 3.11.4, A4 3.11.1).
+   * The task, or null for a run whose task was redacted, which keeps no request and no result text.
    */
   task: string | null;
   session: string | null;
@@ -573,7 +572,7 @@ export interface RunRecord {
   version: number;
 }
 
-/** What a transition writes beside the state (A4 3.16.1's `RunPatch`). */
+/** What a transition writes beside the state. */
 export interface RunPatch {
   /** The reason code of `failed`, `timed_out` and `unknown`, entering them only. */
   reason?: RunReason;
@@ -583,7 +582,7 @@ export interface RunPatch {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Instances as a page or an app shows them (A5 3.6)
+// Instances as a page or an app shows them
 
 /** An instance a page or an app draws a tile for: a key, a label, a monogram and a ring slot. */
 export interface Instance {
@@ -595,7 +594,7 @@ export interface Instance {
   readonly label: string;
   /** A neutral monogram, one or two characters: "Cx". */
   readonly glyph: string;
-  /** One of the eight ring slots of A5 3.19. */
+  /** One of the theme's eight ring slots. */
   readonly ring: number;
   /** How Open opens it here; absent when it cannot, and the tile is for Run. */
   readonly route?: string;

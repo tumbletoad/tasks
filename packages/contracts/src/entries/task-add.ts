@@ -1,4 +1,4 @@
-// task.add: create 1 to 25 tasks in one transaction, upserting by source key (A3 3.4.5). Its MCP
+// task.add: create 1 to 25 tasks in one transaction, upserting by source key. Its MCP
 // tool is add_tasks. Areas and projects match by name or slug, ignoring case, and an agent's task
 // without either goes to the Inbox.
 import { z } from "zod";
@@ -85,7 +85,7 @@ export const taskAdd = defineEntry({
         'Work left for later and items from email, chat or tickets: 1 to 25 a call, not TODOs in files. First read skills writing-tasks, sizing-effort, setting-priority. Key only the source a task is (jira:KEY): a match answers exists. folder "cwd" files a task in your folder\'s project.',
     },
   },
-  // A3 3.2.5: 25 drafts' lines at their longest fit whole, with the counts.
+  // 25 drafts' lines at their longest fit whole, with the counts.
   budget: { typical: 80, max: 2000 },
   errors: ["invalid_input", "too_large", "forbidden", "request_id_conflict", "applied_earlier"],
   examples: [
