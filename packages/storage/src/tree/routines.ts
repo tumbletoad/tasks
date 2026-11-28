@@ -48,22 +48,23 @@ type Run = Command["run"];
 const COULD_NOT_START = ["spawn_failed", "start_timed_out", "no_output", "service_ended"];
 
 /** How long after a run that could not start its time is tried again. */
-export const RETRY_MS = 15 * 60_000;
+const RETRY_MS = 15 * 60_000;
 
 const SQL = {
   routine:
     "SELECT n.id, n.title, n.deleted_at, t.ref, t.lifecycle, r.rule, r.start, r.tz, r.due_date, " +
-    "r.due_at, r.instance, r.instruction, r.role, r.paused, r.enabled_by FROM nodes n " +
+    "r.due_at, r.instance, r.instruction, r.paused, r.enabled_by, " +
+    "coalesce(json_extract(r.fv, '$.open'), r.created_seq) AS opened FROM nodes n " +
     "JOIN tasks t ON t.id = n.id JOIN routines r ON r.id = n.id WHERE n.id = $id",
   entry:
     "SELECT id FROM occurrences WHERE routine_id = $routine AND due_date = $date " +
     "AND coalesce(due_at, 0) = coalesce($at, 0) AND deleted_at IS NULL",
   occurrence: "SELECT * FROM occurrences WHERE id = $id",
   run: "SELECT * FROM runs WHERE id = $id",
-  /** The runs of a routine for one due time, newest first. */
+  /** The runs of a routine for one due time queued from commit `$since` on, newest first. */
   runsFor:
     "SELECT * FROM runs WHERE task_id = $id AND json_extract(spec, '$.due_at') = $due " +
-    "ORDER BY attempt DESC",
+    "AND created_seq >= $since ORDER BY attempt DESC",
   open: `SELECT 1 FROM runs r WHERE r.task_id = $id AND ${OPEN_RUN}`,
   question: `SELECT 1 FROM tasks t WHERE t.id = $id AND (${TREE_QUESTION_WAITS})`,
 } as const;
@@ -92,33 +93,50 @@ const at = (instant: number, schedule: Schedule): Time => ({
   due_at: instant,
 });
 
-const none = (): never => problem("VALIDATION_FAILED", "The schedule has no time to come", "rule");
-
 /**
  * The first time from now: today's date or later for a date only, the first instant after now
  * for a time of day. An agent's routine always has one (DEFAULT_RUN_TIME when the rule names none).
  */
-function firstFrom(schedule: Schedule, agent: boolean, now: number): Time {
+function firstFrom(schedule: Schedule, agent: boolean, now: number): Time | undefined {
   if (agent || parseRule(schedule.rule)?.time != null) {
     const next = nextInstant(schedule, now - 1);
-    return next === undefined ? none() : at(next, schedule);
+    return next === undefined ? undefined : at(next, schedule);
   }
   const today = localDate(now, schedule.zone);
-  const yesterday = dateOf((dayNumber(today) ?? 0) - 1);
-  const date = nextDate(schedule, yesterday);
-  return date === undefined ? none() : { due_date: date, due_at: null };
+  const date = nextDate(schedule, dateOf((dayNumber(today) ?? 0) - 1));
+  return date === undefined ? undefined : { due_date: date, due_at: null };
 }
 
-/** The open time after the open time `own` is done or skipped. */
-function after(r: Row, own: Time, now: number): Time {
-  const schedule = scheduleOf(r);
-  if (r["instance"] !== null) {
-    const next = nextInstant(schedule, own.due_at ?? now);
-    return next === undefined ? none() : at(next, schedule);
+/** The scheduled time after `time`. */
+function nextAfter(schedule: Schedule, time: Time): Time | undefined {
+  if (time.due_at !== null) {
+    const next = nextInstant(schedule, time.due_at);
+    return next === undefined ? undefined : at(next, schedule);
   }
+  const date = nextDate(schedule, time.due_date);
+  return date === undefined ? undefined : { due_date: date, due_at: null };
+}
+
+/** The time after the open time `own` is done or skipped, before entries are passed over. */
+function after(r: Row, own: Time, now: number): Time | undefined {
+  const schedule = scheduleOf(r);
+  if (r["instance"] !== null) return nextAfter(schedule, own);
   const next = following(schedule, now, own.due_date);
-  if (next === undefined) return none();
-  return { due_date: next.date, due_at: next.at ?? null };
+  return next === undefined ? undefined : { due_date: next.date, due_at: next.at ?? null };
+}
+
+/**
+ * The open time from `first`: the first scheduled time from there that has no live entry. Every
+ * open time is computed through it, so a time done or skipped never comes back.
+ */
+function openFrom(tx: Tx, routine: string, schedule: Schedule, first: Time | undefined): Time {
+  // Each pass steps over one live entry, and a routine holds finitely many.
+  for (let time = first; time !== undefined; time = nextAfter(schedule, time)) {
+    if (tx.get(SQL.entry, { routine, date: time.due_date, at: time.due_at }) === undefined) {
+      return time;
+    }
+  }
+  return problem("VALIDATION_FAILED", "The schedule has no time to come", "rule");
 }
 
 /** A live routine by its key, with its node, task and routine rows. */
@@ -150,7 +168,7 @@ const answer = (tx: Tx, r: Row, extra: Record<string, unknown> = {}) => ({
 /** Cancels a queued run of the routine for `due`: the time was done or skipped without it. */
 function cancelQueued(tx: Tx, routine: string, due: number | null): void {
   if (due === null) return;
-  for (const row of tx.all(SQL.runsFor, { id: routine, due })) {
+  for (const row of tx.all(SQL.runsFor, { id: routine, due, since: 0 })) {
     if (row["state"] !== "queued") continue;
     const id = String(row["id"]);
     const moved = runAfter(
@@ -163,8 +181,9 @@ function cancelQueued(tx: Tx, routine: string, due: number | null): void {
       },
       tx.at,
     );
+    // On the routine's node, so the cancel goes with the check-off's Undo.
     if (moved !== undefined && "write" in moved)
-      tx.set("runs", id, null, { state: { ...moved.write } }, false);
+      tx.set("runs", id, routine, { state: { ...moved.write } }, false);
   }
 }
 
@@ -214,7 +233,7 @@ function log(
   }
   const id = addEntry(tx, routine, due, entry);
   if (due === null || !sameTime(due, timeOf(r))) return { id };
-  const next = after(r, due, tx.at);
+  const next = openFrom(tx, routine, scheduleOf(r), after(r, due, tx.at));
   tx.set("routines", routine, routine, { open: { ...next } }, based);
   cancelQueued(tx, routine, due.due_at);
   return { id, next };
@@ -257,8 +276,11 @@ const routineSet: Run = (tx, input) => {
   if (input["instruction"] !== undefined) routine["instruction"] = instruction as SqlValue;
   const becomesAgents = (r["instance"] === null) !== (instance === null);
   // A new schedule, or a new kind of doer, starts at its first time from now.
-  if (rescheduled || becomesAgents)
-    routine["open"] = { ...firstFrom(schedule, instance !== null, tx.at) };
+  if (rescheduled || becomesAgents) {
+    routine["open"] = {
+      ...openFrom(tx, id, schedule, firstFrom(schedule, instance !== null, tx.at)),
+    };
+  }
   if (becomesAgents) {
     routine["paused"] = {
       paused: r["paused"] as SqlValue,
@@ -289,9 +311,9 @@ function make(tx: Tx, input: Input) {
     zone,
   };
   if (readSchedule(schedule) === undefined) problem("VALIDATION_FAILED", "Not a schedule", "rule");
-  const open = firstFrom(schedule, instance !== null, tx.at);
   const under = String(parent["id"]);
   const id = str(input, "id") ?? tx.newId("t");
+  const open = openFrom(tx, id, schedule, firstFrom(schedule, instance !== null, tx.at));
   const ref = tx.ref();
   tx.create(
     "nodes",
@@ -347,18 +369,27 @@ const routinePaused =
         enabled_by:
           paused || !agents ? (r["enabled_by"] as SqlValue) : tx.request.actor.principal_id,
       },
-      ...(paused ? {} : { open: { ...firstFrom(scheduleOf(r), agents, tx.at) } }),
+      ...(paused
+        ? {}
+        : {
+            open: { ...openFrom(tx, id, scheduleOf(r), firstFrom(scheduleOf(r), agents, tx.at)) },
+          }),
     });
     return answer(tx, r);
   };
 
 /**
- * A time done: the open time, or a run's own due time. A run's done for a time that has its entry
- * already, by the person's check-off meanwhile, changes nothing: it never checks off the next.
+ * A time done: the person's check-off marks the open time; an agent's done is always for its run's
+ * own due time, the run named in the input or the agent's envelope. A run's done for a time that
+ * has its entry already, by the person's check-off meanwhile, changes nothing.
  */
 const routineDone: Run = (tx, input) => {
   const r = active(liveRoutine(tx, input["routine"]));
-  const runId = str(input, "run");
+  const agent = tx.request.actor.actor_kind !== "human";
+  const runId = str(input, "run") ?? (agent ? tx.request.actor.run_id : undefined);
+  if (agent && runId === undefined) {
+    problem("VALIDATION_FAILED", "An agent's done is for the time of its run: name the run", "run");
+  }
   let due: Time | null = timeOf(r);
   if (runId !== undefined) {
     const run = tx.get(SQL.run, { id: runId });
@@ -366,7 +397,7 @@ const routineDone: Run = (tx, input) => {
       return problem("NOT_FOUND", "The routine has no such run", "run");
     const spec = JSON.parse(String(run["spec"])) as { due_at?: unknown };
     const own = typeof spec.due_at === "number" ? spec.due_at : null;
-    if ((input["due"] ?? null) !== own)
+    if (input["due"] !== undefined && input["due"] !== own)
       problem("VALIDATION_FAILED", "The run is for another time", "due");
     due = own === null ? null : at(own, scheduleOf(r));
   }
@@ -453,6 +484,9 @@ const routineClaim: Run = (tx, input) => {
   const open = timeOf(r);
   // An agent's routine always has a due time (the schema's CHECK).
   const dueAt = Number(open.due_at);
+  // The runs that count are those since the open time became it: a run an Undo's check-off
+  // cancelled before stays cancelled, and the time is claimed afresh.
+  const since = Number(r["opened"]);
   const idle = (why: string) => ({ ...answer(tx, r), claimed: false, why });
   if (r["paused"] === 1) return idle("paused");
   if (dueAt > now) return idle("not_due");
@@ -461,13 +495,13 @@ const routineClaim: Run = (tx, input) => {
   const slot = claim(scheduleOf(r), dueAt, now);
   let due = open;
   if (slot !== undefined && slot.due > dueAt) {
-    if (tx.all(SQL.runsFor, { id, due: dueAt }).length > 0) {
+    if (tx.all(SQL.runsFor, { id, due: dueAt, since }).length > 0) {
       addEntry(tx, id, open, { state: "skipped", why: "run_failed" });
     }
     due = at(slot.due, scheduleOf(r));
     tx.set("routines", id, id, { open: { ...due } }, false);
   }
-  const last = tx.all(SQL.runsFor, { id, due: due.due_at })[0];
+  const last = tx.all(SQL.runsFor, { id, due: due.due_at, since })[0];
   const retry =
     last !== undefined &&
     COULD_NOT_START.includes(String(last["reason"])) &&
@@ -484,7 +518,10 @@ const routineClaim: Run = (tx, input) => {
   return { ...answer(tx, r), claimed: true, run: made.run, due };
 };
 
-/** The request ID of a claim: a second start replays it, and a retry is a request of its own. */
+/**
+ * The request ID of a claim, with `attempt` one more than the runs for that due time: a second
+ * start replays the claim that queued a run, and a look that queued nothing keeps no receipt.
+ */
 export const claimRequestId = (routine: string, due: number, attempt: number): string =>
   `claim-${routine.slice(2)}-${String(due)}-${String(attempt)}`;
 
@@ -591,5 +628,5 @@ export const ROUTINES: Readonly<Record<string, Command>> = {
   "routine.finish": { check: oneRoutine, run: routineLifecycle(true) },
   "routine.reopen": { check: oneRoutine, run: routineLifecycle(false) },
   "routine.entry": { check: checkEntry, run: routineEntry },
-  "routine.claim": { check: checkClaim, run: routineClaim },
+  "routine.claim": { check: checkClaim, run: routineClaim, poll: true },
 };
