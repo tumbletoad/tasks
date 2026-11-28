@@ -11,7 +11,7 @@
 // The feed never moves the reader's words: a newer change shows a line with the way to the newest
 // words, and an open pen keeps what the person typed.
 import { Link, useRouter, useRouterState } from "@tanstack/react-router";
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { classes } from "../app/css.ts";
 import { useTitle, useToast } from "../app/frame.ts";
 import { Session } from "../context.ts";
@@ -43,6 +43,9 @@ const styles = classes(css, [
   "quiet",
   "act",
   "notice",
+  "actions",
+  "fold",
+  "quietAct",
   "versions",
   "version",
   "when",
@@ -337,6 +340,26 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
   useEffect(() => {
     if (shown !== undefined) banner.current?.focus({ preventScroll: false });
   }, [shown]);
+  // The reader's place: a line that comes or goes above the words (a newer change, the Trash) while
+  // the reader is down the page leaves the words where they were on the screen.
+  const words = useRef<HTMLDivElement>(null);
+  const row = id === undefined ? undefined : state.pages.get(id);
+  const notices = `${String(row !== undefined && page !== undefined && row.version > page.version)}|${String(trashed)}`;
+  const shownNotices = useRef(notices);
+  const place = useRef<number | undefined>(undefined);
+  if (notices !== shownNotices.current) {
+    shownNotices.current = notices;
+    if (window.scrollY > 0 && words.current !== null) {
+      place.current = words.current.getBoundingClientRect().top;
+    }
+  }
+  useLayoutEffect(() => {
+    const kept = place.current;
+    place.current = undefined;
+    if (kept === undefined || words.current === null) return;
+    const moved = words.current.getBoundingClientRect().top - kept;
+    if (Math.abs(moved) > 0.5) window.scrollBy(0, moved);
+  });
   useTitle(page?.title ?? ref);
   if (read === undefined) return null;
   if (read === "gone" || read === "failed") {
@@ -352,7 +375,6 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
     );
   }
   const { page: view, body, whole } = read;
-  const row = state.pages.get(view.id);
   const newer = row !== undefined && row.version > view.version ? row : undefined;
   const editable = state.space?.read_only === undefined && !trashed;
   const base = view.as_of;
@@ -437,27 +459,27 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
             </p>
           )}
         />
-        <p className={styles.meta} data-part="page-changed">
-          <span dir="auto">
-            {last.why === undefined
-              ? t("page.changed", { changed: meta })
-              : t("page.changedWhy", { changed: meta, why: last.why })}
-          </span>
+        <p className={styles.meta} data-part="page-changed" dir="auto">
+          {last.why === undefined
+            ? t("page.changed", { changed: meta })
+            : t("page.changedWhy", { changed: meta, why: last.why })}
+        </p>
+        <div className={styles.actions}>
           <button
             type="button"
-            className={styles.act}
+            className={styles.fold}
             data-part="versions-toggle"
             aria-expanded={open}
             onClick={() => {
               setOpen(!open);
             }}
           >
-            {t(open ? "page.versionsClose" : "page.versions")}
+            {t("page.versions")}
           </button>
           {editable ? (
             <button
               type="button"
-              className={styles.act}
+              className={styles.quietAct}
               data-part="page-trash"
               onClick={() => {
                 writes.trash(view.ref).then(
@@ -473,7 +495,7 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
               {t("page.trash")}
             </button>
           ) : null}
-        </p>
+        </div>
       </header>
       {open ? (
         <Versions
@@ -513,65 +535,67 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
           </button>
         </p>
       )}
-      {shown === undefined ? (
-        <Penned
-          owner={view.id}
-          part="body"
-          label={t("page.body")}
-          pen={t("page.bodyEdit")}
-          text={body}
-          base={base}
-          max={TEXT_MAX}
-          paragraphs
-          partial={whole ? undefined : t("text.partial")}
-          save={
-            editable ? (words, from) => writes.page(view.ref, { body: words }, from) : undefined
-          }
-          onDone={again}
-          view={(text, pen) => (
-            <div className={styles.body} data-part="page-body">
-              {text === "" ? (
-                <p className={styles.quiet}>{t("page.empty")}</p>
-              ) : (
-                <Markdown text={text} className={styles.md} headings />
-              )}
-              {pen}
-            </div>
-          )}
-        />
-      ) : (
-        <div className={styles.body} data-part="page-version">
-          <p ref={banner} tabIndex={-1} className={styles.shown}>
-            {t("page.versionOf", {
-              when: whenOf(shown.version),
-              who: whoOf(shown.version.by, state.instances, t),
-            })}
-            {editable ? (
+      <div ref={words}>
+        {shown === undefined ? (
+          <Penned
+            owner={view.id}
+            part="body"
+            label={t("page.body")}
+            pen={t("page.bodyEdit")}
+            text={body}
+            base={base}
+            max={TEXT_MAX}
+            paragraphs
+            partial={whole ? undefined : t("text.partial")}
+            save={
+              editable ? (words, from) => writes.page(view.ref, { body: words }, from) : undefined
+            }
+            onDone={again}
+            view={(text, pen) => (
+              <div className={styles.body} data-part="page-body">
+                {text === "" ? (
+                  <p className={styles.quiet}>{t("page.empty")}</p>
+                ) : (
+                  <Markdown text={text} className={styles.md} headings />
+                )}
+                {pen}
+              </div>
+            )}
+          />
+        ) : (
+          <div className={styles.body} data-part="page-version">
+            <p ref={banner} tabIndex={-1} className={styles.shown}>
+              {t("page.versionOf", {
+                when: whenOf(shown.version),
+                who: whoOf(shown.version.by, state.instances, t),
+              })}
+              {editable ? (
+                <button
+                  type="button"
+                  className={styles.act}
+                  data-part="restore-shown"
+                  onClick={() => {
+                    restore(shown.version);
+                  }}
+                >
+                  {t("page.restoreThis")}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className={styles.act}
-                data-part="restore-shown"
+                data-part="back-to-current"
                 onClick={() => {
-                  restore(shown.version);
+                  setShown(undefined);
                 }}
               >
-                {t("page.restoreThis")}
+                {t("page.backToCurrent")}
               </button>
-            ) : null}
-            <button
-              type="button"
-              className={styles.act}
-              data-part="back-to-current"
-              onClick={() => {
-                setShown(undefined);
-              }}
-            >
-              {t("page.backToCurrent")}
-            </button>
-          </p>
-          <Markdown text={shown.text} className={styles.md} headings />
-        </div>
-      )}
+            </p>
+            <Markdown text={shown.text} className={styles.md} headings />
+          </div>
+        )}
+      </div>
     </article>
   );
 }

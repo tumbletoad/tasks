@@ -139,7 +139,7 @@ export function AreaPage({
   return (
     <>
       <ArchivedLine area={area} />
-      <NodeTabs node={node} tab={tab} tasks={count} />
+      <NodeTabs node={node} tasks={count} />
       {tab === "library" ? (
         <NodeLibrary key={area} node={node} />
       ) : (
@@ -220,7 +220,7 @@ export function ProjectPage({
   return (
     <>
       <ArchivedLine area={area} project={project} />
-      <NodeTabs node={node} tab={tab} tasks={count} />
+      <NodeTabs node={node} tasks={count} />
       {tab === "library" ? (
         <NodeLibrary key={project} node={node} />
       ) : (

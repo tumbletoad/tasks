@@ -55,6 +55,9 @@ const styles = classes(css, [
 const DESCRIPTION_LINES = 12;
 const BRIEF_MAX = 400;
 
+/** A link is current only on its own address: the Tasks tab is not current under `/library`. */
+const EXACT = { exact: true, includeSearch: false } as const;
+
 /** The ID a node's words are kept under, and the target its reads and writes name. */
 function idsOf(
   node: LibraryNode,
@@ -69,18 +72,16 @@ function idsOf(
 export function LibraryLink({
   node,
   className,
-  current = false,
   children,
 }: {
   readonly node: LibraryNode;
-  readonly className?: string;
-  /** It is the page on screen. */
-  readonly current?: boolean;
+  readonly className?: string | undefined;
   readonly children: ReactNode;
 }) {
   const { space, projects } = useLive();
   const id = space?.id ?? "";
-  const props = { className, ...(current ? { "aria-current": "page" as const } : {}) };
+  // The router marks the link of the page on screen as current: this one only when it is exactly.
+  const props = { className, activeOptions: EXACT };
   if (node.kind === "space") {
     return (
       <Link to="/s/$space/$view" params={{ space: id, view: "library" }} {...props}>
@@ -118,11 +119,9 @@ export function LibraryLink({
 /** Tasks and Library, the two tabs of an area or a project, each with its count. */
 export function NodeTabs({
   node,
-  tab,
   tasks,
 }: {
   readonly node: Exclude<LibraryNode, { kind: "space" }>;
-  readonly tab: "tasks" | "library";
   /** Its open tasks, as the side menu counts them. */
   readonly tasks: number | undefined;
 }) {
@@ -135,7 +134,6 @@ export function NodeTabs({
   }, [node, state.pages, state.areas, state.projects]);
   const space = state.space?.id ?? "";
   const area = node.kind === "area" ? node.id : state.projects.get(node.id)?.area_id;
-  const current = { "aria-current": "page" } as const;
   const count = (n: number | undefined) =>
     n === undefined || n === 0 ? null : (
       <span className={styles.count} aria-hidden="true">
@@ -148,7 +146,7 @@ export function NodeTabs({
         to="/s/$space/area/$area"
         params={{ space, area: node.id }}
         className={styles.tab}
-        {...(tab === "tasks" ? current : {})}
+        activeOptions={EXACT}
       >
         {t("library.tasksTab")}
         {count(tasks)}
@@ -158,7 +156,7 @@ export function NodeTabs({
         to="/s/$space/project/$project"
         params={{ space, project: node.id }}
         className={styles.tab}
-        {...(tab === "tasks" ? current : {})}
+        activeOptions={EXACT}
       >
         {t("library.tasksTab")}
         {count(tasks)}
@@ -168,7 +166,7 @@ export function NodeTabs({
         to="/s/$space/area/$area/project/$project"
         params={{ space, area, project: node.id }}
         className={styles.tab}
-        {...(tab === "tasks" ? current : {})}
+        activeOptions={EXACT}
       >
         {t("library.tasksTab")}
         {count(tasks)}
@@ -177,7 +175,7 @@ export function NodeTabs({
   return (
     <nav className={styles.tabs} aria-label={t("library.tabs")} data-part="node-tabs">
       {tasksTab}
-      <LibraryLink node={node} className={styles.tab} current={tab === "library"}>
+      <LibraryLink node={node} className={styles.tab}>
         {t("library.libraryTab")}
         {count(pages)}
       </LibraryLink>
@@ -251,11 +249,13 @@ function Texts({
                 {text === "" ? (
                   <span className={styles.quiet}>{t("library.forAgentsNone")}</span>
                 ) : (
-                  <span dir="auto">{text}</span>
-                )}
-                {read.for_agents === undefined || text === "" ? null : (
-                  <span className={styles.line}>
-                    {changed("user", Date.parse(read.for_agents.at))}
+                  <span>
+                    <span dir="auto">{text}</span>
+                    {read.for_agents === undefined ? null : (
+                      <span className={styles.line}>
+                        {changed("user", Date.parse(read.for_agents.at))}
+                      </span>
+                    )}
                   </span>
                 )}
                 {pen}
@@ -335,7 +335,7 @@ function Above({
     levels.map((level) =>
       t("library.levelCount", { title: level.title, count: level.pages.length }),
     ),
-    { type: "unit", style: "narrow" },
+    { type: "unit", style: "short" },
   );
   return (
     <section className={styles.section} data-part="from-above">
