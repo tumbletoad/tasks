@@ -398,7 +398,7 @@ function valueNow(conn: Connection, c: StoredChange): string | undefined {
   if (!isRowed(c.entity)) return undefined;
   const row = conn.prepare(SQL.row[c.entity]).get({ id: c.entityId });
   if (row === undefined) return undefined;
-  if (c.entity === "node_texts" && c.action === "create") return textsOf(row);
+  if (c.entity === "node_texts" && c.action === "create") return textsOf(row, created(c));
   // A new group's create is undone by its archive: what it wrote there is its lifecycle.
   const field = c.action === "create" ? "lifecycle" : (c.field ?? "");
   const fields: Readonly<Record<string, readonly string[]>> =
@@ -406,16 +406,23 @@ function valueNow(conn: Connection, c: StoredChange): string | undefined {
   return fieldJson(columnsValue(row, fields[field] ?? []));
 }
 
-/** A node's texts together: what its row's create wrote, and what an undo of it would empty. */
-const textsOf = (row: Readonly<Record<string, unknown>>): string =>
-  fieldJson(["brief", "description", "for_agents"].map((field) => row[field] ?? null));
+/**
+ * The texts a node row's create wrote: the ones its undo empties, and the only ones it compares, so
+ * a description written since never keeps the first text for agents from being undone.
+ */
+const created = (c: StoredChange): string[] =>
+  ["brief", "description", "for_agents"].filter((field) => (columns(c.after)[field] ?? "") !== "");
+
+/** Those texts of a node row, together. */
+const textsOf = (row: Readonly<Record<string, unknown>>, fields: readonly string[]): string =>
+  fieldJson(fields.map((field) => row[field] ?? null));
 
 /** What `c` wrote, as valueNow gives it. */
 const wrote = (c: StoredChange): string =>
   c.action !== "create"
     ? c.after
     : c.entity === "node_texts"
-      ? textsOf(columns(c.after))
+      ? textsOf(columns(c.after), created(c))
       : fieldJson(columns(c.after)["lifecycle"] ?? null);
 
 /**
