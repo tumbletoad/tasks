@@ -14,9 +14,7 @@ import {
   GROUP_PAGE,
   GroupListResult,
   opSpec,
-  LATER_PREFERENCES,
   PREFERENCES,
-  preferenceSpec,
   PrefsReadResult,
   registry,
   TaskAddResult,
@@ -892,8 +890,8 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
     const described = PrefsReadResult.parse(
       await call(fx, script, "prefs.manage", { action: "describe" }),
     );
-    // The registry's space keys whose value is one of the tool's kinds and that this build acts
-    // on, sorted (A3 3.4.11). An object, a map, a machine key and a key nothing reads are not shown.
+    // The registry's space keys whose value is one of the tool's kinds, sorted (A3 3.4.11). An
+    // object, a map and a machine key are not shown.
     expect(described.prefs.map((p) => p.key)).toEqual([
       "tasks.dedupe_window_days",
       "tasks.effort_scale",
@@ -906,16 +904,9 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
       ["ui.theme", "machine", "enum"],
       ["ui.single_keys", "machine", "boolean"],
       ["grouping.names", "space", "object"],
-      ["autonomy.level", "space", "enum"],
-      ["autonomy.agent_tasks_to_inbox", "space", "boolean"],
       ["autonomy.overrides", "space", "map"],
       ["autonomy.areas", "space", "map"],
-      ["targets.default", "space", "text"],
-      ["projection.enabled", "space", "boolean"],
-      ["projection.dir", "machine", "path"],
-      ["features.search_trigram", "space", "boolean"],
     ]);
-    for (const later of LATER_PREFERENCES) expect(shown.has(later.key), later.key).toBe(false);
     // A script changes no key: the agents' set is a later step's (later.ts). The person does,
     // all but the statuses, whose change is a later step's too.
     expect(described.prefs.filter((p) => p.writable)).toEqual([]);
@@ -927,48 +918,15 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
       ["tasks.effort_scale", EFFORT_LEVELS, true, true],
       ["tasks.statuses", ["open", "waiting", "review", "backlog"], true, false],
     ]);
-    // An agent is not shown a key nothing reads; a person's command still reads what is stored.
-    expect(
-      await refusal(call(fx, script, "prefs.manage", { action: "get", keys: ["autonomy.*"] })),
-    ).toMatchObject({ code: "invalid_input" });
-    const person = PrefsReadResult.parse(
-      await call(fx, user, "prefs.manage", { action: "get", keys: ["autonomy.level"] }),
-    );
-    expect(person.prefs.map((p) => [p.key, p.value, p.writable])).toEqual([
-      ["autonomy.level", "review", false],
-    ]);
-    const all = PrefsReadResult.parse(await call(fx, user, "prefs.manage", { action: "describe" }));
-    // A machine key lives in machine.toml, and doctor names one set there.
-    for (const later of LATER_PREFERENCES.filter(
-      (row) => preferenceSpec(row.key)?.scope === "space",
-    )) {
-      expect(
-        all.prefs.some((p) => p.key === later.key),
-        later.key,
-      ).toBe(true);
-    }
     const unknown = await refusal(
       call(fx, script, "prefs.manage", { action: "get", keys: ["tasks.statuss"] }),
     );
     expect(unknown).toMatchObject({ code: "invalid_input", hint: "Did you mean tasks.statuses?" });
   });
 
-  test("status answers autonomy full whatever autonomy.level holds: no change waits for the user", async () => {
-    const level = (value: string | null) => {
-      const ops = [{ kind: "pref.set" as const, key: "autonomy.level", value }];
-      expect(fx.writer.submit(fx.request(fx.human, ops, { base: fx.base() })).status).toBe(
-        "applied",
-      );
-    };
-    try {
-      for (const value of ["suggest", "review"]) {
-        level(value);
-        const status = await call(fx, script, "space.status", {});
-        expect((status as { autonomy: string }).autonomy, value).toBe("full");
-      }
-    } finally {
-      level(null);
-    }
+  test("status answers autonomy full: no change waits for the user", async () => {
+    const status = await call(fx, script, "space.status", {});
+    expect((status as { autonomy: string }).autonomy).toBe("full");
   });
 
   test("a stored value its key's schema refuses reads as the default; a list in either stored form", async () => {
@@ -993,6 +951,11 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
       ["tasks.effort_scale", [EFFORT_LEVELS[1], EFFORT_LEVELS[4]], false],
       ["tasks.statuses", ["open", "waiting", "review", "backlog"], true],
     ]);
+    // A key no declaration has any more stays stored, unread: the space opens and lists the rest.
+    await store("autonomy.level", JSON.stringify("suggest"));
+    const all = PrefsReadResult.parse(await call(edited, user, "prefs.manage", { action: "get" }));
+    expect(all.prefs.map((p) => p.key)).not.toContain("autonomy.level");
+    expect(all.prefs.map((p) => p.key)).toContain("tasks.statuses");
   });
 });
 

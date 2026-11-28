@@ -135,14 +135,14 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
       state: "default",
     });
     expectStatus(submit([set("grouping.names", null)]), "unchanged");
-    const never = submit([set("projection.enabled", null)], { base: null });
+    const never = submit([set("autonomy.areas", null)], { base: null });
     expectStatus(never, "unchanged");
     expect(never.results[0]).toMatchObject({
       status: "unchanged",
-      id: "projection.enabled",
+      id: "autonomy.areas",
       version: 0,
     });
-    expect(one("SELECT count(*) FROM preferences WHERE key = 'projection.enabled'")).toBe(0);
+    expect(one("SELECT count(*) FROM preferences WHERE key = 'autonomy.areas'")).toBe(0);
     // Set again after a reset: the row's value comes back, with a base.
     expectStatus(submit([set("grouping.names", { area: "A", project: "P" })]), "applied");
   });
@@ -199,11 +199,11 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
       }),
     );
     expectStatus(renamed, "applied");
-    expectStatus(submit([set("autonomy.level", "full")]), "applied");
+    expectStatus(submit([set("autonomy.areas", { portal: "full" })]), "applied");
     const undone = fx.writer.submit(fx.request(fx.human, [{ kind: "undo" }]));
     expectStatus(undone, "applied");
     expect(one("SELECT title FROM tasks")).toBe("Plan the week");
-    expect(read("autonomy.level").value).toBe("full");
+    expect(read("autonomy.areas").value).toEqual({ portal: "full" });
   });
 
   test("every receipt of pref.set is receipt.get's result: applied, conflict and refused", () => {
@@ -212,7 +212,7 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
     expectStatus(submit([set("tasks.statuses", ["open"])]), "applied");
     const outcomes = [
       fx.request(fx.human, [set("tasks.statuses", ["open", "later"])], { base: stale }),
-      fx.request(fx.codex, [set("autonomy.level", "full")]),
+      fx.request(fx.codex, [set("autonomy.areas", { portal: "full" })]),
       fx.request(fx.human, [set("grouping.names", { area: "A", project: "P" })]),
     ].map((request) => {
       fx.writer.submit(request);
@@ -235,9 +235,8 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
       "applied",
     );
     for (const [key, value] of [
-      ["autonomy.level", "full"],
+      ["autonomy.areas", { portal: "full" }],
       ["autonomy.overrides", { "task.patch.due": "apply" }],
-      ["targets.default", "codex-work"],
       ["tasks.effort_scale", [{ key: "XS" }]],
     ] as const) {
       const refused = submit([set(key, value)], { actor: "codex" });
@@ -248,12 +247,12 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
         field: "key",
       });
     }
-    expect(receipts("rejected")).toBe(4);
+    expect(receipts("rejected")).toBe(3);
     expect(one("SELECT count(*) FROM preferences WHERE policy = 1")).toBe(0);
     // The user may: the row records that it is a policy key.
-    expectStatus(submit([set("autonomy.level", "full")]), "applied");
-    expect(one("SELECT policy FROM preferences WHERE key = 'autonomy.level'")).toBe(1);
-    expect(read("autonomy.level").value).toBe("full");
+    expectStatus(submit([set("autonomy.areas", { portal: "full" })]), "applied");
+    expect(one("SELECT policy FROM preferences WHERE key = 'autonomy.areas'")).toBe(1);
+    expect(read("autonomy.areas").value).toEqual({ portal: "full" });
   });
 
   test("a value outside its shape, an unknown key, a machine key and a missing value are refused before the transaction", () => {
@@ -280,11 +279,6 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
       ],
       [{ kind: "pref.set", key: "ui.nothing", value: true }, "VALIDATION_FAILED", "ops[0].key"],
       [{ kind: "pref.set", key: "UI Theme", value: "sumi" }, "VALIDATION_FAILED", "ops[0].key"],
-      [
-        { kind: "pref.set", key: "projection.dir", value: "/srv/view" },
-        "VALIDATION_FAILED",
-        "ops[0].key",
-      ],
       [{ kind: "pref.set", key: "ui.theme", value: "washi" }, "VALIDATION_FAILED", "ops[0].key"],
       [{ kind: "pref.set", key: "tasks.statuses" }, "VALIDATION_FAILED", "ops[0].value"],
       [
@@ -462,15 +456,15 @@ describe("[A1.3.16.prefs.read] the writer reads preferences through the registry
   test("every declared space key reads its default in a new space, and a set one its value", () => {
     const before = readSpacePreferences(fx.reader);
     expect(before.every((p) => p.state === "default")).toBe(true);
-    expect(before.map((p) => p.key)).not.toContain("projection.dir");
-    submit([set("features.search_trigram", true)]);
+    expect(before.map((p) => p.key)).not.toContain("ui.theme");
+    submit([set("tasks.dedupe_window_days", 9)]);
     expect(
-      readSpacePreferences(fx.reader).find((p) => p.key === "features.search_trigram"),
+      readSpacePreferences(fx.reader).find((p) => p.key === "tasks.dedupe_window_days"),
     ).toEqual({
-      key: "features.search_trigram",
-      value: true,
+      key: "tasks.dedupe_window_days",
+      value: 9,
       state: "set",
     });
-    expect(() => readSpacePreference(fx.reader, "projection.dir")).toThrow();
+    expect(() => readSpacePreference(fx.reader, "ui.theme")).toThrow();
   });
 });

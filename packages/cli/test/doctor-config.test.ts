@@ -42,22 +42,6 @@ describe("[A2.3.2.2.permissions.rule] ttasks doctor's config row", () => {
     expect(configCheck(io).detail).toContain("syntax at line 1");
   });
 
-  test("[A1.3.16.prefs.machine.not-read] a machine key this build does not read is a note that says where the files are", () => {
-    const { io, file } = home();
-    const named = process.platform === "win32" ? "C:\\elsewhere\\view" : "/srv/elsewhere/view";
-    writeFileSync(file, `[preferences]\n"projection.dir" = ${JSON.stringify(named)}\n`, {
-      mode: 0o600,
-    });
-    const check = configCheck(io);
-    expect(check.status).toBe("warn");
-    expect(check.detail).toBe(
-      "machine.toml sets projection.dir, which this build does not read yet, so it changes nothing: the readable files are in each space folder's view/.",
-    );
-    // Unset: no note.
-    writeFileSync(file, '[preferences]\n"ui.theme" = "washi"\n');
-    expect(configCheck(io)).toMatchObject({ status: "ok", detail: "machine.toml is valid." });
-  });
-
   test("a key this build does not read is named as one that changes nothing, and the file is left as it is", () => {
     const { io, file } = home();
     const text =
