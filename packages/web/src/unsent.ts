@@ -254,13 +254,14 @@ export function useKeptTitles(space: string, task: string): readonly KeptTitle[]
 // the editor opens again on the text as it is now, and a new draft never takes their place.
 
 /**
- * What a text editor corrects: a task's summary, its context, or an entry by reference (n3, l4);
- * a page's title, brief or body, and a node's brief, description or text for agents. Each is kept
- * under its owner's ID: the task's, the page's or the node's.
+ * What a text editor corrects: a task's summary, its context, who it waits on, or an entry by
+ * reference (n3, l4); a page's title, brief or body, and a node's brief, description or text for
+ * agents. Each is kept under its owner's ID: the task's, the page's or the node's.
  */
 export type TextPart =
   | "summary"
   | "context"
+  | "waiting_on"
   | `${"n" | "l"}${number}`
   | "title"
   | "brief"
@@ -268,7 +269,8 @@ export type TextPart =
   | "description"
   | "for_agents";
 
-const PART = /^(?:summary|context|[nl][1-9][0-9]{0,5}|title|brief|body|description|for_agents)$/u;
+const PART =
+  /^(?:summary|context|waiting_on|[nl][1-9][0-9]{0,5}|title|brief|body|description|for_agents)$/u;
 
 export const isTextPart = (value: string): value is TextPart => PART.test(value);
 

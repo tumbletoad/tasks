@@ -4,7 +4,7 @@
 // under the control (edit/Unsaved.tsx). A fact without a value is an empty control a person can
 // fill. Editable values sit in outlined controls; that outline is the only hint that a value can be
 // changed by hand. A finished task's facts are read-only text.
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ToggleButton, ToggleButtonGroup, type Key } from "react-aria-components";
 import { classes } from "../app/css.ts";
 import { ViewIcon } from "../app/Icons.tsx";
@@ -20,6 +20,8 @@ import {
 import { whoOf } from "../edit/edits.ts";
 import { Unsaved, useUnsaved } from "../edit/Unsaved.tsx";
 import { useEdits } from "../edit/useEdits.ts";
+import { Session } from "../context.ts";
+import { keepTextDraft, letGo, pageLeaving, readTextDraft } from "../unsent.ts";
 import { areaSlots, formatDay, formatInstant, type Clock } from "@ttasks/client/today";
 import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
 import { localDate } from "@ttasks/contracts/day";
@@ -231,7 +233,8 @@ function Segmented({
  * someone else shows under it while the typed text stays, and leaving or Enter sends the text
  * against what the person saw, so the change is a conflict they choose on. A field that goes away
  * while the person edits it (the card collapses, the task leaves the view) saves what was typed,
- * as leaving it does.
+ * as leaving it does. What is typed is kept in this tab until it is sent or put back with Escape,
+ * so a reload brings it back into the field.
  */
 function WaitingOn({
   task,
@@ -244,16 +247,31 @@ function WaitingOn({
   const t = useT();
   const edits = useEdits();
   const state = useLive();
+  const { live } = useContext(Session);
+  const space = live.spaceId ?? "";
   const field = useRef<HTMLInputElement>(null);
+  const saved = task.waiting_on ?? "";
+  // What this tab typed before a reload, unless the field already holds it: its save got there.
+  const [brought] = useState(() => {
+    const kept = readTextDraft(space, task.id, "waiting_on");
+    return kept === undefined || kept.typed.trim() === saved ? undefined : kept;
+  });
   /** Set once the person types: the base, the mark and the value they started from. */
   const opened = useRef<{ base: string | undefined; mark: number; value: string } | undefined>(
-    undefined,
+    brought === undefined
+      ? undefined
+      : { base: brought.base, mark: edits.mark(), value: brought.before },
   );
   /** What the person typed, for a save when the field goes away under them. */
-  const typed = useRef<string | undefined>(undefined);
+  const typed = useRef<string | undefined>(brought?.typed);
   const latest = useRef(task);
   latest.current = task;
-  const saved = task.waiting_on ?? "";
+  useEffect(() => {
+    const kept = readTextDraft(space, task.id, "waiting_on");
+    if (brought === undefined && kept !== undefined && !edits.sending(task.id)) {
+      letGo(space, { kind: "text", task: task.id, part: "waiting_on", text: kept.typed });
+    }
+  }, [brought, space, task.id, edits]);
   // A new saved value shows in the field until the person types in it.
   useEffect(() => {
     if (opened.current === undefined && field.current !== null) field.current.value = saved;
@@ -281,13 +299,15 @@ function WaitingOn({
     if (was === undefined || value === undefined || unchanged) {
       // Nothing to send: the field shows what is saved, also a change made while it was open.
       if (field.current !== null) field.current.value = latest.current.waiting_on ?? "";
+      if (was !== undefined) keepTextDraft(space, task.id, "waiting_on", undefined);
       return;
     }
-    edits.edit(
-      latest.current,
-      waitingChange(text === "" ? undefined : text),
-      was.base === undefined ? {} : { base: was.base },
-    );
+    edits.edit(latest.current, waitingChange(text === "" ? undefined : text), {
+      ...(was.base === undefined ? {} : { base: was.base }),
+      settled: () => {
+        letGo(space, { kind: "text", task: task.id, part: "waiting_on", text: value });
+      },
+    });
   };
   const save = (chosen = false) => {
     send(field.current?.value, chosen);
@@ -315,7 +335,7 @@ function WaitingOn({
         data-part="waiting-on"
         aria-label={t("fact.waitingOn")}
         placeholder={t("fact.waitingPlaceholder")}
-        defaultValue={saved}
+        defaultValue={brought?.typed ?? saved}
         list={list}
         maxLength={80}
         dir="auto"
@@ -325,7 +345,21 @@ function WaitingOn({
         onInput={(event) => {
           // Typing again after an Enter is a new edit, with its own base.
           begin();
-          typed.current = event.currentTarget.value;
+          const value = event.currentTarget.value;
+          typed.current = value;
+          const from = opened.current;
+          keepTextDraft(
+            space,
+            task.id,
+            "waiting_on",
+            from === undefined || value === from.value
+              ? undefined
+              : {
+                  typed: value,
+                  before: from.value,
+                  ...(from.base === undefined ? {} : { base: from.base }),
+                },
+          );
         }}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
@@ -341,11 +375,13 @@ function WaitingOn({
             }
             opened.current = undefined;
             typed.current = undefined;
+            keepTextDraft(space, task.id, "waiting_on", undefined);
           }
         }}
         onBlur={() => {
-          // Leaving the window is not leaving the field: what was typed stays for the return.
-          if (!document.hasFocus()) return;
+          // Leaving the window, or the page going away, is not leaving the field: what was typed
+          // stays for the return.
+          if (!document.hasFocus() || pageLeaving()) return;
           save();
           onEditing(false);
         }}
@@ -367,7 +403,10 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
   const t = useT();
   const state = useLive();
   const edits = useEdits();
-  const waitingKept = useUnsaved(task.id, "waiting_on").length > 0;
+  const { live } = useContext(Session);
+  const waitingKept =
+    useUnsaved(task.id, "waiting_on").length > 0 ||
+    readTextDraft(live.spaceId ?? "", task.id, "waiting_on") !== undefined;
   // Who it waits on stays shown while the person is in it, even when the status moves on.
   const [waitingOpen, setWaitingOpen] = useState(false);
   const [area, project] = trail(state.nodes, task.parent);
