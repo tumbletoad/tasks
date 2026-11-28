@@ -2172,7 +2172,7 @@
     },
     {
       "id": "S2.tree.sources",
-      "title": "Sources, links and the capture by source on the tree writer: a repeat capture finds its task through the source it came from, wherever the source moved and also after the window for finished tasks; a source key is read as today's writer reads it; a source on a node, the same key elsewhere linked there, links that come and go, and a held key that keeps a removed source out; a source under a task in the Trash is not found and comes back with it",
+      "title": "A source's move takes no base, and a removal or a putting back already there changes nothing, as today's link; Sources, links and the capture by source on the tree writer: a repeat capture finds its task through the source it came from, wherever the source moved and also after the window for finished tasks; a source key is read as today's writer reads it; a source on a node, the same key elsewhere linked there, links that come and go, and a held key that keeps a removed source out; a source under a task in the Trash is not found and comes back with it",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]

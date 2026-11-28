@@ -90,7 +90,7 @@ import {
   nodeTexts,
   occurrences,
   PAGE_SQL,
-  pageInTrashAlready,
+  alreadyThere,
   pageSetTexts,
   textWrite,
 } from "./pages.ts";
@@ -2193,7 +2193,7 @@ export class SpaceWriter {
           }
           const record = { task: parent, source: op.source };
           const live = links.get(id) ?? link["removed_at"] === null;
-          if (op.kind === "source.unlink" ? !live : live) {
+          if (alreadyThere(!live, op.kind === "source.relink")) {
             return { i, op, target: op.source, task: parent, touches: [], record, skip: true };
           }
           const start = linkState(link);
@@ -2686,7 +2686,7 @@ export class SpaceWriter {
           const row = pageOf(op.page, restoring);
           const id = new RowReader("pages", row).id("id", "pg");
           const record = { ...inputOf(op, "page"), page: id };
-          const done = pageInTrashAlready(row["deleted_at"] !== null, restoring);
+          const done = alreadyThere(row["deleted_at"] !== null, restoring);
           return {
             i,
             op,

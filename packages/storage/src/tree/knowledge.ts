@@ -18,7 +18,7 @@ import {
   finishedBody,
   nodeTexts,
   occurrences,
-  pageInTrashAlready,
+  alreadyThere,
   pageSetTexts,
   textWrite,
 } from "../write/pages.ts";
@@ -164,7 +164,7 @@ const pageTrashed =
   (trash: boolean): Run =>
   (tx, input) => {
     const page = livePage(tx, input["page"], !trash);
-    if (pageInTrashAlready(page["deleted_at"] !== null, !trash)) return pageAnswer(tx, page);
+    if (alreadyThere(page["deleted_at"] !== null, !trash)) return pageAnswer(tx, page);
     const deleted = { deleted_at: trash ? tx.at : null, deleted_by: trash ? tx.author : null };
     tx.set("pages", String(page["id"]), String(page["owner_id"]), { deleted }, false);
     return pageAnswer(tx, page);
