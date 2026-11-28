@@ -163,7 +163,7 @@ const str = (value: unknown): string => (typeof value === "string" ? value : "")
 const opt = (value: unknown): string | null => (typeof value === "string" ? value : null);
 
 /** The non-empty texts, one per line. */
-const lines = (values: readonly unknown[]): string =>
+export const lines = (values: readonly unknown[]): string =>
   values.filter((v): v is string => typeof v === "string" && v !== "").join("\n");
 
 const decoded = (text: string): string => {
@@ -184,7 +184,7 @@ const LINK_PARTS = /^(?:[a-z][a-z\d+.-]*:)?(?:\/\/(?:[^/?#]*@)?)?(?<address>[^?#
  * task; a query and a fragment are mostly tracking and session values; a user and password are
  * not the page's words, and a password must never find a task.
  */
-function linkWords(url: unknown): string | null {
+export function linkWords(url: unknown): string | null {
   if (typeof url !== "string" || url === "") return null;
   const address = LINK_PARTS.exec(url)?.groups?.["address"] ?? "";
   return decoded(address.replace(/^www\./iu, ""));

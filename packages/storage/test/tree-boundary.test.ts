@@ -395,7 +395,7 @@ describe("[S2.tree.boundary] the tree writer keeps today's guarantees at the req
     ok(fx.send("note.add", { on: "M-1", body: "Booked" }));
     const note = fx.conn.prepare("SELECT * FROM notes").get() ?? {};
     fx.conn.prepare("DELETE FROM notes").run();
-    expect(treeHistoryProblems(fx.conn)).toEqual(["history: a notes row the history made is gone"]);
+    expect(treeHistoryProblems(fx.conn)).toContain("history: a notes row the history made is gone");
     // Put back as it was, for the check after the test.
     const columns = Object.keys(note);
     fx.conn

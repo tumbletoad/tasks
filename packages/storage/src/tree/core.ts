@@ -29,6 +29,7 @@ import { COMMANDS } from "./registry.ts";
 import { TreeProblem } from "./fields.ts";
 import { DERIVED } from "./schema.ts";
 import { planHistory, STEP_SQL } from "./steps.ts";
+import { indexTreeChanges } from "./search.ts";
 import {
   Tx,
   type CheckedTreeRequest,
@@ -536,6 +537,7 @@ export class TreeWriter {
           before_prov: c.beforeProv,
         });
       });
+      indexTreeChanges(this.#conn, seq, changes);
       if (plan !== undefined) {
         const target = plan.target;
         if (plan.kind === "undo") this.#conn.prepare(SQL.markUndone).run({ target, seq });

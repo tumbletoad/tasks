@@ -209,6 +209,15 @@ export const TREE_STATEMENTS: readonly string[] = [
   ${VERSIONS},
   UNIQUE (owner_id, ordinal)
 ) STRICT`,
+  // The search index (search.ts): derived, each document on the node that holds it.
+  `CREATE TABLE search_docs (
+  doc INTEGER PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('task','project','note','log','learning','page')),
+  entity_id TEXT NOT NULL UNIQUE, node_id TEXT NOT NULL, seq INTEGER NOT NULL
+) STRICT`,
+  "CREATE INDEX search_docs_node ON search_docs(node_id)",
+  "CREATE VIRTUAL TABLE search_fts USING fts5(title, body, extra, " +
+    "tokenize = 'unicode61 remove_diacritics 2', prefix = '2 3')",
 ];
 
 export interface NewTreeSpace {

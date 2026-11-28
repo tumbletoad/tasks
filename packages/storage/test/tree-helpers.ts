@@ -9,6 +9,7 @@ import { TreeWriter, type TreeActor, type TreeResult } from "../src/tree/core.ts
 import { formatAsOf } from "../src/write/request.ts";
 import { columnsOf, FIELDS, isEntity, keyOf, type Entity } from "../src/tree/fields.ts";
 import { createTreeSpace } from "../src/tree/schema.ts";
+import { storedTreeDocuments, treeDocuments } from "../src/tree/search.ts";
 import { TEST_MACHINE } from "./space-helpers.ts";
 
 export const TREE_FILE = "tree.db";
@@ -241,6 +242,18 @@ export function treeHistoryProblems(conn: Connection): string[] {
     {};
   if (refs["top"] !== null && Number(refs["next"]) <= Number(refs["top"])) {
     problems.push("counters: the counter is behind a reference");
+  }
+  // The search index equals a fresh rebuild of what the space holds.
+  const index = storedTreeDocuments(conn);
+  const want = treeDocuments(conn);
+  if (index.stray !== 0) problems.push("search: a text no document names");
+  for (const [id, doc] of want) {
+    if (JSON.stringify(index.docs.get(id)) !== JSON.stringify(doc)) {
+      problems.push(`search: the ${doc.kind} document of ${id} is not the space's`);
+    }
+  }
+  for (const [id, doc] of index.docs) {
+    if (!want.has(id)) problems.push(`search: a ${doc.kind} document of nothing live (${id})`);
   }
   return problems;
 }
