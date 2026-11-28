@@ -52,6 +52,8 @@ export interface SpaceView {
   readonly link: LinkState;
   /** The tasks to show: the feed's, less those checked off on this phone. */
   readonly tasks: ReadonlyMap<string, TaskRow>;
+  /** Finished and dropped tasks on which an agent's question waits for the person. */
+  readonly asking: ReadonlyMap<string, TaskRow>;
   readonly nodes: ReadonlyMap<string, NodeRow>;
   /** Whether any rows are known: the feed's or the ones kept from before. */
   readonly loaded: boolean;
@@ -135,6 +137,7 @@ interface Kept {
   readonly copy?: string;
   readonly cursor?: Cursor;
   readonly tasks: readonly TaskRow[];
+  readonly asking?: readonly TaskRow[];
   readonly nodes: readonly NodeRow[];
   readonly pages?: readonly PageRow[];
   readonly changes?: readonly TaskChange[];
@@ -142,13 +145,14 @@ interface Kept {
 
 function keptOf(value: unknown): Kept | undefined {
   if (!isRecord(value) || typeof value["at"] !== "number") return undefined;
-  const { tasks, nodes, copy, cursor, pages, changes } = value;
+  const { tasks, asking, nodes, copy, cursor, pages, changes } = value;
   if (!Array.isArray(tasks) || !Array.isArray(nodes)) return undefined;
   return {
     at: value["at"],
     ...(typeof copy === "string" ? { copy } : {}),
     ...(isRecord(cursor) ? { cursor: cursor as unknown as Cursor } : {}),
     tasks: tasks as TaskRow[],
+    ...(Array.isArray(asking) ? { asking: asking as TaskRow[] } : {}),
     nodes: nodes as NodeRow[],
     ...(Array.isArray(pages) ? { pages: pages as PageRow[] } : {}),
     ...(Array.isArray(changes) ? { changes: changes as TaskChange[] } : {}),
@@ -277,6 +281,9 @@ export function spaceSession(options: SessionOptions): SpaceSession {
     return {
       link,
       tasks,
+      asking:
+        held?.asking ??
+        new Map((kept?.asking ?? []).map((task): [string, TaskRow] => [task.id, task])),
       nodes,
       loaded: held !== undefined || kept !== undefined,
       live: isLive,
@@ -303,6 +310,7 @@ export function spaceSession(options: SessionOptions): SpaceSession {
       ...(held.space.copy === undefined ? {} : { copy: held.space.copy }),
       cursor: held.cursor,
       tasks: [...held.tasks.values()],
+      asking: [...held.asking.values()],
       nodes: [...held.nodes.values()],
       pages: [...held.pages.values()],
       changes: log.getEntries(),

@@ -318,6 +318,10 @@ const TONES: Readonly<Record<string, RunTone>> = {
   failed: "failed",
 };
 
+/** The run still goes on: it waits to start, works, or is stopping. */
+export const runGoes = (tone: RunTone): boolean =>
+  tone === "waiting" || tone === "working" || tone === "stopping";
+
 export function runLine(run: PhoneRun): RunLine {
   const tone: RunTone =
     run.state === "failed" && run.reason === "needs_input"

@@ -7409,14 +7409,21 @@
     },
     {
       "id": "S5.phone.agents",
-      "title": "On the phone, against the real service: an agent's change shows under Today's Changes with who made it and its page under the pages agents changed, both kept for when the computer is away and after a restart of the app; an agent's question marks its task as waiting for the person; a task's runs are read for its card and kept",
+      "title": "On the phone, against the real service: an agent's change shows under Today's Changes with who made it and its page under the pages agents changed, both kept for when the computer is away and after a restart of the app; an agent's question marks its task as waiting for the person, also once the task is finished; an agent's change of only a task's page puts the task under Changes, and a page's change, restore or move moves its tasks' rows so an open card reads again",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.phone.run-badge",
+      "title": "On the phone, against the real service: a task with a run stays on Today, its run's badge reaching the phone as its ID and state only, in a batch and in a snapshot; its runs are read for its card and kept for when the computer is away",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "S5.phone.run-line",
-      "title": "A card on the phone says how a run stands (waiting, working, done, needs you, failed, stopped) and shows its answer, its question or its last words; a task's runs come newest first",
+      "title": "A card on the phone says how a run stands (waiting, working, stopping, done, needs you, failed, stopped) and shows its answer, its question or its last words; which runs go on; a task's runs come newest first",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

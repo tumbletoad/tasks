@@ -170,12 +170,11 @@ export function Today(props: {
     () => agentPages(view?.pages.values() ?? [], clock.now, CHANGES_DAYS, CHANGES_LIMIT),
     [view, clock.now],
   );
-  /** Tasks on which an agent waits for the person: a question, or a run that ended needing them. */
+  // A finished task a question waits on counts as an open one does, as on the page.
   const needing = useMemo(
     () =>
-      [...(view?.tasks.values() ?? [])].filter(
-        (task) => questionsWaiting(task) > 0 || task.run?.state === "needs_you",
-      ).length,
+      [...new Map([...(view?.asking ?? []), ...(view?.tasks ?? [])]).values()].filter(needsYou)
+        .length,
     [view],
   );
 
@@ -445,6 +444,10 @@ export function Today(props: {
   );
 }
 
+/** An agent waits for the person on it: a question, or a run that ended needing them. */
+const needsYou = (task: TaskRow) =>
+  questionsWaiting(task) > 0 || task.run?.state === "needs_you";
+
 function Row(props: {
   /** In Changes: who changed it, and when. */
   change: TaskChange | undefined;
@@ -456,7 +459,7 @@ function Row(props: {
   onOpen: (task: TaskRow) => void;
 }) {
   const { change, task, done, colors, clock, onCheck, onOpen } = props;
-  const needsYou = questionsWaiting(task) > 0 || task.run?.state === "needs_you";
+  const asks = needsYou(task);
   return (
     <View style={styles.row}>
       <Pressable
@@ -490,7 +493,7 @@ function Row(props: {
         >
           {task.title}
         </Text>
-        {needsYou ? (
+        {asks ? (
           <Text style={[styles.needs, { color: colors.accent }]}>{WORDS.needsYou}</Text>
         ) : null}
         {change === undefined ? null : (

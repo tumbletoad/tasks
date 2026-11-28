@@ -1,6 +1,6 @@
 // A run as a task's card on the phone says it: its one line, and what its agent said.
 import { describe, expect, test } from "vitest";
-import { runLine, runsOf, type PhoneRun } from "./card.ts";
+import { runGoes, runLine, runsOf, type PhoneRun } from "./card.ts";
 
 const run = (state: string, more: Partial<PhoneRun> = {}): PhoneRun => ({
   id: "ru_1",
@@ -14,12 +14,13 @@ const run = (state: string, more: Partial<PhoneRun> = {}): PhoneRun => ({
 });
 
 describe("[S5.phone.run-line] a card says how a run stands and shows what its agent said", () => {
-  test("waiting, working, done with its answer, needing the person with its question, failed and stopped", () => {
+  test("waiting, working, stopping, done with its answer, needing the person with its question, failed and stopped", () => {
     expect(runLine(run("queued"))).toEqual({ tone: "waiting" });
     expect(runLine(run("running", { answer: "Still looking." }))).toEqual({
       tone: "working",
       said: { kind: "last", text: "Still looking.", cut: false },
     });
+    expect(runLine(run("cancelling", { answer: "Half way." }))).toEqual({ tone: "stopping" });
     expect(runLine(run("succeeded", { answer: "Found it.", answer_final: true }))).toEqual({
       tone: "done",
       said: { kind: "answer", text: "Found it.", cut: false },
@@ -30,6 +31,22 @@ describe("[S5.phone.run-line] a card says how a run stands and shows what its ag
     expect(runLine(run("failed", { reason: "spawn_failed" }))).toEqual({ tone: "failed" });
     expect(runLine(run("cancelled"))).toEqual({ tone: "stopped" });
     expect(runLine(run("something new"))).toEqual({ tone: "unknown" });
+  });
+
+  test("a run that waits, works or is stopping goes on; one that ended does not", () => {
+    const goes = (state: string, reason: string | null = null) =>
+      runGoes(runLine(run(state, { reason })).tone);
+    expect(["queued", "starting", "running", "cancelling"].map((s) => goes(s))).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
+    expect([goes("succeeded"), goes("cancelled"), goes("failed", "needs_input")]).toEqual([
+      false,
+      false,
+      false,
+    ]);
   });
 
   test("the runs a phone reads come newest first", () => {
