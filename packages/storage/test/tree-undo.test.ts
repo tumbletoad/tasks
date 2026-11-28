@@ -97,7 +97,7 @@ describe("[S2.tree.undo] Undo and Redo of the steps a person takes back, on the 
         .status,
     ).toBe("applied");
     const kept = undo();
-    expect(kept.status).toBe("applied");
+    expect(kept.status).toBe("unchanged");
     const work = (kept.result as { kept: { work: { by: { label: string } }[] } }).kept.work;
     expect(work.map((w) => w.by.label)).toEqual(["agent:codex"]);
     // The next Undo reaches the step below: the check-off.

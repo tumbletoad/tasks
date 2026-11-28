@@ -138,6 +138,13 @@ export function baseRead(
   verb: Pick<VerbSpec, "entry" | "actions" | "positionals" | "flags">,
   input: Readonly<Record<string, unknown>>,
 ): { readonly op: string; readonly input: Record<string, unknown> } | undefined {
+  // A page's write is based on the read of that page, or of the node whose texts it sets.
+  if (verb.entry === "page.write") {
+    const target = input["target"];
+    return typeof target === "string" && input["action"] !== "create"
+      ? { op: "page.read", input: { target } }
+      : undefined;
+  }
   const task = input["task"];
   if (
     typeof task === "string" ||

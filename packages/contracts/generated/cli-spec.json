@@ -484,14 +484,6 @@
           "type": "string"
         },
         {
-          "field": "learnings",
-          "flag": "--learning",
-          "help": "Lessons reusable beyond this task; a task keeps 20 in all",
-          "repeat": true,
-          "required": false,
-          "type": "string"
-        },
-        {
           "field": "finished",
           "flag": "--finished",
           "help": "When it was done, only for work done before it was recorded: ISO date or instant",
@@ -524,7 +516,7 @@
           "type": "string"
         }
       ],
-      "summary": "Finish or abandon a task with an outcome and learnings, and create its follow-ups.",
+      "summary": "Finish or abandon a task with an outcome and the pages it updated, and its follow-ups.",
       "verb": "done"
     },
     {
@@ -537,7 +529,7 @@
         {
           "field": "scope",
           "flag": "--scope",
-          "help": "active by default; finished is completed or archived",
+          "help": "active by default; finished: completed or archived; library: pages and lessons",
           "repeat": false,
           "required": false,
           "type": "string",
@@ -545,7 +537,8 @@
             "active",
             "finished",
             "all",
-            "learnings"
+            "learnings",
+            "library"
           ]
         },
         {
@@ -721,6 +714,134 @@
       ]
     },
     {
+      "actors": "agent",
+      "auto": [
+        "base",
+        "request_id"
+      ],
+      "entry": "page.write",
+      "flags": [
+        {
+          "field": "on",
+          "flag": "--on",
+          "help": "create: \"task\", a task, a project, an area or \"space\"",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "to",
+          "flag": "--to",
+          "help": "move: a task, a project, an area or \"space\"",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "title",
+          "flag": "--title",
+          "help": "create, set: one line",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "brief",
+          "flag": "--brief",
+          "help": "create, set: what a reader finds in it; agents must give one on create",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "body",
+          "flag": "--body",
+          "help": "create, set: Markdown",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "description",
+          "flag": "--description",
+          "help": "set on a node: its description, whole",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "old",
+          "flag": "--old",
+          "help": "edit: the exact words in the page now, standing once",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "new",
+          "flag": "--new",
+          "help": "edit: what they become",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "text",
+          "flag": "--text",
+          "help": "append: Markdown added at the end",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "from_seq",
+          "flag": "--from-seq",
+          "help": "set: write back the version this change made",
+          "repeat": false,
+          "required": false,
+          "type": "integer",
+          "userOnly": true
+        },
+        {
+          "field": "why",
+          "flag": "--why",
+          "help": "One line: what changed and why",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "inputOnly": [],
+      "kind": "write",
+      "positionals": [
+        {
+          "field": "action",
+          "help": "restore: back from the Trash; set from_seq: a version",
+          "name": "action",
+          "required": true,
+          "type": "string",
+          "values": [
+            "create",
+            "edit",
+            "append",
+            "set",
+            "move",
+            "trash",
+            "restore"
+          ]
+        },
+        {
+          "field": "target",
+          "help": "The page (M-180); set: or a project, area or \"space\" for its texts",
+          "name": "target",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "summary": "Create, edit, append to, set, move, trash or restore a page, or set a node's texts.",
+      "verb": "page"
+    },
+    {
       "actions": {
         "field": "action",
         "reads": [
@@ -808,6 +929,42 @@
       ],
       "summary": "Read and change the space's preferences that are not policy.",
       "verb": "prefs"
+    },
+    {
+      "actors": "agent",
+      "auto": [],
+      "entry": "page.read",
+      "flags": [
+        {
+          "field": "section",
+          "flag": "--section",
+          "help": "Only the part under this heading",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "cursor",
+          "flag": "--cursor",
+          "help": "Pass it to read to read on",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "inputOnly": [],
+      "kind": "read",
+      "positionals": [
+        {
+          "field": "target",
+          "help": "A page (M-180), a project or area by path or ID, or \"space\"",
+          "name": "target",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "summary": "Read a page, or a node's texts with what is known above it and its pages.",
+      "verb": "read"
     },
     {
       "actors": "agent",

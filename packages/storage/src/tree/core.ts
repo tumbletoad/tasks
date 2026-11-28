@@ -11,7 +11,8 @@
 import type { Connection } from "../driver.ts";
 import { newId, osRandom, type Id, type RandomSource } from "../ids.ts";
 import { PREFERENCES } from "@ttasks/contracts/preferences";
-import { isSpaceName, RowReader } from "../rows.ts";
+import { RowReader } from "../rows.ts";
+import { agentLabel, notTheAuthority, spaceHuman } from "../write/actors.ts";
 import { intentFingerprint } from "../write/receipts.ts";
 import { formatTaskRef } from "../refs.ts";
 import {
@@ -20,7 +21,6 @@ import {
   checkHistoryEnvelope,
   Fields,
   formatAsOf,
-  normaliseStored,
   RequestProblem,
   type WriteProblem,
 } from "../write/request.ts";
@@ -166,22 +166,13 @@ export class TreeWriter {
       const found = this.#conn.transaction("deferred", () =>
         this.#conn.prepare(SQL.firstHuman).get(),
       );
-      return found?.["id"] as Id<"ac">;
+      return spaceHuman(found?.["id"]);
     }
-    const name = normaliseStored(label);
-    if (!isSpaceName(name) || name !== label) {
-      throw new TreeProblem(
-        "VALIDATION_FAILED",
-        "An actor label is one line of 1 to 100 characters",
-        "label",
-      );
-    }
+    const name = agentLabel(label);
     return this.#conn.transaction("immediate", () => {
       const found = this.#conn.prepare(SQL.actorByLabel).get({ kind, label: name })?.["id"];
       if (typeof found === "string") return found as Id<"ac">;
-      if (this.#space().machine !== this.#machine) {
-        throw new TreeProblem("SPACE_READ_ONLY", "This machine is not the space's authority");
-      }
+      if (this.#space().machine !== this.#machine) throw notTheAuthority();
       const id = newId("ac", this.#random);
       this.#system(
         `register-actor-${id.slice(3)}`,
@@ -580,7 +571,7 @@ export class TreeWriter {
             : { target: plan.target, work: [], reason: error.message };
       if (kept !== undefined) {
         this.#conn.prepare(SQL.markDead).run({ target: kept.target });
-        return now("applied", { result: { kept } });
+        return now("unchanged", { result: { kept } });
       }
       return now("rejected", {
         error: {

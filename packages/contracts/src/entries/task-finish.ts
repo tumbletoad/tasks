@@ -1,9 +1,11 @@
-// task.finish: finish or abandon a task with an outcome and learnings, create follow-ups in the
-// same request, or wrap up a task the user checked off (A3 3.4.8). The user checks a task off
-// without an outcome. Agents must give one (A3 3.2.3).
+// task.finish: finish or abandon a task with an outcome and the pages it updated, create
+// follow-ups in the same request, or wrap up a task the user checked off (A3 3.4.8). The user checks
+// a task off without an outcome or pages. Agents give both (A3 3.2.3), but for a session that began
+// before the library, which still gives its lessons.
 import { z } from "zod";
 import { defineEntry, under } from "../define.ts";
 import { safeText } from "../safe-text.ts";
+import { FinishLibrary } from "../pages.ts";
 import {
   AGENT_LIMITS,
   WriteAsOf,
@@ -37,12 +39,12 @@ export const TaskFinishInput = z.strictObject({
       `What changed and the evidence; agents must give it, in at most ${String(AGENT_LIMITS.outcome)} characters`,
     )
     .optional(),
+  library: FinishLibrary.optional(),
+  // A session that began before the library still finishes with its lessons.
   learnings: z
     .array(safeText(USER_LIMITS.learning))
     .max(USER_LIMITS.learnings)
-    .describe(
-      `Lessons reusable beyond this task; a task keeps ${String(USER_LIMITS.learnings)} in all`,
-    )
+    .describe("Before library: lessons beyond this task; give library instead")
     .optional(),
   follow_ups: z.array(TaskDraft).max(10).describe("Tasks to create, as for task.add").optional(),
   finished: PastInput.describe(
@@ -62,6 +64,9 @@ export const TaskFinishResult = z.strictObject({
   lifecycle: Lifecycle,
   wrap_state: WrapState.optional(),
   learnings: z.int().min(0).max(USER_LIMITS.learnings).describe("Learnings recorded"),
+  library: FinishLibrary.describe(
+    "The pages it says it updated, as kept below the outcome",
+  ).optional(),
   follow_ups: z
     .array(
       z.strictObject({
@@ -90,7 +95,7 @@ export const TaskFinishResult = z.strictObject({
 
 export const taskFinish = defineEntry({
   name: "task.finish",
-  summary: "Finish or abandon a task with an outcome and learnings, and create its follow-ups.",
+  summary: "Finish or abandon a task with an outcome and the pages it updated, and its follow-ups.",
   kind: "write",
   actors: "agent",
   scope: "space:write",
@@ -126,15 +131,14 @@ export const taskFinish = defineEntry({
   output: TaskFinishResult,
   faces: {
     ui: true,
-    cli: { verb: "done", positional: ["task"], flags: { learnings: "learning" } },
+    cli: { verb: "done", positional: ["task"], exclude: ["learnings", "library"] },
     mcp: {
       tool: "complete_task",
       title: "Complete a task",
       description:
-        "Use when a task is done or dropped: records the outcome and learnings and creates " +
-        "follow-ups in one call. Also wraps up a task the user checked off. Pass base: the " +
-        "as_of of your last get_task, of the add_tasks that created it, or of your " +
-        "complete_task or reopen_task of it.",
+        "Use when a task is done or dropped: records the outcome and the pages you updated (or " +
+        '"nothing reusable") and creates follow-ups. Also wraps up a task the user checked off. ' +
+        "Pass base: the as_of of your last get_task, add_tasks, complete_task or reopen_task of it.",
     },
   },
   budget: { typical: 100, max: 1500 },
@@ -149,12 +153,12 @@ export const taskFinish = defineEntry({
   ],
   examples: [
     {
-      title: "Complete M-14 with a learning and a follow-up",
+      title: "Complete M-14 with a follow-up: nothing of it is for the library",
       input: {
         task: "M-14",
         outcome:
           "Times are stored as UTC plus the clinic's zone ID and converted once. The 11-12 export matches the clinic's calendar.",
-        learnings: ["Always store UTC plus the clinic's zone ID, never local times."],
+        library: "nothing reusable",
         follow_ups: [
           {
             title: "Check the mobile app for the same time zone bug",
@@ -169,7 +173,8 @@ export const taskFinish = defineEntry({
         task: "M-14",
         lifecycle: "completed",
         wrap_state: "wrapped",
-        learnings: 1,
+        learnings: 0,
+        library: "nothing reusable",
         follow_ups: [
           {
             result: "created",

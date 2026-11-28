@@ -27,7 +27,7 @@ import {
 } from "../../packages/service/test/harness.ts";
 import { post } from "../../packages/service/test/http-client.ts";
 import { classSession } from "../../packages/service/test/ops-helpers.ts";
-import { installFakeAgents } from "../../packages/testkit/src/fake-agents.ts";
+import { FAKE_SIGNED_IN, installFakeAgents } from "../../packages/testkit/src/fake-agents.ts";
 import { FakeTerminal } from "./fake-terminal.ts";
 
 /** Generous bounds: a loaded machine must not fail a test that is only slow. */
@@ -92,6 +92,8 @@ export async function startFresh(ui: string): Promise<FreshWorld> {
     mkdirSync(join(agentHome, ".claude"), { recursive: true });
     mkdirSync(join(agentHome, ".codex"), { recursive: true });
     const fakes = installFakeAgents(join(temp.root, "fakes"), agentHome);
+    // Claude Code is signed in, Codex is not: the agent apps show both.
+    writeFileSync(join(agentHome, ".claude", FAKE_SIGNED_IN), "");
     // The installed command the agents' entries run. Nothing runs it in these tests.
     mkdirSync(join(home, "bin"), { recursive: true });
     writeFileSync(
