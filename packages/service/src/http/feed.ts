@@ -163,9 +163,10 @@ const SPACE_SQL =
   "FROM space WHERE one = 1";
 
 const AREA_COLUMNS =
-  "a.id, a.slug, a.title, a.position, a.color, a.lifecycle, a.deleted_at, a.version";
+  "a.id, a.slug, a.title, a.brief, a.position, a.color, a.lifecycle, a.deleted_at, a.version";
 const PROJECT_COLUMNS =
-  "p.id, p.area_id, p.slug, p.title, p.position, p.color, p.lifecycle, p.deleted_at, p.version";
+  "p.id, p.area_id, p.slug, p.title, p.brief, p.position, p.color, p.lifecycle, p.deleted_at, " +
+  "p.version";
 
 const openTasks = (folders: boolean) =>
   `SELECT ${taskColumns(folders)} FROM tasks t WHERE t.lifecycle = 'active' AND t.deleted_at IS NULL ORDER BY t.position, t.id`;
@@ -259,7 +260,7 @@ const PROJECT_ROWS = `SELECT ${PROJECT_COLUMNS} FROM projects p WHERE p.id IN ($
 
 /** A tree space's projects, read from its tree at any depth: the feed sends them as they are. */
 const TREE_NODE_COLUMNS =
-  "n.id, n.parent_id, n.title, n.position, n.color, n.archived_at, n.deleted_at";
+  "n.id, n.parent_id, n.title, n.brief, n.position, n.color, n.archived_at, n.deleted_at";
 const LIVE_TREE_NODES =
   `SELECT ${TREE_NODE_COLUMNS} FROM nodes n JOIN nodes p ON p.id = n.parent_id ` +
   "WHERE n.kind = 'project' AND n.deleted_at IS NULL ORDER BY p.kind <> 'space', n.position, n.id";
@@ -271,6 +272,12 @@ const TREE_NODE_ROWS =
 /** No rows, for a batch's parameters. */
 const NO_ROWS = "SELECT 1 WHERE $after < 0 AND $upto < 0";
 
+/** A project's brief as a node row carries it: none when it has none. */
+const briefOf = (row: Row): { brief?: string } => {
+  const brief = row["brief"];
+  return typeof brief === "string" && brief !== "" ? { brief } : {};
+};
+
 /** A project of a tree space as the feed sends a node, under the node it sits in. */
 function treeNodeOf(row: Row): CompactNode & CompactRow {
   const color = row["color"];
@@ -280,6 +287,7 @@ function treeNodeOf(row: Row): CompactNode & CompactRow {
     kind: "project",
     parent: String(row["parent_id"]),
     title: String(row["title"]),
+    ...briefOf(row),
     position: String(row["position"]),
     ...(typeof color === "string" ? { color } : {}),
     state: row["archived_at"] === null ? "active" : "archived",
@@ -311,6 +319,7 @@ function nodeOf(table: "areas" | "projects", row: Row, space: string): CompactNo
     kind: "project",
     parent: typeof area === "string" ? area : space,
     title: String(row["title"]),
+    ...briefOf(row),
     position: table === "projects" && typeof area !== "string" ? `~${position}` : position,
     ...(typeof color === "string" ? { color } : {}),
     state: row["lifecycle"] === "archived" ? "archived" : "active",
@@ -318,9 +327,10 @@ function nodeOf(table: "areas" | "projects", row: Row, space: string): CompactNo
   };
 }
 
-/** The node's field each of an area's or a project's changed fields is; a brief is none. */
+/** The node's field each of an area's or a project's changed fields is. */
 const NODE_FIELDS: Readonly<Record<string, string>> = {
   title: "title",
+  brief: "brief",
   color: "color",
   lifecycle: "state",
   grouping: "place",

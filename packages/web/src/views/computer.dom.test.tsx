@@ -19,7 +19,7 @@ import type {
   AgentsView,
 } from "@ttasks/contracts/monitor";
 import { FakeFrames } from "../../test/fake-frames.ts";
-import type { Api } from "../api.ts";
+import { Unserved, type Api } from "../api.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
@@ -149,6 +149,7 @@ beforeEach(() => {
     busy: () => Promise.resolve({ busy: [], last: {} }),
     receipts: () => Promise.resolve([]),
     runs: () => Promise.resolve([]),
+    unserved: new Unserved(),
   } as unknown as Api;
   live = new Live({
     api,

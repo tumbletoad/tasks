@@ -77,6 +77,9 @@ export const ForAgents = z.strictObject({
   at: At,
 });
 
+/** The most levels a trail holds: a tree is as deep as the work needs, and deeper is a limit. */
+export const TRAIL_LEVELS = 32;
+
 /**
  * One level above a task or a node: what it is, the person's text for agents there, and its
  * pages. `read` names it for `read`, whatever its title, and `count` says how many pages it holds

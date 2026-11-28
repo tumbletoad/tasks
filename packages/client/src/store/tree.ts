@@ -33,6 +33,18 @@ export function trail(nodes: Nodes, id: string | undefined): NodeRow[] {
   return out;
 }
 
+/**
+ * Where a node lies as a task's place is named: the project at the top, which gives its colour,
+ * and the node itself when it lies deeper. Neither for the space.
+ */
+export function placeOf(
+  nodes: Nodes,
+  id: string | undefined,
+): readonly [NodeRow | undefined, NodeRow | undefined] {
+  const path = trail(nodes, id);
+  return [path[0], path.length > 1 ? path.at(-1) : undefined];
+}
+
 /** Whether `id` is `node` or lies below it. */
 export const isUnder = (nodes: Nodes, id: string | undefined, node: string): boolean =>
   trail(nodes, id).some((n) => n.id === node);
@@ -44,11 +56,17 @@ export const isUnder = (nodes: Nodes, id: string | undefined, node: string): boo
  */
 export const projectWithoutArea = (id: string): boolean => id.startsWith("p_");
 
-/** What today's operations take as the area and as the project, to file work into `area`'s `project`. */
+/**
+ * What today's operations take as the area and as the project, to file work into `area`'s
+ * `project`. A tree space takes its top project as the area and any project below by itself, at
+ * any depth.
+ */
 export function filedAs<T extends { readonly id: string }>(
   area: T,
   project?: T,
+  tree = false,
 ): { readonly area?: T; readonly project?: T } {
+  if (tree) return project === undefined ? { area } : { project };
   if (project !== undefined) return { area, project };
   return projectWithoutArea(area.id) ? { project: area } : { area };
 }
@@ -61,18 +79,30 @@ export function topLevel(nodes: Nodes): NodeRow[] {
 
 /**
  * The node a read names by its area's and its project's names (`task.get`, a search): the project
- * of that name under the area, else the area, else a project made without an area of the
- * project's name; else the space. An area and such a project may share a name: the read says
- * which it is.
+ * of that name in a project of the area's name, at any depth (a tree's read names a task's two
+ * nearest levels); else the area at the top; else a project made without an area of the project's
+ * name; else the space. An area and such a project may share a name: the read says which it is.
  */
 export function nodeNamed(nodes: Nodes, area?: string, project?: string): string {
   const tops = topLevel(nodes);
-  const top = tops.find((a) => a.title === area && !projectWithoutArea(a.id));
+  const inArea =
+    area === undefined || project === undefined
+      ? undefined
+      : [...nodes.values()].find((p) => {
+          // The level above is a project: the space's own name names no area.
+          const above = p.parent === undefined ? undefined : nodes.get(p.parent);
+          return (
+            p.kind === "project" &&
+            p.title === project &&
+            above?.kind === "project" &&
+            above.title === area
+          );
+        });
   const named =
-    top === undefined
-      ? area === undefined
-        ? tops.find((p) => p.title === project && projectWithoutArea(p.id))
-        : undefined
-      : (childrenOf(nodes, top.id).find((p) => p.title === project) ?? top);
+    inArea ??
+    (area === undefined
+      ? tops.find((p) => p.title === project && projectWithoutArea(p.id))
+      : (tops.find((a) => a.title === area && !projectWithoutArea(a.id)) ??
+        tops.find((a) => a.title === area)));
   return named?.id ?? [...nodes.values()].find((n) => n.kind === "space")?.id ?? "";
 }

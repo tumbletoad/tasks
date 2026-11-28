@@ -51,6 +51,7 @@ import type { MonitorPace } from "../monitor/index.ts";
 import { shownPath } from "../hub/agent-apps.ts";
 import { copyOf, findSpace, isAmbiguity, onlySpace } from "../ops/copies.ts";
 import { defaultOf, type ServedSpace } from "../ops/index.ts";
+import { isTree } from "../ops/tree.ts";
 import type { HttpLog, WsClose } from "./events.ts";
 import {
   readBatch,
@@ -142,9 +143,11 @@ const COPY = /^[0-9a-f]{24}$/u;
 
 /**
  * What a snapshot's `space` says of the copy it is served as: its name for the page's calls, its
- * folder, why it takes no change, and its restore record.
+ * folder, why it takes no change, its restore record, and whether it is a tree.
  */
 interface CopyFacts {
+  /** Today's operations take a tree's top projects as areas, and any project by its ID. */
+  readonly tree?: true;
   readonly copy?: string;
   readonly folder?: string;
   readonly read_only?: { readonly reason: string; readonly message?: string };
@@ -166,6 +169,7 @@ function factsOf(space: ServedSpace, host: FeedHost): CopyFacts {
         }
       : {}),
     ...(space.restored === undefined ? {} : { restored: space.restored }),
+    ...(isTree(space) ? { tree: true as const } : {}),
   };
 }
 

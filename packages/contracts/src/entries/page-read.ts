@@ -15,6 +15,7 @@ import {
   PageRow,
   ReadCursor,
   TaskPageRow,
+  TRAIL_LEVELS,
   TrailLevel,
 } from "../pages.ts";
 import { AsOf } from "../schemas.ts";
@@ -72,7 +73,7 @@ export const PageReadResult = z.union([
     slice: Slice.optional(),
     last: LastChange.describe("The last change of its description").optional(),
     version: Version.describe("Its texts' version: the base to set them").optional(),
-    above: z.array(TrailLevel).max(2).describe("The levels above it, nearest first"),
+    above: z.array(TrailLevel).max(TRAIL_LEVELS).describe("The levels above it, nearest first"),
     pages: z.array(PageRow).max(PAGE_LIST).describe("Its own pages, by title"),
     task_pages: z
       .array(TaskPageRow)

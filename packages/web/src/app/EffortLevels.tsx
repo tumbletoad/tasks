@@ -32,7 +32,7 @@ import { refusalText } from "../folder/FolderDialog.tsx";
 import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
 import type { TaskRow, Overlay, TaskOverlay } from "@ttasks/client/store";
 import type { Msg } from "../row/model.ts";
-import { useLive } from "../store/hooks.ts";
+import { useLive, useServes } from "../store/hooks.ts";
 import { classes } from "./css.ts";
 import { useToast } from "./frame.ts";
 import { CrossIcon, DownIcon, MoreIcon, PlusIcon, UpIcon } from "./Icons.tsx";
@@ -168,6 +168,8 @@ export function EffortLevels({ headingClass }: { readonly headingClass: string }
   const state = useLive();
   const { efforts: levels, effortsFixed: fixed } = state.scales;
   const [held, readHeld] = useHeld(api, levels);
+  // A space that cannot change its preferences yet shows its levels to read.
+  const served = useServes("prefs.manage");
   /** The level whose removal asks where its tasks go. */
   const [asking, setAsking] = useState<string | undefined>(undefined);
   const [adding, setAdding] = useState(false);
@@ -282,7 +284,7 @@ export function EffortLevels({ headingClass }: { readonly headingClass: string }
       return outcome;
     });
 
-  const readOnly = fixed !== undefined;
+  const readOnly = fixed !== undefined || !served;
   const used = new Set<number>();
   const rows: { id: number; level: EffortLevel | undefined }[] = levels.map((level) => {
     let id = idOf(level.key);
@@ -301,9 +303,13 @@ export function EffortLevels({ headingClass }: { readonly headingClass: string }
         {t("levels.heading")}
       </Heading>
       <p className={styles.lead}>{t("levels.lead", { space: state.space?.name ?? "" })}</p>
-      {fixed === undefined ? null : (
+      {fixed !== undefined ? (
         <p className={styles.fixed} data-part="levels-fixed">
           {t(fixed === "newer" ? "levels.newer" : "levels.unreadable")}
+        </p>
+      ) : served ? null : (
+        <p className={styles.fixed} data-part="levels-fixed">
+          {t("levels.notYet")}
         </p>
       )}
       <div className={styles.head} aria-hidden="true">

@@ -195,6 +195,27 @@ describe("[A5.3.13.web.capture] a quick capture reads its shortcuts and leaves t
     expect(groupSuggestions("#ga", AREAS, PROJECTS).map((s) => s.insert)).toEqual(["#home/garden"]);
   });
 
+  test("on a tree space a capture on a screen at any depth goes into that project, named by its ID", () => {
+    const kitchen = { id: "p_kitchen", title: "Kitchen", parent: "p_reno" };
+    const capture = read("Order oak samples", {
+      projects: [...PROJECTS, kitchen],
+      here: { area: "a_home", project: "p_kitchen" },
+      tree: true,
+    });
+    expect(capture.chips[0]).toMatchObject({ kind: "area", project: kitchen, fromView: true });
+    expect(capture.draft).toEqual({
+      title: "Order oak samples",
+      inbox: false,
+      project: "p_kitchen",
+    });
+    // At the top of a tree, the screen's project is the area.
+    expect(read("Check the boiler", { here: { area: "a_home" }, tree: true }).draft).toEqual({
+      title: "Check the boiler",
+      inbox: false,
+      area: "Home",
+    });
+  });
+
   test("an archived group's name means it and files nothing there: never a live project of the same name; #area/project still picks the live one", () => {
     const garden = { id: "a_garden", title: "Garden" };
     const shed = { id: "p_shed", title: "Shed", parent: "a_home" };

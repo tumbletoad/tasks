@@ -10,7 +10,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { CLI_NAME } from "@ttasks/brand";
 import { AppError } from "@ttasks/contracts";
-import { Refused, type Api, type Busy, type Opened, type Run } from "../api.ts";
+import { Unserved, Refused, type Api, type Busy, type Opened, type Run } from "../api.ts";
 import type { Instance } from "@ttasks/contracts/runs";
 import { ToastContext } from "../app/frame.ts";
 import { Session } from "../context.ts";
@@ -204,6 +204,7 @@ beforeEach(async () => {
       opens.push({ id, text: options.text, another: options.another === true });
       return openAnswer(opens.length);
     },
+    unserved: new Unserved(),
   } as unknown as Api;
   live = new Live({
     api,

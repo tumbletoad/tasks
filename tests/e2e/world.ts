@@ -44,6 +44,7 @@ import {
   type FakeAgent,
   type TerminalCall,
 } from "./fake-terminal.ts";
+import { makeTreeSpace, type TreeSpace } from "./tree.ts";
 
 /** The service runs as the sample's machine, so that machine's folders take this OS's form. */
 const OS =
@@ -71,6 +72,8 @@ export interface World {
   readonly studio: SpaceInfo;
   /** A space with no open task, area or project. Tests leave its views empty. */
   readonly quiet: SpaceInfo;
+  /** The four-level tree space (tree.ts), in a world asked for one (`WorldOptions.tree`). */
+  readonly tree: (TreeSpace & SpaceInfo) | undefined;
   /** Copies of Mira's sample, one per scale of `WorldOptions.scales`, in its order. */
   readonly scaled: readonly SpaceInfo[];
   /** A task of Mira's in an area, for the launch. */
@@ -192,6 +195,8 @@ export interface WorldOptions {
   readonly t3?: string;
   /** More agents after the fake agent, each the fake agent under its own key and label. */
   readonly agents?: readonly FakeAgent[];
+  /** A space on the new storage, four levels of projects deep (tree.ts), opened as `World.tree`. */
+  readonly tree?: boolean;
 }
 
 /** The T3 Code instance of a world with T3. */
@@ -285,6 +290,10 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         options.finished,
       );
     }
+    const treeMade =
+      options.tree === true
+        ? makeTreeSpace(await checkedDriver(), join(spacesRoot, "grove"), machine, OS)
+        : undefined;
     mkdirSync(stateOf(home), { recursive: true, mode: 0o700 });
     writeFileSync(
       join(stateOf(home), "machine.json"),
@@ -392,6 +401,19 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       { name: "Quiet", path: join(spacesRoot, "quiet"), ref_prefix: "Q" },
       { timeoutMs: SLOW_MS },
     )) as { space: Described };
+    const tree =
+      treeMade === undefined
+        ? undefined
+        : {
+            ...treeMade,
+            id: (
+              (await user.call(
+                "space/open",
+                { path: treeMade.folder },
+                { timeoutMs: SLOW_MS },
+              )) as { space: Described }
+            ).space.id,
+          };
     // The sample's portal folders are on Mira's machine, which is not here: this machine's are
     // temporary folders, so a launch of her tasks opens somewhere real. Her first task's own
     // folder inside the portal's moves along with it.
@@ -432,6 +454,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       mira: { id: opened.space.spaceId, name: opened.space.name },
       studio: { id: created.space.id, name: created.space.name },
       quiet: { id: quiet.space.id, name: quiet.space.name },
+      tree,
       scaled: scaled.map(({ id, name }) => ({ id, name })),
       task,
       spare,

@@ -18,7 +18,7 @@ import { useT, type Translate } from "../i18n/intl.tsx";
 import { formatWhen, type Clock } from "@ttasks/client/today";
 import { sayMsg } from "../row/say.ts";
 import { useClock } from "../row/useClock.ts";
-import { useLive, usePagedQuery } from "../store/hooks.ts";
+import { useLive, usePagedQuery, useServes } from "../store/hooks.ts";
 import { affects } from "../store/queries.ts";
 import type { TaskRow } from "@ttasks/client/store";
 import { onKept } from "../kept.ts";
@@ -146,6 +146,7 @@ function TrashList({
   const { instances } = useLive();
   const source = useMemo(() => trashSource((input) => api.client.task.trash(input), q), [api, q]);
   const { state, query } = usePagedQuery(QUERY, source);
+  const served = useServes("task.trash");
   // What the whole Trash shows is seen, also a removal that arrives while it is open.
   const space = live.spaceId;
   useEffect(() => {
@@ -258,7 +259,11 @@ function TrashList({
         onExpand={onExpand}
         beneath={beneath}
       />
-      {state.phase === "failed" ? (
+      {!served ? (
+        <p className={list.line} role="status">
+          {t("trash.notYet")}
+        </p>
+      ) : state.phase === "failed" ? (
         <p className={list.line} role="status">
           {t("trash.failed")}
           <button

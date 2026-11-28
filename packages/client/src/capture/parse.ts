@@ -36,6 +36,8 @@ export interface CaptureContext {
     readonly areas: readonly CaptureArea[];
     readonly projects: readonly CaptureProject[];
   };
+  /** The space is a tree: its projects are filed as filedAs takes them there. */
+  readonly tree?: boolean;
   /** The area (and project) of the view the person is in: a capture lands there by default. */
   readonly here?: { readonly area: string; readonly project?: string } | undefined;
   /** The keys of shortcuts the person turned back into text. */
@@ -352,7 +354,7 @@ export function parseCapture(text: string, ctx: CaptureContext): Capture {
     const project =
       ctx.here.project === undefined
         ? undefined
-        : ctx.projects.find((p) => p.id === ctx.here?.project && p.parent === area?.id);
+        : ctx.projects.find((p) => p.id === ctx.here?.project);
     if (area !== undefined) {
       found.unshift({
         kind: "area",
@@ -372,12 +374,12 @@ export function parseCapture(text: string, ctx: CaptureContext): Capture {
   return {
     title,
     chips: found,
-    draft: title === "" ? undefined : draftOf(title, found),
+    draft: title === "" ? undefined : draftOf(title, found, ctx.tree === true),
     ...(archived === undefined ? {} : { archived }),
   };
 }
 
-function draftOf(title: string, chips: readonly Chip[]): CaptureDraft {
+function draftOf(title: string, chips: readonly Chip[], tree: boolean): CaptureDraft {
   let draft: {
     -readonly [K in keyof CaptureDraft]: CaptureDraft[K];
   } = { title, inbox: true };
@@ -396,11 +398,14 @@ function draftOf(title: string, chips: readonly Chip[]): CaptureDraft {
         draft = { ...draft, status: "waiting", waiting_on: chip.who, inbox: false };
         break;
       case "area": {
-        const filed = filedAs(chip.area, chip.project);
+        const filed = filedAs(chip.area, chip.project, tree);
         draft = {
           ...draft,
           ...(filed.area === undefined ? {} : { area: filed.area.title }),
-          ...(filed.project === undefined ? {} : { project: filed.project.title }),
+          // A tree's project by its ID: its name can be another's at another depth.
+          ...(filed.project === undefined
+            ? {}
+            : { project: tree ? filed.project.id : filed.project.title }),
           inbox: false,
         };
         break;

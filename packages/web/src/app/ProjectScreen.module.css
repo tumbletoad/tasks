@@ -44,6 +44,22 @@
   display: none;
 }
 
+/* The project's one line, as the Library's brief reads. */
+.brief {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-size: 0.9375rem;
+  line-height: 1.375rem;
+  color: var(--k-text);
+  overflow-wrap: anywhere;
+}
+
+.quiet {
+  color: var(--k-muted);
+}
+
 /* t-meta: 12 / 16. Each part keeps its words together, so the line wraps between parts. */
 .status {
   margin: 0 0 6px;
