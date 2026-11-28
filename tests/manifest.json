@@ -159,6 +159,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.pages.write",
+      "title": "A page takes the space's next reference; two edits of different passages both stand, and words gone or standing twice write nothing; a set and a Restore meet newer words as a conflict; a page leaves with its task unwritten; only a person writes a node's text for agents",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.restore.every-revision",
+      "title": "A backup of every revision with a search index, 0.4 to this build's, passes this build's trial restore, restores searchable, and upgrades with its references, counter and history kept; a 0.6 space's live pages are search documents",
+      "source": "A1 3.12, 3.17; step 1 design, pull request 228",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.pages.contract",
       "title": "The page entries pass the registry check beside the registry, and the feed's page rows, a page leaving the live lists and the conflict of a Restore match their shapes",
       "source": "Step 1 design, pull request 228",
@@ -6695,6 +6711,54 @@
       "id": "A5.while-away.web.thread-older",
       "title": "Earlier shows what the page holds, then Older entries asks once and says it reads; a first read with no entry but more behind it offers Older entries instead of saying nothing was logged; a failed read says so in one line and the button can be pressed again",
       "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.routines.schedule.rule",
+      "title": "A schedule's stored form, a subset of RFC 5545 RRULE, reads back as itself for every rule of the subset; the presets write the rules the design names; a text outside the subset (an unknown, repeated or out-of-bounds part, a combination it does not have) is no rule, and a start that is no date of the calendar (30 February) makes no schedule",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.routines.schedule.dates",
+      "title": "The next and the previous date a schedule falls on are those of a day-by-day walk, for every pattern and interval and never before its start; a day past a month's end falls on its last day; every Saturday, the first and last working day, the 31st and the last Friday give the dates named",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.routines.schedule.daylight-saving",
+      "title": "A local time in every zone tried, with and without daylight saving and with half-hour changes, is its first instant; a time in the spring gap is the first valid minute after it; every weekday at 07:00 stays at 07:00 through both changes of a year",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.routines.schedule.due",
+      "title": "An agent's routine with no time is due at 07:00; after any absence, also two weeks, a claim takes the latest due time that passed, once, and moves on to the first due time after now",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.routines.schedule.following",
+      "title": "The next occurrence of a task a person does falls on the schedule's first time after both now and its own date: finished early, on the day or late, one period gets one task, and a time of day gives a due time",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.routines.web.schedule-words",
+      "title": "A schedule reads in the catalogue's words: every Saturday, every Monday and Thursday, every weekday at 07:00, the first working day of every month, every 3 months on the 15th, the last Friday of every month, every year on 14 December, every year on the last day of February for the 29th to the 31st; every rule of the stored form has words with nothing of the message left in them",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },

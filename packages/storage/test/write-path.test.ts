@@ -378,6 +378,13 @@ describe("[A1.5.write.operations] the five task operations, their checks and the
       "project.folder_clear",
       "task.folder_set",
       "task.folder_clear",
+      // An edit applies while its words stand; an append, a move and the Trash ask for none.
+      "page.create",
+      "page.edit",
+      "page.append",
+      "page.move",
+      "page.trash",
+      "page.restore",
     ]);
     for (const kind of OPERATION_KINDS) {
       if (kind.startsWith("launch.") || kind.startsWith("run.")) {
@@ -389,6 +396,11 @@ describe("[A1.5.write.operations] the five task operations, their checks and the
         // The user's alone (A3 3.2.3), and guarded by provenance, not a base (A1 3.10.1).
         expect(opSpec(kind), kind).toMatchObject({ class: "user", base: false });
         expect(opSpec(kind)).not.toHaveProperty("r7");
+        continue;
+      }
+      if (kind === "node.instruct") {
+        // The person's standing instruction for every task below.
+        expect(opSpec(kind), kind).toMatchObject({ class: "user", base: true });
         continue;
       }
       if (["note.delete", "note.restore", "note.patch", "log.patch"].includes(kind)) {

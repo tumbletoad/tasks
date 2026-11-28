@@ -562,7 +562,7 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
       // Outside the TTasks home, never in the space's own folder any more.
       expect(readSpaceSettings(stateOf(home), id).lastMigration).toMatchObject({
         from: "0.1",
-        to: "0.5",
+        to: "0.6",
         backup,
         backup_folder: backupsOf(home, id),
       });
@@ -577,7 +577,7 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
       const listed = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
       expect(listed[0]?.["migrated"]).toMatchObject({
         from: "0.1",
-        to: "0.5",
+        to: "0.6",
         backup,
         backup_folder: backupsOf(home, id),
       });
@@ -585,13 +585,13 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
       recordMigration(
         stateOf(home),
         id,
-        { from: 1, to: 5, ...(backup === undefined ? {} : { backup }) },
+        { from: 1, to: 6, ...(backup === undefined ? {} : { backup }) },
         new Date(Date.now() - 31 * 86_400_000),
       );
       const later = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
       expect(later[0]?.["migrated"]).toMatchObject({
         from: "0.1",
-        to: "0.5",
+        to: "0.6",
         backup,
         backup_listed: true,
       });
@@ -603,10 +603,10 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
       expect(gone[0]?.["migrated"]).toMatchObject({ backup, backup_listed: false });
       await stop(service);
       const after = await dbState(space.folder);
-      expect(after.revision).toEqual({ major: 0, minor: 5 });
-      // The fixture's commits, then the migration's four, this machine's registration, the effort
+      expect(after.revision).toEqual({ major: 0, minor: 6 });
+      // The fixture's commits, then the migration's five, this machine's registration, the effort
       // levels the open stored and the task's.
-      expect(after.lastSeq).toBe(before.lastSeq + 7);
+      expect(after.lastSeq).toBe(before.lastSeq + 8);
     },
     LONG,
   );
@@ -742,7 +742,7 @@ describe("[A2.3.1.hub.search-after-migration] word search on a migrated space, a
       const id = space.space.spaceId;
       const service = await start(home, space.folder);
       expect(service.spaces()).toEqual([{ entry: 0, state: "open", id }]);
-      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 5 } });
+      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 6 } });
       const user = await session(home, service, "cli-interactive");
 
       // What the space held before its migration is found by its words.
