@@ -57,12 +57,12 @@ import {
   readHead,
   readSnapshot,
   sameAuthority,
+  type BatchMessage,
   type Cursor,
   type FeedHere,
   type SnapshotMessage,
   type Visibility,
 } from "./feed.ts";
-import { phoneBatch, phoneSnapshot } from "../link/rows.ts";
 import type { UiInstance } from "./launches.ts";
 import type { HttpLimits } from "./limits.ts";
 import type { HttpTimerKind, StartHttpTimer } from "./timers.ts";
@@ -116,7 +116,7 @@ export interface FeedOptions {
 
 /**
  * A paired phone's feed (link/): bound to its grant's one space, with rows of the space's own data
- * only (link/rows.ts), no settings of this machine and no Agent Monitor, and its calls answered
+ * only (its own `snapshot` and `batch`), no settings of this machine and no Agent Monitor, and its calls answered
  * through the same bounded output as the feed.
  */
 export interface PhoneFeed {
@@ -124,6 +124,14 @@ export interface PhoneFeed {
   /** What the hello tells the phone of its pairing. */
   readonly link: Readonly<Record<string, unknown>>;
   call(message: Record<string, unknown>, reply: (message: unknown) => Promise<void>): void;
+  /** A snapshot as the phone sees it: its copy's name and whether it takes changes, no more. */
+  snapshot(
+    snapshot: SnapshotMessage,
+    copy: { readonly copy?: string; readonly read_only?: { readonly reason: string } },
+    reason?: string,
+  ): unknown;
+  /** A batch as the phone sees it. */
+  batch(batch: BatchMessage): unknown;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -534,6 +542,8 @@ class FeedSocket {
   #find(ref: string | undefined): ServedSpace | "ambiguous" | "not_served" | undefined {
     const host = this.#hub.options.host;
     const served = host.spaces().filter((s) => s.reader !== undefined && s.id !== undefined);
+    // A phone's space is its grant's, by ID alone: never another space that has that name.
+    if (this.#phone !== undefined) return ref === undefined ? undefined : copyOf(served, ref);
     const found =
       ref !== undefined
         ? findSpace(served, ref)
@@ -560,7 +570,7 @@ class FeedSocket {
         ...(facts.copy === undefined ? {} : { copy: facts.copy }),
         ...(facts.read_only === undefined ? {} : { read_only: { reason: facts.read_only.reason } }),
       };
-      return this.#send(phoneSnapshot(snapshot, copy, reason));
+      return this.#send(this.#phone.snapshot(snapshot, copy, reason));
     }
     const instances: readonly UiInstance[] =
       space.id === undefined ? [] : (this.#hub.options.instances?.(space.id) ?? []);
@@ -769,7 +779,7 @@ class FeedSocket {
         continue;
       }
       if (batch.through === cursor.seq) return;
-      await this.#send(this.#phone === undefined ? batch : phoneBatch(batch));
+      await this.#send(this.#phone === undefined ? batch : this.#phone.batch(batch));
       if (generation !== this.#generation) return;
       this.#cursor = { epoch: batch.epoch, incarnation: batch.incarnation, seq: batch.through };
       if (head.cursor.seq <= batch.through) return;

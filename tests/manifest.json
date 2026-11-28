@@ -159,6 +159,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.pages.write",
+      "title": "A page takes the space's next reference; two edits of different passages both stand, and words gone or standing twice write nothing; a set and a Restore meet newer words as a conflict; a page leaves with its task unwritten; only a person writes a node's text for agents",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.restore.every-revision",
+      "title": "A backup of every revision with a search index, 0.4 to this build's, passes this build's trial restore, restores searchable, and upgrades with its references, counter and history kept; a 0.6 space's live pages are search documents",
+      "source": "A1 3.12, 3.17; step 1 design, pull request 228",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.pages.contract",
       "title": "The page entries pass the registry check beside the registry, and the feed's page rows, a page leaving the live lists and the conflict of a Restore match their shapes",
       "source": "Step 1 design, pull request 228",
@@ -3485,15 +3501,23 @@
     },
     {
       "id": "A4.3.4.1.t3.open",
-      "title": "Open in T3 Code through the service against a fake T3: one click makes one thread at a project root or a nested folder registered as its own project, with the brief in its composer and the typed words only in the launch's request; a double click and a lost answer give the same thread; a link that did not come up opens again with its brief, then bare; T3 not paired or not running refuses with its reason",
+      "title": "Open in T3 Code through the service against a fake T3: one click makes one thread at a project root or a nested folder registered as its own project, with the brief in its composer and the typed words only in the launch's request; a double click and a lost answer give the same thread; a link that did not come up opens again with its brief, then bare; a second Open brings the task's thread forward with the words as a note, a thread T3 no longer has is noticed and made again, and T3 that does not say refuses with nothing made; T3 not paired or not running refuses with its reason",
       "source": "A4 3.4.1, A7 M2.10t",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.4.1.t3.thread",
+      "title": "A task's T3 Code thread as T3 Code tells it: its entry shows it running with what its agent does (working, needs you, idle) while T3 has it and ended once T3 no longer has it; the Agents page shows it as an agent of its task in that state, also while the Agent Monitor is missing; a card opened while T3 Code did not answer shows the state once it does; a thread recorded lost reads ended and offers no link",
+      "source": "A4 3.4.1, A5 3.9",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.4.1.t3.e2e",
-      "title": "Against the real service in Chromium and Firefox with a fake T3: T3 not running offers Start, which opens its link; not paired offers Pair, which opens T3's approval page; a read-only pairing fails one press at once with Pair again and no thread; then Open makes one thread at a project root with the brief in its composer and the typed words only in the request, Open in T3 on its entry brings it up without the brief, and a folder inside the project opens as a project of its own (screenshots in Chromium only)",
+      "title": "Against the real service in Chromium and Firefox with a fake T3: T3 not running offers Start, which opens its link; not paired offers Pair, which opens T3's approval page; a read-only pairing fails one press at once with Pair again and no thread; then Open makes one thread at a project root with the brief in its composer and the typed words only in the request, Open in T3 on its entry brings it up without the brief, Open again brings the same thread forward, its entry and the Agents page say that its agent needs the person as T3 tells, a thread deleted in T3 is made again at the next Open, and a folder inside the project opens as a project of its own (screenshots in Chromium only)",
       "source": "A4 3.4.1, A5 3.8, A5 3.9, A7 M2.10t",
       "owner": "M2",
       "kind": "ci",
@@ -6699,6 +6723,54 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.routines.schedule.rule",
+      "title": "A schedule's stored form, a subset of RFC 5545 RRULE, reads back as itself for every rule of the subset; the presets write the rules the design names; a text outside the subset (an unknown, repeated or out-of-bounds part, a combination it does not have) is no rule, and a start that is no date of the calendar (30 February) makes no schedule",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.routines.schedule.dates",
+      "title": "The next and the previous date a schedule falls on are those of a day-by-day walk, for every pattern and interval and never before its start; a day past a month's end falls on its last day; every Saturday, the first and last working day, the 31st and the last Friday give the dates named",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.routines.schedule.daylight-saving",
+      "title": "A local time in every zone tried, with and without daylight saving and with half-hour changes, is its first instant; a time in the spring gap is the first valid minute after it; every weekday at 07:00 stays at 07:00 through both changes of a year",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.routines.schedule.due",
+      "title": "An agent's routine with no time is due at 07:00; after any absence, also two weeks, a claim takes the latest due time that passed, once, and moves on to the first due time after now",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.routines.schedule.following",
+      "title": "The next occurrence of a task a person does falls on the schedule's first time after both now and its own date: finished early, on the day or late, one period gets one task, and a time of day gives a due time",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.routines.web.schedule-words",
+      "title": "A schedule reads in the catalogue's words: every Saturday, every Monday and Thursday, every weekday at 07:00, the first working day of every month, every 3 months on the 15th, the last Friday of every month, every year on 14 December, every year on the last day of February for the 29th to the 31st; every rule of the stored form has words with nothing of the message left in them",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "S5.link.cert",
       "title": "The link's own certificate reads in Node, verifies with its key, names only `link`, uses P-256 and serves TLS 1.3; the computer's key file is made once, private, and made again when it does not read",
       "owner": "M6",
@@ -6707,7 +6779,7 @@
     },
     {
       "id": "S5.link.rows",
-      "title": "A phone's task row keeps the task's own fields and loses where it opens on this machine, the agents it was last opened in and the run's instance; a batch's rows the same; private, link-local and loopback peers are let in and public ones are not",
+      "title": "A phone's feed row of a task keeps the task's own fields and loses where it opens on this machine, the agents it was last opened in and the run's instance; a question's author and a batch's actor read as the agent app's name, never its instance key or session; private, link-local and loopback peers are let in and public ones are not",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -6728,14 +6800,14 @@
     },
     {
       "id": "S5.link.unpaired",
-      "title": "A peer without a client certificate, a request on another path, plain HTTP, and a phone with a certificate but no grant or code each get no byte of answer and are closed",
+      "title": "A peer that is not paired sees the open port and the certificate (a stable public key, the neutral name link, its dates) and nothing of a space: plain HTTP without TLS, a connection without a client certificate, another path and HTTP inside TLS that is no upgrade are closed with no answer; an unknown key or a wrong code gets no reply, and the right code still pairs",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "S5.link.rights",
-      "title": "A paired phone calls every registry entry a linked device may call and none of the others, watches a task's runs, gets Run and Stop only once switched on for it, reaches no machine, space or sign-in route, and can neither open nor subscribe to another space",
+      "title": "A paired phone calls only the entries its screens use, whatever their remote class, and the list is exactly those; it watches a task's runs, gets Run and Stop only once switched on for it, reaches no machine, space or sign-in route, and can neither open nor subscribe to another space",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -6749,14 +6821,49 @@
     },
     {
       "id": "S5.link.capture-once",
-      "title": "A capture whose answer was lost, sent again after the app restarted and after the phone was removed and paired again, makes one task and replays its first result",
+      "title": "A capture whose reply was dropped, sent again with its request ID on a new connection and again after the same phone key was removed and paired anew, replays its first reply and leaves one task; a real app restart and its offline queue are not tested here",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "S5.link.remove",
-      "title": "Remove closes the phone's open connection at once, Settings no longer lists it, and the phone is told it was removed when it comes back",
+      "title": "Remove closes the phone's open connection at once and Settings no longer lists it; the listener closes with the last phone, and once a pairing opens it again the removed phone is told it was removed",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.saved",
+      "title": "Remove and the Run switch answer once saved: a Remove that was not saved says so, holds at once, stays listed to remove again and is saved by Remove again; Run on that was not saved stays off, Run off that was not saved holds at once, and Run on counts for the phone only once its save is done",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.run-saved",
+      "title": "A phone's Run switch, on and then off, reads back as switched after the service's store is closed and opened again",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.told",
+      "title": "Against the real service, with an agent's evidence and question written under its instance key and session, a task folder and Run on: every listed call's answer and error and the feed's snapshot and batch hold no instance key, session, folder path or machine name; an error a handler raised reaches a phone as its code and fixed words, with none of its message, hint or data",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.answers",
+      "title": "A phone's answers keep what its screens use and leave out a task's folder, a launch's request, a note's launches, the person's skills, a run's agent instance, its cleanup and its error; an author reads as the person, an import or the agent app's name, never its instance key or session; a capture may send a task's own fields only, and a page read takes a page's reference only",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.fields",
+      "title": "Against the real service: a task whose folder the page shows reads on a phone without its folder or skills; a folder on a capture and a launch reference on a read are refused by name, and a task update, a folder change and the space's status are refused",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

@@ -143,3 +143,23 @@ describe("[A5.3.9.web.session-entry] a launch's entry is a record: opened, then 
     expect(ranFor(65 * 60_000, t)).toBe("1 h 5 min");
   });
 });
+
+describe("[A4.3.4.1.t3.thread] a task's T3 Code thread says what its agent does", () => {
+  test("working, needs you or idle while T3 Code has it, ended once it does not", () => {
+    const thread = (over: Partial<Receipt>) =>
+      receipt({ state: "confirmed", route: "t3-mcp", session: "running", ...over });
+    expect(receiptText(thread({ activity: "working" }), "T3 Code", t)).toBe(
+      "Opened in T3 Code · working",
+    );
+    expect(receiptText(thread({ activity: "waiting" }), "T3 Code", t)).toBe(
+      "Opened in T3 Code · needs you",
+    );
+    expect(receiptText(thread({ activity: "idle" }), "T3 Code", t)).toBe(
+      "Opened in T3 Code · idle",
+    );
+    expect(entryState(thread({ activity: "idle" }))).toBe("running");
+    expect(receiptText(thread({ session: "ended" }), "T3 Code", t)).toBe(
+      "Opened in T3 Code · ended",
+    );
+  });
+});

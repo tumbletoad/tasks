@@ -7,7 +7,8 @@ import { afterEach, describe, expect, test } from "vitest";
 import { tempRoot } from "../../test/harness.ts";
 import { certPin, LINK_CERT_NAME, makeIdentity, PIN } from "./cert.ts";
 import { loadOrCreateHome } from "./home.ts";
-import { phoneBatch, phoneTask } from "./rows.ts";
+import { authorsFrom, FEED_TASK, project } from "./allowed.ts";
+import { phoneBatch } from "./rows.ts";
 import { isPrivateAddress } from "./service.ts";
 
 const cleanups: (() => void)[] = [];
@@ -52,6 +53,8 @@ describe("[S5.link.cert] the link's certificates and the computer's key file", (
   });
 });
 
+const authors = authorsFrom([{ key: "codex", app: "Codex" }]);
+
 describe("[S5.link.rows] a phone's rows name nothing of the computer", () => {
   test("a task keeps its own fields and loses its place, its last agents and run instances", () => {
     const row = {
@@ -61,40 +64,48 @@ describe("[S5.link.rows] a phone's rows name nothing of the computer", () => {
       place: { state: "here" as const },
       last: { open: "codex" },
       run: { id: "ru_1", state: "working" as const, instance: "codex" },
-      questions: [{ ref: "l1", by: "codex", instance: "codex", text: "Fixture?", at: 1 }],
+      questions: [
+        { ref: "l1", by: "agent:codex:se_fixture1", instance: "codex", text: "Fixture?", at: 1 },
+      ],
       some_new_field: "not yet named",
     };
-    expect(phoneTask(row)).toEqual({
+    expect(project(row, FEED_TASK, authors)).toEqual({
       id: "tk_1",
       ref: "M-1",
       title: "Fixture",
       run: { id: "ru_1", state: "working" },
-      questions: [{ ref: "l1", by: "codex", text: "Fixture?", at: 1 }],
+      questions: [{ ref: "l1", by: "Codex", text: "Fixture?", at: 1 }],
     });
-    const batch = phoneBatch({
-      type: "batch",
-      space_id: "sp",
-      epoch: 1,
-      incarnation: "a",
-      from: 0,
-      through: 1,
-      events: [
-        {
-          seq: 1,
-          at: 1,
-          op_id: "op",
-          request_id: "r",
-          actor: { kind: "human", label: "user" },
-          kind: "task.add",
-          entities: [
-            { type: "task", id: "tk_1", row, changed: [] },
-            { type: "note", id: "n", row: null, changed: [] },
-          ],
-        },
-      ],
-    });
-    expect(batch.events[0]?.entities[0]?.row).not.toHaveProperty("place");
-    expect(batch.events[0]?.entities[1]?.row).toBeNull();
+    const batch = phoneBatch(
+      {
+        type: "batch",
+        space_id: "sp",
+        epoch: 1,
+        incarnation: "a",
+        from: 0,
+        through: 1,
+        events: [
+          {
+            seq: 1,
+            at: 1,
+            op_id: "op",
+            request_id: "r",
+            actor: { kind: "agent", label: "agent:codex:se_fixture1" },
+            kind: "task.add",
+            entities: [
+              { type: "task", id: "tk_1", row, changed: [] },
+              { type: "note", id: "n", row: null, changed: [] },
+            ],
+          },
+        ],
+      },
+      authors,
+    );
+    expect(JSON.stringify(batch)).not.toContain("se_fixture1");
+    expect(batch).toMatchObject({ events: [{ actor: { kind: "agent", label: "Codex" } }] });
+    const [first] = batch["events"] as { entities: { row: unknown }[] }[];
+    expect(first?.entities[0]?.row).not.toHaveProperty("place");
+    expect(first?.entities[1]?.row).toBeNull();
   });
 
   test("private, link-local and loopback addresses are let in; public ones are not", () => {
