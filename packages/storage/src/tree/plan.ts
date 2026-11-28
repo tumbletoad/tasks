@@ -13,6 +13,7 @@ import type { Id } from "../ids.ts";
 import { formatEntryRef, parseTaskRef } from "../refs.ts";
 import {
   NO_SUCH_TASK,
+  notActive,
   NOT_NOW,
   OTHER_SPACE_TASK,
   WRITE_LIMITS,
@@ -173,6 +174,30 @@ export function planGap(op: Operation): string | undefined {
   }
 }
 
+/** Today's task row's fields, in its order (write/fields.ts TASK_FIELDS), as the tree keeps them. */
+const GUARDED: readonly (readonly ["nodes" | "tasks", string])[] = [
+  ["nodes", "title"],
+  ["nodes", "brief"],
+  ["nodes", "description"],
+  ["tasks", "status"],
+  ["tasks", "inbox"],
+  ["tasks", "priority"],
+  ["tasks", "effort"],
+  ["tasks", "planned_for"],
+  ["tasks", "focus"],
+  ["tasks", "waiting_on"],
+  ["tasks", "source_at"],
+  ["tasks", "reviewed_at"],
+  ["tasks", "due"],
+  ["nodes", "place"],
+  ["tasks", "lifecycle"],
+  ["tasks", "wrap"],
+  ["nodes", "deleted"],
+];
+
+/** A task node's fields today's task row does not have: a conflict on one is not today's. */
+const NODE_ONLY: ReadonlySet<string> = new Set(["for_agents", "color", "archived"]);
+
 /** What an operation did, before its status and version are known. */
 type Done = Omit<OpResult, "i" | "status" | "version"> & {
   /** Its status, when its own writes do not say it: a draft's part, or one left out. */
@@ -247,16 +272,27 @@ export function runPlan(tx: Tx, ops: readonly Operation[]): OpResult[] {
     }
   });
   const runs: { i: number; from: number; to: number; done: Done }[] = [];
-  ops.forEach((_, i) => {
+  ops.forEach((op, i) => {
     const from = tx.mark;
     const clashes = tx.conflicts.length;
     tx.op = i;
     try {
+      // The task as the operation finds it: a request marked active changes active tasks only,
+      // whether or not this operation writes anything, once its base holds (as today's writer).
+      const key = "task" in op && typeof op.task === "string" ? op.task : undefined;
+      const life =
+        key === undefined || op.kind === "task.create" || drafts.has(key as Id<"t">)
+          ? undefined
+          : taskRow(plan, key)["lifecycle"];
       const done = plan.taken.get(i) ?? runOne(plan, i);
+      const refusal = life === undefined ? undefined : notActive(tx.request.active, life);
+      if (refusal !== undefined && tx.conflicts.length === clashes) {
+        throw new TreeProblem(refusal.code, refusal.message, refusal.field);
+      }
       runs.push({ i, from, to: tx.mark, done });
-      for (const c of tx.conflicts.slice(clashes)) asToday(tx, c, i);
+      todayConflicts(tx, clashes, i);
     } catch (error) {
-      for (const c of tx.conflicts.slice(clashes)) asToday(tx, c, i);
+      todayConflicts(tx, clashes, i);
       if (error instanceof TreeProblem && error.op === undefined) error.op = i;
       throw error;
     }
@@ -277,12 +313,25 @@ export function runPlan(tx: Tx, ops: readonly Operation[]): OpResult[] {
   });
 }
 
+/** The conflicts operation `i` met from `from` on, as today's writer names them. */
+function todayConflicts(tx: Tx, from: number, i: number): void {
+  const mine = tx.conflicts.splice(from);
+  for (const c of mine) {
+    const task = c.entity === "nodes" && tx.get(SQL.node, { id: c.id })?.["kind"] === "task";
+    if (task && NODE_ONLY.has(c.field)) continue;
+    asToday(tx, c, i);
+    tx.conflicts.push(c);
+  }
+}
+
 /**
  * A conflict as today's writer names it: of operation `i`, and a task's place in the tree as its
  * area and project (`grouping`).
  */
 function asToday(tx: Tx, c: TreeConflict, i: number): void {
   c.op = i;
+  // A page's conflict names no task, as today's does.
+  if (c.entity === "pages") delete c.task;
   if (c.entity !== "nodes") return;
   const at = tx.get(SQL.node, { id: c.id });
   if (at?.["kind"] !== "task") {
@@ -545,6 +594,11 @@ function runOne(plan: Plan, i: number): Done {
     case "task.restore": {
       const task = taskRow(plan, op.task);
       const id = String(task["id"]);
+      // As today's: a task goes to the Trash as the person saw it, every field of its row held
+      // to the base, in today's order.
+      if (op.kind === "task.delete" && task["deleted_at"] === null) {
+        for (const [entity, field] of GUARDED) tx.held(entity, id, id, [field]);
+      }
       const said = call(tx, op.kind === "task.delete" ? "nodes.trash" : "nodes.restore", {
         task: id,
       }) as { tasks: number };
@@ -731,6 +785,11 @@ function wrapUp(plan: Plan, key: string, outcome: string | undefined, once: bool
   const { tx } = plan;
   const task = taskRow(plan, key);
   const id = String(task["id"]);
+  // A finish a base held back leaves the task open: the request is a conflict, its wrap-up's too.
+  if (tx.conflicts.length > 0) {
+    tx.held("tasks", id, id, ["wrap"]);
+    return named(task, tx);
+  }
   if (task["lifecycle"] === "active") {
     problem("INVALID_TRANSITION", NOT_NOW.wrapUp, "task");
   }
@@ -821,6 +880,8 @@ function taskCreate(plan: Plan, i: number, op: TaskCreate): Done {
           ? "unchanged"
           : "existing";
     const entry = tx.get(SQL.newestLog, { owner: on, body: log.body });
+    // The draft's log is its own operation's change, as today's rows say it.
+    if (entry !== undefined) tx.retag("notes", String(entry["id"]), logAt);
     plan.taken.set(logAt, {
       id: typeof entry?.["id"] === "string" ? entry["id"] : on,
       task: on,
@@ -832,6 +893,7 @@ function taskCreate(plan: Plan, i: number, op: TaskCreate): Done {
   }
   if (source !== undefined) {
     const held = tx.get(SQL.origin, { id: on })?.["origin_source_id"];
+    if (typeof held === "string") tx.retag("sources", held, sourceAt);
     plan.taken.set(sourceAt, {
       id: typeof held === "string" ? held : on,
       task: on,

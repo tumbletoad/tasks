@@ -335,6 +335,13 @@ export class Tx {
     }
   }
 
+  /** Names operation `op` as the one that wrote row `id` of `entity`, made inside another's command. */
+  retag(entity: Entity, id: string, op: number): void {
+    const row = this.#rows.get(`${entity}|${id}`);
+    if (row === undefined) return;
+    for (const key of [...row.ops.keys(), ...(row.created ? [""] : [])]) row.ops.set(key, op);
+  }
+
   /** Where the request's writes stand now: what follows is the next operation's. */
   get mark(): number {
     return this.#log.length;

@@ -84,6 +84,8 @@ export interface Session {
   answered: (string | undefined)[];
   /** Every task reference an answer named, read after each step. */
   refs: Set<string>;
+  /** How many tokens of each kind the space has given. */
+  counts: Map<string, number>;
   /** This sequence's run in its space: request IDs are a space's, across sequences. */
   run: number;
 }
@@ -96,27 +98,32 @@ export function token(s: Session, kind: string, value: string): string {
   const key = `${kind}:${value}`;
   let found = s.ids.get(key);
   if (found === undefined) {
-    found = `<${kind}${String(s.ids.size + 1)}>`;
+    // Each kind counts its own, so one kind's coincidence never shifts another's numbers.
+    const n = (s.counts.get(kind) ?? 0) + 1;
+    s.counts.set(kind, n);
+    found = `<${kind}${String(n)}>`;
     s.ids.set(key, found);
   }
   return found;
 }
 
+/** An entry's reference is its task's own: `n2` of one task is not `n2` of another. */
+const ENTRY = /^[nl][1-9]\d{0,5}$/u;
+
 /** Each space's own IDs, references, as_of and versions as tokens; its times left out. */
-export function normal(value: unknown, s: Session): unknown {
+export function normal(value: unknown, s: Session, task = ""): unknown {
   if (typeof value === "string") {
-    return (
-      value
-        .replace(/\b\d+\.\d+\.[0-9a-z]{8,}\b/gu, (asOf) => token(s, "as_of", asOf))
-        .replace(/\b\d{4}-\d\d-\d\dT[\d:.]+Z\b/gu, "<at>")
-        // An entry's number is its space's own: the tree numbers a task's notes and log in one thread.
-        .replace(/\b(?:[a-z]{1,3}_[0-9a-z]{26}|[A-Z]{1,6}-\d+|[nl][1-9]\d{0,5})\b/gu, (id) =>
-          token(s, "", id),
-        )
-    );
+    // An entry's number is its space's own: the tree numbers a task's notes and log in one thread.
+    if (ENTRY.test(value)) return token(s, "e", `${task}|${value}`);
+    return value
+      .replace(/\b\d+\.\d+\.[0-9a-z]{8,}\b/gu, (asOf) => token(s, "as_of", asOf))
+      .replace(/\b\d{4}-\d\d-\d\dT[\d:.]+Z\b/gu, "<at>")
+      .replace(/\b(?:[a-z]{1,3}_[0-9a-z]{26}|[A-Z]{1,6}-\d+)\b/gu, (id) => token(s, "", id));
   }
-  if (Array.isArray(value)) return value.map((v) => normal(v, s));
+  if (Array.isArray(value)) return value.map((v) => normal(v, s, task));
   if (typeof value === "object" && value !== null) {
+    const own = (value as Record<string, unknown>)["task"];
+    const scope = typeof own === "string" ? own : task;
     // A version and a seq count the space's own commits; a time in milliseconds is a time.
     return Object.fromEntries(
       Object.entries(value).map(([k, v]) => [
@@ -125,7 +132,7 @@ export function normal(value: unknown, s: Session): unknown {
           ? token(s, "v", String(v))
           : /(?:^|_)at$/u.test(k) && typeof v === "number"
             ? "<at>"
-            : normal(v, s),
+            : normal(v, s, scope),
       ]),
     );
   }
@@ -190,6 +197,7 @@ export const backend = (ops: OpsHost, space: () => string): Side<Step, Session> 
       entries: new Map(),
       asOf: undefined,
       ids: new Map(),
+      counts: new Map(),
       sent: [],
       after: [],
       answered: [],
@@ -258,7 +266,11 @@ export const backend = (ops: OpsHost, space: () => string): Side<Step, Session> 
     for (const ref of s.refs) {
       const read = await send(ops, s, "task.get", { task: ref }, USER);
       for (const target of readsIn(read.ok)) targets.add(target);
-      seen[names.get(ref) ?? token(s, "", ref)] = normal(read.ok ?? { error: read.error.code }, s);
+      seen[names.get(ref) ?? token(s, "", ref)] = normal(
+        read.ok ?? { error: read.error.code },
+        s,
+        ref,
+      );
     }
     // Every node a read hands out to read next (a trail's `read`) is followed as it was given,
     // keyed by its title.

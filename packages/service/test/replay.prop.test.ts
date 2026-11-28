@@ -7,15 +7,16 @@
 // The vocabulary is the list of step makers below, one per call. Each family that moves to the tree
 // adds its calls here. What the backends differ in by decision is left out of it, each with its
 // reason: a project without an area (S2.replay.projects marks it), a node's history (marked in
-// S2.replay.reviewed), and a task's history section (refused on a tree for now).
+// S2.replay.reviewed), and a task's history section (refused on a tree for now). One difference
+// the sequences meet is left out of both answers (`KNOWN`).
 //
 // A failure prints its seed; FC_SEED replays it, and FC_RUNS sets how many sequences run.
 // Fixture text only.
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, onTestFailed, test } from "vitest";
-import { both, type Sequence } from "../../storage/test/both-helpers.ts";
+import { both, type Answer, type Sequence, type Side } from "../../storage/test/both-helpers.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
-import { backend, newSpaces, type Step } from "./replay-helpers.ts";
+import { backend, newSpaces, type Session, type Step } from "./replay-helpers.ts";
 
 const LONG = 600_000;
 let w: ContractWorld & { root: string };
@@ -26,6 +27,24 @@ beforeAll(async () => {
 afterAll(async () => {
   await w.close();
 }, LONG);
+
+/**
+ * The marks of the generated replay: what the backends answer differently by decision, taken out
+ * of both answers. Today's task row has an `owner`, which nothing in the product writes and the
+ * tree does not keep, so a conflict on every field of a task names it only today.
+ */
+function known(answer: Answer): Answer {
+  const said = answer.said as { data?: { conflicts?: { field?: string }[] } } | undefined;
+  const conflicts = said?.data?.conflicts;
+  if (said?.data === undefined || conflicts === undefined) return answer;
+  const kept = conflicts.filter((c) => c.field !== "owner");
+  return { ...answer, said: { ...said, data: { ...said.data, conflicts: kept } } };
+}
+
+const marked = (side: Side<Step, Session>): Side<Step, Session> => ({
+  ...side,
+  step: async (s, step) => known(await side.step(s, step)),
+});
 
 /** The names steps give what they make, and refer to: a name nothing made yet is not found. */
 const TASKS = ["t0", "t1", "t2", "t3"] as const;
@@ -292,8 +311,8 @@ describe("[S2.replay.generated] random ordinary sequences of the tree's families
           const spaces = await newSpaces(w, `gen-${String(n)}`);
           await both(
             {
-              today: backend(w.service.ops, () => spaces.today),
-              tree: backend(w.service.ops, () => spaces.tree),
+              today: marked(backend(w.service.ops, () => spaces.today)),
+              tree: marked(backend(w.service.ops, () => spaces.tree)),
             },
             steps as Sequence<Step>,
           );
