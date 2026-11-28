@@ -27,6 +27,7 @@ import {
   type Part,
   type PartName,
   type Pending,
+  type Ready,
 } from "./apps.ts";
 import { classes } from "./css.ts";
 import { useAuth, useMachineApi } from "./session.tsx";
@@ -48,6 +49,7 @@ const styles = classes(css, [
   "note",
   "primary",
   "quiet",
+  "ready",
   "secondary",
   "title",
   "why",
@@ -302,6 +304,7 @@ export function AgentApps({
                   </span>
                 )}
               </div>
+              {row.ready === undefined ? null : <ReadyLine t={t} ready={row.ready} />}
               {row.byName ? (
                 <p className={styles.why} data-part="by-name">
                   {t("apps.byName", { label: row.label })}
@@ -390,6 +393,40 @@ export function AgentApps({
       </div>
       <p className={styles.note}>{t(firstStart ? "apps.laterFirst" : "apps.signIn")}</p>
     </section>
+  );
+}
+
+/** Whether the app is installed and signed in, and the command or page that comes next. */
+function ReadyLine({ t, ready }: { readonly t: Translate; readonly ready: Ready }) {
+  const version = ready.state === "not_installed" ? "none" : (ready.version ?? "none");
+  const command =
+    ready.state === "no_login" ? ready.login : ready.state === "unknown" ? ready.status : undefined;
+  return (
+    <p className={styles.ready} data-part="ready" data-state={ready.state}>
+      {t("apps.ready", { state: ready.state, version })}
+      {command === undefined ? (
+        ready.state === "no_login" ? (
+          <> {t("apps.loginOwn")}</>
+        ) : null
+      ) : (
+        <>
+          {" "}
+          {t("apps.run", { what: ready.state === "no_login" ? "login" : "status" })}{" "}
+          <code dir="ltr" {...(/[\\/]/u.test(command) ? { "data-machine": "" } : {})}>
+            {command}
+          </code>
+        </>
+      )}
+      {ready.state === "no_login" ? <> {t("apps.loginOther")}</> : null}
+      {ready.state === "not_installed" ? (
+        <>
+          {" "}
+          <a href={ready.install} target="_blank" rel="noreferrer">
+            {t("apps.install")}
+          </a>
+        </>
+      ) : null}
+    </p>
   );
 }
 

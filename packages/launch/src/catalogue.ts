@@ -124,6 +124,17 @@ export interface TargetDef {
    * (`{resume}`): how Continue goes on with a background run's conversation.
    */
   readonly resume?: readonly Template[];
+  /**
+   * The app's own login commands, given after its program, and its vendor's install page. Only
+   * `status`'s exit code is read: 0 a login was found, 1 none was confirmed; its output is never
+   * read. `since`: the first version that has `status`.
+   */
+  readonly signIn?: {
+    readonly status: readonly string[];
+    readonly login: readonly string[];
+    readonly install: string;
+    readonly since?: string;
+  };
 }
 
 /** No flags for any mode: targets whose permission TTasks cannot set. */
@@ -276,6 +287,12 @@ export const CATALOGUE: readonly TargetDef[] = [
     },
     run: "claude-print",
     resume: ["{exec}", "--resume", "{resume}", "{permission}", "{extra_args}"],
+    signIn: {
+      status: ["auth", "status"],
+      login: ["auth", "login"],
+      install: "https://code.claude.com/docs/en/setup",
+      since: "2.1.41",
+    },
   },
   {
     id: "codex-cli",
@@ -338,6 +355,11 @@ export const CATALOGUE: readonly TargetDef[] = [
       "{permission}",
       "{extra_args}",
     ],
+    signIn: {
+      status: ["login", "status"],
+      login: ["login"],
+      install: "https://developers.openai.com/codex/cli",
+    },
   },
   {
     id: "claude-desktop",
