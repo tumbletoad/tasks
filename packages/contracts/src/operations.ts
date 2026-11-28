@@ -89,6 +89,18 @@ export const OPERATIONS: Readonly<Record<string, OpSpec>> = {
   "task.folder_clear": agent(false),
   ...group("area"),
   ...group("project"),
+  // Pages and a node's texts (step 1). An edit, an append, a move and the Trash need no base:
+  // an edit applies while its old words stand. A set replaces a text whole, against a base.
+  "page.create": agent(false),
+  "page.edit": agent(false),
+  "page.append": agent(false),
+  "page.set": agent(true),
+  "page.move": agent(false),
+  "page.trash": agent(false),
+  "page.restore": agent(false),
+  "node.set": agent(true),
+  // The person's standing instruction for every task below: the writer refuses it from others too.
+  "node.instruct": { class: "user", scopes: WRITE, base: true },
   "label.patch": agent(true),
   "label.delete": agent(true),
   // Agents write only keys whose declaration lists them. Policy keys are human-only and need
