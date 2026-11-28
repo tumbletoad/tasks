@@ -165,9 +165,10 @@ from indexes, and a consistent backup while agents write.
 - **Old versions of a text come from the change log.** There is no table for them. If history
   grows large, two remedies stay open: store only the passage an edit changed, or thin old
   versions by age as a stated rule. Neither is built until a measurement asks for it.
-- **Spaces made before the tree are not carried over by a shipped migration:** TTasks has no
-  outside users yet. From the first release that another person uses for real work, every change
-  of format is a supported upgrade behind a backup that has passed a trial restore, as
+- **Spaces made before the tree are not carried over by a shipped migration,** and before 1.0.0
+  no build keeps code for an older format, name or build. The owner's own space comes along by
+  a one-time script that is not kept, and its old change log stays behind. From 1.0.0 every
+  change of format is a supported upgrade behind a backup that has passed a trial restore, as
   `docs/promises-and-limits.md` promises.
 
 ## Other devices, hosting and teams
@@ -321,9 +322,13 @@ Each step ships and is useful on its own. The order follows what each step needs
 
 ### Step 2b. Routines
 
-- **A person gets:** tasks that come back on a schedule, and agent runs that start by themselves
-  on a schedule, such as Refresh or tidying a library. Refresh in the top bar, and Continue
-  interactively from a run.
+- **A person gets:** routines. A routine is one task of a kind of its own, for work that comes
+  back on a schedule: a person's own, or an agent's, such as Refresh or tidying a library. It
+  does not finish by being done once: each time is logged under the same task, Completed does
+  not fill with them, and ending a routine for good is its own, confirmed step. It looks
+  different from a task, and one page lists every active routine. A time missed while the
+  computer was off or asleep runs once when it is back, however many were missed, and an
+  agent's time counts as done when an agent did the work. Refresh in the top bar.
 - **Needs:** the new writer of step 2, because routines add kinds of writes that should be built
   once. A short design comes first.
 
