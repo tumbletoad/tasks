@@ -193,7 +193,7 @@ describe("[A5.3.9.web.thread-request] a launch's request shows in the thread as 
 });
 
 describe("[A4.3.4.1.t3.open] a T3 Code launch's entry brings its thread up in T3 Code", () => {
-  test("Open in T3 on a thread T3 made, none on one that did not open; the two refusals T3 gives say why", () => {
+  test("Open in T3 on a thread T3 made, none on one that did not open or that T3 no longer has; the two refusals T3 gives say why", () => {
     const t3 = (id: string, state: ReceiptState, reason: string | null = null): Receipt => ({
       ...receipt(id, `L${id.slice(-5).toUpperCase()}`, state, AT),
       instance: "t3",
@@ -210,6 +210,7 @@ describe("[A4.3.4.1.t3.open] a T3 Code launch's entry brings its thread up in T3
             log={[]}
             receipts={[
               t3("la_t3000", "confirmed"),
+              { ...t3("la_t3003", "confirmed"), session: "ended" },
               t3("la_t3001", "failed", "model_unavailable"),
               t3("la_t3002", "failed", "pairing_denied"),
             ]}

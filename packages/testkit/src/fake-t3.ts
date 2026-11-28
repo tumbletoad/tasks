@@ -39,6 +39,11 @@ export interface FakeT3Thread {
   readonly runtimeMode: unknown;
   /** Whether a first message was sent, which starts an agent turn. The route never sends one. */
   readonly message: boolean;
+  /** T3's thread status (`idle`, or a run's, such as `running`): a test sets it. */
+  status: string;
+  /** Approvals and questions that wait for the person: a test sets it. */
+  pendingRequestCount: number;
+  archived: boolean;
 }
 
 /** One `tools/call` as the fake saw it. IDs and outcomes only. */
@@ -717,8 +722,10 @@ export class FakeT3 {
             projectId: thread.projectId,
             title: thread.title,
             worktreePath: thread.worktreePath,
-            status: "idle",
-            archived: false,
+            status: thread.status,
+            pendingRequestCount: thread.pendingRequestCount,
+            archived: thread.archived,
+            updatedAt: new Date().toISOString(),
           },
         };
       }
@@ -790,6 +797,9 @@ export class FakeT3 {
       modelSelection: args["modelSelection"] ?? null,
       runtimeMode: args["runtimeMode"] ?? null,
       message: typeof args["message"] === "string",
+      status: "idle",
+      pendingRequestCount: 0,
+      archived: false,
     });
     return this.#launched(id);
   }

@@ -117,6 +117,9 @@ export function receiptText(receipt: Receipt, label: string, t: Translate): stri
       // A link or T3 only asked the app: it says so until the agent connects.
       return t(receipt.route === "clipboard" ? "receipt.copied" : "receipt.asked", { label });
     case "confirmed":
+      if (receipt.session === "running" && receipt.activity !== undefined) {
+        return t("receipt.thread", { opened, status: receipt.activity });
+      }
       if (receipt.session === "running") return t("receipt.running", { opened });
       if (receipt.session === "restored") return t("receipt.restored", { opened });
       if (receipt.session === "ended") {
@@ -363,10 +366,12 @@ export function Thread({
             onOpenAgain(asked, instance);
           }
         : undefined;
-    // A T3 thread T3 Code made stays there: it can be brought up again.
+    // A T3 thread T3 Code made stays there and can be brought up again, until T3 Code no longer has
+    // it.
     const inT3 =
       receipt.route === "t3-mcp" &&
       (receipt.state === "confirmed" || receipt.state === "dispatched") &&
+      receipt.session !== "ended" &&
       onOpenInT3 !== undefined
         ? () => {
             onOpenInT3(receipt.id);

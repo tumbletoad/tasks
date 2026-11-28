@@ -123,6 +123,8 @@ export const WRITE_ERROR_CODES = [
   "UNDO_BEFORE_FLOOR",
   /** A preference whose declaration does not list the actor as a writer (A1 3.16, A3 3.8.3). */
   "PREFERENCE_FORBIDDEN",
+  /** A write only a person makes: the text for agents on a node (step 1). */
+  "USER_ONLY",
 ] as const;
 
 export type WriteErrorCode = (typeof WRITE_ERROR_CODES)[number];
@@ -175,7 +177,9 @@ export type ConflictEntity =
   | "runs"
   | "areas"
   | "projects"
-  | "folders";
+  | "folders"
+  | "pages"
+  | "node_texts";
 
 /**
  * One field that changed after the caller's base, or the link version the caller named (A1 3.5).
@@ -331,6 +335,14 @@ export interface OpResult {
    * result's task is the first of them, so the result keeps one shape; the caller picks one.
    */
   ambiguous?: string[];
+  /**
+   * `page.edit` that wrote nothing: how often its old words stand in the page now (0: gone), and
+   * the page's start as it is now, so the caller edits again from what is there.
+   */
+  found?: number;
+  excerpt?: string;
+  /** A page's or a node's write: what holds the page now, `kind` and ID. */
+  owner?: { kind: PageOwner["kind"]; id: string };
 }
 
 /**
@@ -630,6 +642,86 @@ export interface NoteRestore {
   kind: "note.restore";
   task: string;
   ordinal: number;
+}
+
+/**
+ * What holds a page, and whose texts a node row holds: the space, an area or a project by ID or
+ * slug, or a task by reference. A node's texts are on the space, an area or a project only.
+ */
+export type PageOwner =
+  | { kind: "space" }
+  | { kind: "area"; area: string }
+  | { kind: "project"; project: string }
+  | { kind: "task"; task: string };
+export type TextNode = Exclude<PageOwner, { kind: "task" }>;
+
+/** `page.create`: a new page, numbered from the space's counter as a task is. */
+export interface PageCreate {
+  kind: "page.create";
+  owner: PageOwner;
+  title: string;
+  /** Empty when a person gave none; an agent's entry always gives one. */
+  brief: string;
+  body: string;
+}
+
+/**
+ * `page.edit`, the one named command of its request: these old words, standing once in the body
+ * as it is now, become those new ones. Words gone or standing more than once write nothing.
+ */
+export interface PageEdit {
+  kind: "page.edit";
+  page: string;
+  old: string;
+  new: string;
+}
+
+/** `page.append`: Markdown added at the end of the body, after a blank line. */
+export interface PageAppend {
+  kind: "page.append";
+  page: string;
+  text: string;
+}
+
+/**
+ * `page.set`: a title, a brief or the body whole, against a base. `from_seq` writes back the body
+ * as that change left it (Restore), which the writer reads from the change log.
+ */
+export interface PageSet {
+  kind: "page.set";
+  page: string;
+  title?: string;
+  brief?: string;
+  body?: string;
+  from_seq?: number;
+}
+
+/** `page.move`: the page goes to another holder. */
+export interface PageMove {
+  kind: "page.move";
+  page: string;
+  owner: PageOwner;
+}
+
+/** `page.trash` and `page.restore`: into the Trash and back, with every version. */
+export interface PageTrash {
+  kind: "page.trash" | "page.restore";
+  page: string;
+}
+
+/** `node.set`: a node's description, or the space's brief, whole, against a base. */
+export interface NodeSet {
+  kind: "node.set";
+  node: TextNode;
+  brief?: string;
+  description?: string;
+}
+
+/** `node.instruct`: the person's text for agents on a node, whole. A person's alone. */
+export interface NodeInstruct {
+  kind: "node.instruct";
+  node: TextNode;
+  text: string;
 }
 
 /**
@@ -1080,6 +1172,14 @@ export type Operation =
   | RunCreate
   | RunTransition
   | PrefSet
+  | PageCreate
+  | PageEdit
+  | PageAppend
+  | PageSet
+  | PageMove
+  | PageTrash
+  | NodeSet
+  | NodeInstruct
   | Undo
   | Redo;
 export type OperationKind = Operation["kind"];
@@ -1128,7 +1228,32 @@ export const OPERATION_KINDS = [
   "project.folder_clear",
   "task.folder_set",
   "task.folder_clear",
+  "page.create",
+  "page.edit",
+  "page.append",
+  "page.set",
+  "page.move",
+  "page.trash",
+  "page.restore",
+  "node.set",
+  "node.instruct",
 ] as const satisfies readonly OperationKind[];
+
+/**
+ * The operations of pages and a node's texts. Each is a request of its own: what it reads is the
+ * space as it stands, never what an earlier operation of the request would leave.
+ */
+export const PAGE_OPERATIONS: ReadonlySet<OperationKind> = new Set([
+  "page.create",
+  "page.edit",
+  "page.append",
+  "page.set",
+  "page.move",
+  "page.trash",
+  "page.restore",
+  "node.set",
+  "node.instruct",
+]);
 
 /** The operations that write a folder row. Their paths are stored exactly as sent. */
 export const FOLDER_OPERATIONS: ReadonlySet<OperationKind> = new Set([
@@ -1585,6 +1710,11 @@ function placement(f: Fields): Placement {
 
 const fields = (value: unknown, path: string, op?: number): Fields => new Fields(value, path, op);
 
+/** A page's or a node's brief: one line, which a person may leave empty. */
+const BRIEF = { chars: WRITE_LIMITS.summary, line: true, empty: true } as const;
+/** A page's body, a description, a text for agents: Markdown, which may be empty. */
+const BODY = { bytes: WRITE_LIMITS.note, empty: true } as const;
+
 function checkOperation(value: unknown, i: number): Operation {
   const f = fields(value, `ops[${String(i)}]`, i);
   const kind = f.oneOf("kind", OPERATION_KINDS);
@@ -1975,6 +2105,70 @@ function checkOperation(value: unknown, i: number): Operation {
       }
       break;
     }
+    case "page.create": {
+      op = {
+        kind,
+        owner: pageOwner(f, "owner"),
+        title: f.text("title", { chars: WRITE_LIMITS.title, line: true }),
+        brief: f.has("brief") ? f.text("brief", BRIEF) : "",
+        body: f.has("body") ? f.text("body", BODY) : "",
+      };
+      break;
+    }
+    case "page.edit": {
+      op = {
+        kind,
+        page: f.reference("page"),
+        old: f.text("old", { bytes: WRITE_LIMITS.note }),
+        new: f.text("new", { ...BODY, empty: true }),
+      };
+      break;
+    }
+    case "page.append": {
+      op = { kind, page: f.reference("page"), text: f.text("text", { bytes: WRITE_LIMITS.note }) };
+      break;
+    }
+    case "page.set": {
+      const set: PageSet = { kind, page: f.reference("page") };
+      if (f.has("title")) set.title = f.text("title", { chars: WRITE_LIMITS.title, line: true });
+      if (f.has("brief")) set.brief = f.text("brief", BRIEF);
+      if (f.has("body")) set.body = f.text("body", BODY);
+      if (f.has("from_seq")) set.from_seq = f.int("from_seq", RANGES.seq.min, RANGES.seq.max);
+      if (set.body !== undefined && set.from_seq !== undefined) {
+        f.fail("VALIDATION_FAILED", "Give the body or the version it comes from, not both", "body");
+      }
+      if (Object.keys(set).length === 2) {
+        f.fail("VALIDATION_FAILED", "A set gives a title, a brief, a body or a version", "body");
+      }
+      op = set;
+      break;
+    }
+    case "page.move": {
+      op = { kind, page: f.reference("page"), owner: pageOwner(f, "owner") };
+      break;
+    }
+    case "page.trash":
+    case "page.restore": {
+      op = { kind, page: f.reference("page") };
+      break;
+    }
+    case "node.set": {
+      const set: NodeSet = { kind, node: textNode(f, "node") };
+      if (f.has("brief")) set.brief = f.text("brief", BRIEF);
+      if (f.has("description")) set.description = f.text("description", BODY);
+      if (set.brief === undefined && set.description === undefined) {
+        f.fail("VALIDATION_FAILED", "A set gives a brief or a description", "description");
+      }
+      if (set.brief !== undefined && set.node.kind !== "space") {
+        f.fail("VALIDATION_FAILED", "An area's and a project's brief are their own", "brief");
+      }
+      op = set;
+      break;
+    }
+    case "node.instruct": {
+      op = { kind, node: textNode(f, "node"), text: f.text("text", BODY) };
+      break;
+    }
     case "area.patch":
     case "project.patch": {
       const owner = kind === "area.patch" ? "area" : "project";
@@ -2053,6 +2247,27 @@ function requiredGroup(f: Fields, key: "area" | "project"): string {
   const group = f.group(key);
   if (group === null) return f.fail("VALIDATION_FAILED", "Expected an ID or a slug", key);
   return group;
+}
+
+/** What holds a page: `{kind: "space"}`, `{kind: "area", area}`, `{kind: "project", project}` or `{kind: "task", task}`. */
+function pageOwner(f: Fields, key: string): PageOwner {
+  const o = f.sub(key);
+  const kind = o.oneOf("kind", ["space", "area", "project", "task"] as const);
+  let owner: PageOwner;
+  if (kind === "space") owner = { kind };
+  else if (kind === "task") owner = { kind, task: o.reference("task") };
+  else if (kind === "area") owner = { kind, area: requiredGroup(o, "area") };
+  else owner = { kind, project: requiredGroup(o, "project") };
+  o.done();
+  return owner;
+}
+
+/** Whose texts a node row holds: the space, an area or a project. */
+function textNode(f: Fields, key: string): TextNode {
+  const node = pageOwner(f, key);
+  if (node.kind === "task")
+    return f.fail("VALIDATION_FAILED", "A task's texts are its own fields", key);
+  return node;
 }
 
 /** A colour of an area or a project: `#rrggbb` in lower case. */
@@ -2452,6 +2667,9 @@ export function checkRequest(value: unknown): CheckedRequest {
     actor,
     ops: list.map((op, i) => checkOperation(op, i)),
   };
+  if (request.ops.length > 1 && request.ops.some((op) => PAGE_OPERATIONS.has(op.kind))) {
+    fail("VALIDATION_FAILED", "A page's or a node's write is a request of its own", "ops");
+  }
   if (f.has("base")) request.base = checkBase(f.raw("base"));
   if (f.has("intent")) request.intent = checkIntent(f.raw("intent"));
   const reason = f.optText("reason", { chars: WRITE_LIMITS.reason });

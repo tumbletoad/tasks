@@ -33,7 +33,7 @@ import { StorageWorker } from "../src/worker/client.ts";
 import { copyTree, rawWriter, readFacts, treeDigest, writeCommits } from "./backup-helpers.ts";
 import { createRequest, FIXTURE_MACHINE, ownerCredential } from "./fixture-requests.ts";
 import { checkedDriver, createFixtureSpace, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
-import { STEPS_0_6 } from "./stand-in-steps.ts";
+import { STEPS_0_7 } from "./stand-in-steps.ts";
 import { blocked, rejection, sent } from "./worker-helpers.ts";
 
 const folders = tempFolders("restore");
@@ -176,19 +176,19 @@ describe("[A1.5.restore.new-folder] restore into a new folder", () => {
   test("a backup of a newer revision than this build is refused; an older one restores", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
-    const outcome = await migrateSpaceWith(checked, folder, {}, { steps: STEPS_0_6 });
+    const outcome = await migrateSpaceWith(checked, folder, {}, { steps: STEPS_0_7 });
     if (outcome.state !== "migrated") throw new Error("the stand-in migration failed");
     const newer = await backupSpace(checked, folder, { kind: "manual" });
-    expect(newer.sidecar.user_version).toBe(6);
+    expect(newer.sidecar.user_version).toBe(7);
     const parent = folders.make();
     await expectCode(
       () => restoreBackup(checked, newer.file, join(parent, "mira")),
       "SPACE_TOO_NEW",
     );
     expect(readdirSync(parent)).toEqual([]);
-    // The pre-migration backup is 0.5, which this build writes.
+    // The pre-migration backup is 0.6, which this build writes.
     const older = await restoreBackup(checked, outcome.backup.file, join(parent, "mira"));
-    expect(older.revision).toEqual({ major: 0, minor: 5 });
+    expect(older.revision).toEqual({ major: 0, minor: 6 });
   });
 });
 
@@ -803,10 +803,10 @@ describe("[A1.5.restore.recovery] recovering a space with a rollback journal", (
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
     writeFileSync(join(folder, `${DATABASE_FILE}-journal`), "");
-    const recovered = recoverSpaceWith(checked, folder, {}, { steps: STEPS_0_6 });
-    expect(recovered.revision).toEqual({ major: 0, minor: 5 });
-    expect((await readFacts(folder)).userVersion).toBe(5);
-    const reader = openSpaceWith(checked, folder, { role: "reader" }, { steps: STEPS_0_6 });
+    const recovered = recoverSpaceWith(checked, folder, {}, { steps: STEPS_0_7 });
+    expect(recovered.revision).toEqual({ major: 0, minor: 6 });
+    expect((await readFacts(folder)).userVersion).toBe(6);
+    const reader = openSpaceWith(checked, folder, { role: "reader" }, { steps: STEPS_0_7 });
     expect(reader.readOnlyReasons).toEqual(["older_revision"]);
     reader.conn.close();
   });

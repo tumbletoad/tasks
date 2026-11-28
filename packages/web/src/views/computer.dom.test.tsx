@@ -197,9 +197,10 @@ async function mount(tasks: readonly TaskRow[] = [working]) {
   });
 }
 
-const show = (view: AgentsView) => {
+/** The monitor's view, with no T3 threads unless it names some. */
+const show = (view: Omit<AgentsView, "threads"> & Partial<Pick<AgentsView, "threads">>) => {
   act(() => {
-    live.agents.show(view, performance.now());
+    live.agents.show({ threads: [], ...view }, performance.now());
   });
 };
 
