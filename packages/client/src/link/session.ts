@@ -1,16 +1,16 @@
-// The phone's space over the link: the live rows the computer's feed sends, the person's
-// check-offs, reopenings and captures, and what was last shown while the computer is away.
+// The phone's space over the link: the live rows the computer's feed sends, what the person does
+// (outbox.ts holds it until the computer answers), and what was last shown while the computer is
+// away.
 //
 // - Rows: after each hello the session subscribes, from the cursor it holds, and feeds the store
-//   core (store/core.ts) as the page does. They change only through the feed.
-// - What the person does is kept first, with the request ID it got when the person acted, and only
-//   then sent: one at a time, while the link is up. A lost answer, a lost link or a restart of the
-//   app leaves it kept, and it goes again with the same ID, which the computer applies once. An
-//   answer the computer refused takes it out, with the words it gave; one it could not give now
-//   (a 5xx) leaves it for a later try.
-// - A finished task leaves the list when it is checked off, not when the feed confirms it.
-// - The last rows are kept with the time they were current, so a start without the computer shows
-//   them and how old they are. A removal of the phone forgets them; what waits to be sent stays.
+//   core (store/core.ts) as the page does. They change only through the feed. A subscription the
+//   computer ended is asked for again; until a snapshot comes, the rows are not live.
+// - What waits goes one entry at a time, in order, while the link is up and the app in front. No
+//   answer within `callMs`, or one that may change, sends the same request again after `resendMs`.
+// - The screen's rows are the feed's, less the tasks the outbox hides.
+// - The last rows are kept with the time they were current, under the computer's pin and the
+//   space, so a start without the computer shows them and how old they are. A removal of the phone
+//   forgets them; what waits stays.
 //
 // Plain TypeScript: the app hands it the native link and its own storage, the tests a Node link
 // and a map.
@@ -22,57 +22,15 @@ import {
   type Cursor,
   type Held,
   type NodeRow,
-  type SpaceHead,
   type TaskRow,
 } from "../store/index.ts";
 import type { Connect, Saved } from "./open.ts";
+import { answerOf, Outbox, type Entry, type Keep, type Refused } from "./outbox.ts";
 import { linkOwner, type LinkState } from "./owner.ts";
-
-/** Where the session keeps what must outlast the app: the app's private storage. */
-export interface Keep {
-  read(name: string): string | null;
-  write(name: string, text: string): void;
-}
-
-/**
- * What the person did that the computer has not taken yet, in the space it was done in: a pairing
- * with another space sends none of it there.
- */
-export type Waiting = { readonly space: string } & (
-  | {
-      readonly kind: "finish" | "reopen";
-      readonly request: string;
-      readonly task: string;
-      readonly title: string;
-      /** Where the feed was when the person acted: the write's `base`. */
-      readonly base: string;
-      readonly at: number;
-      readonly copy?: string;
-    }
-  | {
-      readonly kind: "add";
-      readonly request: string;
-      readonly draft: CaptureDraft;
-      /** The words the person typed. */
-      readonly text: string;
-      readonly at: number;
-      readonly copy?: string;
-    }
-);
-
-/** Something the computer refused: it did nothing, and its words say why. */
-export interface Refused {
-  readonly request: string;
-  readonly kind: Waiting["kind"];
-  /** The task's title, or the words of a capture. */
-  readonly words: string;
-  /** The computer's words, when it gave any. */
-  readonly why: string | undefined;
-}
 
 export interface SpaceView {
   readonly link: LinkState;
-  /** The open tasks to show, without those checked off on this phone. */
+  /** The tasks to show: the feed's, less those checked off on this phone. */
   readonly tasks: ReadonlyMap<string, TaskRow>;
   readonly nodes: ReadonlyMap<string, NodeRow>;
   /** Whether any rows are known: the feed's or the ones kept from before. */
@@ -81,10 +39,12 @@ export interface SpaceView {
   readonly live: boolean;
   /** When the rows were last current, in milliseconds since 1970. */
   readonly asOf: number | undefined;
-  readonly waiting: readonly Waiting[];
+  readonly waiting: readonly Entry[];
   readonly refused: readonly Refused[];
-  /** The last capture the computer took, by its request ID. */
-  readonly added: string | undefined;
+  /** Whether an applied change still waits for the feed to show it. */
+  readonly settling: boolean;
+  /** The last capture the computer took: its request ID and what it asked for. */
+  readonly added: { readonly request: string; readonly draft: CaptureDraft } | undefined;
 }
 
 export interface SpaceSession {
@@ -96,10 +56,7 @@ export interface SpaceSession {
   now(): void;
   /** Checks a task off. Its request ID, for Undo. */
   finish(task: TaskRow): string;
-  /**
-   * Takes back a check-off: one still waiting is never sent; one the computer took is reopened
-   * there.
-   */
+  /** Takes back a check-off made in this run of the app. */
   undo(request: string): void;
   /** Adds a task from a capture. Its request ID. */
   add(draft: CaptureDraft, text: string): string;
@@ -117,27 +74,19 @@ export interface SessionOptions {
   /** Every change; with the pairing to keep when the computer named it anew. */
   readonly report: (view: SpaceView, saved: Saved) => void;
   readonly retryMs?: number;
-  /** How long a write the computer could not take now waits for its next try. */
+  /** How long an unanswered send waits before the same request goes again. */
   readonly resendMs?: number;
+  /** How long a send waits for its answer. */
+  readonly callMs?: number;
 }
 
-const WAITING = "waiting";
 const ROWS = "rows";
-
-const PATH: Readonly<Record<Waiting["kind"], string>> = {
-  finish: "/api/v1/op/task.finish",
-  reopen: "/api/v1/op/task.reopen",
-  add: "/api/v1/op/task.add",
-};
-
-/** Each call is answered within this long, or counts as lost with its link. */
-const CALL_MS = 30_000;
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
 function parsed(text: string | null): unknown {
-  if (text === null) return undefined;
+  if (text === null || text === "") return undefined;
   try {
     return JSON.parse(text) as unknown;
   } catch {
@@ -145,25 +94,21 @@ function parsed(text: string | null): unknown {
   }
 }
 
-/** The kept rows: what the feed last sent, and when it was current. */
+/** The kept rows of one computer's space: what the feed last sent, and when it was current. */
 interface Kept {
   readonly at: number;
-  readonly space: string;
   readonly copy?: string;
   readonly cursor?: Cursor;
   readonly tasks: readonly TaskRow[];
   readonly nodes: readonly NodeRow[];
 }
 
-function keptOf(value: unknown, space: string): Kept | undefined {
-  if (!isRecord(value) || value["space"] !== space || typeof value["at"] !== "number") {
-    return undefined;
-  }
+function keptOf(value: unknown): Kept | undefined {
+  if (!isRecord(value) || typeof value["at"] !== "number") return undefined;
   const { tasks, nodes, copy, cursor } = value;
   if (!Array.isArray(tasks) || !Array.isArray(nodes)) return undefined;
   return {
     at: value["at"],
-    space,
     ...(typeof copy === "string" ? { copy } : {}),
     ...(isRecord(cursor) ? { cursor: cursor as unknown as Cursor } : {}),
     tasks: tasks as TaskRow[],
@@ -171,101 +116,65 @@ function keptOf(value: unknown, space: string): Kept | undefined {
   };
 }
 
-function waitingOf(value: unknown): Waiting[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter(
-    (w): w is Waiting =>
-      isRecord(w) &&
-      typeof w["request"] === "string" &&
-      typeof w["space"] === "string" &&
-      typeof w["at"] === "number" &&
-      (w["kind"] === "add"
-        ? isRecord(w["draft"]) && typeof w["text"] === "string"
-        : (w["kind"] === "finish" || w["kind"] === "reopen") &&
-          typeof w["task"] === "string" &&
-          typeof w["base"] === "string"),
-  );
-}
-
-const bodyOf = (w: Waiting): Record<string, unknown> =>
-  w.kind === "add"
-    ? { tasks: [w.draft], request_id: w.request }
-    : { task: w.task, base: w.base, request_id: w.request };
-
-const wordsOf = (w: Waiting): string => (w.kind === "add" ? w.text : w.title);
-
-/** The words of a refusal the computer sent, if it gave any. */
-function whyOf(body: unknown): string | undefined {
-  const error = isRecord(body) ? body["error"] : undefined;
-  const message = isRecord(error) ? error["message"] : undefined;
-  return typeof message === "string" && message !== "" ? message : undefined;
-}
+const asOfOf = (cursor: Cursor | undefined): string =>
+  cursor === undefined
+    ? ""
+    : `${String(cursor.epoch)}.${String(cursor.seq)}.${incarnationTag(cursor.incarnation)}`;
 
 export function spaceSession(options: SessionOptions): SpaceSession {
   const { connect, keep, newId, report } = options;
   const now = options.now ?? Date.now;
   const resendMs = options.resendMs ?? 5_000;
+  const callMs = options.callMs ?? 30_000;
+  const retryMs = options.retryMs ?? 10_000;
   let pairing = options.saved;
   const space = pairing.space.id;
+  const key = `${pairing.pin} ${space}`;
 
+  const outbox = new Outbox(keep, pairing.pin, space);
   let core = new LiveCore(space);
   let held: Held | undefined;
-  let kept = keptOf(parsed(keep.read(ROWS)), space);
-  const all = waitingOf(parsed(keep.read(WAITING)));
-  /** What waits for another space's pairing: kept as it is, never sent from here. */
-  const others = all.filter((w) => w.space !== space);
-  let waiting = all.filter((w) => w.space === space);
-  const refused: Refused[] = [];
-  /** Check-offs the computer took that the feed has not shown yet. */
-  const landed = new Set<string>();
-  let added: string | undefined;
-  /** This run's check-offs, for their Undo. */
-  const finishes = new Map<string, { task: string; title: string }>();
-  /** The request on its way to the computer now. */
-  let flying: string | undefined;
-  /** Check-offs taken back while on their way: their answer hides nothing. */
-  const undone = new Set<string>();
-  let link: LinkState = { kind: "connecting" };
-  let heard: number | undefined;
-
-  const calls = new Map<string, (reply: { status: number; body: unknown }) => void>();
-  let lost: (() => void)[] = [];
-  let callCount = 0;
-  let draining = false;
-  let resend: ReturnType<typeof setTimeout> | undefined;
-
-  const copy = (): string | undefined => held?.space.copy ?? kept?.copy;
-  /** Where the feed is: what a write of a field the person saw names as its `base`. */
-  const base = (): string => {
-    const cursor = held?.cursor ?? kept?.cursor;
-    return cursor === undefined
-      ? ""
-      : `${String(cursor.epoch)}.${String(cursor.seq)}.${incarnationTag(cursor.incarnation)}`;
+  const rowsFile = (): Record<string, unknown> => {
+    const value = parsed(keep.read(ROWS));
+    return isRecord(value) ? value : {};
   };
+  let kept = keptOf(rowsFile()[key]);
+  let link: LinkState = { kind: "connecting" };
+  let running = false;
+  /** The feed serves this phone now: resumed, or a snapshot came, since the last hello. */
+  let subscribed = false;
+  /** When the feed last applied something: the rows were current then. */
+  let fresh: number | undefined;
+  let added: SpaceView["added"];
+  /** This run's check-offs, for their Undo. */
+  const taps = new Map<string, { task: string; title: string }>();
+
+  const calls = new Map<string, (reply: { status: number; body: unknown } | undefined) => void>();
+  let callCount = 0;
+  let pumping = false;
+  let resubscribe: ReturnType<typeof setTimeout> | undefined;
+
+  const live = () => link.kind === "connected" && subscribed && held !== undefined;
 
   const view = (): SpaceView => {
-    const live = link.kind === "connected" && held !== undefined;
-    const source = held ?? kept;
+    const hidden = outbox.hidden();
     const tasks = new Map<string, TaskRow>();
-    const leaving = new Set<string>(landed);
-    for (const w of waiting) {
-      if (w.kind === "finish") leaving.add(w.task);
-      if (w.kind === "reopen") leaving.delete(w.task);
-    }
     for (const task of held?.tasks.values() ?? kept?.tasks ?? []) {
-      if (!leaving.has(task.id)) tasks.set(task.id, task);
+      if (!hidden.has(task.id)) tasks.set(task.id, task);
     }
     const nodes =
       held?.nodes ?? new Map((kept?.nodes ?? []).map((node): [string, NodeRow] => [node.id, node]));
+    const isLive = live();
     return {
       link,
       tasks,
       nodes,
-      loaded: source !== undefined,
-      live,
-      asOf: live ? now() : (heard ?? kept?.at),
-      waiting,
-      refused,
+      loaded: held !== undefined || kept !== undefined,
+      live: isLive,
+      asOf: isLive ? now() : (fresh ?? kept?.at),
+      waiting: outbox.waiting,
+      refused: outbox.refused,
+      settling: outbox.settling,
       added,
     };
   };
@@ -273,48 +182,37 @@ export function spaceSession(options: SessionOptions): SpaceSession {
     report(view(), pairing);
   };
 
-  const keepWaiting = () => {
-    keep.write(WAITING, JSON.stringify([...others, ...waiting]));
-  };
   const keepRows = () => {
     if (held === undefined) return;
-    const head: SpaceHead = held.space;
     kept = {
-      at: heard ?? now(),
-      space,
-      ...(head.copy === undefined ? {} : { copy: head.copy }),
+      at: fresh ?? now(),
+      ...(held.space.copy === undefined ? {} : { copy: held.space.copy }),
       cursor: held.cursor,
       tasks: [...held.tasks.values()],
       nodes: [...held.nodes.values()],
     };
-    keep.write(ROWS, JSON.stringify(kept));
+    const all = rowsFile();
+    all[key] = kept;
+    keep.write(ROWS, JSON.stringify(all));
   };
 
   const subscribe = (fresh: boolean) => {
     const message: Record<string, unknown> = { type: "subscribe" };
     const cursor = fresh ? undefined : core.resumeFrom;
     if (cursor !== undefined) message["cursor"] = cursor;
-    if (core.copy !== undefined && (cursor !== undefined || !core.loaded))
+    // A subscription resumed from the cursor gets no snapshot: its rows are current as of the
+    // cursor, so it is live now. A fresh one is live with its snapshot.
+    subscribed = cursor !== undefined;
+    if (core.copy !== undefined && (cursor !== undefined || !core.loaded)) {
       message["copy"] = core.copy;
+    }
     owner.send(JSON.stringify(message));
   };
 
-  const published = () => {
-    const next = core.publish();
-    if (next === undefined) return;
-    held = next;
-    for (const id of landed) {
-      if (held.tasks.get(id)?.lifecycle !== "active") landed.delete(id);
-    }
-    keepRows();
-  };
-
   const message = (text: string) => {
-    heard = now();
     const value = parsed(text);
     if (isRecord(value) && value["type"] === "reply" && typeof value["id"] === "string") {
       const answer = calls.get(value["id"]);
-      calls.delete(value["id"]);
       answer?.({
         status: typeof value["status"] === "number" ? value["status"] : 0,
         body: value["body"],
@@ -322,12 +220,17 @@ export function spaceSession(options: SessionOptions): SpaceSession {
       return;
     }
     const feed = messageOf(value);
-    if (
-      feed === undefined ||
-      (feed.type !== "snapshot" && feed.type !== "batch" && feed.type !== "unreadable")
-    ) {
+    if (feed?.type === "error") {
+      // The computer ended the subscription (the space closed there): not live, and asked again.
+      subscribed = false;
+      clearTimeout(resubscribe);
+      resubscribe = setTimeout(() => {
+        if (link.kind === "connected") subscribe(true);
+      }, retryMs);
+      tell();
       return;
     }
+    if (feed?.type !== "snapshot" && feed?.type !== "batch" && feed?.type !== "unreadable") return;
     const outcome = core.receive(feed);
     if (outcome.kind === "resnapshot") subscribe(true);
     if (outcome.kind === "replaced") {
@@ -336,76 +239,70 @@ export function spaceSession(options: SessionOptions): SpaceSession {
       held = undefined;
       subscribe(true);
     }
-    published();
+    if (outcome.kind === "snapshot") subscribed = true;
+    if (outcome.kind === "snapshot" || outcome.kind === "applied") fresh = now();
+    const next = core.publish();
+    if (next !== undefined) {
+      held = next;
+      keepRows();
+    }
+    if (held !== undefined && outcome.kind !== "ignored") outbox.covered(held.cursor);
     tell();
-    if (outcome.kind === "snapshot") void drain();
   };
 
-  /** One call on the link: its answer, or undefined when the link went first. */
-  const call = (w: Waiting): Promise<{ status: number; body: unknown } | undefined> =>
+  /** One send on the link: its answer, or undefined when none came in time or the link went. */
+  const call = (entry: Entry): Promise<{ status: number; body: unknown } | undefined> =>
     new Promise((resolve) => {
       callCount += 1;
       const id = `w${String(callCount)}`;
       const timer = setTimeout(() => {
-        calls.delete(id);
-        resolve(undefined);
-      }, CALL_MS);
-      const done = (reply: { status: number; body: unknown } | undefined) => {
-        clearTimeout(timer);
-        resolve(reply);
-      };
-      calls.set(id, done);
-      lost.push(() => {
-        calls.delete(id);
         done(undefined);
-      });
-      const at = w.copy ?? copy();
+      }, callMs);
+      function done(reply: { status: number; body: unknown } | undefined) {
+        clearTimeout(timer);
+        calls.delete(id);
+        resolve(reply);
+      }
+      calls.set(id, done);
+      const { path, body } = outbox.bodyOf(entry);
+      const copy = held?.space.copy ?? kept?.copy;
       const sent = owner.send(
-        JSON.stringify({
-          type: "call",
-          id,
-          path: PATH[w.kind],
-          body: bodyOf(w),
-          ...(at === undefined ? {} : { copy: at }),
-        }),
+        JSON.stringify({ type: "call", id, path, body, ...(copy === undefined ? {} : { copy }) }),
       );
       if (!sent) done(undefined);
     });
 
-  /** Sends what waits, oldest first, one at a time, while the link is up. */
-  const drain = async () => {
-    if (draining) return;
-    draining = true;
+  const pause = () =>
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, resendMs);
+    });
+
+  /** Sends what waits, oldest first, one at a time, while the link is up and the app in front. */
+  const pump = async () => {
+    if (pumping) return;
+    pumping = true;
     try {
-      while (link.kind === "connected" && waiting.length > 0) {
-        const w = waiting[0];
-        if (w === undefined) break;
-        flying = w.request;
-        const reply = await call(w);
-        flying = undefined;
-        if (reply === undefined) break;
-        if (reply.status >= 500) {
-          clearTimeout(resend);
-          resend = setTimeout(() => void drain(), resendMs);
-          break;
+      while (running && link.kind === "connected") {
+        const entry = outbox.next();
+        if (entry === undefined) break;
+        outbox.tried(entry.request);
+        const reply = await call(entry);
+        const answer =
+          reply === undefined ? { kind: "again" as const } : answerOf(reply.status, reply.body);
+        if (answer.kind === "again") {
+          await pause();
+          continue;
         }
-        waiting = waiting.filter((x) => x.request !== w.request);
-        keepWaiting();
-        if (reply.status === 200) {
-          if (w.kind === "finish" && !undone.has(w.request)) landed.add(w.task);
-          if (w.kind === "add") added = w.request;
-        } else {
-          refused.push({
-            request: w.request,
-            kind: w.kind,
-            words: wordsOf(w),
-            why: whyOf(reply.body),
-          });
+        outbox.answered(entry.request, answer);
+        // The feed may have shown it before its answer came.
+        if (held !== undefined) outbox.covered(held.cursor);
+        if (answer.kind === "applied" && entry.kind === "add") {
+          added = { request: entry.request, draft: entry.draft };
         }
         tell();
       }
     } finally {
-      draining = false;
+      pumping = false;
     }
   };
 
@@ -415,45 +312,44 @@ export function spaceSession(options: SessionOptions): SpaceSession {
     (state, saved) => {
       link = state;
       pairing = saved;
+      subscribed = false;
       if (state.kind !== "connected") {
-        for (const end of lost.splice(0)) end();
+        for (const end of [...calls.values()]) end(undefined);
       }
       if (state.kind === "removed") {
         // What it read goes; what waits to be sent stays, for a new pairing of this phone.
         kept = undefined;
         held = undefined;
-        keep.write(ROWS, "");
+        const all = rowsFile();
+        Reflect.deleteProperty(all, key);
+        keep.write(ROWS, JSON.stringify(all));
       }
       if (state.kind === "connected") {
-        lost = [];
         subscribe(false);
-        void drain();
+        void pump();
       }
       tell();
     },
-    { ...(options.retryMs === undefined ? {} : { retryMs: options.retryMs }), message },
+    { retryMs, message },
   );
 
-  const act = (w: Waiting): string => {
-    // Kept before anything is sent: a crash right after still sends it, once.
-    waiting = [...waiting, w];
-    keepWaiting();
+  const act = (request: string) => {
     tell();
-    void drain();
-    return w.request;
+    void pump();
+    return request;
   };
-  const at = (): { copy?: string } => {
-    const c = copy();
-    return c === undefined ? {} : { copy: c };
-  };
+  const base = () => asOfOf(held?.cursor ?? kept?.cursor);
 
   return {
     start: () => {
+      running = true;
       tell();
       owner.start();
+      void pump();
     },
     stop: () => {
-      clearTimeout(resend);
+      running = false;
+      clearTimeout(resubscribe);
       owner.stop();
     },
     now: () => {
@@ -461,47 +357,28 @@ export function spaceSession(options: SessionOptions): SpaceSession {
     },
     finish: (task) => {
       const request = newId();
-      finishes.set(request, { task: task.id, title: task.title });
-      return act({
-        kind: "finish",
-        space,
+      taps.set(request, { task: task.id, title: task.title });
+      outbox.add(
+        { kind: "finish", task: task.id, title: task.title, base: base() },
         request,
-        task: task.id,
-        title: task.title,
-        base: base(),
-        at: now(),
-        ...at(),
-      });
+        now(),
+      );
+      return act(request);
     },
     undo: (request) => {
-      const finished = finishes.get(request);
-      if (finished === undefined) return;
-      finishes.delete(request);
-      if (request !== flying && waiting.some((x) => x.request === request)) {
-        // Never sent: it goes, and the computer hears nothing of it.
-        waiting = waiting.filter((x) => x.request !== request);
-        keepWaiting();
-        tell();
-        return;
-      }
-      // Sent, or on its way: the computer reopens the task.
-      undone.add(request);
-      landed.delete(finished.task);
-      act({
-        kind: "reopen",
-        space,
-        request: newId(),
-        ...finished,
-        base: base(),
-        at: now(),
-        ...at(),
-      });
+      const task = taps.get(request);
+      if (task === undefined) return;
+      taps.delete(request);
+      outbox.undo(request, task, newId(), now(), base());
+      act(request);
     },
-    add: (draft, text) =>
-      act({ kind: "add", space, request: newId(), draft, text, at: now(), ...at() }),
+    add: (draft, text) => {
+      const request = newId();
+      outbox.add({ kind: "add", draft, text }, request, now());
+      return act(request);
+    },
     dismiss: (request) => {
-      const i = refused.findIndex((r) => r.request === request);
-      if (i >= 0) refused.splice(i, 1);
+      outbox.dismiss(request);
       tell();
     },
   };

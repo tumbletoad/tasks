@@ -125,9 +125,11 @@ class LinkTest {
     shown(device, "Connected")
     val field = device.wait(Until.findObject(By.desc("New task")), WAIT_MS)
       ?: throw AssertionError("no capture field")
+    // Enter goes to the view with the focus, as a person's tap gives it.
+    field.click()
     field.text = "Buy milk"
     device.pressEnter()
-    shown(device, "Added to the Inbox.")
+    shown(device, "Added to Inbox")
     picture(device, "capture.png")
   }
 

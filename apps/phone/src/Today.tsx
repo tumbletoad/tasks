@@ -7,9 +7,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Pressable, SectionList, StyleSheet, Text, TextInput, View } from "react-native";
 import { PRODUCT_NAME } from "@ttasks/brand";
-import { captureGroups, parseCapture } from "@ttasks/client/capture";
+import { captureGroups, parseCapture, type CaptureDraft } from "@ttasks/client/capture";
 import { spaceSession, type Saved, type SpaceSession, type SpaceView } from "@ttasks/client/link";
-import type { TaskRow } from "@ttasks/client/store";
+import type { NodeRow, TaskRow } from "@ttasks/client/store";
 import { formatDay, todayOf, type Clock } from "@ttasks/client/today";
 import { localDate } from "@ttasks/contracts/day";
 import { connectSocket, native } from "./link/socket.ts";
@@ -46,6 +46,14 @@ function ago(ms: number, now: number): string {
   if (minutes < 60) return WORDS.minutes(minutes);
   const hours = Math.floor(minutes / 60);
   return hours < 24 ? WORDS.hours(hours) : WORDS.days(Math.floor(hours / 24));
+}
+
+/** Where a capture went, as the page names it: its project or area, Waiting, or the Inbox. */
+function whereOf(draft: CaptureDraft, nodes: ReadonlyMap<string, NodeRow>): string {
+  const group = draft.project ?? draft.area;
+  const title = group === undefined ? undefined : nodes.get(group)?.title;
+  if (title !== undefined) return title;
+  return draft.status === "waiting" ? WORDS.waitingList : WORDS.inbox;
 }
 
 interface Held {
@@ -167,8 +175,8 @@ export function Today(props: {
   const captured =
     mine === undefined
       ? undefined
-      : view?.added === mine
-        ? WORDS.added
+      : view?.added?.request === mine
+        ? WORDS.addedTo(whereOf(view.added.draft, view.nodes))
         : view?.waiting.some((w) => w.request === mine) === true && !view.live
           ? WORDS.addedLater
           : undefined;

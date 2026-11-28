@@ -233,15 +233,17 @@ try {
   // In front again, so anything the end of the test cut off is sent.
   await restart();
   check(
-    await until(async () => (await lifecycle(water)) !== "active", 60_000),
+    await until(async () => (await lifecycle(water)) === "completed", 60_000),
     "the check-off reached the computer",
   );
-  check(await instrument("captures"), "a capture: a title and Enter, and the Inbox has it");
-  await pull("capture.png", "6-capture");
+  // The computer's side first, so a failure says which side it was.
+  const captured = await instrument("captures");
   check(
     await until(async () => (await found('"Buy milk"')) === 1, 60_000),
-    "the capture reached the computer, once",
+    "a capture, a title and Enter, reached the computer once",
   );
+  check(captured, "and the screen says where it went: Added to Inbox");
+  await pull("capture.png", "6-capture");
 
   const vet = await added("Call the vet");
   check(await shows("Call the vet"), "a second task shows");
@@ -259,7 +261,7 @@ try {
   await world.restart(link);
   ({ token } = await signIn(world));
   check(
-    await until(async () => (await lifecycle(vet)) !== "active", 120_000),
+    await until(async () => (await lifecycle(vet)) === "completed", 120_000),
     "with the service back, the check-off reached it",
   );
   check(await shows("Connected"), "and Today is live again");

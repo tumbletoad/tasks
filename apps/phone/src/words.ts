@@ -56,7 +56,9 @@ export const WORDS = {
 
   newTask: "New task",
   addTask: "Add a task",
-  added: "Added to the Inbox.",
+  addedTo: (where: string) => `Added to ${where}`,
+  inbox: "Inbox",
+  waitingList: "Waiting",
   addedLater: "Saved. It goes to the computer when it is back.",
   noTitle: "A task needs a title.",
 } as const;

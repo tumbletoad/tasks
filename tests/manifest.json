@@ -7283,6 +7283,27 @@
       "profiles": ["v1"]
     },
     {
+      "id": "S5.phone.outbox",
+      "title": "The phone's outbox keeps what waits under the computer's pin and the space; Undo of a check-off never sent takes it out, one on its way becomes a reopening from where the check-off landed, and each later change of the task goes from where the one before it landed; an applied check-off stays hidden until the feed covers it; a refusal moves to the refusals in one write, takes its Undo along and outlasts a restart; a 5xx is tried again unless it says it will never work",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.phone.sequences",
+      "title": "Against the real service, the phone's outbox through the sequences a review found: Undo after the computer applied a check-off whose answer was lost, Undo before the feed showed the check-off, the feed before the answer and a reopening on the computer, an answer withheld on an open link, a 503 that says it will never work, a closed space, and a refused capture across a restart",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.phone.interleavings",
+      "title": "Generated sequences against the real service: taps, lost and withheld answers, a dropped link, the feed held back, a restart of the app, changes on the computer and the space closed and opened; when all is quiet the phone shows what the computer holds, each capture is there once, and nothing waits",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "S5.phones.web",
       "title": "Settings > Phones: the list with each phone's space and last use; the Run switch shows on only once its save answered; a Remove that never reached the service changes nothing on screen and Remove is there again; a Remove or a Run off the service holds but did not save shows from the service's own answer, also after a reload, and saving it again clears it; Remove after a confirmation; the pairing dialog with its code, its warning, its end on close and the phone it paired",
       "owner": "M6",

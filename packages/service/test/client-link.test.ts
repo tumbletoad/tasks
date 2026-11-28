@@ -4,10 +4,8 @@
 // key. The native link itself is tried on an emulator (tests/phone/emulator.ts). Fixture data only.
 import { parsePairing, type Pairing } from "@ttasks/contracts/link";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { WebSocket } from "ws";
 import { randomUUID } from "node:crypto";
 import { createServer, type Socket } from "node:net";
-import { connect as tlsConnect } from "node:tls";
 import {
   linkOwner,
   spaceSession,
@@ -16,114 +14,16 @@ import {
   openLink,
   pairWith,
   type Connect,
-  type LinkSocket,
   type LinkState,
   type Saved,
 } from "@ttasks/client/link";
 import { post } from "./http-client.ts";
 import { httpWorld, signIn, type HttpWorld } from "./http-world.ts";
 import { SPACE_HEADER } from "../src/http/app.ts";
-import { certPin } from "../src/link/cert.ts";
-import { phoneKey, type PhoneKey } from "./phone-client.ts";
+import { phoneKey } from "./phone-client.ts";
+import { freePort, memory, phone, until } from "./phone-link.ts";
 
 const SLOW = { timeout: 120_000 };
-
-interface Phone {
-  readonly connect: Connect;
-  /** Every `open` the phone sent, in order. */
-  readonly opens: Record<string, unknown>[];
-  /** Every address the phone connected to, in order. */
-  readonly dialled: string[];
-  /** Sockets open now, and the most there ever were at once. */
-  readonly sockets: { live: number; most: number };
-}
-
-/**
- * A phone with its own key. The first `lose` connections that get an answer lose it: the socket
- * closes before the phone reads it, as when the network drops just then. Closing a socket ends it
- * at once, also in the middle of its handshake.
- */
-function phone(key: PhoneKey = phoneKey(), lose = 0): Phone {
-  const opens: Record<string, unknown>[] = [];
-  const dialled: string[] = [];
-  const sockets = { live: 0, most: 0 };
-  let losing = lose;
-  const connect: Connect = (url, pin, events) => {
-    const { hostname, port } = new URL(url);
-    dialled.push(`${hostname}:${port}`);
-    sockets.live += 1;
-    sockets.most = Math.max(sockets.most, sockets.live);
-    let ws: WebSocket | undefined;
-    let closed = false;
-    const tls = tlsConnect({
-      host: hostname,
-      port: Number(port),
-      key: key.key,
-      cert: key.cert,
-      rejectUnauthorized: false,
-      minVersion: "TLSv1.3",
-    });
-    const end = () => {
-      if (closed) return false;
-      closed = true;
-      sockets.live -= 1;
-      ws?.terminate();
-      tls.destroy();
-      return true;
-    };
-    const socket: LinkSocket = {
-      events,
-      send: (text) => {
-        opens.push(JSON.parse(text) as Record<string, unknown>);
-        ws?.send(text);
-      },
-      close: () => {
-        end();
-      },
-    };
-    const ended = (code: number) => {
-      if (end()) socket.events.close(code);
-    };
-    const lost = losing > 0;
-    if (lost) losing -= 1;
-    tls.once("error", () => {
-      if (closed) return;
-      socket.events.error("network");
-      ended(1006);
-    });
-    tls.once("secureConnect", () => {
-      const peer = tls.getPeerX509Certificate();
-      if (peer === undefined || certPin(peer.raw) !== pin) {
-        socket.events.error("pin");
-        ended(1006);
-        return;
-      }
-      const opened = new WebSocket(url, {
-        createConnection: () => tls,
-        perMessageDeflate: false,
-        rejectUnauthorized: false,
-      });
-      ws = opened;
-      opened.on("open", () => {
-        if (!closed) socket.events.open();
-      });
-      opened.on("message", (data: Buffer) => {
-        if (closed) return;
-        if (lost) {
-          ended(1006);
-          return;
-        }
-        socket.events.message(data.toString("utf8"));
-      });
-      opened.on("error", () => undefined);
-      opened.on("close", (code: number) => {
-        ended(code);
-      });
-    });
-    return socket;
-  };
-  return { connect, opens, dialled, sockets };
-}
 
 /** An address that takes connections and never answers: an attempt there waits. */
 async function silent() {
@@ -199,22 +99,6 @@ const reopened = async () => {
   ({ token } = await signIn(world));
   await until(async () => (await op("task.search", {})).status === 200);
 };
-/** Waits until `holds`, asking again every 20 ms. */
-async function until(holds: () => boolean | Promise<boolean>): Promise<void> {
-  while (!(await holds())) await new Promise((resolve) => setTimeout(resolve, 20));
-}
-
-/** The app's private storage, in memory. */
-function memory(): Keep {
-  const values = new Map<string, string>();
-  return {
-    read: (name) => values.get(name) ?? null,
-    write: (name, text) => {
-      values.set(name, text);
-    },
-  };
-}
-
 /** A session whose last view is kept. */
 function session(connect: Connect, saved: Saved, keep: Keep) {
   const seen: { view?: SpaceView } = {};
@@ -252,19 +136,6 @@ const code = async (): Promise<Pairing> => {
   if (pairing === undefined) throw new Error("the service made no pairing code");
   return pairing;
 };
-
-/** A port free now, so the service comes back on the same one after a restart. */
-const freePort = () =>
-  new Promise<number>((resolve, reject) => {
-    const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      server.close(() => {
-        resolve(typeof address === "object" && address !== null ? address.port : 0);
-      });
-    });
-  });
 
 let link: NonNullable<Parameters<typeof httpWorld>[1]>;
 
@@ -459,7 +330,7 @@ describe(
       expect(titles()).not.toContain("Post the letter");
       await until(async () => (await lifecycle(ref)) !== "active");
       const request = live.add({ title: "Buy milk", inbox: true }, "Buy milk");
-      await until(() => seen.view?.added === request);
+      await until(() => seen.view?.added?.request === request);
       const found = await op("task.search", { q: '"Buy milk"' });
       expect(found.result?.["total"]).toBe(1);
       expect(seen.view?.waiting).toEqual([]);

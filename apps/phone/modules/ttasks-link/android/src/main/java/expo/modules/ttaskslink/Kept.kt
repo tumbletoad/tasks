@@ -2,6 +2,8 @@ package expo.modules.ttaskslink
 
 import android.content.Context
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * What the app keeps across a restart besides its pairing: the space's last rows and what waits to
@@ -17,14 +19,11 @@ object Kept {
 
   fun read(context: Context, name: String): String? = file(context, name).takeIf { it.exists() }?.readText()
 
-  /** Written beside, then moved over the old: a crash leaves the old file or the new, never half. */
+  /** Written beside, then moved over the old in one step: a failure leaves the old file whole. */
   fun write(context: Context, name: String, text: String) {
     val target = file(context, name)
     val next = File(target.parentFile, "$name.json.next")
     next.writeText(text)
-    if (!next.renameTo(target)) {
-      target.delete()
-      next.renameTo(target)
-    }
+    Files.move(next.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
   }
 }
