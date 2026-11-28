@@ -1,7 +1,7 @@
-// Golden argv per target, route and OS (A4 5.1 "Golden argv tests", A7 3.9 M2.10's Verify line):
+// Golden argv per target, route and OS:
 // the command line each CLI route gives for fixed inputs, compared as arrays of decoded elements,
 // and the link route's URL compared by its decoded values, never as rendered strings. The inputs
-// are each OS's instances as A4 3.2 shapes them: a native binary or a wrapper on
+// are each OS's instances: a native binary or a wrapper on
 // Linux, `node <entry>` for an npm install on Windows. Fixture data only.
 import { describe, expect, test } from "vitest";
 import { envVar, MCP_SERVER_KEY, PRODUCT_NAME } from "@ttasks/brand";
@@ -12,6 +12,7 @@ import {
   expandUrl,
   isUncPath,
   presetSession,
+  resumeArgv,
   RouteUnavailable,
   routeOf,
   SESSION_UUID,
@@ -175,6 +176,46 @@ describe("[A4.5.routes.golden-argv] golden argv per target, route and OS, compar
       "--",
       BRIEF,
     ]);
+  });
+
+  test("Continue's command lines open the app's own conversation by its ID, with the instance's permission and arguments, and no brief", () => {
+    const claudeId = "4f1d2c3b-5a69-4e7d-8c0b-1a2b3c4d5e6f";
+    const codexId = "019a3f2c-7c41-7d20-9b6e-3f1c2a4b5d6e";
+    expect(resumeArgv(OS.linux.claude, { ...values, resume: claudeId, toolEnv: [] })).toEqual({
+      argv: [
+        "/home/mira/.local/bin/claude",
+        "--resume",
+        claudeId,
+        "--permission-mode",
+        "bypassPermissions",
+        "--model",
+        "opus",
+      ],
+      folderArgs: [],
+    });
+    const codex = resumeArgv(OS.win32.codex, {
+      ...values,
+      resume: codexId,
+      toolEnv: codexToolEnv(),
+    });
+    expect(withFolder(codex.argv, codex.folderArgs, OS.win32.folder)).toEqual([
+      "C:\\Program Files\\nodejs\\node.exe",
+      "C:\\Users\\mira\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js",
+      "resume",
+      codexId,
+      "-C",
+      OS.win32.folder,
+      "--no-daemon",
+      "-c",
+      `mcp_servers.${MCP_SERVER_KEY}.env_vars=["${envVar("TICKET")}"]`,
+      "--dangerously-bypass-approvals-and-sandbox",
+    ]);
+    // An ID that is not a plain UUID never reaches a command line, where it could read as an option.
+    for (const bad of ["--help", "thread-1", `${claudeId} x`]) {
+      expect(() => resumeArgv(OS.linux.claude, { ...values, resume: bad, toolEnv: [] })).toThrow(
+        RouteUnavailable,
+      );
+    }
   });
 
   test("the claude-cli:// link: the folder and the brief, each percent-encoded once, decoded back exactly", () => {

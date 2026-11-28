@@ -129,6 +129,8 @@ export interface UiRunPort {
   stop(space: string, run: string): Promise<RunRecord | undefined>;
   /** What the run's record cannot say now, in the copy `space` serves (RunService.live). */
   live(run: RunRecord, space: ServedSpace): UiRunLive;
+  /** Whether Continue can open the run's own conversation here (RunService.continuable). */
+  continuable(run: RunRecord): Promise<{ readonly ok: boolean }>;
   /** Hears each run a person queues or stops, here or with `ttasks run`. */
   onChange?(listener: (space: string) => void): () => void;
 }
@@ -176,12 +178,17 @@ export interface UiRun {
   readonly error?: string;
   /** How many of the agent's requests its permission refused, when any were. */
   readonly refused?: number;
+  /** The run holds its agent's own conversation, which Continue opens again. */
+  readonly resumable?: true;
   /** Grows with every change of the run. */
   readonly version: number;
 }
 
-/** The page's view of a run record, with what only the service knows of it now. */
-export function uiRun(run: RunRecord, live: UiRunLive = {}): UiRun {
+/**
+ * The page's view of a run record, with what only the service knows of it now, and whether
+ * Continue can open its conversation here.
+ */
+export function uiRun(run: RunRecord, live: UiRunLive = {}, continuable = false): UiRun {
   const result = run.result;
   const { waiting, quietSince, said } = live;
   const refused = result === null ? 0 : result.declined + result.permissionDenials;
@@ -206,6 +213,8 @@ export function uiRun(run: RunRecord, live: UiRunLive = {}): UiRun {
         }),
     ...runAnswer(run, said),
     ...(refused === 0 ? {} : { refused }),
+    // A restored copy's run is only a record here: nothing of its conversation is this copy's.
+    ...(continuable && live.recorded !== true ? { resumable: true as const } : {}),
     version: run.version,
   };
 }
@@ -632,10 +641,13 @@ export class UiLaunches {
       throw invalid("Expected a task ID.", "task");
     const space = this.#space(spaceRef, copy);
     const listed = await runs.list(space.id ?? "", task);
-    return listed
-      .filter(({ run }, at) => at < RUNS_SHOWN || isOpenRun(run))
-      .map(({ run }) => uiRun(run, runs.live(run, space)))
-      .reverse();
+    const shown = listed.filter(({ run }, at) => at < RUNS_SHOWN || isOpenRun(run));
+    const read = await Promise.all(
+      shown.map(async ({ run }) =>
+        uiRun(run, runs.live(run, space), (await runs.continuable(run)).ok),
+      ),
+    );
+    return read.reverse();
   }
 
   /**

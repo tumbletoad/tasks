@@ -1,4 +1,4 @@
-// What the projection writes (A1 3.13, A3 3.9.8), as pure functions of what read.ts read: a
+// What the projection writes, as pure functions of what read.ts read: a
 // task's file and its catalogue line, `catalog.jsonl`, `index.md`, `README.md` and
 // `.projection.json`. No I/O, no clock: the same rows give the same bytes, so a file is rewritten
 // only when what it shows changed, and the tree after quiescence equals a fresh render.
@@ -14,7 +14,7 @@
 //   the rest under Record. An outcome that is not this finish's (the task was reopened, dropped,
 //   or checked off without a new one) is shown as earlier: after the Context of an open task.
 //   Only notes for every audience are read (read.ts), so no other note is ever written.
-// - **Task text is shown, never run** (A1 3.13): agents write most of it, some from mail and
+// - **Task text is shown, never run**: agents write most of it, some from mail and
 //   tickets, so a Markdown viewer must run or load nothing it says: no HTML, no link or image whose
 //   target is not the text shown, no entity, no structure the projection did not write. A text of
 //   one line is written with what could start those escaped (mdLine); a text of more lines goes
@@ -25,7 +25,7 @@ import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { localDate } from "@ttasks/contracts/day";
 import { formatEntryRef, formatTaskRef } from "@ttasks/storage";
 
-/** The projection's format (A1 3.17 keeps it apart from the schema). A new one rebuilds the tree. */
+/** The projection's format, kept apart from the schema's version. A new one rebuilds the tree. */
 export const FORMAT = 1;
 
 /**
@@ -34,7 +34,7 @@ export const FORMAT = 1;
  */
 export const RENDERER = 2;
 
-/** A1 3.13: a slug of at most 48 ASCII characters. */
+/** A slug of at most 48 ASCII characters. */
 export const SLUG_MAX = 48;
 
 export const LIFECYCLES = ["active", "completed", "archived"] as const;
@@ -114,7 +114,7 @@ export interface TaskInput {
   readonly learnings: readonly string[];
 }
 
-/** A task's line in `catalog.jsonl` (A1 3.13), in this key order. */
+/** A task's line in `catalog.jsonl`, in this key order. */
 export interface CatalogEntry {
   readonly ref: string;
   readonly id: string;
@@ -388,7 +388,7 @@ const LIFECYCLE_ORDER: Readonly<Record<Lifecycle, number>> = {
 
 const refNumber = (ref: string): number => Number(ref.slice(ref.lastIndexOf("-") + 1));
 
-/** Catalogue lines in A1's order: by lifecycle, then by reference. */
+/** Catalogue lines in order: by lifecycle, then by reference. */
 export function sortEntries(entries: Iterable<CatalogEntry>): CatalogEntry[] {
   return [...entries].sort(
     (a, b) =>
@@ -405,7 +405,7 @@ export interface Watermark extends SpaceIdentity {
   readonly generatedAt: string;
 }
 
-/** `catalog.jsonl`: the header, then one line per task (A1 3.13, A3 3.9.8). */
+/** `catalog.jsonl`: the header, then one line per task. */
 export function catalogText(mark: Watermark, entries: Iterable<CatalogEntry>): string {
   const header = {
     kind: "header",
@@ -419,7 +419,7 @@ export function catalogText(mark: Watermark, entries: Iterable<CatalogEntry>): s
   return `${lines.join("\n")}\n`;
 }
 
-/** `.projection.json` (A1 3.13). */
+/** `.projection.json`. */
 export function projectionJson(mark: Watermark): string {
   const value = {
     space_id: mark.spaceId,
@@ -493,7 +493,7 @@ function lookupOf(list: readonly Group[]): {
 }
 
 /**
- * index.md: the open tasks by area, then project, one line each (A1 3.13). The tasks are put in
+ * index.md: the open tasks by area, then project, one line each. The tasks are put in
  * their groups once and each title is looked up once, so the cost grows with the tasks, not with
  * tasks times groups.
  */
@@ -530,7 +530,7 @@ export function indexText(
   return `${lines.join("\n").replace(/\n+$/u, "")}\n`;
 }
 
-/** README.md: A3 3.9.8's text for people and file-only agents. */
+/** README.md: the text for people and file-only agents. */
 export const README_TEXT = [
   "# Generated view",
   "",

@@ -99,6 +99,7 @@ import {
   StorageWorker,
   UnexpectedSpace,
   type Id,
+  type StayReason,
   type LockedFile,
   type MachineInfo,
   type Revision,
@@ -240,6 +241,8 @@ export interface SpaceView {
   readonly backups_folder?: string;
   /** An open space whose backups are not working: what happened and what to do. */
   readonly backup?: BackupTroubleView;
+  /** Backups made into the space's own folder that stay there, and why, for people. */
+  readonly old_backups?: { readonly stayed: number; readonly message: string };
   /** A restored copy that is not claimed: its own record, whatever its state's reason. */
   readonly restored?: Restored;
   /** What the folder check found (A1 3.2), when it found a sync client or a network file system. */
@@ -466,8 +469,11 @@ class Hosted {
   recheckNext = 0;
   /** Counts a person's closes, which an open the service begins by itself must not undo. */
   closes = 0;
-  /** The maintenance run in progress. */
+  /** The maintenance run in progress, and what ends it. */
   maintaining: Promise<void> | undefined;
+  stopMaintaining: AbortController | undefined;
+  /** The space's old backups that stay in its own folder, by why, as this start's move found. */
+  oldStayed: MaintenanceReport["moved"] | undefined;
   /** Whether the space's backups work, as its upkeep and the person's backups last found. */
   readonly backups = new BackupWatch();
   /** A restore in place or a claim through the manager, in progress. */
@@ -560,6 +566,7 @@ class Hosted {
     this.restored = undefined;
     this.copy = undefined;
     this.incarnation = undefined;
+    this.oldStayed = undefined;
     this.backups.reset();
   }
 
@@ -591,7 +598,9 @@ class Hosted {
     const check = this.check;
     const message = this.shown();
     const backup = this.state === "open" ? this.backups.view() : undefined;
+    const old = this.state === "open" ? oldBackupsView(this.oldStayed) : undefined;
     return {
+      ...(old === undefined ? {} : { old_backups: old }),
       entry: this.index,
       state: this.state,
       ...(this.forgotten ? { forgotten: true } : {}),
@@ -615,6 +624,26 @@ class Hosted {
           }),
     };
   }
+}
+
+const STAYED_WORDS: Record<StayReason, string> = {
+  unverified: "whose copy does not read back",
+  taken: "whose name another file has in the backups folder",
+  incomplete: "not whole",
+  no_room: "without room on the backups folder's disk",
+  failed: "that could not be moved",
+};
+
+/** What a person reads about old backups that stay in the space's own folder, if any do. */
+function oldBackupsView(moved: MaintenanceReport["moved"]): SpaceView["old_backups"] | undefined {
+  const counts = Object.entries(moved?.stayed ?? {}) as [StayReason, number][];
+  const stayed = counts.reduce((sum, [, n]) => sum + n, 0);
+  if (stayed === 0) return undefined;
+  const why = counts.map(([reason, n]) => `${String(n)} ${STAYED_WORDS[reason]}`).join(", ");
+  return {
+    stayed,
+    message: `Old backups stay in the space's own backups folder: ${why}. They are listed and restore as before; ${CLI_NAME} space backups shows them.`,
+  };
 }
 
 /** What a restore in place or a claim through the manager reports. Content-free. */
@@ -698,14 +727,19 @@ export class SpaceManager {
       const last = settings.lastMigration;
       const backups = backupsFolderOf(settings, this.#options.backups, space.registered);
       // The backup from before it is sent to only while it is there: a build before this one
-      // removed it after 30 days, and a person may have since. A record from before folders were
-      // recorded is in the backups folder or the space's own, where backups went before.
-      const folders =
-        last?.backup_folder === undefined
-          ? [backups.dir, backupsFolder(space.folder)]
-          : [last.backup_folder];
+      // removed it after 30 days, and a person may have since. It is looked for where its record
+      // says, then in the backups folder and the space's own: one made into the space's own
+      // folder moves to the backups folder (storage's moveOldBackups).
+      const folders = [
+        ...(last?.backup_folder === undefined ? [] : [last.backup_folder]),
+        backups.dir,
+        backupsFolder(space.folder),
+      ];
       const found = folders.find(
-        (dir) => last?.backup !== undefined && existsSync(join(dir, `${last.backup}.db.gz`)),
+        (dir) =>
+          last?.backup !== undefined &&
+          existsSync(join(dir, `${last.backup}.db.gz`)) &&
+          existsSync(join(dir, `${last.backup}.json`)),
       );
       const migrated =
         last?.backup === undefined
@@ -1950,23 +1984,28 @@ export class SpaceManager {
     const t0 = performance.now();
     const begun = space.backups.begin();
     const dir = readyBackupsFolder(backupFolder);
+    const stop = new AbortController();
+    space.stopMaintaining = stop;
     // A default folder that cannot be made is not there: no daily backup goes elsewhere, and
     // nothing is cleaned anywhere.
     const run: Promise<MaintenanceReport> =
       dir === undefined
         ? Promise.resolve({ leftovers: 0, backup: "away", removed: 0, unverified: 0 })
-        : maintenance.run({
-            folder: space.folder,
-            spaceId,
-            incarnation,
-            backupDir: dir,
-            // Only the default folder, which this service alone writes while it holds the
-            // space's writer.lock (maintenance.ts).
-            cleanup: !backupFolder.set,
-            atStart,
-            now,
-            utcOffsetMinutes: -new Date(now).getTimezoneOffset(),
-          });
+        : maintenance.run(
+            {
+              folder: space.folder,
+              spaceId,
+              incarnation,
+              backupDir: dir,
+              // Only the default folder, which this service alone writes while it holds the
+              // space's writer.lock (maintenance.ts).
+              cleanup: !backupFolder.set,
+              atStart,
+              now,
+              utcOffsetMinutes: -new Date(now).getTimezoneOffset(),
+            },
+            stop.signal,
+          );
     space.maintaining = run
       .then(
         (report) => {
@@ -1977,9 +2016,13 @@ export class SpaceManager {
             backup: report.backup,
             removed: report.removed,
             unverified: report.unverified,
+            ...(report.moved === undefined
+              ? {}
+              : { copied: report.moved.copied, finished: report.moved.finished }),
             ms: Math.round(performance.now() - t0),
           });
           space.backups.ran(begun, report);
+          if (report.moved !== undefined) space.oldStayed = report.moved;
           if (report.searchIndexDamaged === true) this.#repairSearch(space);
         },
         (error: unknown) => {
@@ -1996,6 +2039,7 @@ export class SpaceManager {
       )
       .finally(() => {
         space.maintaining = undefined;
+        space.stopMaintaining = undefined;
       });
   }
 
@@ -2072,6 +2116,10 @@ export class SpaceManager {
    * closed within the bound.
    */
   async #release(space: Hosted, ms: number = this.#closeMs): Promise<boolean> {
+    // A maintenance run moves and removes backups under the space's writer.lock: it ends here,
+    // and its worker is gone, before the lock goes.
+    space.stopMaintaining?.abort();
+    await space.maintaining;
     const { writer, reader, worker, projection } = space;
     space.writer = undefined;
     space.reader = undefined;

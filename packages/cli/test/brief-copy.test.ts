@@ -1,5 +1,5 @@
-// `ttasks brief --copy` and `ttasks brief --pack` as a person reads them (A4 3.4.6, 3.15.5; A7 3.14
-// M6.11): the text goes to the clipboard through the clipboard seam, which stands in for the OS's
+// `ttasks brief --copy` and `ttasks brief --pack` as a person reads them:
+// the text goes to the clipboard through the clipboard seam, which stands in for the OS's
 // tool (no test touches the machine's clipboard), and the CLI says so; with no tool, or a tool
 // that fails, it says why and prints the text, never a copy that did not happen. The CLI in this
 // process against a service in this process; fixture text and temporary folders only.

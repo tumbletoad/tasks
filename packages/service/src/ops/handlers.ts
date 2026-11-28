@@ -215,6 +215,7 @@ import {
 import { readFinished } from "./task-rows.ts";
 import { readChangeTasks, readTrash } from "./trash.ts";
 import { readActivity } from "./activity.ts";
+import { trailOff } from "../trial.ts";
 import {
   holderName,
   nodeView,
@@ -3270,7 +3271,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (sections.length === 0) {
       const digest = digestOf(read, call.today, await digestFolder(call, read.folder));
       // What is known above the task, and its own pages, in the digest's one budget.
-      const library = await trailOf(reader, read.space, read.row);
+      const library = trailOff() ? undefined : await trailOf(reader, read.space, read.row);
       const more = digest["more"] as Record<string, unknown>;
       answer = {
         view: "digest",
@@ -3780,6 +3781,15 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const instance = typeof input["instance"] === "string" ? input["instance"] : undefined;
     // Open again with a request already on the task: a note the person wrote, as it is now.
     const requestNote = typeof input["request"] === "string" ? input["request"] : undefined;
+    // Continue: the run's own conversation in the run's app, never a new one under that name. It
+    // takes no words: the person types them in the agent app.
+    const continues = typeof input["run"] === "string" ? input["run"] : undefined;
+    if (
+      continues !== undefined &&
+      (text !== undefined || requestNote !== undefined || input["pack"] === true)
+    ) {
+      throw invalid("run", "Continue takes no words", "Type them in the agent app.");
+    }
     if (requestNote !== undefined) {
       if (instance === undefined)
         throw invalid("request", "Copy takes no request note", "Pass instance.");
@@ -3833,6 +3843,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         ...(pack === undefined ? {} : { pack }),
         ...(input["mark_folder"] === true ? { markFolder: true } : {}),
         ...(input["another"] === true ? { another: true } : {}),
+        ...(continues === undefined ? {} : { continues }),
         // The person's words as a note of theirs: the note entry's own request path, under a
         // request ID the click's derives. Its writer scope is the click's
         // as the launch's replay is, not the sign-in's: a click repeated from any page or shell

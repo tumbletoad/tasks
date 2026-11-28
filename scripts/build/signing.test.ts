@@ -1,4 +1,4 @@
-// SHA256SUMS and its two signatures (A2 3.12.4): the raw Ed25519 signature and the SSHSIG, both
+// SHA256SUMS and its two signatures: the raw Ed25519 signature and the SSHSIG, both
 // from one key in node:crypto, checked against the tools the install scripts use: ssh-keygen -Y
 // verify on every OS, and openssl pkeyutl on Linux (the fallback verifier). Keys are throwaway
 // keys made by the test, in a temporary folder, deleted with it.

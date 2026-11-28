@@ -1,5 +1,5 @@
-// `ttasks doctor`'s rows about the version folder it runs from (A2 3.13): integrity against
-// manifest.json, and the runtime gate of A2 3.12.1 against the manifest's pins. From source both
+// `ttasks doctor`'s rows about the version folder it runs from: integrity against
+// manifest.json, and the runtime gate against the manifest's pins. From source both
 // are skipped. Fixture files in a temporary folder.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

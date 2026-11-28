@@ -5,7 +5,7 @@
 //
 //   /                              the machine's default space (A2 3.1), resolved by the page
 //   /?task=<ref>                   a task in the default space (`ttasks open <task>` without a space)
-//   /s/<space ID>/<view…>          a view of the space, at most four plain segments
+//   /s/<space ID>/<view…>          a view of the space, at most five plain segments
 //   /s/<space ID>/task/<ref>       a task of the space, expanded
 //
 // The skeleton's task links (`/s/<space>/t/<ref>`) still land on the task.
@@ -37,7 +37,7 @@ export function pagePath(path: string): string | undefined {
   const [s, space, ...rest] = parts;
   if (s !== "s" || space === undefined || space === "") return undefined;
   if (!SPACE_ID.test(space)) return NO_SUCH_SPACE;
-  if (rest.length > 4 || !rest.every((segment) => SEGMENT.test(segment))) return undefined;
+  if (rest.length > 5 || !rest.every((segment) => SEGMENT.test(segment))) return undefined;
   if (rest.length === 2 && rest[0] === "t") return `/s/${space}/task/${rest[1] ?? ""}`;
   return `/s/${[space, ...rest].join("/")}`;
 }

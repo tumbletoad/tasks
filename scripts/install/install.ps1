@@ -1,8 +1,8 @@
-# @@PRODUCT_NAME@@ install script for Windows x64, version @@VERSION@@ (A2 3.12.4).
+# @@PRODUCT_NAME@@ install script for Windows x64, version @@VERSION@@.
 # Rendered from scripts/install/install.ps1 by scripts/install/render.ts (@@BUILD_KIND@@ build).
 # Do not edit it: the release keys below are what it trusts. Runs on Windows PowerShell 5.1 and
 # PowerShell 7, and uses only what both have: .NET's own classes, never a module cmdlet such as
-# Get-FileHash, and never the console's code page for the bytes it verifies (A2 3.12.4).
+# Get-FileHash, and never the console's code page for the bytes it verifies.
 #
 # Usage: powershell -NoProfile -ExecutionPolicy Bypass -File install-@@VERSION@@.ps1 -Source <folder>
 #          [-Root <folder>] [-Verifier ssh-keygen|node]
@@ -10,8 +10,8 @@
 #   -Source    the release files, in one local folder: @@PRODUCT@@-@@VERSION@@-win-x64.zip, SHA256SUMS,
 #              SHA256SUMS.sig and SHA256SUMS.sshsig.
 #   -Root      the install root, a full path on a local disk whose parent folder exists. Default:
-#              $env:@@HOME_VAR@@. The whole install lives in it (a separate install, A2 3.2.2
-#              rule 3): versions\, current, bin\@@PRODUCT@@.exe and @@PRODUCT@@w.exe, config\, state\,
+#              $env:@@HOME_VAR@@. The whole install lives in it (a separate
+#              install): versions\, current, bin\@@PRODUCT@@.exe and @@PRODUCT@@w.exe, config\, state\,
 #              cache\ and home.marker. This installer makes separate installs only. It writes
 #              nothing outside the root: no Path entry, no shortcut, no registry value.
 #   -Verifier  the tool that checks the signature: ssh-keygen, the OpenSSH that is part of Windows
@@ -20,7 +20,7 @@
 #              part of this script. Default: ssh-keygen when it is there, else node. Each accepts
 #              only a signature by a key pinned below.
 #
-# The order is the point (A2 3.12.4, review SL-13). Nothing from the archive is unpacked or run
+# The order is the point. Nothing from the archive is unpacked or run
 # until the Ed25519 signature of SHA256SUMS verifies against a pinned key and the archive's SHA-256
 # matches its line in SHA256SUMS. (The node verifier runs runtime\node.exe and nothing else from
 # the archive, and only after Authenticode has confirmed its publisher.) Then the zip's entries are
@@ -46,7 +46,7 @@ $BuildKind = '@@BUILD_KIND@@'
 $Platform = 'win-x64'
 $Archive = "$Product-$Version-$Platform.zip"
 $Namespace = "$Product-release"
-# A2 3.12.3, path length: the launchers' longest path below the root, versions\<64-character
+# Path length: the launchers' longest path below the root, versions\<64-character
 # version>\runtime\node.exe, must stay under MAX_PATH.
 $MaxRoot = 168
 
@@ -76,7 +76,7 @@ function Join-Arguments([string[]]$Arguments) {
 # Runs an executable with a file as its standard input and returns its exit code and output.
 # Windows PowerShell 5.1 (.NET Framework) wraps the child's standard input in a StreamWriter with
 # [Console]::InputEncoding and writes that encoding's preamble first: on a UTF-8 console (65001) the
-# child read a byte order mark before the file (lab row R09, A2 3.12.4). So the console encoding
+# child read a byte order mark before the file (lab row R09). So the console encoding
 # is swapped for UTF-8 without a preamble while the process starts, and restored at once.
 function Invoke-WithInput([string]$Exe, [string[]]$Arguments, [string]$InputFile, [hashtable]$Environment = @{}, [string[]]$Remove = @()) {
   $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -130,7 +130,7 @@ function Invoke-Inherited([string]$Exe, [string[]]$Arguments) {
   return $process.ExitCode
 }
 
-# .NET directly, not Get-FileHash (A2 3.12.4).
+# .NET directly, not Get-FileHash.
 function Get-Sha256([string]$Path) {
   $sha = [System.Security.Cryptography.SHA256]::Create()
   $stream = [System.IO.File]::OpenRead($Path)
@@ -208,8 +208,8 @@ function Test-VersionFolder([string]$Dir, [string]$ManifestPath) {
   return $null
 }
 
-# An existing folder of this version counts only if it is exactly the signed release (A2 3.12.4
-# step 7): a plain folder that no other account can change, all through (checked before its
+# An existing folder of this version counts only if it is exactly the signed release:
+# a plain folder that no other account can change, all through (checked before its
 # files are, so none can change after), its manifest.json byte for byte the staged one, every file
 # checked against that. Its own manifest never vouches for it.
 function Test-ExistingVersion([string]$Dir, [string]$StagedManifest) {
@@ -231,7 +231,7 @@ function Test-ExistingVersion([string]$Dir, [string]$StagedManifest) {
   return $null
 }
 
-# ---- Who may change a folder (A2 3.2.2 rule 5, A2 3.12.4) ---------------------------------------
+# ---- Who may change a folder --------------------------------------------------------------------
 # Trusted: this user, SYSTEM, Administrators, CREATOR OWNER (whose rights go to whoever creates a
 # child, so to this user) and TrustedInstaller (which owns Windows' own folders, C:\ on many
 # machines). Any other account allowed to write, delete, change permissions or take ownership could
@@ -348,7 +348,7 @@ try {
 
   if (-not [Environment]::Is64BitOperatingSystem) { throw 'This installer is for 64-bit Windows.' }
 
-  # ---- The install root (A2 3.2.2 rules 3 and 5, A2 3.12.4) ------------------------------------
+  # ---- The install root ------------------------------------------------------------------------
   if ([string]::IsNullOrEmpty($Root)) {
     throw "Set `$env:@@HOME_VAR@@ or pass -Root <folder>. This installer makes separate installs only, into a folder you name."
   }
@@ -370,7 +370,7 @@ try {
   if (-not $rootItem.PSIsContainer -or (Test-IsLink $rootItem)) { throw "The install root $Root is not a folder (or is a link). Nothing was installed." }
   Assert-SafeRoot $Root
 
-  # One install into a root at a time, from here to the end of the clean-up (A2 3.2.3 holds
+  # One install into a root at a time, from here to the end of the clean-up (an update holds
   # update.lock for a whole install; a script cannot take a SQLite lock): a lock file in the root,
   # open without sharing, which Windows deletes when its handle closes, however this script ends.
   # Only while it holds the lock may a failure remove the root it made: until then another install
@@ -432,7 +432,7 @@ try {
       throw (New-VerifyError 'the signature of SHA256SUMS does not verify (ssh-keygen)')
     }
   } else {
-    # A2 3.12.4: without OpenSSH, the archive's own node.exe verifies, but only once Windows has
+    # Without OpenSSH, the archive's own node.exe verifies, but only once Windows has
     # confirmed that it is the OpenJS Foundation's signed binary. Nothing else from the zip runs,
     # and node.exe runs only the verifier below, from this script's text.
     $rawSig = Join-Path $work 'SHA256SUMS.sig'
@@ -449,7 +449,7 @@ try {
       $zipArchive.Dispose()
     }
     # The module from this PowerShell's own folder: a module path inherited from the other edition
-    # must not decide which Get-AuthenticodeSignature runs (A2 3.12.4).
+    # must not decide which Get-AuthenticodeSignature runs.
     Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1')
     $signature = Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $node
     $subject = if ($null -ne $signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '' }
@@ -527,7 +527,7 @@ process.exitCode = verified ? 0 : 1;
 
   # ---- 5. Into versions\<version> ---------------------------------------------------------------
   if (Test-Path -LiteralPath $target) {
-    # The same version is already there (A2 3.12.4 step 7): it runs only if it is exactly this
+    # The same version is already there: it runs only if it is exactly this
     # signed release. Otherwise it is left as it is: a running TTasks may use it.
     $problem = Test-ExistingVersion $target $stagedManifest
     if ($problem) {
@@ -544,7 +544,7 @@ process.exitCode = verified ? 0 : 1;
   Remove-Tree $work
   $work = $null
 
-  # ---- 6. home.marker: the launchers set @@HOME_VAR@@ to the root (A2 3.2.2 rule 3) ------------
+  # ---- 6. home.marker: the launchers set @@HOME_VAR@@ to the root ------------------------------
   $marker = Join-Path $Root 'home.marker'
   if (-not [System.IO.File]::Exists($marker)) {
     [System.IO.File]::WriteAllBytes($marker, [byte[]]@())
@@ -588,8 +588,8 @@ process.exitCode = verified ? 0 : 1;
   # folders go: current names this version (a crash or a stop after the finish's switch, which
   # puts current back when it fails), the version an earlier install made current, or one an
   # update made current after the finish let go of update.lock. An update may also use, meanwhile,
-  # a version folder this run moved into place (it takes an equal folder that is there, A2 3.12.4
-  # step 7, and holds update.lock, not this script's lock), so that folder stays too, verified
+  # a version folder this run moved into place (it takes an equal folder that is there,
+  # and holds update.lock, not this script's lock), so that folder stays too, verified
   # and unused. The lock goes last: a root this run made is emptied first, then the lock file goes
   # with its handle, then the folder, if it is still empty.
   try {

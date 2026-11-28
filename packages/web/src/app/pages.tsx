@@ -21,6 +21,7 @@ import { hostOf, type Host } from "./host.ts";
 import css from "./pages.module.css";
 import {
   areaFilter,
+  groupCounts,
   isCounted,
   projectFilter,
   LANDING,
@@ -39,6 +40,7 @@ import { TodayPage } from "../views/Today.tsx";
 import { TrashPage } from "../views/Trash.tsx";
 import { classes } from "./css.ts";
 import { SearchPage as SearchResults } from "../views/Search.tsx";
+import { NodeLibrary, NodeTabs } from "../library/Library.tsx";
 
 const styles = classes(css, ["line"]);
 
@@ -84,6 +86,7 @@ export function ViewPage({
   if (view === "agents") return <AgentsPage task={task} onExpand={onExpand} />;
   if (view === "activity") return <ActivityPage />;
   if (view === "trash") return <TrashPage task={task} onExpand={onExpand} />;
+  if (view === "library") return <NodeLibrary node={SPACE_NODE} />;
   if (filter === undefined || !isCounted(view)) return null;
   const list = VIEW_LIST[view];
   // Keyed by the view: another view starts at its top with nothing expanded.
@@ -101,18 +104,34 @@ export function ViewPage({
   );
 }
 
-/** An area's page: its tasks, its projects' included. */
+const SPACE_NODE = { kind: "space" } as const;
+
+/** The open tasks a group's view lists, as the side menu counts them; unknown before the rows. */
+function useTaskCount(group: string): number | undefined {
+  const state = useLive();
+  const known = state.space !== undefined;
+  return useMemo(
+    () => (known ? (groupCounts(state.tasks.values()).get(group) ?? 0) : undefined),
+    [known, state.tasks, group],
+  );
+}
+
+/** An area's page: its tasks, its projects' included, or its Library. */
 export function AreaPage({
   area,
   task,
+  tab = "tasks",
 }: {
   readonly area: string;
   readonly task?: string | undefined;
+  readonly tab?: "tasks" | "library";
 }) {
   const t = useT();
   const state = useLive();
   const onExpand = useExpandInUrl();
   const row = state.areas.get(area);
+  const node = useMemo(() => ({ kind: "area", id: area }) as const, [area]);
+  const count = useTaskCount(area);
   useTitle(row?.title ?? "");
   const filter = useMemo(() => areaFilter(area), [area]);
   if (row === undefined) return <p className={styles.line}>{t("view.noArea")}</p>;
@@ -120,16 +139,21 @@ export function AreaPage({
   return (
     <>
       <ArchivedLine area={area} />
-      <TaskList
-        key={area}
-        view="area"
-        grouping="project"
-        group={areaGroups}
-        filter={filter}
-        empty={t("view.empty")}
-        expand={task}
-        onExpand={onExpand}
-      />
+      <NodeTabs node={node} tab={tab} tasks={count} />
+      {tab === "library" ? (
+        <NodeLibrary key={area} node={node} />
+      ) : (
+        <TaskList
+          key={area}
+          view="area"
+          grouping="project"
+          group={areaGroups}
+          filter={filter}
+          empty={t("view.empty")}
+          expand={task}
+          onExpand={onExpand}
+        />
+      )}
     </>
   );
 }
@@ -144,23 +168,38 @@ export function ProjectPage({
   project,
   area: addressed,
   task,
+  tab = "tasks",
 }: {
   readonly space: string;
   readonly project: string;
   /** The area the address names. */
   readonly area?: string;
   readonly task?: string | undefined;
+  readonly tab?: "tasks" | "library";
 }) {
   const t = useT();
   const state = useLive();
   const onExpand = useExpandInUrl();
   const row = state.projects.get(project);
+  const node = useMemo(() => ({ kind: "project", id: project }) as const, [project]);
+  const count = useTaskCount(project);
   useTitle(row?.title ?? "");
   const filter = useMemo(() => projectFilter(project), [project]);
   if (row === undefined) return <p className={styles.line}>{t("view.noProject")}</p>;
   const area = row.area_id;
   if (area !== addressed) {
     const search = task === undefined ? {} : { task };
+    if (tab === "library") {
+      return area === undefined ? (
+        <Navigate to="/s/$space/project/$project/library" params={{ space, project }} replace />
+      ) : (
+        <Navigate
+          to="/s/$space/area/$area/project/$project/library"
+          params={{ space, area, project }}
+          replace
+        />
+      );
+    }
     return area === undefined ? (
       <Navigate
         to="/s/$space/project/$project"
@@ -181,17 +220,24 @@ export function ProjectPage({
   return (
     <>
       <ArchivedLine area={area} project={project} />
-      <ProjectFolder key={project} project={project} />
-      <TaskList
-        key={`list/${project}`}
-        view="area"
-        grouping="project"
-        group={projectGroups}
-        filter={filter}
-        empty={t("view.empty")}
-        expand={task}
-        onExpand={onExpand}
-      />
+      <NodeTabs node={node} tab={tab} tasks={count} />
+      {tab === "library" ? (
+        <NodeLibrary key={project} node={node} />
+      ) : (
+        <>
+          <ProjectFolder key={project} project={project} />
+          <TaskList
+            key={`list/${project}`}
+            view="area"
+            grouping="project"
+            group={projectGroups}
+            filter={filter}
+            empty={t("view.empty")}
+            expand={task}
+            onExpand={onExpand}
+          />
+        </>
+      )}
     </>
   );
 }

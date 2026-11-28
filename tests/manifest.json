@@ -575,6 +575,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.backup.old-move",
+      "title": "A space's backups made into its own folder move to its backups folder in two starts: copied without replacing a file, the original removed only at a later start once the copy reads back; listed once and restorable at every step and after a crash at any of them; a copy that does not read back, another file at the name, too little room, an incomplete or another space's backup stays; a backups folder that is the old one or inside the space moves nothing; old daily backups are kept by retention unless pruning is on, then from the run after their move",
+      "source": "A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.backup.outside-home",
       "title": "A space's backups go to a folder per space beside the TTasks home, never inside it; backups made before in the space's own folder stay there untouched, listed with their folder, and restore by name and as latest, also before the first backup beside the home",
       "source": "A1 3.18",
@@ -2033,6 +2041,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.5.routes.continue",
+      "title": "Continue through the service with a real shim and fake Claude Code and Codex: a run's own conversation opens in its instance's terminal with the app's resume command, the instance's permission and no brief, in the folder the run worked in, with the launch's ticket, and what the resumed session writes is its own; a conversation already open is that session, also as another, and another run's opens beside it; a working run is stopped and ended before anything opens; another task's run, one without a conversation and one whose instance now uses another home are refused without being stopped, and a task whose folder is another one now opens nothing",
+      "source": "A4 3.4.2, A4 3.4.3, A4 3.11",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.5.routes.chosen",
       "title": "Open starts the agent as its instance is set up: the first usable route that carries its permission, arguments, environment and home, so a prefill instance with any of them opens in a terminal with the brief to paste; without one it opens on a route that leaves the prompt unsent and the receipt names what it left out, recorded with the launch so every later answer about it says it, and no route that sends a prompt leaves anything out; a terminal counts only where one of its chain can start; a TTASKS_* variable is no setting to carry; where no terminal opens, an instance keeps its tile for what it can do; an instance for some spaces is offered and opened only there; a home of its own opens only on a route that carries it, never in the default account, and gets no account variable of the person's, by prefix, while its own env wins and the program is told its home; a folder replaced after its marker check opens nothing",
       "source": "A4 3.4, A4 3.8, A4 3.3",
@@ -2193,7 +2209,7 @@
     },
     {
       "id": "S2.tree.runs",
-      "title": "A folder's change held to its path and its removal as the caller saw them, and a new folder to a removal since the base, as today's writer; What Open and Run record on the tree writer, by today's rules: a launch opens prepared, a second click gets it, and it moves by the state machine's edges only, by one compare-and-set, with evidence that only grows and a reason where a state takes one; a run is queued for a task with the person's instruction and moves on its version; a node's folder on this machine is set as the machine spells a path, changed and cleared, and a removed folder is refused; a launch of a task in the Trash is refused, and one may name a note of its task as its request",
+      "title": "A folder's change held to its path and its removal as the caller saw them, and a new folder to a removal since the base, as today's writer; What Open and Run record on the tree writer, by today's rules: a launch opens prepared, a second click that continues the same agent conversation or none gets it, and it moves by the state machine's edges only, by one compare-and-set, with evidence that only grows and a reason where a state takes one; a run is queued for a task with the person's instruction and moves on its version; a node's folder on this machine is set as the machine spells a path, changed and cleared, and a removed folder is refused; a launch of a task in the Trash is refused, and one may name a note of its task as its request",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2883,6 +2899,13 @@
     {
       "id": "M6.page.run-words",
       "title": "A run's thread entry says in plain words that it waits and why, works, stops, is done, needs the person with its question, did not start, was interrupted by a restart, failed with the agent's error or ran past its limit, and how its processes ended; Stop is offered only while it may still work",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "M6.page.run-continue",
+      "title": "A run the service says can continue offers Continue under what it said, which opens it in the run's instance; a run that may still work offers Stop and continue beside its Stop; one with no conversation, and one whose instance this machine no longer has, offer none",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -6854,6 +6877,94 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.pages.web.store",
+      "title": "The page holds the library's pages shown, from the snapshot and the batches after it: a page moved to the Trash leaves the lists, a page row the feed withholds asks for a fresh snapshot, and a change to a node's texts carries no row",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.library",
+      "title": "A project's Library against the contract's examples: its brief, its text for agents and its description, its pages and its tasks' pages by title with who changed each, each row to its page, what comes from above folded; a page an agent moves to the Trash leaves at once, a change to the texts while the person reads them is offered and never put in their place, a long description is read whole so its pen opens, and the person's pen writes the text for agents from the base the Library read",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.page",
+      "title": "A page's screen against the contract's examples: who changed it and why, the way back named for where the person came from, the versions newest first with Show and Restore, Restore written as a set from the version's change over the body on screen, a Restore that meets a newer body goes back to the current words, read anew, before Restore can be pressed again, a Restore that worked puts the focus on the words, and the feed never replaces the words on screen or in an open pen",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.new-page",
+      "title": "New page on a Library asks for a title alone, makes the page without a brief and opens it with the pen in its body; a page's row without a brief shows no brief line",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.card",
+      "title": "A task's card shows its Knowledge from the live store: the task's own pages, a new page on the task, and what is known above it (project, area, space, nearest first) folded with its count; each page opens with the way back to the list with the task expanded",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.build",
+      "title": "Build this project's library, on a project's Library with no pages: an ordinary task there with the person's note for agents saying what to build, then the task expanded in the project's list; a note that fails is tried again on the task made, never with a second task; a Library with pages has no such button",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.today",
+      "title": "Today's Changes names the pages an agent changed last in the past seven days, newest first, beside the tasks; a page the person changed after the agent is not named",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.activity",
+      "title": "Activity reads an agent's page changes as what they did to the page (text changed, text added, renamed, moved, moved to the Trash), and pages made by one change as a count",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.e2e.library",
+      "title": "Against the real service in Chromium and Firefox: a project's Library lists an agent's page as it comes and Back returns focus to its row; an agent's edit while the page is read is offered, never put in place; the pen corrects the body across a reload, a version is shown and restored with an Undo and focus on the words; a Restore that meets newer words writes nothing and shows them; New page opens with its pen and its row has no brief line; Move to Trash, the page's address saying it is in the Trash with its Restore, the page in the Trash and Restore; the space's text for agents keeps across a reload; screenshots at 1,440 and 390 px in Sumi and Washi, axe finds nothing and nothing scrolls sideways",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.e2e.knowledge",
+      "title": "Against the real service in Chromium and Firefox: a task's card shows its own pages and, folded, what is known above it, and Back from a page returns to the card with the focus on its link; + Page on a card makes a page on the task and opens it with its pen; Today names a page an agent changed and Activity reads the edit with the page as a link; Build this project's library adds its task with the person's note for agents, expanded in the list; screenshots of the card's Knowledge at 1,440 and 390 px in Sumi and Washi, axe finds nothing and nothing scrolls sideways",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.trash",
+      "title": "The pages in the Trash list where each was, who moved it there and why, and restore with their own Restore",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.while-away.web.asking",
       "title": "The page holds every finished or dropped task an agent's question waits on, from the snapshot and the batches after it: a row with questions outside the open tasks joins, one dismissed, answered or deleted leaves, and a reopened one is an open task again",
       "owner": "M5",
@@ -7023,6 +7134,20 @@
     {
       "id": "S5.link.fields",
       "title": "Against the real service: a task whose folder the page shows reads on a phone without its folder or skills; a folder on a capture and a launch reference on a read are refused by name, and a task update, a folder change and the space's status are refused",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.phones.web",
+      "title": "Settings > Phones: the list with each phone's space and last use; the Run switch shows on only once its save answered; a Remove that never reached the service changes nothing on screen and Remove is there again; a Remove or a Run off the service holds but did not save shows from the service's own answer, also after a reload, and saving it again clears it; Remove after a confirmation; the pairing dialog with its code, its warning, its end on close and the phone it paired",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.phones.e2e",
+      "title": "Against the real service in Chromium and Firefox: Settings > Phones shows a pairing code as a QR code with its warning, a phone pairs with that code and the dialog says so, the list shows it with its space, Run is switched on and stays after a reload, a Run off the service reports as not saved is shown and saved again, and Remove asks first; screenshots of the list, the unsaved Run off, the dialog and the confirmation at 1,440 and 390 px in Sumi and Washi, axe clean, no sideways scroll",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

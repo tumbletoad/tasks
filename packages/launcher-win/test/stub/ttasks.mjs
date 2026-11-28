@@ -1,4 +1,4 @@
-// Stand-in for lib/ttasks.mjs in the launcher tests (A2 3.12.2). Commands:
+// Stand-in for lib/ttasks.mjs in the launcher tests. Commands:
 //   argv <args…>   print what reached Node as JSON: arguments, execArgv, the runtime and the
 //                  launcher's variables (only whether NODE_OPTIONS and NODE_PATH are set)
 //   env            print as JSON the names of the NODE_ and OPENSSL_ variables that reached Node,

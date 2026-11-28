@@ -1,4 +1,4 @@
-// `ttasks setup agents` (A3 3.13; M2.14, M4.05): TTasks's MCP server entry in this machine's agent
+// `ttasks setup agents`: TTasks's MCP server entry in this machine's agent
 // homes: Claude Code's user scope, every Codex home (the Codex app reads the default one), the
 // homes T3 Code's provider instances use, and Claude Desktop's configuration. Loaded only for this
 // command (setup.ts), so no other command pays for the TOML reader and the lock.
@@ -15,17 +15,17 @@
 //   ttasks setup agents --status     each home, registered or not, and its agent-home row (reads only)
 //   ttasks setup agents print --app <name>
 //                                   the entry and the file it belongs in, for an app setup does not
-//                                   manage or a managed file (A3 3.13.7): a hand-made entry, which
+//                                   manage or a managed file: a hand-made entry, which
 //                                   names the machine's default space, the one such an entry may
 //                                   use. Writes nothing
 //   ttasks setup agents print-block --for claude|agents
 //                                   the instruction block and the file it belongs in, for a managed
-//                                   file's source or an app setup does not write (A3 3.12). Reads no
+//                                   file's source or an app setup does not write. Reads no
 //                                   home and writes nothing
 //   [--app claude-code,codex,claude-desktop,codex-app,t3] [--instance <id>] [--home <folder>]
 //   [--parts mcp,approve-tools,block] [--space <id or name>] [--json]
 //
-// `block` (A3 3.12, setup/block.ts) is the optional instruction block in each Claude Code and Codex
+// `block` (setup/block.ts) is the optional instruction block in each Claude Code and Codex
 // home's instruction file: the preview shows its unified diff, apply writes exactly that, and
 // remove takes back only a block that is still exactly setup's. It names no space and needs no
 // service, so a plan of only that part asks the service nothing.
@@ -36,7 +36,7 @@
 // and remove run only for a person at a terminal: a script or an agent is refused before anything
 // is read or written, and the service checks the class again for every row.
 //
-// `approve-tools` (A3 3.13.2, 3.13.4) is shown, never applied: setup never changes another app's
+// `approve-tools` is shown, never applied: setup never changes another app's
 // approval settings, so the preview names the change for the person to make by hand.
 import { statSync } from "node:fs";
 import { posix, win32 } from "node:path";
@@ -113,7 +113,7 @@ import { asAppError } from "./verbs.ts";
 export interface AgentsSetupOptions {
   /** The agent environment the apps' commands run in. Default: this process's environment. */
   readonly env?: Env;
-  /** The user's home folder. Default: the account's (A2 3.2.2 rule 1). */
+  /** The user's home folder. Default: the account's. */
   readonly home?: string;
   /**
    * Doctor: the argv a program stands for when doctor runs it (a fake engine in place of the Codex
@@ -334,8 +334,8 @@ function keptText(outcome: Outcome): string | undefined {
 
 /**
  * Why a home was left, for people. An entry of TTasks's name that setup did not write (one added by
- * hand) also says what to take out of which file, so the next setup can register the home (A3
- * 3.7.8: the grant gate's refusal of such an entry sends the person here).
+ * hand) also says what to take out of which file, so the next setup can register the home (the
+ * grant gate's refusal of such an entry sends the person here).
  */
 function reasonText(reason: OutcomeReason, home: HomeView["home"], record?: string): string {
   if (reason === "state_unwritable" && record !== undefined) {
@@ -440,7 +440,7 @@ interface SpaceRow {
 }
 
 /**
- * The space each new entry names (A3 3.13.1): `--space` (an ID or a name), else the
+ * The space each new entry names: `--space` (an ID or a name), else the
  * machine's default space (machine.toml's `[service] default_space`) when the service serves it,
  * else the one space the service serves.
  */
@@ -460,7 +460,7 @@ async function pickSpace(
       : byDefault.length > 0
         ? byDefault
         : served;
-  // Copies of one space share its ID, which is what an entry names (A2 3.10.5): one space.
+  // Copies of one space share its ID, which is what an entry names: one space.
   const ids = [...new Set(found.map((s) => s.id))];
   const [only, other] = ids;
   if (only !== undefined && other === undefined) return only;
@@ -491,7 +491,7 @@ export async function setupInputOf(
   const layout = resolveLayout(facts);
   const env = options.agents?.env ?? io.env;
   const userHome = options.agents?.home ?? homeFolder(facts);
-  // The install's stable command (A2 3.12) in the layout's command folder: `~/.local/bin/ttasks`,
+  // The install's stable command in the layout's command folder: `~/.local/bin/ttasks`,
   // or `<root>/bin/ttasks` of a TTASKS_HOME install (`ttasks.exe` on Windows).
   const tasks = (io.platform === "win32" ? win32 : posix).join(
     layout.bin,
@@ -547,7 +547,7 @@ export async function agentsCommand(
     if ((parsed.mode === "apply" || parsed.mode === "remove") && !personAtTerminal(io)) {
       throw forbidden();
     }
-    // Apply carries out a preview the person has seen, or nothing (A3 3.13.1).
+    // Apply carries out a preview the person has seen, or nothing.
     if (parsed.mode === "apply" && parsed.plan === undefined) {
       throw new UsageError(
         `${CLI_NAME} setup agents --apply needs --plan: run ${CLI_NAME} setup agents first and use the command it prints`,
@@ -641,7 +641,7 @@ export async function agentsCommand(
           if (mcp) {
             // Each selected home by its own records: one with something of setup's, an entry of
             // its name, or a live row. Its access first, then each of its files; a file whose
-            // record cannot be read is left as it is. Reverse order (A3 3.13.1): the latest first.
+            // record cannot be read is left as it is. Reverse order: the latest first.
             const rowed = (v: HomeView) =>
               (live.rows ?? []).some(
                 (r) => r.app === v.home.app && samePath(input.platform, r.home, v.home.home),
@@ -691,7 +691,7 @@ export async function agentsCommand(
   }
 }
 
-/** Setup's own failures as A3's error bodies. */
+/** Setup's own failures as TTasks error bodies. */
 function setupError(error: unknown): unknown {
   if (error instanceof LockBusy) {
     return new AppError({
@@ -721,7 +721,7 @@ type Call = (method: string, params: Record<string, unknown>) => Promise<Record<
 
 /**
  * Setup's input with the service's live agent-home rows, so the preview and its apply propose
- * each new home an instance no other home's row holds (A3 3.7.8). Without a service it is the
+ * each new home an instance no other home's row holds. Without a service it is the
  * input as it is: apply needs the service anyway, and checks the plan again under its lock.
  */
 async function withRows(input: SetupInput, call: Call): Promise<SetupInput> {
@@ -1422,7 +1422,7 @@ function report(
     for (const note of notes) io.stdout(`${note}\n`);
     const changed = outcomes.filter((o) => o.result === "applied" || o.result === "removed");
     if (changed.some((o) => o.home.app === "claude-desktop")) {
-      // A3 3.13.3: the app loads its configuration only when it starts.
+      // The app loads its configuration only when it starts.
       io.stdout("Quit and reopen Claude Desktop to load the change.\n");
     }
     if (mode === "apply" && changed.some((o) => o.home.app !== "claude-desktop")) {

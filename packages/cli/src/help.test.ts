@@ -1,4 +1,4 @@
-// The CLI's help (A2 3.10.1): every command of the verb table and every generated verb has its own
+// The CLI's help: every command of the verb table and every generated verb has its own
 // help, printed the same by `ttasks help <command>` and `ttasks <command> --help`, with its forms
 // and flags; a flag the contract requires is marked so; the columns of each help line up. No
 // service is needed: help runs nothing.

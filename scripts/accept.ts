@@ -1,14 +1,14 @@
-// pnpm accept m<N> [--part <name>] [--profile <p>] [--installed <folder>] (A7 3.3, 3.18.6): runs
+// pnpm accept m<N> [--part <name>] [--profile <p>] [--installed <folder>]: runs
 // the `ci` entries of tests/manifest.json that milestones M1 to M<N> own in the profile, and lists
-// the `manual` ones. A part is the subset one step owns, such as `pnpm accept m1 --part cli` for
-// M1.10's Verify line; the parts are listed in PARTS below.
+// the `manual` ones. A part is the subset one step owns, such as `pnpm accept m1 --part cli`;
+// the parts are listed in PARTS below.
 //
 // Without `--installed` a run takes the `ci` and `installed` entries, from source. With
-// `--installed <root or folder>` it takes the `installed` ones (A7 3.18.6: those that also run
+// `--installed <root or folder>` it takes the `installed` ones (those that also run
 // against an installed build), against:
-//   - an install root that an install script made (M1.14; it holds home.marker and current): its
+//   - an install root that an install script made (it holds home.marker and current): its
 //     current version folder, and the root itself for the tests of the install as installed,
-//   - a built version folder (M1.13's `pnpm build` writes one to dist/<platform>/<version>/), or a
+//   - a built version folder (`pnpm build` writes one to dist/<platform>/<version>/), or a
 //     folder holding exactly one.
 // The tests that start a service and `ttasks` processes lay out a test install of the version
 // folder in their own temporary TTASKS_HOME and run it through its launcher
@@ -21,21 +21,21 @@ import { binPath, repoRoot, runNode } from "./run.ts";
 /** The parts of a milestone's acceptance: the manifest IDs each one runs. */
 export const PARTS: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = {
   m1: {
-    // M1.10's Verify line: the CLI against a real service child in a temporary TTASKS_HOME.
+    // The CLI against a real service child in a temporary TTASKS_HOME.
     cli: ["A2.3.10.cli.accept"],
-    // M1.13's check that the bundles behave like the source, with --installed: the CLI's
+    // The check that the bundles behave like the source, with --installed: the CLI's
     // acceptance, with the folder's integrity and runtime rows and `ttasks mcp` as the build's own
     // bridge through the launcher, and the space verbs, whose writes, backups and restores run in
     // the built service's storage, space-admin and maintenance workers.
     build: ["A2.3.10.cli.accept", "A2.3.10.cli.space"],
   },
   m2: {
-    // M1's build part, and M2.08's launch shim from the build: `ttasks shim` through the folder's
-    // launcher against the folder's own bundled service (A4 3.6.3).
+    // M1's build part, and the launch shim from the build: `ttasks shim` through the folder's
+    // launcher against the folder's own bundled service.
     build: ["A2.3.10.cli.accept", "A2.3.10.cli.space", "A4.5.shim.installed"],
   },
   m3: {
-    // M3.01's installed-build drill (A1 5, MIL-02), which repeats M1.15's with the real 0.2: an
+    // The installed-build migration drill with the real 0.2: an
     // `installed` entry, run with --installed against an install root (the smoke job's) or the
     // version folder `pnpm build --sign test` makes. Real 0.1 spaces are upgraded
     // only after it passes.
@@ -45,11 +45,11 @@ export const PARTS: Readonly<Record<string, Readonly<Record<string, readonly str
 
 /** The variable that tells the test harness which built version folder to run. */
 export const INSTALLED_VAR = "TTASKS_ACCEPT_INSTALLED";
-/** The variable that names the install root, when `--installed` names one (M1.14). */
+/** The variable that names the install root, when `--installed` names one. */
 export const INSTALL_ROOT_VAR = "TTASKS_ACCEPT_INSTALL_ROOT";
 
 /**
- * The version folder an install root's `current` names (A2 3.12.2): a link to versions/<v>, or on
+ * The version folder an install root's `current` names: a link to versions/<v>, or on
  * Windows a text file holding <v>. Undefined when `root` is no install root.
  */
 export function currentFolderOf(path: string): string | undefined {
@@ -133,7 +133,7 @@ export function selectEntries(
 }
 
 /**
- * The entries a run executes (A7 3.18.6): `ci` and `installed` from source, only `installed`
+ * The entries a run executes: `ci` and `installed` from source, only `installed`
  * against an installed build. `manual` ones are listed, never run.
  */
 export function runnable(chosen: readonly ManifestEntry[], args: AcceptArgs): ManifestEntry[] {

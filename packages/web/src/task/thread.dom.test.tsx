@@ -2,12 +2,13 @@
 //
 // A launch's request in the thread (Thread.tsx), rendered by React into happy-dom: the note the
 // launch names shows in its session's entry as what the person asked, a launch that did not open
-// offers to open again with it, and a request whose session is not listed shows on its own as one.
+// offers to open again with it, a request whose session is not listed shows on its own as one, and
+// a run that holds its agent's conversation offers Continue.
 // Fixture data only.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { Instance, Receipt, ReceiptState } from "../api.ts";
+import type { Instance, Receipt, ReceiptState, Run } from "../api.ts";
 import { I18n } from "../i18n/intl.tsx";
 import type { DetailLog, DetailNote } from "./detail.ts";
 import { Thread, type EntryEdit } from "./Thread.tsx";
@@ -566,5 +567,82 @@ describe("[A5.entry.correct.web.thread] the pen on a note and a log entry correc
   test("a corrected entry says who corrected it after its time", () => {
     render([{ ...agentNote, edited: { at: new Date(AT).toISOString(), by: "user" } }], []);
     expect(entries()[0]?.querySelector("[data-part='edited']")?.textContent).toContain("you");
+  });
+});
+
+describe("[M6.page.run-continue] a run that holds its agent's conversation offers Continue in its instance", () => {
+  const run = (patch: Partial<Run>): Run => ({
+    id: "ru_00r5mfcw5rfzxb9enb2vg50z3g",
+    instance: "claude",
+    state: "succeeded",
+    reason: null,
+    queued_at: AT,
+    started_at: AT + 1_000,
+    ended_at: AT + 60_000,
+    asked: null,
+    answer: "The export drops the time zone.",
+    answer_final: true,
+    answer_cut: false,
+    version: 6,
+    ...patch,
+  });
+  const draw = (runs: readonly Run[], onContinue: (run: Run, instance: Instance) => void) => {
+    act(() => {
+      root ??= createRoot(host);
+      root.render(
+        <I18n>
+          <Thread
+            notes={[]}
+            log={[]}
+            receipts={[]}
+            runs={runs}
+            instances={[CLAUDE]}
+            partial={false}
+            onStop={() => undefined}
+            onContinue={onContinue}
+          />
+        </I18n>,
+      );
+    });
+  };
+  const buttons = () => [...host.querySelectorAll<HTMLElement>("[data-part='run-continue']")];
+
+  test("an ended run's Continue opens it in the run's instance; a working one offers Stop and continue beside Stop", () => {
+    const pressed: [string, string][] = [];
+    draw([run({ resumable: true })], (r, instance) => pressed.push([r.id, instance.key]));
+    expect(buttons().map((b) => b.textContent)).toEqual(["Continue"]);
+    expect(buttons()[0]?.getAttribute("aria-label")).toBe(
+      "Continue Claude Code · work's conversation",
+    );
+    act(() => {
+      buttons()[0]?.click();
+    });
+    expect(pressed).toEqual([["ru_00r5mfcw5rfzxb9enb2vg50z3g", "claude"]]);
+
+    // A run that may still work: its two ways out stand together on its state's line.
+    draw(
+      [
+        run({
+          state: "running",
+          ended_at: null,
+          resumable: true,
+          answer: "Long work. ".repeat(400),
+        }),
+      ],
+      () => undefined,
+    );
+    expect(buttons().map((b) => b.textContent)).toEqual(["Stop and continue"]);
+    const line = buttons()[0]?.closest("[data-part='run-state']");
+    expect([...(line?.querySelectorAll("button") ?? [])].map((b) => b.dataset["part"])).toEqual([
+      "run-stop",
+      "run-continue",
+    ]);
+  });
+
+  test("a run without its agent's conversation, or of an instance this machine no longer has, offers none", () => {
+    draw([run({})], () => undefined);
+    expect(buttons()).toEqual([]);
+    draw([run({ instance: "gone", resumable: true })], () => undefined);
+    expect(buttons()).toEqual([]);
   });
 });

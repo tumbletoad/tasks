@@ -1,10 +1,10 @@
-// The execution store's contract suite (A4 3.16.1, 5.1): every backend of the interface must pass
+// The execution store's contract suite: every backend of the interface must pass
 // it, so the state machine, which knows only the interface, behaves the same on each. v1 runs it
 // against the in-memory backend and the space database's (space-store.ts, in-thread and through
-// the storage worker). M6.01 adds runs, and the L1 journal must pass it too (M3.12).
+// the storage worker). The L1 journal must pass it too.
 //
 // It covers what the machine relies on: one record per click and request ID, replay of a request
-// ID, a compare-and-set that moves nothing when it loses, only A4's edges, evidence that only grows,
+// ID, a compare-and-set that moves nothing when it loses, only the machine's edges, evidence that only grows,
 // a timestamp per state, openWork per machine after a restart, and records without free text.
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { EDGES, INTENT_STATES, isLaunchRef, type IntentState } from "../src/intents.ts";
@@ -36,7 +36,7 @@ export interface ContractBackend {
 const HASH = "9f2c41d7".repeat(8);
 const OTHER_MACHINE = "m_0000000000000000000000000z";
 
-/** A path through A4's machine from Prepared to `state`, with the reasons each step needs. */
+/** A path through the launch machine from Prepared to `state`, with the reasons each step needs. */
 const PATHS: Record<IntentState, { next: IntentState; outcome?: Outcome }[]> = {
   prepared: [],
   dispatching: [{ next: "dispatching" }],
@@ -67,7 +67,7 @@ async function refusal(promise: Promise<unknown>): Promise<ExecutionRefused> {
   throw new Error("The call was not refused");
 }
 
-/** Every string a record holds: IDs, codes and states only (A4 3.9.1, AGENTS.md). */
+/** Every string a record holds: IDs, codes and states only (AGENTS.md). */
 function strings(value: unknown): string[] {
   if (typeof value === "string") return [value];
   if (typeof value !== "object" || value === null) return [];
@@ -103,7 +103,7 @@ export function executionStoreContract(
       ...extra,
     });
 
-    /** A fresh intent moved along A4's machine to `state`. */
+    /** A fresh intent moved along the launch machine to `state`. */
     const intentIn = async (state: IntentState, extra: Partial<NewIntent> = {}) => {
       let intent = await store.createIntent(await intentInput(extra), requestId());
       for (const step of PATHS[state]) {
@@ -215,6 +215,21 @@ export function executionStoreContract(
       expect(next.state).toBe("prepared");
       await store.transitionIntent(next.id, "prepared", "failed", { reason: "cancelled" });
       expect((await store.createIntent(input, requestId())).id).not.toBe(next.id);
+    });
+
+    test("a click that continues a conversation joins only a launch still opening that continues the same one", async () => {
+      const input = await intentInput();
+      const continues = (id: string) => ({ ...input, evidence: { resumes: id } });
+      const opening = await store.createIntent(input, requestId());
+      const first = await store.createIntent(continues("conversation-a"), requestId());
+      expect(first.id).not.toBe(opening.id);
+      expect((await store.createIntent(continues("conversation-a"), requestId())).id).toBe(
+        first.id,
+      );
+      const second = await store.createIntent(continues("conversation-b"), requestId());
+      expect([opening.id, first.id]).not.toContain(second.id);
+      // An Open that continues nothing still joins the one that continues nothing.
+      expect((await store.createIntent(input, requestId())).id).toBe(opening.id);
     });
 
     test("a link or T3 launch that asked its app holds no click", async () => {

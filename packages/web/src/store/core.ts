@@ -11,7 +11,7 @@
 //   never by consecutive `seq` values, because a filtered feed leaves out commits.
 // - A batch wholly at or behind the cursor is a repeat: nothing happens.
 // - A gap (`from` beyond the cursor), another epoch or incarnation, a withheld row (`row: null`
-//   for a task, area or project: A5 3.15), a changed status or effort scale (its value comes with
+//   for a task, area, project or page: A5 3.15), a changed status or effort scale (its value comes with
 //   a snapshot) or a batch the page cannot read asks for a fresh snapshot. Until it arrives, every
 //   batch waits for it and is dropped; the rows stay on screen.
 // - Each batch applies whole or not at all: it is checked first, then applied.
@@ -32,6 +32,7 @@ import {
   type AnyRow,
   type AreaRow,
   type BatchMessage,
+  type PageRow,
   type Cursor,
   type ProjectRow,
   type RowType,
@@ -102,6 +103,8 @@ export interface Held {
   readonly asking: ReadonlyMap<string, TaskRow>;
   readonly areas: ReadonlyMap<string, AreaRow>;
   readonly projects: ReadonlyMap<string, ProjectRow>;
+  /** The pages shown: the Library's lists, without bodies. */
+  readonly pages: ReadonlyMap<string, PageRow>;
   readonly instances: readonly Instance[];
   readonly scales: Scales;
 }
@@ -110,6 +113,7 @@ interface Maps {
   task: Map<string, AnyRow>;
   area: Map<string, AnyRow>;
   project: Map<string, AnyRow>;
+  page: Map<string, AnyRow>;
   asking: Map<string, TaskRow>;
 }
 
@@ -215,10 +219,11 @@ export class LiveCore {
       task: mapOf("task", message.tasks),
       area: mapOf("area", message.areas),
       project: mapOf("project", message.projects),
+      page: mapOf("page", message.pages ?? []),
       asking: new Map((message.asking ?? []).filter(asksOutside).map((row) => [row.id, row])),
     };
     this.#awaiting = false;
-    this.#dirty.add("task").add("area").add("project");
+    this.#dirty.add("task").add("area").add("project").add("page");
     this.#askingDirty = true;
     this.#published = undefined;
     return { kind: "snapshot", agentChanges: message.agent_changes ?? [] };
@@ -339,6 +344,7 @@ export class LiveCore {
       tasks: copy<TaskRow>("task", before?.tasks),
       areas: copy<AreaRow>("area", before?.areas),
       projects: copy<ProjectRow>("project", before?.projects),
+      pages: copy<PageRow>("page", before?.pages),
       asking: before !== undefined && !this.#askingDirty ? before.asking : new Map(maps.asking),
       instances: this.#instances,
       scales: this.#scales,

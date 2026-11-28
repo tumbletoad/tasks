@@ -1,4 +1,4 @@
-// Starting a launch's terminal and the acceptance rule of each adapter (A4 3.6.2, SL-09). This is
+// Starting a launch's terminal and the acceptance rule of each adapter. This is
 // the terminal route's external step (LaunchSteps.dispatch), so it runs once per intent, after
 // Dispatching is durable, and must not wait for a claim (the claim waits for this step).
 //
@@ -25,7 +25,7 @@ import {
 } from "./commands.ts";
 import type { ChainEntry } from "./detect.ts";
 
-/** A4 3.6.2: how long a direct terminal is watched for an early, non-zero exit. */
+/** How long a direct terminal is watched for an early, non-zero exit. */
 export const DIRECT_WATCH_MS = 2_000;
 
 /** One process to start, exactly as built: argv[0] is the program. Never through a shell. */
@@ -130,7 +130,7 @@ const codeOf = (error: unknown): string => {
   return typeof code === "string" && /^[A-Z0-9_]{1,32}$/.test(code) ? code : "UNKNOWN";
 };
 
-/** Runs the chain by A4 3.6.2's acceptance rules (head of this file). */
+/** Runs the chain by the acceptance rules (head of this file). */
 export async function acceptTerminal(
   input: AcceptInput,
 ): Promise<{ outcome: DispatchOutcome; attempts: Attempt[] }> {
@@ -194,7 +194,7 @@ export async function acceptTerminal(
 }
 
 /**
- * The OS's spawner: no shell, stdio ignored (no pipe dangles after a restart, A4 3.7), shown (a
+ * The OS's spawner: no shell, stdio ignored (no pipe dangles after a restart), shown (a
  * terminal is a window) unless the command is a hidden helper, and unreferenced, so the service
  * never waits for one.
  */

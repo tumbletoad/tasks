@@ -1,6 +1,6 @@
-// The bridge loads fast and stays small because its bundle imports only a few Node built-ins
-// (A2 3.7.1), and it never starts the service (A7 A.3: "A test proves the bridge never starts the
-// service"): nothing it loads can spawn a process. This walks the runtime imports from the script
+// The bridge loads fast and stays small because its bundle imports only a few Node built-ins,
+// and it never starts the service:
+// nothing it loads can spawn a process. This walks the runtime imports from the script
 // entry; type-only imports are erased and do not count. Two parser-based checks back it in
 // `pnpm verify`: lint refuses every dynamic load in the bridge (eslint.config.js), and
 // dependency-cruiser's bridge-few-builtins rule refuses any other built-in.
@@ -12,8 +12,8 @@ import { describe, expect, test } from "vitest";
 const ENTRY = fileURLToPath(new URL("./main.ts", import.meta.url));
 
 /**
- * A2 3.7.1 names net, fs, crypto and process. path, os and url are small parts of Node's core, and
- * v8 sets the flag of safe-exit.ts (A2 3.12.1).
+ * The bridge needs net, fs, crypto and process. path, os and url are small parts of Node's core, and
+ * v8 sets the flag of safe-exit.ts.
  */
 const ALLOWED = [
   "node:crypto",

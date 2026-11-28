@@ -1,4 +1,4 @@
-// One call at a time per intent, each with deadlines (A4 3.9, 3.16.1): the races
+// One call at a time per intent, each with deadlines: the races
 // and stalls three review rounds found, replayed step by step on both backends. Each test holds a
 // call of the store or of an external step at a chosen point, lets other calls run, and checks
 // that every decision rests on the record its call read inside the intent's section, that no
@@ -369,7 +369,7 @@ describe.each(BENCHES)(
       expect((dispatching.error as Error | undefined)?.name).toBe("DeadlinePassed");
       expect(m.owned()).toEqual([]);
       expect(await read(intent.id)).toMatchObject({ state: "dispatching" });
-      // No call owns it now: its step's outcome is lost, and the sweep says so (A4 3.9.3).
+      // No call owns it now: its step's outcome is lost, and the sweep says so.
       stuck = false;
       expect(await m.sweep()).toMatchObject([{ id: intent.id, state: "unknown", reason: "lost" }]);
       const again = await click(m, "link", 0);
@@ -427,7 +427,7 @@ describe.each(BENCHES)(
       expect(await read(intent.id)).toMatchObject({ state: "confirmed" });
     });
 
-    /** The confirmations A4 3.9.2 names, as the evidence they carry. */
+    /** The confirmations, as the evidence they carry. */
     const SHAPES: [string, Evidence | undefined][] = [
       ["the shim's settle", undefined],
       ["the bridge's binding", { bound_at: 1_800_000_000_000 }],

@@ -44,11 +44,12 @@ export const LAUNCH_SQL = {
   /**
    * The intent still opening for a task and instance on a machine, newest first: Prepared,
    * Dispatching, or a terminal launch its shim has not settled yet. A link or T3 launch that
-   * was Dispatched only asked its app, and nothing settles it, so it holds no click.
+   * was Dispatched only asked its app, and nothing settles it, so it holds no click. It continues
+   * the same agent conversation as the click (`resumes`), or neither continues one.
    */
   focus:
     "SELECT id FROM launches WHERE task_id = $task AND instance_id = $instance " +
-    "AND machine_id = $machine " +
+    "AND machine_id = $machine AND json_extract(detail, '$.evidence.resumes') IS $resumes " +
     "AND (state IN ('prepared','dispatching') OR (state = 'dispatched' AND route = 'terminal')) " +
     "ORDER BY created_at DESC, id DESC LIMIT 1",
   referenceTaken: "SELECT 1 AS taken FROM launches WHERE reference = $reference LIMIT 1",
@@ -211,6 +212,17 @@ export function readOpenLaunches(conn: Connection, machine: string): LaunchRecor
   if (!isId(machine, "m")) return [];
   return conn.prepare(LAUNCH_SQL.open).all({ machine }).map(decodeLaunch);
 }
+
+/**
+ * The agent conversation a launch continues (`evidence.resumes`), or null: a second click gets the
+ * launch still opening for its task and instance that continues the same one, or neither does.
+ */
+export const resumesOf = (
+  evidence: Readonly<Record<string, unknown>> | undefined,
+): string | null => {
+  const given = evidence?.["resumes"];
+  return typeof given === "string" ? given : null;
+};
 
 /** Why a launch or a run may not start, as both writers say it. */
 export interface StartProblem {

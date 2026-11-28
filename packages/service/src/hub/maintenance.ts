@@ -11,7 +11,15 @@
 // machine-local `backup.dir` can be shared with other spaces, state folders and machines, so it is
 // listed and kept by retention, never cleaned automatically.
 import { Worker } from "node:worker_threads";
-import type { Id } from "@ttasks/storage";
+import type { Id, StayReason } from "@ttasks/storage";
+
+/**
+ * Whether retention may remove a daily backup that was made into the space's own folder, once its
+ * move to the backups folder is done (from the first run after the one that finished it). Off: such
+ * a backup is never removed, wherever it stands, unless the backups folder set for the space is
+ * that folder itself: there its backups are the ordinary ones. The owner decides.
+ */
+export const PRUNE_OLD_DAILIES = false;
 
 /** What one run does. Content-free: a folder, an ID, numbers. */
 export interface MaintenanceJob {
@@ -23,10 +31,14 @@ export interface MaintenanceJob {
    */
   readonly incarnation: Id<"ai">;
   /**
-   * The folder the space's backups are written to, and the only one the run cleans. Never the
-   * space's own `backups/`, where backups went before: those stay until the person removes them.
+   * The folder the space's backups are written to, and the only one the run cleans. The space's
+   * own `backups/`, where backups went before, is read with it, and at a start its backups move
+   * here (storage's moveOldBackups). Retention removes only here, so nothing there, unless this
+   * folder is that one.
    */
   readonly backupDir: string;
+  /** Whether retention may remove old daily backups (default PRUNE_OLD_DAILIES). */
+  readonly pruneOldDailies?: boolean;
   /** Remove leftovers: only in a folder this service alone writes (above). */
   readonly cleanup: boolean;
   /** The service's start: a daily backup over 24 hours old is due at once (A1 3.18). */
@@ -46,6 +58,15 @@ export interface MaintenanceReport {
   readonly removed: number;
   /** Backups newer than the newest that restores which do not restore, or are no longer whole. */
   readonly unverified: number;
+  /**
+   * At a start: the old backups the move took a step with, and those that stay in the space's
+   * own folder, by why (storage's moveOldBackups).
+   */
+  readonly moved?: {
+    readonly copied: number;
+    readonly finished: number;
+    readonly stayed: Partial<Record<StayReason, number>>;
+  };
   /** The backup found the space's search index damaged: the space's writer repairs it. */
   readonly searchIndexDamaged?: true;
   /** Retention ran and trial restored the newest backups, until one passed. */
@@ -84,11 +105,17 @@ export class Maintenance {
   readonly #running = new Set<Worker>();
   #stopped = false;
 
-  /** One run. Rejects with MaintenanceFailed, or when the runner is stopped meanwhile. */
-  run(job: MaintenanceJob): Promise<MaintenanceReport> {
-    if (this.#stopped) return Promise.reject(new MaintenanceFailed(undefined, true));
+  /**
+   * One run. Rejects with MaintenanceFailed, or when the runner is stopped meanwhile. `signal` ends
+   * the run's worker: it is gone once the promise settles, so nothing of it outlives the lock.
+   */
+  run(job: MaintenanceJob, signal?: AbortSignal): Promise<MaintenanceReport> {
+    if (this.#stopped || signal?.aborted === true) {
+      return Promise.reject(new MaintenanceFailed(undefined, true));
+    }
     const worker = new Worker(ENTRY, { workerData: job });
     this.#running.add(worker);
+    signal?.addEventListener("abort", () => void worker.terminate(), { once: true });
     return new Promise<MaintenanceReport>((resolve, reject) => {
       let settled = false;
       const settle = (): void => {
@@ -109,7 +136,7 @@ export class Maintenance {
       worker.once("exit", () => {
         if (settled) return;
         settle();
-        reject(new MaintenanceFailed(undefined, this.#stopped));
+        reject(new MaintenanceFailed(undefined, this.#stopped || signal?.aborted === true));
       });
     });
   }

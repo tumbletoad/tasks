@@ -1,8 +1,9 @@
-// The person's correction of a task's text in place: its summary, its context, and the words of
-// any note or log entry, whoever wrote them. A pen opens the whole text as an editable box where it
+// The person's correction of a text in place: a task's summary, its context, the words of any
+// note or log entry, whoever wrote them, and the library's pages and texts. A pen opens the whole text as an editable box where it
 // stands; a text the card holds only in part has no box to save from. Enter saves the words as
 // typed (Shift+Enter is a new line), Escape lets go, and leaving the box saves, as the title's
-// editor does; a box whose words the person did not change writes nothing. What is typed is kept
+// editor does; in a page's body, which is written in paragraphs, Enter is a new line and
+// Ctrl+Enter saves. A box whose words the person did not change writes nothing. What is typed is kept
 // in this browser (unsent.ts) until the service holds it: after a reload the box opens again with
 // it. The save is made from where the page was when the box opened, so a change someone made
 // meanwhile is a refusal, never overwritten: the box closes on the text as it is now, and the
@@ -73,7 +74,7 @@ export function Pen({
  */
 export function useEditing(
   space: string,
-  task: string,
+  owner: string,
   part: TextPart,
   text: string,
   editable: boolean,
@@ -83,11 +84,11 @@ export function useEditing(
   latest.current = text;
   useLayoutEffect(() => {
     if (!editable) return;
-    const kept = readTextDraft(space, task, part);
+    const kept = readTextDraft(space, owner, part);
     if (kept === undefined) return;
     if (kept.typed !== latest.current) setOpen(true);
-    else letGo(space, { kind: "text", task, part, text: kept.typed });
-  }, [editable, space, task, part]);
+    else letGo(space, { kind: "text", task: owner, part, text: kept.typed });
+  }, [editable, space, owner, part]);
   return [open && editable, setOpen];
 }
 
@@ -113,16 +114,16 @@ export function useSaved(text: string): readonly [string, (words: string | undef
  */
 export function NotSaved({
   space,
-  task,
+  owner,
   part,
 }: {
   readonly space: string;
-  readonly task: string;
+  readonly owner: string;
   readonly part: TextPart;
 }) {
   const t = useT();
   const say = useToast();
-  return useRefusedTexts(space, task, part).map(({ tab, typed }) => (
+  return useRefusedTexts(space, owner, part).map(({ tab, typed }) => (
     <span key={tab} className={line.line} data-part="not-saved" role="status">
       <span className={line.why}>{t("edit.notSaved")}</span>
       <span className={line.value} dir="auto" data-part="not-saved-value">
@@ -150,7 +151,7 @@ export function NotSaved({
         className={line.act}
         data-part="discard-not-saved"
         onClick={() => {
-          letGo(space, { kind: "text", task, part, text: typed, tab, refused: true });
+          letGo(space, { kind: "text", task: owner, part, text: typed, tab, refused: true });
         }}
       >
         {t("edit.discard")}
@@ -161,7 +162,7 @@ export function NotSaved({
 
 export interface TextEditorProps {
   readonly space: string;
-  readonly task: string;
+  readonly owner: string;
   readonly part: TextPart;
   /** The box's name for a screen reader. */
   readonly label: string;
@@ -169,6 +170,10 @@ export interface TextEditorProps {
   readonly text: string;
   /** One line, as the summary is: Enter saves and no new line is typed. */
   readonly line?: boolean;
+  /** Written in paragraphs, as a page's body: Enter is a new line, Ctrl+Enter saves. */
+  readonly paragraphs?: boolean;
+  /** An emptied box is sent: it takes the text away (the text for agents, a description). */
+  readonly clears?: boolean;
   readonly max: number;
   /** Where the page is now: the base of a save made from here. */
   readonly base: string | undefined;
@@ -180,11 +185,13 @@ export interface TextEditorProps {
 
 export function TextEditor({
   space,
-  task,
+  owner,
   part,
   label,
   text,
   line: single = false,
+  paragraphs = false,
+  clears = false,
   max,
   base,
   save,
@@ -197,7 +204,7 @@ export function TextEditor({
   // reload brought back what was typed.
   const [opened] = useState(
     (): TextDraft =>
-      readTextDraft(space, task, part) ?? {
+      readTextDraft(space, owner, part) ?? {
         typed: text,
         before: text,
         ...(base === undefined ? {} : { base }),
@@ -224,18 +231,18 @@ export function TextEditor({
     ...(opened.base === undefined ? {} : { base: opened.base }),
   });
   const keep = (typed: string) => {
-    keepTextDraft(space, task, part, typed === opened.before ? undefined : draft(typed));
+    keepTextDraft(space, owner, part, typed === opened.before ? undefined : draft(typed));
   };
   const release = () => {
-    const kept = readTextDraft(space, task, part);
-    if (kept !== undefined) letGo(space, { kind: "text", task, part, text: kept.typed });
+    const kept = readTextDraft(space, owner, part);
+    if (kept !== undefined) letGo(space, { kind: "text", task: owner, part, text: kept.typed });
   };
   const finish = (send: boolean) => {
     if (sending.current) return;
     const typed = field.current?.value ?? "";
     // Nothing the person changed, or nothing at all, is never sent: an emptied text is taken back
     // with its own control, and a box opened over words that changed since writes nothing.
-    if (!send || typed === opened.before || typed.trim() === "") {
+    if (!send || typed === opened.before || (typed.trim() === "" && !clears)) {
       release();
       onDone(undefined);
       return;
@@ -244,12 +251,12 @@ export function TextEditor({
     setSaving(true);
     save(typed, opened.base).then(
       () => {
-        letGo(space, { kind: "text", task, part, text: typed });
+        letGo(space, { kind: "text", task: owner, part, text: typed });
         onDone(typed);
       },
       (error: unknown) => {
         // Refused: never sent again from here. The words wait under the text as not saved.
-        keepRefusedText(space, task, part, draft(typed));
+        keepRefusedText(space, owner, part, draft(typed));
         release();
         say(refusalText(error, t("text.notSaved")));
         onDone(undefined);
@@ -272,7 +279,8 @@ export function TextEditor({
     },
     onKeyDown: (event: KeyboardEvent) => {
       if (event.nativeEvent.isComposing) return;
-      if (event.key === "Enter" && !event.shiftKey) {
+      const saves = paragraphs ? event.ctrlKey || event.metaKey : !event.shiftKey;
+      if (event.key === "Enter" && saves) {
         event.preventDefault();
         finish(true);
       } else if (event.key === "Escape") {

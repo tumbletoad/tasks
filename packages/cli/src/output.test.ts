@@ -1,4 +1,4 @@
-// Exit codes and output (A2 3.10.2, 3.10.3; A3 3.5): every error code exits with its class's code,
+// Exit codes and output: every error code exits with its class's code,
 // --json prints exactly one document, people's text names the space of every write, diagnostics
 // go to stderr. Fixture text only.
 import { mkdtempSync, rmSync } from "node:fs";
@@ -152,7 +152,7 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
 
   test("people's text names the space of every write", () => {
     expect(render("task.add", { tasks: [{ ref: "M-31" }] }, "Mira")).toBe("Added M-31 to Mira\n");
-    // A draft found by its source key (A3 3.4.5) says so, never "Added".
+    // A draft found by its source key says so, never "Added".
     const found = { result: "exists", ref: "M-14", lifecycle: "active", log_added: true };
     expect(
       render(
@@ -388,7 +388,7 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
       });
       const text = recorder(["status"], { TTASKS_HOME: home });
       expect(await main(text)).toBe(6);
-      // The message and its hint, each said once (A3 3.5).
+      // The message and its hint, each said once.
       expect(text.err).toBe(
         "error service_unavailable: TTasks's service is not running. Run: ttasks service start\n",
       );

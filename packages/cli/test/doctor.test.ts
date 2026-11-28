@@ -1,4 +1,4 @@
-// `ttasks doctor --self-test` with the service checks (A2 3.13, A7 3.8 M1.10): it works without a
+// `ttasks doctor --self-test` with the service checks: it works without a
 // service, it tells an untrusted endpoint from a stopped service, and with a running service it
 // reports its version, protocol and spaces, and recent crash files. Fixture text only.
 import { randomBytes } from "node:crypto";
@@ -178,7 +178,7 @@ describe("[A2.3.13.cli.doctor] ttasks doctor --self-test", () => {
     ) as Report;
     expect(status(shelved, "spaces")).toBe("ok");
     expect(shelved.checks.find((c) => c.id === "spaces")?.detail).toContain("Shelved: closed");
-    // The launch rows and the sessions row come from the running service (A3 3.14); none fails
+    // The launch rows and the sessions row come from the running service; none fails
     // the report, and a service with no agent connection has nothing shared or dropped.
     for (const id of ["launch.scopes", "launch.terminal", "launch.env", "launch.t3", "sessions"]) {
       expect([id, status(report, id)]).not.toEqual([id, undefined]);
@@ -276,7 +276,7 @@ describe("[A2.3.13.cli.doctor] ttasks doctor --self-test", () => {
     const broken = () => Promise.reject(new RpcError(-32603, "Internal error"));
     const open = (entry: number, id: string) => ({ entry, id, state: "open" });
 
-    // A copy beside its original: both share the ID, which names one copy (A2 3.10.5), so the
+    // A copy beside its original: both share the ID, which names one copy, so the
     // space is asked once, and a failure there fails the check.
     const shared = await requestCheck(session(broken), [open(0, "sp_a"), open(1, "sp_a")]);
     expect(shared.status).toBe("fail");
@@ -291,7 +291,7 @@ describe("[A2.3.13.cli.doctor] ttasks doctor --self-test", () => {
     expect(both.detail).toContain("for 2 space(s)");
     expect(asked).toEqual(["sp_a", "sp_b"]);
     expect((await requestCheck(session(broken), [open(2, "sp_b")])).status).toBe("fail");
-    // No space served: op/call must still answer with A3's body.
+    // No space served: op/call must still answer with the error body.
     expect((await requestCheck(session(notServed), [])).status).toBe("ok");
     expect((await requestCheck(session(broken), [])).status).toBe("fail");
   });

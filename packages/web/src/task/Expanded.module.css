@@ -22,6 +22,12 @@
   min-width: 0;
 }
 
+/* The facts, and the task's Knowledge under them. */
+.side {
+  grid-area: facts;
+  min-width: 0;
+}
+
 /* Context: the agent's understanding, in text-2, clamped at ten lines until More. */
 .context {
   max-width: 62ch;

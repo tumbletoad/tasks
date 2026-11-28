@@ -1,4 +1,4 @@
-// A process's identity: its PID and its start time exactly as the OS records it (A4 3.1, 3.6.3).
+// A process's identity: its PID and its start time exactly as the OS records it.
 // A PID alone is reused once its process has ended; a PID with the start time names one process
 // for as long as the OS runs. The attachment credential is bound to both, so a reused PID is
 // never taken for the shim, and the credential ends with the process.

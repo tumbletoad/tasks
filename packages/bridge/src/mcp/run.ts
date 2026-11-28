@@ -1,5 +1,5 @@
-// `ttasks mcp` (A2 3.7): the entry as a function. The CLI's entry hands its `mcp` verb here
-// (packages/cli/src/mcp.ts), and main.ts is the direct script entry. The build (M1.13) bundles
+// `ttasks mcp`: the entry as a function. The CLI's entry hands its `mcp` verb here
+// (packages/cli/src/mcp.ts), and main.ts is the direct script entry. The build bundles
 // `@ttasks/bridge/mcp` as its own `lib/bridge.mjs`.
 import { join } from "node:path";
 import type { Writable } from "node:stream";
@@ -14,15 +14,15 @@ import { BRIDGE_BUILD, OFFLINE_FILE, PACKAGE_VAR } from "./names.ts";
 import { loadOffline } from "./offline.ts";
 import { Unavailable } from "./unavailable.ts";
 
-/** A2 3.10.3: a usage problem. */
+/** A usage problem. */
 export const EXIT_USAGE = 2;
 
-/** The bridge connects like the CLI (A2 3.10.4): 2 s to the socket or pipe. */
+/** The bridge connects like the CLI: 2 s to the socket or pipe. */
 export const CONNECT_MS = 2_000;
 
 /**
  * The source tree's offline file, `packages/bridge/lib/mcp-offline.json`, which `pnpm gen`
- * writes. A built bridge passes its version folder's `lib/mcp-offline.json` instead (M1.13).
+ * writes. A built bridge passes its version folder's `lib/mcp-offline.json` instead.
  */
 export const SOURCE_LIB = fileURLToPath(new URL("../../lib/mcp-offline.json", import.meta.url));
 
@@ -32,7 +32,7 @@ export interface McpOptions {
   /** The build's `lib/mcp-offline.json`. */
   readonly libFile?: string;
   readonly timing?: Partial<Timing>;
-  /** The protocol this bridge names. Tests only: a bridge newer than the service (A2 3.6.6). */
+  /** The protocol this bridge names. Tests only: a bridge newer than the service. */
   readonly protocol?: number;
 }
 
@@ -54,13 +54,13 @@ export function diagnostics(stream: Writable): (text: string) => void {
   };
 }
 
-/** The package identity the launcher passed, or null (A2 3.5). */
+/** The package identity the launcher passed, or null. */
 function packageOf(env: Readonly<Record<string, string | undefined>>): string | null {
   const value = env[PACKAGE_VAR];
   return value === undefined || value.trim() === "" || value.length > 256 ? null : value;
 }
 
-/** Discovery (A2 3.6.1), read again for every attempt, then the handshake and the bind. */
+/** Discovery, read again for every attempt, then the handshake and the bind. */
 async function dial(
   folders: Folders | undefined,
   platform: NodeJS.Platform,

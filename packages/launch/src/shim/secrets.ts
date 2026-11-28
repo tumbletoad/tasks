@@ -1,4 +1,4 @@
-// The shim's two secrets (A4 3.1) and the claim's evidence ID.
+// The shim's two secrets and the claim's evidence ID.
 //
 // - The ticket: 120 random bits, the only per-launch value in terminal argv. Redeemable once per
 //   role over the user-only socket.
@@ -9,7 +9,7 @@
 // and the hash of one launch's ticket cannot pass for another launch's. Every comparison is
 // constant time over the 32 bytes of the hash.
 //
-// The claim's evidence is a fresh random ID (A4 3.6.3), never derived from either secret.
+// The claim's evidence is a fresh random ID, never derived from either secret.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { PRODUCT_ID } from "@ttasks/brand";
 import { TICKET_ALPHABET } from "./wire.ts";
@@ -27,7 +27,7 @@ function base32(bytes: Buffer, symbols: number, alphabet: string): string {
   return out;
 }
 
-/** A new ticket: 120 random bits, 24 symbols of A1's alphabet in upper case. */
+/** A new ticket: 120 random bits, 24 symbols of the ID alphabet in upper case. */
 export const newTicket = (): string => base32(randomBytes(15), 24, TICKET_ALPHABET);
 
 /** A new attachment credential: 128 random bits, unpadded base64url. */

@@ -1,5 +1,5 @@
 // A fake clipboard tool (`wl-copy`, `xclip`, `xsel`, `pbcopy` or PowerShell's Set-Clipboard) for
-// the tests of `ttasks brief --copy` (A4 3.4.6). No test ever touches the machine's clipboard: the
+// the tests of `ttasks brief --copy`. No test ever touches the machine's clipboard: the
 // test's program seam runs `node <this file>` in place of the tool.
 //
 // It reads its standard input whole and writes those bytes to FAKE_CLIP_OUT, and its argv as JSON

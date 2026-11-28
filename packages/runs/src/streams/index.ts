@@ -1,4 +1,4 @@
-// The stream parser of an agent's print mode: Claude Code's `claude -p` (A4 3.11.4).
+// The stream parser of an agent's print mode: Claude Code's `claude -p`.
 import { createClaudePrintParser } from "./claude-print.ts";
 import type { ProcessExit, RunEvent, RunOutcome, StreamKind } from "./events.ts";
 import type { StreamParser } from "./parser.ts";

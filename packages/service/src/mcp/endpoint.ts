@@ -6,6 +6,7 @@
 // Task content never leaves through a side door: a tool's arguments and results reach only the
 // request path and the tool's own result. Events carry a connection number, a tool name from the
 // generated list and fixed words.
+import { trialCall } from "../trial.ts";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError } from "@ttasks/contracts";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
@@ -127,6 +128,7 @@ export function toolCaller(options: {
   return async (tool, args) => {
     const entry = toolEntry(tool);
     if (entry === undefined) return text(renderError(INTERNAL.toBody()), true);
+    trialCall(client?.instance, tool, args);
     try {
       const result = await opCall(options.ops, caller, { op: entry.name, input: args });
       options.seen?.(client?.instance, client?.app, folder);

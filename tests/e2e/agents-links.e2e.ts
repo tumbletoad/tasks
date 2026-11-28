@@ -223,7 +223,7 @@ test.describe("[A5.agents.e2e.links] each agent shows once, with its task and it
       await row
         .locator('[data-entry="run"]')
         .first()
-        .getByRole("button", { name: /^Stop/u })
+        .getByRole("button", { name: /^Stop .*'s run$/u })
         .click();
     } finally {
       for (const ref of Object.values(refs)) world.release(ref);

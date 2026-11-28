@@ -1,12 +1,12 @@
-// T3's machine state (A4 3.16 "T3 state"): the pairing (the client registration, its token and
+// T3's machine state: the pairing (the client registration, its token and
 // the current grant ID) and each T3 launch's plan. Machine state
 // only: never machine.toml, never a space, never a log. The service keeps these as files in a
 // user-only folder of `<state>`, written atomically with mode 0600 (hub/t3.ts); this module reads
 // and writes them through that port and checks every field it reads back, so a damaged file is
 // read as absent, never half-trusted.
 //
-// The grant ID (A4 3.1, 3.4.1 "Grant identity"): a local random ID per successful authorization.
-// Every T3 intent records the grant it was dispatched under, and the one repeat A4 allows (L14) is
+// The grant ID: a local random ID per successful authorization.
+// Every T3 intent records the grant it was dispatched under, and the one repeat allowed is
 // sent only while the pairing still holds that grant.
 import { randomBytes } from "node:crypto";
 import { EVIDENCE_ID } from "./intents.ts";
@@ -38,7 +38,7 @@ export class MemoryT3Files implements T3Files {
 
 /** A paired T3: the grant T3 issued and TTasks's grant ID for it. */
 export interface T3Pairing extends Grant {
-  /** TTasks's grant ID: new at every authorization (A4 3.1). */
+  /** TTasks's grant ID: new at every authorization. */
   readonly grant: string;
   readonly pairedAt: number;
   /** Set when T3 refused the token (401): the instance shows "Reconnect T3" until paired again. */
@@ -108,7 +108,7 @@ export function writePairing(files: T3Files, pairing: T3Pairing): void {
   files.write("pairing", `${JSON.stringify({ format: 1, ...pairing })}\n`);
 }
 
-/** Where a thread runs in T3 (A4 3.4.1 steps 2 and 3). */
+/** Where a thread runs in T3. */
 export type T3Strategy =
   { readonly type: "root" } | { readonly type: "existing_worktree"; readonly worktreePath: string };
 

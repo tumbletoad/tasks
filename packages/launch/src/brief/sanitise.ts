@@ -1,4 +1,4 @@
-// The brief's sanitiser (A4 3.15.6): the boundary between task data, which anyone or anything may
+// The brief's sanitiser: the boundary between task data, which anyone or anything may
 // have written (a person, an agent, an import, a synced copy), and the brief, which an agent reads
 // as its first instructions. Every value that goes into a brief passes here first, whatever the
 // space's own normalisation did to it, because a space can hold text that never went through it.
@@ -16,7 +16,7 @@
 // Every value is well-formed UTF-16 afterwards (a lone surrogate becomes U+FFFD), so the brief is
 // valid UTF-8. Pure and idempotent: sanitising a sanitised value changes nothing.
 
-/** A4 3.15.6: at most this many grapheme clusters of a title. */
+/** At most this many grapheme clusters of a title. */
 export const TITLE_MAX_CLUSTERS = 120;
 /**
  * And at most this many UTF-16 code units: a cluster can hold any number of combining marks, so
@@ -27,7 +27,7 @@ export const ELLIPSIS = "\u{2026}";
 
 type Range = readonly [from: number, to: number];
 
-/** What every value loses (A4 3.15.6): characters a person does not see and a model does. */
+/** What every value loses: characters a person does not see and a model does. */
 const HIDDEN: readonly Range[] = [
   [0x202a, 0x202e], // bidi embeddings and overrides
   [0x2066, 0x2069], // bidi isolates
@@ -64,8 +64,8 @@ function allowed(code: number, multiline: boolean): boolean {
 }
 /**
  * Characters that can close or open a double quotation in some script, and the backtick: inside
- * a title each becomes `'`, so the title's own quotes in the brief are the only ones (A4 3.15.6
- * names `"` and the backtick; the others are the same mark in other scripts and widths).
+ * a title each becomes `'`, so the title's own quotes in the brief are the only ones (the
+ * others besides `"` and the backtick are the same mark in other scripts and widths).
  */
 const QUOTES: readonly Range[] = [
   [0x22, 0x22],
@@ -111,7 +111,7 @@ export const clustersOf = (text: string): string[] =>
   Array.from(segmenter.segment(text), (s) => s.segment);
 
 /**
- * A task title as a brief may show it (A4 3.15.6): one line, NFC, without hidden characters or
+ * A task title as a brief may show it: one line, NFC, without hidden characters or
  * double quotes, within 120 clusters and 512 code units (cut with an ellipsis).
  */
 export function sanitiseTitle(text: string): string {
@@ -139,7 +139,7 @@ function capped(text: string): string {
 }
 
 /**
- * Composer text (A4 3.15.6): the person's own words, so line breaks stay, each as LF (CRLF, CR,
+ * Composer text: the person's own words, so line breaks stay, each as LF (CRLF, CR,
  * VT, FF, NEL and the line and paragraph separators alike). Hidden characters and controls other
  * than the tab go; `removed` says whether any did (or a lone surrogate was replaced), for the UI's
  * quiet notice.
@@ -160,7 +160,7 @@ export function sanitiseComposer(text: string): {
 }
 
 /**
- * A path or a root's label as a brief shows it (A4 3.15.6 "Paths: no control characters"): one
+ * A path or a root's label as a brief shows it: one
  * line, without controls, line breaks or hidden characters.
  */
 export function sanitisePath(text: string): string {

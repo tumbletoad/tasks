@@ -1,5 +1,5 @@
-// The T3 primary route against a fake T3 server (A4 3.4.1, 3.9.2, 3.9.3, A4 5.1 "Fake T3 server",
-// A7 3.9 M2.11). The Verify line: a lost reply, then the repeat, returns the same thread across an
+// The T3 primary route against a fake T3 server.
+// A lost reply, then the repeat, returns the same thread across an
 // HTTP reconnect and across a T3 restart; after an OAuth reauthorization the intent is Unknown and
 // no thread is created; a 401 leads to "Reconnect T3"; a nested folder becomes a project of its own
 // and the containing project is never used. The launch machine runs on the in-memory store with the route as its T3 step

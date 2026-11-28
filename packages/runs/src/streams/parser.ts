@@ -1,4 +1,4 @@
-// The stream parser frame (A4 3.11.4): bytes or lines in, normalised events and a final outcome
+// The stream parser frame: bytes or lines in, normalised events and a final outcome
 // out. Pure: no I/O, no clock, no logging. The CLI-specific part is a `CliReader` (claude-print.ts)
 // that reads one parsed JSON object at a time.
 //
@@ -126,7 +126,7 @@ export interface StreamParser {
   readonly kind: StreamKind;
   /** Feeds raw stdout bytes (or text, encoded as UTF-8). Returns the events they completed. */
   push(chunk: Uint8Array | string): RunEvent[];
-  /** Feeds one complete line, without its line break (A4 3.11.1 `parse(line)`). */
+  /** Feeds one complete line, without its line break. */
   line(text: string): RunEvent[];
   /** Feeds one line its driver read already: the parser reads it as the driver does. */
   read(line: JsonLine): RunEvent[];

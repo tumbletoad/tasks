@@ -1,4 +1,4 @@
-// `ttasks doctor`'s launch rows and sessions row (A3 3.14; A4 3.4.1, 3.7, 3.8; M4.05b), from what
+// `ttasks doctor`'s launch rows and sessions row, from what
 // the running service answers. Doctor starts no program for them: the service probes as a launch
 // would, through its own launch service.
 //
@@ -32,7 +32,7 @@ export interface Check {
 }
 
 const DAY = 86_400_000;
-/** A4 3.4.1: doctor warns this long before a token that cannot renew itself runs out. */
+/** Doctor warns this long before a token that cannot renew itself runs out. */
 export const T3_WARN_MS = 5 * DAY;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -57,7 +57,7 @@ function age(ms: number): string {
   return `${String(Math.round(hours / 24))} days`;
 }
 
-/** `launch.scopes` (A4 3.7): `doctor/launch`'s `scopes`. */
+/** `launch.scopes`: `doctor/launch`'s `scopes`. */
 export function scopesCheck(scopes: unknown): Check {
   const id = "launch.scopes";
   if (scopes === true) {
@@ -170,7 +170,7 @@ const SNAPSHOT_WHY: Readonly<Record<string, string>> = {
   no_shell: "no login shell was found",
 };
 
-/** `launch.env` (A4 3.8): `doctor/launch`'s `environment`, at `now`. */
+/** `launch.env`: `doctor/launch`'s `environment`, at `now`. */
 export function environmentCheck(environment: unknown, now: number): Check {
   const id = "launch.env";
   if (!isObject(environment)) {
@@ -234,7 +234,7 @@ export function environmentCheck(environment: unknown, now: number): Check {
   };
 }
 
-/** `launch.t3` (A4 3.4.1): `t3/status`'s answer, at `now`; undefined when it did not answer. */
+/** `launch.t3`: `t3/status`'s answer, at `now`; undefined when it did not answer. */
 export function t3PairingCheck(status: unknown, now: number): Check {
   const id = "launch.t3";
   const pair = `${CLI_NAME} setup t3`;
@@ -295,7 +295,7 @@ export function t3PairingCheck(status: unknown, now: number): Check {
 }
 
 /**
- * `sessions` (A3 3.14): `doctor/sessions`'s answer, the agent connections open now and how many
+ * `sessions`: `doctor/sessions`'s answer, the agent connections open now and how many
  * are a task's session, or null for a service without binding. Nothing in it is a fault.
  */
 export function sessionsCheck(facts: unknown): Check {

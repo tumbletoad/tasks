@@ -1,4 +1,4 @@
-// `ttasks mcp`'s arguments (A2 3.7.1, A3 3.7.2) and the bind context built from an allow-list.
+// `ttasks mcp`'s arguments and the bind context built from an allow-list.
 import { describe, expect, test } from "vitest";
 import { MCP_CONTEXT_ENV } from "../protocol/index.ts";
 import { parseArgs } from "./args.ts";

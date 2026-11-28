@@ -1,4 +1,4 @@
-// The trusted state and the tree's folders (A1 3.13 rules 1 to 5): the record lives in machine
+// The trusted state and the tree's folders: the record lives in machine
 // state; one the projection could not write holds back the next batch; one that is missing or
 // unreadable starts a reconciliation from scratch that deletes nothing on its word, and so does a
 // journal that is there and does not read back; one of another identity in the same folder keeps

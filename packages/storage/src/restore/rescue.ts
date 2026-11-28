@@ -37,7 +37,7 @@ import {
   statSync,
   writeSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import type { Connection } from "../driver.ts";
 import { StorageError } from "../errors.ts";
 import {
@@ -128,20 +128,32 @@ export async function restoreLatest(
   for (const history of own === undefined ? histories : [own]) {
     for (const backup of history.backups) {
       if (backup.state !== "ok") continue;
-      let restored: RestoredSpace;
-      try {
-        // The backup is read again by the restore, and must still be of this space.
-        restored = await restoreBackupWith(
-          checked,
-          backup.file,
-          folder,
-          { ...restoreOptions, spaceId },
-          seams,
-        );
-      } catch (error) {
-        if (backupFault(error, backup.file) !== "damaged") throw error;
-        continue;
+      // The same backup may stand in another of the folders: one on its way between two (backup/
+      // move.ts) is gone from the first when its move ends. Each copy is tried before older work.
+      const copies = [
+        ...new Set(
+          [backup.file, ...backupDirs.map((d) => join(d, basename(backup.file)))].map((f) =>
+            resolve(f),
+          ),
+        ),
+      ];
+      let restored: RestoredSpace | undefined;
+      for (const file of copies) {
+        try {
+          // The backup is read again by the restore, and must still be of this space.
+          restored = await restoreBackupWith(
+            checked,
+            file,
+            folder,
+            { ...restoreOptions, spaceId },
+            seams,
+          );
+          break;
+        } catch (error) {
+          if (backupFault(error, file) !== "damaged") throw error;
+        }
       }
+      if (restored === undefined) continue;
       return {
         restored,
         backup: backup.name,

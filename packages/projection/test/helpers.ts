@@ -229,7 +229,7 @@ export const catalogOf = (dir: string): { id: string; path: string }[] =>
     .map((line) => JSON.parse(line) as { id: string; path: string });
 
 /**
- * A1 3.13's guarantee, checked against the database, which the tree did not write: when the folder
+ * The projection's guarantee, checked against the database, which the tree did not write: when the folder
  * claims a watermark W, every commit up to W is reflected in every task's file (its `seq` is at
  * least the task's last change up to W), every task live at W and still live has a catalogue line
  * (one deleted or restored after W is not judged by W), and every path the catalogue names exists,

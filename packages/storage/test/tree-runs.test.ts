@@ -58,6 +58,14 @@ describe("[S2.tree.runs] what Open and Run record, and a node's folder, on the t
       status: "unchanged",
       result: { launch: { id: made.launch.id, existing: true } },
     });
+    // A click that continues an agent conversation is another launch than one that continues none.
+    const resumed = ok(launch(id, { evidence: { resumes: "thread-7" } })) as {
+      launch: { id: string; existing?: boolean };
+    };
+    expect(resumed.launch.existing).toBeUndefined();
+    expect(launch(id, { evidence: { resumes: "thread-7" } }).result).toMatchObject({
+      launch: { id: resumed.launch.id, existing: true },
+    });
     const move = (expect_: string, next: string, more: Record<string, unknown> = {}) =>
       fx.send("launch.transition", { launch: made.launch.id, expect: expect_, next, ...more });
     expect(move("prepared", "confirmed").error).toMatchObject({

@@ -1,4 +1,4 @@
-// A4's launch state machine (3.9) as code over the execution store, with every external step
+// The launch state machine as code over the execution store, with every external step
 // injected. It owns three rules:
 //
 // 1. Persistence before each external step. Dispatching is committed before the route's call
@@ -8,10 +8,10 @@
 //    started" leaves a durable record of the decision, and never a second start.
 // 2. No automatic retry. Only Prepared moves to Dispatching, by compare-and-set, so a second press,
 //    a repeated request, a racing recovery path or a restart never dispatches an intent again. The
-//    one repeat is A4 L14's: T3's idle-thread create with the same key under the same grant, which
+//    one repeat is T3's idle-thread create with the same key under the same grant, which
 //    starts no agent turn, recorded before it is sent and so sent once at most. After re-pairing
 //    the intent becomes Unknown instead.
-// 3. Restart recovery (A4 3.9.3). After a restart the machine reads its own open work and settles
+// 3. Restart recovery. After a restart the machine reads its own open work and settles
 //    each intent by its route's rule and what it can observe. Unknown stays Unknown until a
 //    definite observation settles it, and nothing leads from Unknown to a dispatch or a claim.
 //
@@ -27,13 +27,13 @@
 //
 // Every call to the store and every external step has a deadline. A store call still unanswered
 // then has an open outcome: the call ends with DeadlinePassed and leaves the record as it is, which
-// later calls settle as after a crash. A step still unanswered is a timeout, recorded as A4 says
-// for not knowing. So a call that never answers owns its intent only until its deadline. A write
+// later calls settle as after a crash. A step still unanswered is a timeout, recorded as
+// not knowing. So a call that never answers owns its intent only until its deadline. A write
 // that lands after its deadline is a compare-and-set on a record that has changed since, when any
 // call has committed on that intent meanwhile: it is refused, or the later call's commit is, and
 // that call reads again. Since every external step follows a commit of its own call, no late
 // write can change the record between that commit and the step. One service per machine owns its
-// launches (A2's service lock), so no other service runs a section on them.
+// launches (the service lock), so no other service runs a section on them.
 import {
   apart,
   CLAIM_WINDOW_MS,
@@ -56,7 +56,7 @@ import {
   type NewIntent,
 } from "./store.ts";
 
-/** What a route's external call reports (A4 3.9.2's Dispatched, Failed and Unknown columns). */
+/** What a route's external call reports. */
 export type DispatchOutcome =
   /** The OS or API accepted the call. Evidence such as T3's thread ID. */
   | { kind: "accepted"; evidence?: Evidence }
@@ -80,14 +80,14 @@ export type Observation =
   | { kind: "pending" }
   /** Evidence to record, without a change of state: an agent's PID, the bridge's binding. */
   | { kind: "evidence"; evidence: Evidence }
-  /** Definite evidence that a session exists in the exact folder (A4 3.9.2's Confirmed). */
+  /** Definite evidence that a session exists in the exact folder. */
   | { kind: "confirmed"; evidence?: Evidence }
   /** Definite evidence that no session started, or that the agent ended within 3 s. */
   | { kind: "failed"; reason: FailReason; evidence?: Evidence }
-  /** The service lost track: a claimed shim gone without a report (A4 3.9.3). */
+  /** The service lost track: a claimed shim gone without a report. */
   | { kind: "lost" };
 
-/** What recovery may look at after a restart (A4 3.9.3). Each route's step brings its own. */
+/** What recovery may look at after a restart. Each route's step brings its own. */
 export interface RecoverySteps {
   /**
    * Terminal: a claimed launch after a restart. A shim that re-attached is `pending` until it
@@ -97,7 +97,7 @@ export interface RecoverySteps {
   /** T3: the current grant ID, or undefined when TTasks is not paired. */
   grant(): Promise<string | undefined>;
   /**
-   * T3: the repeat of the idle-thread create with the intent's key under its grant (A4 L14). It
+   * T3: the repeat of the idle-thread create with the intent's key under its grant. It
    * starts no agent turn. The machine calls it only when the intent's grant is the current one,
    * once per intent, on a record that says so.
    */
@@ -115,7 +115,7 @@ export interface Deadlines {
 export interface LaunchMachineOptions {
   /** The launch part of the execution store: the machine reads and writes intents only. */
   store: LaunchStore;
-  /** This machine (`m_` ID): it recovers only the intents it dispatched (A4 3.16.1). */
+  /** This machine (`m_` ID): it recovers only the intents it dispatched. */
   machine: string;
   steps: LaunchSteps;
   recovery: RecoverySteps;
@@ -135,7 +135,7 @@ export interface LaunchMachineOptions {
 }
 
 /**
- * A call to the store gave no answer within its deadline: its outcome is open (A1 3.8), as after
+ * A call to the store gave no answer within its deadline: its outcome is open, as after
  * a storage failure. The call on the intent ended without it, and the record is as the store
  * holds it, for the next call to read.
  */
@@ -275,7 +275,7 @@ export class LaunchMachine {
       const closed = await this.#decide(id, (intent) => this.#timedOut(intent), prepared);
       return { intent: closed, reconcile: false };
     }
-    // The crash boundary (A4 3.9.1). Nothing external has happened yet.
+    // The crash boundary. Nothing external has happened yet.
     const committed = await this.#try(prepared, { next: "dispatching", evidence });
     // A write that landed after its own call's deadline moved it first: nothing external.
     if (committed.kind !== "moved" || committed.intent?.state !== "dispatching") {
@@ -287,7 +287,7 @@ export class LaunchMachine {
     // A step that throws or does not answer in time cannot tell whether anything started.
     const outcome: DispatchOutcome =
       answer.kind === "answered" ? answer.value : { kind: "unknown" };
-    // A lost T3 reply is reconciled at once, as after a restart (A4 3.9.2, 3.9.3): the record
+    // A lost T3 reply is reconciled at once, as after a restart: the record
     // stays Dispatching for the repeat, which is the next call on this intent.
     if (outcome.kind === "unknown" && intent.route === "t3-mcp") {
       return { intent, reconcile: true };
@@ -297,7 +297,7 @@ export class LaunchMachine {
   }
 
   /**
-   * A terminal shim's claim (A4 3.6.3 step 3). The claim is committed first, then `reply` sends
+   * A terminal shim's claim. The claim is committed first, then `reply` sends
    * the shim the agent's argv, which is what lets it start the agent: so an agent never starts
    * without a durable claim, and a second claim, a late one or one on a closed intent is refused
    * and gets no reply. The claim and its reply are one call on the intent, so no other call acts
@@ -336,7 +336,7 @@ export class LaunchMachine {
    * intent as it is then and returns the result. A store that cannot take the write now
    * (`unavailable`) throws its refusal, so the reporter keeps what it reported and tries again; a
    * definite refusal returns the record as it is. An observation that depends on the record (a
-   * best-effort app's folder check, A4 3.4.4) is given as a function of the intent: it is decided
+   * best-effort app's folder check) is given as a function of the intent: it is decided
    * in the section, on the record as it is then, so a dispatch still in its external call when the
    * report arrived has recorded its evidence first.
    */
@@ -363,7 +363,7 @@ export class LaunchMachine {
   }
 
   /**
-   * Restart recovery (A4 3.9.3): every open intent of this machine, settled by its route's rule.
+   * Restart recovery: every open intent of this machine, settled by its route's rule.
    * It never dispatches. Returns the intents as recovery left them.
    */
   async recover(): Promise<LaunchIntent[]> {
@@ -421,7 +421,7 @@ export class LaunchMachine {
   }
 
   /**
-   * Settles one intent by recovery's rule (A4 3.9.3), in its section, on the record read there.
+   * Settles one intent by recovery's rule, in its section, on the record read there.
    * After a restart nothing of the previous service's calls is left; in the live service a record
    * still in Dispatching when this call has the section belongs to a call that ended without its
    * step's outcome, which is the same.
@@ -457,7 +457,7 @@ export class LaunchMachine {
         }
         case "link":
         case "t3-cli": {
-          // A link that was accepted stays Dispatched: the session may well exist (A4 3.9.2).
+          // A link that was accepted stays Dispatched: the session may well exist.
           // `t3-cli` is a route no longer made, kept so its launches recorded earlier settle: its
           // message cannot be repeated and nothing checks its folder now, so it is Unknown. A
           // call that ended in Dispatching cannot be told apart from one that opened.
@@ -470,7 +470,7 @@ export class LaunchMachine {
           continue;
         }
         case "clipboard": {
-          // A4 3.9.2: a clipboard launch is never Unknown. A copy not reported was not made.
+          // A clipboard launch is never Unknown. A copy not reported was not made.
           if (intent.state === "dispatched") return intent;
           const tried = await this.#try(intent, { next: "failed", reason: "interrupted" });
           if (tried.kind !== "stale") return tried.intent;
@@ -490,7 +490,7 @@ export class LaunchMachine {
   }
 
   /**
-   * T3's lost reply (A4 3.9.2 "Lost reply, then reconciled", 3.9.3): repeat the idle-thread create
+   * T3's lost reply: repeat the idle-thread create
    * once, only under the grant it was dispatched with, recorded on the record before it is sent.
    * After re-pairing the same key would make a second thread, so the intent becomes Unknown. A
    * repeat without an answer, or a refused one, makes it Unknown too: it says nothing about the
@@ -534,11 +534,11 @@ export class LaunchMachine {
       case "unknown":
         switch (intent.route) {
           case "terminal":
-            // The claim window decides (A4 3.6.2: an ambiguous handoff counts as Dispatched),
+            // The claim window decides (an ambiguous handoff counts as Dispatched),
             // which is safe because no agent starts without a claim.
             return { next: "dispatched" };
           case "clipboard":
-            // A4 3.9.2: a clipboard launch is never Unknown. A copy that cannot be confirmed
+            // A clipboard launch is never Unknown. A copy that cannot be confirmed
             // was not made, as far as TTasks can tell, and nothing starts from a clipboard alone.
             return { next: "failed", reason: "refused" };
           default:
@@ -590,8 +590,8 @@ export class LaunchMachine {
           : undefined;
       case "lost":
         // An unclaimed terminal launch is not lost: its claim window decides, and no agent
-        // starts without a claim (A4 3.9.2). So no terminal launch is Unknown without a claim.
-        // Nor is a clipboard launch, which A4 3.9.2 never makes Unknown: nothing runs there.
+        // starts without a claim. So no terminal launch is Unknown without a claim.
+        // Nor is a clipboard launch, which is never Unknown: nothing runs there.
         if (intent.route === "terminal" && intent.evidence.claim === undefined) return undefined;
         if (intent.route === "clipboard") return undefined;
         // A session that did run stays Confirmed; the record says it is no longer followed, so
@@ -758,7 +758,7 @@ export class LaunchMachine {
   }
 }
 
-/** When the click was recorded, on the wall clock (A4 3.16's time of Prepared). */
+/** When the click was recorded, on the wall clock (the time of Prepared). */
 const clickedAt = (intent: LaunchIntent): number => intent.at.prepared ?? intent.createdAt;
 
 /** The evidence of `incoming` that `held` does not have yet. Held keys keep their values. */

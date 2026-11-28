@@ -1,4 +1,4 @@
-// The launchers' sibling repair (A2 3.12.3 step 10, A7 3.13 M6.13): an update cut off between the
+// The launchers' sibling repair: an update cut off between the
 // two renames of one stable launcher leaves the command folder without it, and the other one,
 // started from there while the update's journal is there, puts it back before it runs anything,
 // from the version folder current names and from nothing else. Real release builds in temporary

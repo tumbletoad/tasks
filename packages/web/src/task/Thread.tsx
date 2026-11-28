@@ -221,6 +221,8 @@ export interface ThreadProps {
   readonly runsFailed?: boolean;
   /** The person's Stop of a run. */
   readonly onStop?: (run: Run) => void;
+  /** The person's Continue of a run, in its instance: offered while this machine has it. */
+  readonly onContinue?: (run: Run, instance: Instance) => void;
   /** How the person corrects an entry's words: none in a card that only reads. */
   readonly edit?: EntryEdit | undefined;
 }
@@ -250,6 +252,7 @@ export function Thread({
   onRemove,
   runsFailed = false,
   onStop,
+  onContinue,
   edit,
 }: ThreadProps) {
   const t = useT();
@@ -260,6 +263,14 @@ export function Thread({
   const anchor = useRef<{ key: string; top: number } | undefined>(undefined);
   /** The entry that holds focus: it stays shown while it does, however many entries arrive. */
   const [focused, setFocused] = useState<string | undefined>(undefined);
+  /** A run's Continue, in its instance while this machine has it. */
+  const continueIn = (run: Run | undefined): ((run: Run) => void) | undefined => {
+    const instance = run === undefined ? undefined : instances.find((i) => i.key === run.instance);
+    if (instance === undefined || onContinue === undefined) return undefined;
+    return (chosen) => {
+      onContinue(chosen, instance);
+    };
+  };
 
   const items: Item[] = [];
   // A request shows in its sessions' entries; one whose sessions are not listed shows on its own.
@@ -495,6 +506,7 @@ export function Thread({
             time={Number.isFinite(item.at) && item.at > 0 ? when(item.at, clock) : undefined}
             edit={edit}
             onStop={onStop}
+            onContinue={continueIn(item.run)}
             acts={
               <>
                 {item.kind === "log" ? (
@@ -561,6 +573,7 @@ function EntryLine({
   time,
   edit,
   onStop,
+  onContinue,
   acts,
 }: {
   readonly item: Item;
@@ -568,6 +581,7 @@ function EntryLine({
   readonly time: string | undefined;
   readonly edit: EntryEdit | undefined;
   readonly onStop: ((run: Run) => void) | undefined;
+  readonly onContinue: ((run: Run) => void) | undefined;
   /** Its other actions, before the pen. */
   readonly acts: ReactNode;
 }) {
@@ -616,12 +630,17 @@ function EntryLine({
           </p>
         ) : null}
         {item.run !== undefined ? (
-          <RunBody run={item.run} label={item.who} {...(onStop === undefined ? {} : { onStop })} />
+          <RunBody
+            run={item.run}
+            label={item.who}
+            {...(onStop === undefined ? {} : { onStop })}
+            {...(onContinue === undefined ? {} : { onContinue })}
+          />
         ) : editing && edit !== undefined && words !== undefined ? (
           <div className={styles.text}>
             <TextEditor
               space={edit.space}
-              task={edit.task}
+              owner={edit.task}
               part={words.ref}
               label={words.box}
               text={text}
@@ -644,7 +663,7 @@ function EntryLine({
           </p>
         )}
         {edit === undefined || words === undefined ? null : (
-          <NotSaved space={edit.space} task={edit.task} part={words.ref} />
+          <NotSaved space={edit.space} owner={edit.task} part={words.ref} />
         )}
         {item.again === undefined ? null : (
           <button

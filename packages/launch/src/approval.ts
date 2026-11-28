@@ -1,4 +1,4 @@
-// Approval of definitions that arrive with data (A4 3.2, L2; R10). A space may carry a custom target
+// Approval of definitions that arrive with data. A space may carry a custom target
 // definition or a routine: executable intent that another machine, an import or a copy can plant.
 // Each machine pins what its person allowed by a content hash in machine.toml `[approvals]`:
 //
@@ -16,7 +16,7 @@
 // The hash input starts with a domain line and the kind (`tasks-approval/1`, `custom_target`), so
 // a routine's hash can never approve a target definition with the same JSON, or the reverse.
 //
-// Approving is a user-only operation (A4 3.2 step 4): the UI session or an interactive CLI writes
+// Approving is a user-only operation: the UI session or an interactive CLI writes
 // the verdict through the service's machine.toml editor. Nothing here writes.
 import { createHash } from "node:crypto";
 import { APPROVAL_KEY, type Verdict } from "./sections.ts";
@@ -113,7 +113,7 @@ export function approvalHash(kind: ApprovalKind, definition: unknown): string {
 }
 
 /**
- * The content a routine's approval covers (A4 3.12.1): its template, its parameters, the instance
+ * The content a routine's approval covers: its template, its parameters, the instance
  * it runs in and that instance's run permission at approval time. A raised permission changes the
  * hash, so the routine asks again.
  */
