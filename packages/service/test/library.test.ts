@@ -1,11 +1,15 @@
 // The library through the request path: write_page puts an agent's page on its task's project by
 // default and asks it for a brief; read gives a page whole or by heading, and a node with what is
 // known above it; get_task's digest lists the pages above the task; search in scope library finds
-// pages; complete_task takes the pages a session updated, refuses one the space does not show and
-// tells an agent that named none; the feed's snapshot carries the pages. Fixture text only.
+// pages, with its filters applied before the limit and the bound task's trail first; complete_task
+// keeps the pages a session updated with its outcome, refuses one the space does not show and tells
+// an agent that named none; a page in the Trash is not read as live; the feed's snapshot carries
+// the pages. Fixture text only.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, TaskGetResult } from "@ttasks/contracts";
 import { readSnapshot } from "../src/http/feed.ts";
+import { searchLibrary } from "../src/ops/library.ts";
+import { parseQuery } from "../src/search/query.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 
@@ -122,6 +126,61 @@ describe("[A3.pages.service] the library through the request path", () => {
     expect((found["rows"] as Json[]).map((r) => [r["kind"], r["ref"]])).toEqual([["page", page]]);
   });
 
+  let visa = "";
+  let visaTask = "";
+  test("search in scope library applies its reference and group filters, and refuses one it cannot", async () => {
+    const added = await call(
+      "task.add",
+      {
+        tasks: [{ title: "Apply for the visa", area: "Home", project: "Travel" }],
+        request_id: rid(),
+      },
+      USER,
+    );
+    visaTask = String((added["tasks"] as Json[])[0]?.["id"]);
+    const made = await call("page.write", {
+      action: "create",
+      task: visaTask,
+      title: "Visa",
+      brief: "What the consulate asks for",
+      body: "## Photos\n\nTwo photos, white background.",
+      why: "what the visa needs",
+      request_id: rid(),
+    });
+    visa = String(made["target"]);
+    const refs = async (q: string) =>
+      ((await call("task.search", { q, scope: "library" }))["rows"] as Json[]).map((r) => r["ref"]);
+    expect(await refs(`id:${page}`)).toEqual([page]);
+    expect(await refs(`photos id:${visa}`)).toEqual([visa]);
+    expect(await refs("photos project:Travel")).toEqual([visa]);
+    expect(await refs("project:Papers")).toEqual([page]);
+    expect(await refs("photos -consulate")).toEqual([page]);
+    expect(await refs("area:Home")).toEqual(expect.arrayContaining([page, visa]));
+    expect(await refused("task.search", { q: "photos status:open", scope: "library" })).toBe(
+      "invalid_input",
+    );
+  });
+
+  test("search in scope library puts the pages on the bound task's trail first", async () => {
+    const reader = w.service.ops.spaces().find((s) => s.reader !== undefined)?.reader;
+    if (reader === undefined) throw new Error("no space is served");
+    const first = async (task: string) =>
+      (
+        (
+          await searchLibrary(reader, {
+            query: parseQuery("photos"),
+            limit: 15,
+            agent: true,
+            parsed: "photos",
+            task,
+          })
+        )["rows"] as Json[]
+      )[0]?.["ref"];
+    const papers = TaskGetResult.parse(await call("task.get", { task })).task.id;
+    expect(await first(visaTask)).toBe(visa);
+    expect(await first(papers)).toBe(page);
+  });
+
   test("complete_task takes the pages updated, refuses one the space does not show, and tells an agent that named none", async () => {
     const base = async () => String((await call("space.status", {}))["as_of"]);
     expect(
@@ -141,6 +200,11 @@ describe("[A3.pages.service] the library through the request path", () => {
       request_id: rid(),
     });
     expect(done["warnings"]).toBeUndefined();
+    // The pages it named stay with the outcome, where the person reads it.
+    expect(done["library"]).toEqual([page]);
+    const finished = TaskGetResult.parse(await call("task.get", { task }, USER));
+    if (finished.view !== "digest") throw new Error("not a digest");
+    expect(finished.task.outcome).toBe(`Renewed.\n\nLibrary: ${page}`);
     const other = await call(
       "task.add",
       { tasks: [{ title: "Book the photo booth" }], request_id: rid() },
@@ -167,7 +231,19 @@ describe("[A3.pages.service] the library through the request path", () => {
     const reader = w.service.ops.spaces().find((s) => s.reader !== undefined)?.reader;
     if (reader === undefined) throw new Error("no space is served");
     const snapshot = await readSnapshot(reader);
-    expect(snapshot.pages?.map((p) => p["ref"])).toEqual([page]);
+    expect(snapshot.pages?.map((p) => p["ref"])).toEqual([page, visa]);
     expect(snapshot.pages?.[0]).not.toHaveProperty("body");
+  });
+
+  test("a page in the Trash is not read as a live page, and its history still is", async () => {
+    await call("page.write", {
+      action: "trash",
+      target: visa,
+      why: "the trip is off",
+      request_id: rid(),
+    });
+    expect(await refused("page.read", { target: visa })).toBe("not_found");
+    const history = await call("page.history", { target: visa }, USER);
+    expect((history["versions"] as Json[]).length).toBeGreaterThan(0);
   });
 });

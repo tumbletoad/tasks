@@ -1230,6 +1230,7 @@ When `view` is `"node"`:
 | `more` | object | yes | What this answer left out: the cursor reads on |
 | `more.pages` | integer, 0 to 1000000 | yes | Own pages not here |
 | `more.task_pages` | integer, 0 to 1000000 | yes | Task pages not here |
+| `offset` | integer, 1 to 1000000 | no | Rows of each list read before these |
 | `cursor` | string, max 80 | no | Pass it to read to read on |
 
 ### Examples
@@ -1462,7 +1463,7 @@ Result:
 
 Create, edit, append to, set, move, trash or restore a page, or set a node's texts.
 
-MCP tool `write_page`, "Write a page": Use to keep the library: create a page (on the task's project unless you name the task), edit it (old words become new), append, set title or brief, move, trash or restore it; or set a project's, an area's or the space's brief and description. why: one line.
+MCP tool `write_page`, "Write a page": Keep the library: create a page (leave on empty for the task's project, then its area, then the task itself), edit it (old words become new), append, set title or brief, move, trash or restore it; or set a project's, an area's or the space's brief and description. why: one line.
 
 | Property | Value |
 |---|---|
@@ -1474,7 +1475,7 @@ MCP tool `write_page`, "Write a page": Use to keep the library: create a page (o
 | A1 operations | `page.create`, `page.edit`, `page.append`, `page.set`, `page.move`, `page.trash`, `page.restore`, `node.set`, `area.patch`, `project.patch` |
 | Faces | MCP `write_page`, CLI `ttasks page`, UI |
 | Errors | `invalid_input`, `not_found`, `ambiguous`, `unbound`, `conflict`, `forbidden`, `too_large`, `request_id_conflict`, `applied_earlier` |
-| Definition, estimated tokens | 1114, reported |
+| Definition, estimated tokens | 1113, reported |
 | Result budget, estimated tokens | typical 150, max 1500 |
 
 ### Input
@@ -1483,7 +1484,7 @@ MCP tool `write_page`, "Write a page": Use to keep the library: create a page (o
 |---|---|---|---|
 | `action` | "create" \| "edit" \| "append" \| "set" \| "move" \| "trash" \| "restore" | yes | restore: back from the Trash; set from_seq: a version |
 | `target` | string, max 250 | no | The page (M-180); set: or a project, area or "space" for its texts |
-| `on` | string, max 250 | no | create: "task", a task, a project, an area or "space"; default: its project |
+| `on` | string, max 250 | no | create: "task", a task, a project, an area or "space" |
 | `to` | string, max 250 | no | move: a task, a project, an area or "space" |
 | `title` | string, max 300; agents: string, max 200 | no | create, set: one line |
 | `brief` | string, max 400; agents: string, max 160 | no | create, set: what a reader finds in it; agents must give one on create |
@@ -2858,6 +2859,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `lifecycle` | "active" \| "completed" \| "archived" | yes | Lifecycle |
 | `wrap_state` | "pending" \| "wrapped" | no | Wrap-up state |
 | `learnings` | integer, 0 to 20 | yes | Learnings recorded |
+| `library` | (string, max 20)[], 1 to 10 items \| "nothing reusable" | no | The pages it says it updated, as kept below the outcome |
 | `follow_ups` | object[] | yes | One row per follow-up draft |
 | `follow_ups[].result` | "created" \| "exists" | yes | What happened to the draft |
 | `follow_ups[].ref` | string | no | Task reference |
@@ -2906,6 +2908,7 @@ Result:
   "lifecycle": "completed",
   "wrap_state": "wrapped",
   "learnings": 0,
+  "library": "nothing reusable",
   "follow_ups": [
     {
       "result": "created",

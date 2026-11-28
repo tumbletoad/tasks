@@ -64,6 +64,9 @@ export const TaskFinishResult = z.strictObject({
   lifecycle: Lifecycle,
   wrap_state: WrapState.optional(),
   learnings: z.int().min(0).max(USER_LIMITS.learnings).describe("Learnings recorded"),
+  library: FinishLibrary.describe(
+    "The pages it says it updated, as kept below the outcome",
+  ).optional(),
   follow_ups: z
     .array(
       z.strictObject({
@@ -171,6 +174,7 @@ export const taskFinish = defineEntry({
         lifecycle: "completed",
         wrap_state: "wrapped",
         learnings: 0,
+        library: "nothing reusable",
         follow_ups: [
           {
             result: "created",

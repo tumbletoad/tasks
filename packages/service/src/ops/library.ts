@@ -7,6 +7,8 @@ import { formatTaskRef, PAGE_SHOWN, type Row, type WorkerConnection } from "@tta
 import { byOf } from "./errors.ts";
 import { resolveGroup } from "./groups.ts";
 import { hasPageTable, spaceFacts, type GroupNames, type SpaceFacts } from "./read.ts";
+import { negativeMatch, wordsMatch } from "../search/plan.ts";
+import { queryProblem, type FilterTerm, type Query } from "../search/query.ts";
 
 /** The rows of one list in one answer; a longer one goes on with the cursor. */
 export const LIST = 25;
@@ -372,6 +374,7 @@ export async function nodeView(
       pages: Math.max(0, ownTotal - offset - listed),
       task_pages: Math.max(0, taskTotal - offset - tasksListed),
     },
+    ...(offset === 0 ? {} : { offset }),
     ...(description.cursor
       ? { cursor: description.cursor }
       : more
@@ -588,42 +591,162 @@ export const noLibrary = (): AppError =>
 
 export const noPage = (field: string): AppError => notFound(field, "page");
 
-/** The library's documents: pages, and the lessons of tasks finished before pages existed. */
-const LIBRARY_DOCS =
-  "SELECT d.kind, d.entity_id, bm25(search_fts, 10.0, 3.0, 2.0) AS score, " +
-  "snippet(search_fts, 1, '', '', '...', 12) AS snippet FROM search_fts " +
-  "JOIN search_docs d ON d.doc = search_fts.rowid WHERE search_fts MATCH $match " +
-  "AND d.kind IN ('page', 'learning') AND ($agent = 0 OR d.audience = 'all') " +
-  "ORDER BY score LIMIT $limit";
-/** With no words: the pages changed last. */
-const NEWEST_PAGES =
-  `SELECT 'page' AS kind, p.id AS entity_id, NULL AS snippet FROM pages p WHERE p.deleted_at IS NULL ` +
-  `AND ${PAGE_SHOWN} ORDER BY p.version DESC LIMIT $limit`;
+/**
+ * The library's documents with where they stand: pages, and the lessons of tasks finished before
+ * pages existed. A page on a task stands in that task's project and area.
+ */
+const LIBRARY_ROWS =
+  "SELECT 'page' AS kind, p.id AS entity_id, p.id AS id, p.ref AS ref, " +
+  "p.owner_kind AS owner_kind, p.owner_id AS owner_id, " +
+  "CASE p.owner_kind WHEN 'project' THEN p.owner_id WHEN 'task' THEN tk.project_id END " +
+  "AS project_id, CASE p.owner_kind WHEN 'area' THEN p.owner_id WHEN 'project' THEN pr.area_id " +
+  "WHEN 'task' THEN coalesce(tk.area_id, tp.area_id) END AS area_id, " +
+  "p.version AS seq, 'all' AS audience FROM pages p " +
+  "LEFT JOIN tasks tk ON p.owner_kind = 'task' AND tk.id = p.owner_id " +
+  "LEFT JOIN projects tp ON tp.id = tk.project_id " +
+  "LEFT JOIN projects pr ON p.owner_kind = 'project' AND pr.id = p.owner_id " +
+  `WHERE p.deleted_at IS NULL AND ${PAGE_SHOWN} ` +
+  "UNION ALL SELECT 'learning', l.id, t.id, t.ref, 'task', t.id, t.project_id, " +
+  "coalesce(t.area_id, lp.area_id), l.created_seq, coalesce(ld.audience, 'all') " +
+  "FROM learnings l JOIN tasks t ON t.id = l.task_id " +
+  "LEFT JOIN projects lp ON lp.id = t.project_id " +
+  "LEFT JOIN search_docs ld ON ld.entity_id = l.id " +
+  "WHERE l.deleted_at IS NULL AND t.deleted_at IS NULL";
+/** A document on the bound task's trail: its own, its project's, its area's or the space's. */
+const ON_TRAIL =
+  "($task IS NOT NULL AND ((lib.kind = 'page' AND (lib.owner_kind = 'space' " +
+  "OR lib.owner_id IN ($task, $project, $area))) " +
+  "OR (lib.kind = 'learning' AND lib.project_id = $project)))";
+const BOUND =
+  "SELECT t.project_id AS project, coalesce(t.area_id, p.area_id) AS area FROM tasks t " +
+  "LEFT JOIN projects p ON p.id = t.project_id WHERE t.id = $task";
+const GROUP_ROWS = {
+  areas: "SELECT id, slug, title FROM areas WHERE deleted_at IS NULL",
+  projects: "SELECT id, slug, title FROM projects WHERE deleted_at IS NULL",
+} as const;
 const LIBRARY_PAGE = `SELECT p.*, ${WHO} FROM pages p ${BY_SEQ("p.version")} WHERE p.id = $id`;
 const LIBRARY_LEARNING =
   "SELECT l.id, l.body, l.created_at, t.ref, t.title, a.title AS area_title, r.title AS project_title " +
   "FROM learnings l JOIN tasks t ON t.id = l.task_id LEFT JOIN areas a ON a.id = t.area_id " +
   "LEFT JOIN projects r ON r.id = t.project_id WHERE l.id = $id";
 
+interface GroupRow {
+  readonly id: string;
+  readonly slug: string;
+  readonly title: string;
+}
+
+/** A query's filters as conditions on the library's rows (`lib`), each applied before the limit. */
+function libraryFilters(
+  query: Query,
+  refPrefix: string,
+  groups: { readonly areas: readonly GroupRow[]; readonly projects: readonly GroupRow[] },
+  params: Record<string, string | number | null>,
+): string[] {
+  let n = 0;
+  const bind = (value: string | number): string => {
+    const name = `f${String(n)}`;
+    n += 1;
+    params[name] = value;
+    return `$${name}`;
+  };
+  const named = (term: FilterTerm, rows: readonly GroupRow[], what: string): string => {
+    const want = term.value.trim().toLowerCase();
+    const ids = rows
+      .filter((r) => r.slug.toLowerCase() === want || r.title.toLowerCase() === want)
+      .map((r) => bind(r.id));
+    if (ids.length === 0) throw queryProblem(`Unknown ${what}`);
+    return `(${ids.join(", ")})`;
+  };
+  const condition = (term: FilterTerm): string => {
+    switch (term.key) {
+      case "id": {
+        const ref = /^([A-Za-z]{1,6})-([1-9][0-9]{0,9})$/u.exec(term.value);
+        if (ref === null) return `lib.id = ${bind(term.value)}`;
+        // Another space's prefix names nothing here.
+        return ref[1]?.toUpperCase() === refPrefix ? `lib.ref = ${bind(Number(ref[2]))}` : "0";
+      }
+      case "project":
+        return `lib.project_id IN ${named(term, groups.projects, "project")}`;
+      case "area":
+        return `lib.area_id IN ${named(term, groups.areas, "area")}`;
+      default:
+        throw queryProblem(
+          "A search in scope library takes words, id:, project: and area:",
+          "Leave the other filters out, or search another scope.",
+        );
+    }
+  };
+  return query.groups
+    .filter((group) => group[0]?.type === "filter")
+    .map((group) => {
+      const parts = (group as FilterTerm[]).map((term) => {
+        const held = `coalesce((${condition(term)}), 0)`;
+        return term.negated ? `NOT ${held}` : held;
+      });
+      return parts.length === 1 ? (parts[0] ?? "1") : `(${parts.join(" OR ")})`;
+    });
+}
+
 /**
- * `search` in scope `library`: pages and lessons together, best match first, one page of rows. A
- * page shows what holds it by name; a lesson its task.
+ * `search` in scope `library`: pages and lessons together, those on the bound task's trail first,
+ * then the best match, or with no words the changed last; one page of rows. Every filter applies
+ * before the limit. A page shows what holds it by name; a lesson its task.
  */
 export async function searchLibrary(
   reader: WorkerConnection,
-  input: { match: string | null; limit: number; agent: boolean; parsed: string },
+  input: {
+    query: Query;
+    limit: number;
+    agent: boolean;
+    parsed: string;
+    task?: string | undefined;
+  },
 ): Promise<Record<string, unknown>> {
-  const [spaceRow, found] = await reader.transaction("deferred", [
+  const [spaceRow, areas, projects, bound] = await reader.transaction("deferred", [
     { sql: SQL.space, mode: "get" },
-    input.match === null
-      ? { sql: NEWEST_PAGES, mode: "all", params: { limit: input.limit } }
-      : {
-          sql: LIBRARY_DOCS,
-          mode: "all",
-          params: { match: input.match, agent: input.agent ? 1 : 0, limit: input.limit },
-        },
+    { sql: GROUP_ROWS.areas, mode: "all" },
+    { sql: GROUP_ROWS.projects, mode: "all" },
+    { sql: BOUND, mode: "get", params: { task: input.task ?? null } },
   ]);
   const space = spaceFacts(spaceRow);
+  const near = (bound as Row | null) ?? undefined;
+  const params: Record<string, string | number | null> = {
+    agent: input.agent ? 1 : 0,
+    limit: input.limit,
+    task: near === undefined ? null : (input.task ?? null),
+    project: typeof near?.["project"] === "string" ? near["project"] : null,
+    area: typeof near?.["area"] === "string" ? near["area"] : null,
+  };
+  const groups = {
+    areas: areas as unknown as GroupRow[],
+    projects: projects as unknown as GroupRow[],
+  };
+  const filters = libraryFilters(input.query, space.refPrefix, groups, params);
+  const match = wordsMatch(input.query);
+  const without = negativeMatch(input.query);
+  if (match !== null) params["match"] = match;
+  if (without !== null) params["without"] = without;
+  const where = [
+    "($agent = 0 OR lib.audience = 'all')",
+    ...(match === null ? [] : ["search_fts MATCH $match"]),
+    ...(without === null
+      ? []
+      : [
+          "lib.entity_id NOT IN (SELECT nd.entity_id FROM search_fts JOIN search_docs nd " +
+            "ON nd.doc = search_fts.rowid WHERE search_fts MATCH $without)",
+        ]),
+    ...filters,
+  ].join(" AND ");
+  const sql =
+    match === null
+      ? `SELECT lib.kind, lib.entity_id, NULL AS snippet FROM (${LIBRARY_ROWS}) lib ` +
+        `WHERE ${where} ORDER BY ${ON_TRAIL} DESC, lib.seq DESC LIMIT $limit`
+      : "SELECT lib.kind, lib.entity_id, snippet(search_fts, 1, '', '', '...', 12) AS snippet " +
+        `FROM (${LIBRARY_ROWS}) lib JOIN search_docs d ON d.entity_id = lib.entity_id ` +
+        `JOIN search_fts ON search_fts.rowid = d.doc WHERE ${where} ` +
+        `ORDER BY ${ON_TRAIL} DESC, bm25(search_fts, 10.0, 3.0, 2.0) LIMIT $limit`;
+  const [found] = await reader.transaction("deferred", [{ sql, mode: "all", params }]);
   const hits = found as Row[];
   const reads = await reader.transaction(
     "deferred",

@@ -187,7 +187,7 @@ Usage: `ttasks page <action> [<target>] [flags]`
 |---|---|---|---|
 | `<action>` | `action` | string | restore: back from the Trash; set from_seq: a version |
 | `<target>` | `target` | string | The page (M-180); set: or a project, area or "space" for its texts |
-| `--on` | `on` | string | create: "task", a task, a project, an area or "space"; default: its project |
+| `--on` | `on` | string | create: "task", a task, a project, an area or "space" |
 | `--to` | `to` | string | move: a task, a project, an area or "space" |
 | `--title` | `title` | string | create, set: one line |
 | `--brief` | `brief` | string | create, set: what a reader finds in it; agents must give one on create |

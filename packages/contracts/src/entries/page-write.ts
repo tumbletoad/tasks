@@ -38,7 +38,7 @@ export const PageWriteInput = z.strictObject({
   on: z
     .string()
     .max(250)
-    .describe('create: "task", a task, a project, an area or "space"; default: its project')
+    .describe('create: "task", a task, a project, an area or "space"')
     .optional(),
   to: z.string().max(250).describe('move: a task, a project, an area or "space"').optional(),
   title: safeLine(user.title).describe("create, set: one line").optional(),
@@ -140,8 +140,8 @@ export const pageWrite = defineEntry({
       tool: "write_page",
       title: "Write a page",
       description:
-        "Use to keep the library: create a page (on the task's project unless you name the " +
-        "task), edit it (old words become new), append, set title or brief, move, trash or " +
+        "Keep the library: create a page (leave on empty for the task's project, then its " +
+        "area, then the task itself), edit it (old words become new), append, set title or brief, move, trash or " +
         "restore it; or set a project's, an area's or the space's brief and description. why: " +
         "one line.",
     },

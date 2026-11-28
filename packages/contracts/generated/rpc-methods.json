@@ -2725,6 +2725,12 @@
                 ],
                 "type": "object"
               },
+              "offset": {
+                "description": "Rows of each list read before these",
+                "maximum": 1000000,
+                "minimum": 1,
+                "type": "integer"
+              },
               "pages": {
                 "description": "Its own pages, by title",
                 "items": {
@@ -3166,7 +3172,7 @@
             "type": "string"
           },
           "on": {
-            "description": "create: \"task\", a task, a project, an area or \"space\"; default: its project",
+            "description": "create: \"task\", a task, a project, an area or \"space\"",
             "maxLength": 250,
             "type": "string"
           },
@@ -6181,6 +6187,26 @@
             "maximum": 20,
             "minimum": 0,
             "type": "integer"
+          },
+          "library": {
+            "anyOf": [
+              {
+                "items": {
+                  "description": "Page reference, such as M-180",
+                  "maxLength": 20,
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "const": "nothing reusable",
+                "type": "string"
+              }
+            ],
+            "description": "The pages it says it updated, as kept below the outcome"
           },
           "lifecycle": {
             "description": "Lifecycle",
