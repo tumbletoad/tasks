@@ -13,11 +13,11 @@ import {
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CLI_NAME, MCP_SERVER_KEY } from "@ttasks/brand";
-import { installFakeAgents } from "@ttasks/testkit/fake-agents";
+import { FAKE_SIGNED_IN, installFakeAgents } from "@ttasks/testkit/fake-agents";
 import { FixedEnvironment } from "@ttasks/launch";
 import {
   agentAppVerbs,
-  personEnv,
+  personBase,
   type AgentAppsHost,
   type AppsView,
 } from "../src/hub/agent-apps.ts";
@@ -811,9 +811,9 @@ describe("[A7.3.12.m5-12.page-desktop] Several Claude Desktop files: the person 
 });
 
 describe("[A7.3.12.m5-12.page-env] The agent apps are looked for in the person's environment", () => {
-  it("brings the person's environment up to date before it is read", async () => {
+  it("brings the person's environment up to date before it is read, and keeps what it is", async () => {
     const base = new FixedEnvironment({ kind: "user", env: { PATH: "/person/bin" } });
-    expect(await personEnv(base)).toEqual({ PATH: "/person/bin" });
+    expect(await personBase(base)).toEqual({ kind: "user", env: { PATH: "/person/bin" } });
     expect(base.prepared).toBe(1);
   });
 });
@@ -1001,6 +1001,42 @@ describe("[A7.3.12.m5-12.page-files] A damaged record file is named by its own p
         rmSync(inner, { force: true });
         rmSync(plain, { force: true });
       }
+    },
+    SLOW,
+  );
+});
+
+describe("[A7.3.12.m5-12.page-ready] Each Claude Code and Codex row says whether its app is installed and signed in, and what to do next", () => {
+  let w: World;
+  let space: string;
+  beforeAll(async () => {
+    w = await world("ready");
+    const made = await call<{ id: string }>(w, "/api/v1/space/create", {
+      name: "Mira",
+      folder: join(w.home, "mira"),
+    });
+    space = made.result.id;
+  }, SLOW);
+  afterAll(async () => {
+    await w.close();
+  }, SLOW);
+
+  it(
+    "a login found with its version, or no confirmed login with the login line; the status command's output never reaches the page",
+    async () => {
+      writeFileSync(join(w.user, ".claude", FAKE_SIGNED_IN), "");
+      const reply = await post(w.port, "/api/v1/machine/apps", { space }, { token: w.token });
+      expect(reply.body).not.toContain("FAKE-ACCOUNT-SECRET");
+      const view = (JSON.parse(reply.body) as { result: AppsView }).result;
+      expect(row(view, "claude-code").ready).toEqual({ state: "login_found", version: "2.1.332" });
+      expect(row(view, "codex").ready).toEqual({
+        state: "no_login",
+        version: "0.167.2",
+        login:
+          process.platform === "win32"
+            ? "& { $was = $env:CODEX_HOME; $env:CODEX_HOME = $null; try { codex login } finally { $env:CODEX_HOME = $was } }"
+            : "env -u CODEX_HOME codex login",
+      });
     },
     SLOW,
   );

@@ -275,7 +275,7 @@ test.describe("[A5.3.19.e2e.screens] The shell in Sumi, Washi and System, wide a
       await picture(page, `shell-${theme}-1440-spaces.png`);
       await page.keyboard.press("Escape");
     }
-    // The tests of a worker share its service: the theme goes back to its default.
+    // The tests of a file share its service: the theme goes back to its default.
     await world.machine("ui.theme", null);
   });
 });

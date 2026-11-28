@@ -150,7 +150,7 @@ test.describe("[A5.note.retract.e2e.screens] A note taken back, in both themes",
         if (pictures()) expect(await axeFound(shot, ["main"]), `axe in ${theme}`).toEqual([]);
       } finally {
         await context.close();
-        // The theme is the machine's, shared by the worker's other tests: back to the default.
+        // The theme is the machine's, shared by the file's other tests: back to the default.
         await world.machine("ui.theme", null);
       }
     }
