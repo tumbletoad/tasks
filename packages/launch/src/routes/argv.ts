@@ -86,6 +86,8 @@ export interface ArgvValues {
   readonly toolEnv: readonly string[];
   /** `{session}`: the preset session ID. */
   readonly session?: string;
+  /** `{resume}`: the ID of the app's own conversation that opens again. */
+  readonly resume?: string;
   /** `{task.id}`: the task's reference, such as `M-14`. */
   readonly task: string;
   /** `{task.title}`: the sanitised title. */
@@ -123,6 +125,9 @@ export function expandArgv(template: readonly string[], values: ArgvValues): Exp
   if (checkArgvTemplate(template).length > 0) throw new RouteUnavailable("bad_value");
   if (!TASK_REF.test(values.task)) throw new RouteUnavailable("bad_value");
   if (values.session !== undefined && !SESSION_UUID.test(values.session)) {
+    throw new RouteUnavailable("bad_value");
+  }
+  if (values.resume !== undefined && !CONVERSATION_ID.test(values.resume)) {
     throw new RouteUnavailable("bad_value");
   }
   if (values.reference !== undefined && !isLaunchRef(values.reference)) {
@@ -174,6 +179,8 @@ function textValue(name: string, values: ArgvValues): string | undefined {
   switch (name) {
     case "session":
       return values.session;
+    case "resume":
+      return values.resume;
     case "task.id":
       return values.task;
     case "task.title":
@@ -231,6 +238,37 @@ export function cliArgv(
     ...values,
     exec: execOf(instance),
     permission,
+    extraArgs: instance.extraArgs,
+  });
+}
+
+/**
+ * A conversation ID that opens again: a UUID of any version (Claude Code's are random, Codex's
+ * time-ordered), one plain element that no program reads as an option.
+ */
+const CONVERSATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+
+/** Whether `id` is a conversation ID that a terminal can open again (`{resume}`). */
+export const isConversationId = (id: string): boolean => CONVERSATION_ID.test(id);
+
+/**
+ * A CLI instance's terminal command line that opens one of its app's own conversations again (a
+ * background run's, for Continue), with the instance's executable, open permission and extra
+ * arguments, as an Open of it starts. No brief: the conversation already holds the task.
+ */
+export function resumeArgv(
+  instance: Instance,
+  values: Omit<ArgvValues, "exec" | "permission" | "extraArgs" | "brief" | "resume"> & {
+    readonly resume: string;
+  },
+): ExpandedArgv {
+  if (!isBuiltInTarget(instance.target)) throw new RouteUnavailable("no_route");
+  const def = targetDef(instance.target);
+  if (def.resume === undefined) throw new RouteUnavailable("no_route");
+  return expandArgv(def.resume, {
+    ...values,
+    exec: execOf(instance),
+    permission: def.permissionArgs[instance.openPermission].open,
     extraArgs: instance.extraArgs,
   });
 }

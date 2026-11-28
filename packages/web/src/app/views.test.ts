@@ -57,11 +57,12 @@ describe("[A5.3.3.web.views] the sidebar's views and counts", () => {
     expect(total).toBe(TASKS.length);
   });
 
-  test("Today has sections, not a filter; Completed, Agents, Activity and the Trash read what the live rows do not hold", () => {
+  test("Today has sections, not a filter; Completed, Agents, Activity, the Library and the Trash read what the live rows do not hold", () => {
     expect(viewFilter("today")).toBeUndefined();
     expect(viewFilter("completed")).toBeUndefined();
     expect(viewFilter("agents")).toBeUndefined();
     expect(viewFilter("activity")).toBeUndefined();
+    expect(viewFilter("library")).toBeUndefined();
     expect(viewFilter("trash")).toBeUndefined();
     expect(VIEWS).toEqual([
       "today",
@@ -73,6 +74,7 @@ describe("[A5.3.3.web.views] the sidebar's views and counts", () => {
       "completed",
       "agents",
       "activity",
+      "library",
       "trash",
     ]);
   });
@@ -111,6 +113,7 @@ describe("[A5.3.3.web.views] the sidebar's views and counts", () => {
       completed: { empty: false },
       agents: { empty: false },
       activity: { empty: false },
+      library: { empty: false },
       trash: { empty: false },
     });
     // A space with nothing in it: still every entry, in the same order.

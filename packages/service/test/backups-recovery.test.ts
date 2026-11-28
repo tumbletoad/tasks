@@ -20,6 +20,7 @@ import {
   createSpace,
   listBackups,
   newId,
+  recordedOldDailies,
   restoreBackup,
   type Id,
 } from "@ttasks/storage";
@@ -503,7 +504,7 @@ describe("[A1.5.backup.folder-away] a backups folder set for the space that is n
   );
 });
 
-describe("[A1.5.backup.outside-home] a space's backups go beside the TTasks home, and those made before stay where they are", () => {
+describe("[A1.5.backup.outside-home] a space's backups go beside the TTasks home, and those made before are read where they stand", () => {
   /** A space with a backup made before backups left the home: in its own folder, two days old. */
   async function before(label: string) {
     const machine = newId("m");
@@ -546,7 +547,7 @@ describe("[A1.5.backup.outside-home] a space's backups go beside the TTasks home
   );
 
   test(
-    "the first daily backup goes beside the home at once, and the earlier ones stay as they were",
+    "the first daily backup goes beside the home at once, and an earlier one gets a copy there while its original stays as it was, listed once",
     async () => {
       const { home, work, earlier, own } = await before("outside-daily");
       const files = readdirSync(own).sort();
@@ -558,15 +559,95 @@ describe("[A1.5.backup.outside-home] a space's backups go beside the TTasks home
       );
       const outside = backupsOf(home, work.space.spaceId);
       const daily = listBackups(outside).backups.filter(
-        (b) => b.sidecar?.kind === "daily" && b.state === "ok",
+        (b) => b.sidecar?.kind === "daily" && b.state === "ok" && b.name !== earlier.name,
       );
       expect(daily).toHaveLength(1);
       expect(readdirSync(own).sort()).toEqual(files);
+      expect(listBackups(outside).backups.find((b) => b.name === earlier.name)?.state).toBe("ok");
+      // Remembered, so retention keeps it wherever it stands once its move is done.
+      expect(recordedOldDailies(outside, work.space.spaceId)).toEqual([earlier.name]);
       const listed = (await call(user, "space/backups", { space: work.folder }))["backups"];
       expect(listed).toEqual([
         expect.objectContaining({ name: daily[0]?.name, folder: outside }),
         expect.objectContaining({ name: earlier.name, folder: own }),
       ]);
+    },
+    SLOW,
+  );
+});
+
+describe("[A1.5.backup.old-move] an old backup whose name another file has in the backups folder", () => {
+  test(
+    "stays in the space's own folder, which space list says, and a restore by name takes it, not the other file",
+    async () => {
+      const machine = newId("m");
+      const { home, spaces } = setUp("old-taken", machine);
+      const work = await fixtureSpace(join(spaces, "work"), machine);
+      const earlier = await backupSpace(await checkedDriver(), work.folder, {
+        kind: "manual",
+        now: () => Date.now() - 48 * HOUR,
+      });
+      const outside = backupsOf(home, work.space.spaceId);
+      mkdirSync(outside, { recursive: true });
+      writeFileSync(join(outside, `${earlier.name}.db.gz`), "another program's file");
+      const { user } = await start(home, [work.folder], true);
+      await waitFor(
+        () => (readLog(home).some((e) => e["ev"] === "space.maintained") ? true : undefined),
+        READY_MS,
+        "the upkeep",
+      );
+      const row = (await rowOf(user, work.folder)) as unknown as Record<string, unknown>;
+      expect(row["old_backups"]).toMatchObject({
+        stayed: 1,
+        message: expect.stringContaining(
+          "1 whose name another file has in the backups folder",
+        ) as unknown,
+      });
+      const named = await call(user, "space/restore", {
+        backup: earlier.name,
+        of: work.folder,
+        to: join(spaces, "named"),
+      });
+      expect(named).toMatchObject({ read_only_copy: true });
+      expect(existsSync(earlier.file)).toBe(true);
+    },
+    SLOW,
+  );
+});
+
+describe("[A1.5.backup.old-move] the backup from before an upgrade, made into the space's own folder", () => {
+  test(
+    "is found by space list in the backups folder once it has moved there",
+    async () => {
+      const machine = newId("m");
+      const { home, spaces } = setUp("old-upgrade", machine);
+      const work = await fixtureSpace(join(spaces, "work"), machine);
+      const barrier = await backupSpace(await checkedDriver(), work.folder, {
+        kind: "pre-migrate",
+      });
+      const own = backupsFolder(work.folder);
+      const outside = backupsOf(home, work.space.spaceId);
+      mkdirSync(outside, { recursive: true });
+      for (const file of [barrier.file, barrier.sidecarFile]) {
+        renameSync(file, join(outside, basename(file)));
+      }
+      writeSettings(home, work.space.spaceId, {
+        format: 1,
+        last_migration: {
+          from: "0.1",
+          to: "0.2",
+          at: "2026-11-27T08:00:00.000Z",
+          backup: barrier.name,
+          backup_folder: own,
+        },
+      });
+      const { user } = await start(home, [work.folder]);
+      const row = (await rowOf(user, work.folder)) as unknown as Record<string, unknown>;
+      expect(row["migrated"]).toMatchObject({
+        backup: barrier.name,
+        backup_listed: true,
+        backup_folder: outside,
+      });
     },
     SLOW,
   );

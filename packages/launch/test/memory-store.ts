@@ -291,6 +291,7 @@ export class MemoryExecutionStore implements ExecutionStore {
           i.task === input.task &&
           i.instance === input.instance &&
           i.machine === input.machine &&
+          i.evidence.resumes === input.evidence?.resumes &&
           isOpening(i),
       )
       .sort((a, b) => b.createdAt - a.createdAt)[0];

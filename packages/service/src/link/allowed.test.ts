@@ -152,7 +152,9 @@ describe("[S5.link.saved] Remove and the Run switch answer once they are saved",
       data: { reason: "not_saved", retryable: true },
     });
     expect(row(grants, phone)?.revoked_at).not.toBeNull();
-    expect(link.view({}).phones).toEqual([expect.objectContaining({ id: phone, removing: true })]);
+    expect(link.view({}).phones).toEqual([
+      expect.objectContaining({ id: phone, unsaved: "remove" }),
+    ]);
     failing(false);
     expect(await link.remove({ phone })).toEqual({ removed: true });
     expect(link.view({}).phones).toEqual([]);
@@ -173,8 +175,13 @@ describe("[S5.link.saved] Remove and the Run switch answer once they are saved",
       data: { reason: "not_saved" },
     });
     expect(row(grants, phone)?.scopes).not.toContain(RUN_SCOPE);
+    // Settings is told, from the service, until the Run off is saved.
+    expect(link.view({}).phones).toEqual([
+      expect.objectContaining({ id: phone, run: false, unsaved: "run_off" }),
+    ]);
     failing(false);
     expect(await link.rights({ phone, run: false })).toEqual({ run: false });
+    expect(link.view({}).phones).toEqual([expect.objectContaining({ id: phone, unsaved: null })]);
   });
 
   test("Run on counts only once it is saved, never while its save is out", async () => {
