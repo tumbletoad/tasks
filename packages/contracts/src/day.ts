@@ -84,14 +84,17 @@ export function localDate(ms: number, timeZone: string): string {
 const dateIn = (value: string | null | undefined): string | undefined =>
   typeof value === "string" && dayNumber(value) !== undefined ? value : undefined;
 
+/** What a due day reads of a task. */
+export type DueTask = Pick<DayTask, "due_date" | "due_at">;
+
 /**
  * The day of each task's due time, by time zone: a task is a new object whenever it changes, so
  * each is read through `Intl` once.
  */
-const dueDays = new WeakMap<DayTask, { readonly zone: string; readonly day: string }>();
+const dueDays = new WeakMap<DueTask, { readonly zone: string; readonly day: string }>();
 
 /** A task's due day on the viewer's calendar: its date, or the day of its due time. */
-export function dueDayOf(task: DayTask, clock: DayClock): string | undefined {
+export function dueDayOf(task: DueTask, clock: DayClock): string | undefined {
   if (typeof task.due_at === "number") {
     const known = dueDays.get(task);
     if (known?.zone === clock.timeZone) return known.day;

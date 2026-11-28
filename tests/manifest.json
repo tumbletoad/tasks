@@ -7177,6 +7177,34 @@
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
+    },
+    {
+      "id": "S2.status.line",
+      "title": "A project's status line from its open tasks: the open, the waiting, about how long the sized ones take by the space's effort levels (a day is a working day), the unsized ones and the earliest due day, late when it is past, also across a year's end and on the viewer's calendar; a part that is zero is left out",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.nav.tree",
+      "title": "The side menu's tree in the store: the live projects at every depth in their order with their colour, each archived project once under Archived with its trail and everything below it, and the open tasks counted through the whole subtree",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.nav.screen",
+      "title": "On a made-up tree four levels deep: the side menu nests and counts every level, folds at every level, starts the fourth level folded and keeps the person's folds; the project screen shows its breadcrumbs, each crumb to its project, its status line, its tabs and its tasks, then each subproject as a headed group with its own status line, foldable",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.nav.e2e",
+      "title": "Against the real service at 1,440 and 390 px: a project's one address with its Tasks and Library tabs, its breadcrumbs and status line, a crumb opening the project above; the narrow breadcrumbs keep the last two levels",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
     }
   ]
 }
