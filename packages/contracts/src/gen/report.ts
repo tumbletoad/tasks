@@ -25,7 +25,7 @@ export function definitionReport(tools: readonly McpTool[]): DefinitionReport {
     return { name: tool.name, bytes, tokens: Math.ceil(bytes / divisor) };
   });
   return {
-    estimator: "ceil(utf8 bytes of the compact JSON / bytes_per_token), per tool (A3 3.2.5)",
+    estimator: "ceil(utf8 bytes of the compact JSON / bytes_per_token), per tool",
     bytes_per_token: divisor,
     tools: rows,
     total: {

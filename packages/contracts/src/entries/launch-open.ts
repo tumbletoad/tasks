@@ -65,7 +65,7 @@ export const LaunchReceipt = z.strictObject({
   route: z.enum(["terminal", "link", "t3-mcp", "t3-cli", "clipboard"]).describe("How it opens"),
   state: z
     .enum(["prepared", "dispatching", "dispatched", "confirmed", "failed", "unknown"])
-    .describe("A4 3.9's state"),
+    .describe("Where the launch is: prepared, on its way, confirmed, failed or unknown"),
   reason: z.string().max(40).describe("Why it failed or is unknown: a fixed code").optional(),
   left_out: z
     .array(z.enum(["full-access", "auto-edit", "read-only", "arguments", "environment", "home"]))

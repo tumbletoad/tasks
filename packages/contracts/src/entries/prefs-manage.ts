@@ -149,7 +149,7 @@ const PrefRow = z.strictObject({
   default: PrefValueOutput.describe("Its default"),
   is_default: z.boolean().describe("The value is the default (get)").optional(),
   writable: z.boolean().describe("Whether this caller may change it"),
-  policy: z.literal(true).describe("Policy: the user's own (A3 3.8)").optional(),
+  policy: z.literal(true).describe("Policy: the user's own").optional(),
   fixed: z.literal(true).describe("Fixed in this build: nobody changes it").optional(),
   in_force: PrefValueOutput.describe(
     "What this build does whatever the key says: it does not act on the key yet",
