@@ -33,14 +33,6 @@ id = "sp_43f0gjcvzgaa1gh5my6qxwcj7m"
 path = "/home/mira/Tasks/life"
 enabled = false
 
-[roots.work]                 # the key is the root ID
-label = "Work"
-path  = "/home/mira/work"
-runs  = true
-
-[roots.oss]
-path = "/home/mira/oss"
-
 [terminal]
 app = "ghostty"
 path = ""

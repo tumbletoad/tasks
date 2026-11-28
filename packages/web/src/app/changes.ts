@@ -7,9 +7,9 @@
 // One log per live session, made with it (`changeLogOf`), so it hears the first snapshot and
 // survives a switch of view. Plain code, no React; the views read it through
 // `useSyncExternalStore`.
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import type { Changes } from "../store/store.ts";
-import { CHANGES_DAYS, type TaskChange } from "./views.ts";
+import { CHANGES_DAYS, type TaskChange } from "@ttasks/client/today";
 
 /** The actors whose changes Changes lists (A1 `actors.kind`): not the person, the system or an import. */
 export const AGENT_KINDS: ReadonlySet<string> = new Set(["agent", "routine"]);

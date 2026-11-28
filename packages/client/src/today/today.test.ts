@@ -4,7 +4,7 @@
 // Fixture data only.
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
-import type { TaskRow } from "../live.ts";
+import type { TaskRow } from "../store/rows.ts";
 import {
   dateOf,
   dayNumber,
@@ -22,7 +22,7 @@ import {
   DAY_TODAY,
   DAY_WEEK,
 } from "@ttasks/contracts/day-cases";
-import type { Clock } from "../row/dates.ts";
+import type { Clock } from "./dates.ts";
 import {
   CHANGES_LIMIT,
   dayNumbersOf,

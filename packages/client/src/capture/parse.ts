@@ -8,7 +8,7 @@
 // "tom", "may" alone) are never read as dates; numbers that differ by locale ("11/12") are not
 // read either, so no date is a guess. Only the first shortcut of each kind applies: a second
 // "p2" stays in the title.
-import { addDays, isDate, weekdayOf } from "../edit/due.ts";
+import { addDays, isDate, weekdayOf } from "./due.ts";
 
 export interface CaptureArea {
   readonly id: string;

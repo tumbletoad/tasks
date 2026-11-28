@@ -23,6 +23,8 @@ const spellsName = (text: string): boolean =>
   new RegExp(`(?:\\bRun |\`)${CLI_NAME}\\b`, "i").test(text);
 
 const SRC = join(import.meta.dirname, "..", "src");
+/** The client code the page runs, whose keys it shows as its messages. */
+const CLIENT_SRC = join(import.meta.dirname, "..", "..", "client", "src");
 
 function sources(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -235,7 +237,7 @@ describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {
   });
 
   test("every message is used by the page, and no message spells out a product name", () => {
-    const code = sources(SRC)
+    const code = [...sources(SRC), ...sources(CLIENT_SRC)]
       .map((path) => readFileSync(path, "utf8"))
       .join("\n");
     const unused = Object.keys(CATALOGUE).filter((id) => !code.includes(`"${id}"`));

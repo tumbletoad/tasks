@@ -8,13 +8,13 @@
 // - Counts appear on Inbox, Open, Waiting, Review and Backlog only (U2), and only in the sidebar.
 // - Every view is always in the sidebar, in its fixed place, whatever it holds.
 // - Completed, Agents, Activity and the Trash read data the live store does not hold (completed and
-//   removed tasks are never in it): Completed and the Trash are paged queries (views/Completed.tsx,
-//   views/Trash.tsx), Agents the tab's change log, Activity the service's lines of what agents did
-//   (views/Activity.tsx).
-import { flatGroups, groupTasks, personGroups, type GroupTasks } from "../groups.ts";
-import type { MessageId } from "../i18n/intl.tsx";
-import type { TaskRow } from "../live.ts";
-import type { AgentChange } from "../store/rows.ts";
+//   removed tasks are never in it): Completed and the Trash are paged queries, Agents the tab's
+//   change log, Activity the service's lines of what agents did.
+//
+// A view's name, a Today section's heading and a view's empty line are keys, never words: each app
+// maps them to its own.
+import type { AgentChange, TaskRow } from "../store/rows.ts";
+import { flatGroups, groupTasks, personGroups, type GroupTasks } from "./groups.ts";
 import {
   byDue,
   byText,
@@ -27,8 +27,7 @@ import {
   localDate,
   priorityOf,
 } from "@ttasks/contracts/day";
-import type { Clock } from "../row/dates.ts";
-import type { Grouping } from "../row/model.ts";
+import type { Clock } from "./dates.ts";
 
 export const VIEWS = [
   "today",
@@ -51,7 +50,7 @@ export const LANDING: View = "today";
 export const COUNTED = ["inbox", "open", "waiting", "review", "backlog"] as const;
 export type CountedView = (typeof COUNTED)[number];
 
-export const VIEW_LABEL: Readonly<Record<View, MessageId>> = {
+export const VIEW_LABEL: { readonly [V in View]: `nav.${V}` } = {
   today: "nav.today",
   inbox: "nav.inbox",
   open: "nav.open",
@@ -149,13 +148,24 @@ export function sidebarEntries(
   );
 }
 
+/** How a list groups its rows: each grouping states some facts in its headings. */
+export type Grouping =
+  /** One flat list, or Today's sections: no fact is stated. */
+  | "flat"
+  /** Area headings, then project labels (Open, Backlog, the skeleton's lists). */
+  | "area"
+  /** Project labels inside one area (the area view). */
+  | "project"
+  /** Person labels (Waiting). */
+  | "person";
+
 /** How a status view lists what it holds, and the line it shows when it holds nothing. */
 export interface ViewList {
   /** What the grouping states, so the rows leave it out. */
   readonly grouping: Grouping;
   readonly group: GroupTasks;
-  /** The empty line. */
-  readonly empty: MessageId;
+  /** The empty line's key. */
+  readonly empty: `view.empty.${CountedView}`;
 }
 
 export const VIEW_LIST: Readonly<Record<CountedView, ViewList>> = {
@@ -191,7 +201,7 @@ export function projectFilter(project: string): (task: TaskRow) => boolean {
 export const TODAY_SECTIONS = ["focus", "week", "next", "changes"] as const;
 export type TodaySection = (typeof TODAY_SECTIONS)[number];
 
-export const TODAY_LABEL: Readonly<Record<TodaySection, MessageId>> = {
+export const TODAY_LABEL: { readonly [S in TodaySection]: `today.${S}` } = {
   focus: "today.focus",
   week: "today.week",
   next: "today.next",

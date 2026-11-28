@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { areaSlots, groupTasks } from "../groups.ts";
-import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
+import { areaSlots, groupTasks } from "@ttasks/client/today";
+import type { AreaRow, ProjectRow, TaskRow } from "@ttasks/client/store";
 import { itemsOf, moveFrom } from "./items.ts";
 
 const area = (id: string, title: string, position: string): AreaRow => ({ id, title, position });

@@ -40,7 +40,7 @@ import { AreaPage, ProjectPage, SearchPage, TaskPage, ViewPage } from "./pages.t
 import { SettingsPage } from "./Settings.tsx";
 import { SpaceSession } from "./session.tsx";
 import { Shell } from "./Shell.tsx";
-import { isView, LANDING } from "./views.ts";
+import { isView, LANDING } from "@ttasks/client/today";
 
 /** A view's search: the task it holds expanded, a reference or an ID, checked by its shape. */
 export function taskSearch(search: Record<string, unknown>): { task?: string } {

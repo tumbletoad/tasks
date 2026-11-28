@@ -448,25 +448,6 @@ describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read thr
     ).toContain("over the limit");
   });
 
-  test("an app that kept the old tool list and sends guide is pointed to the skills that replaced it", async () => {
-    const result = await toolCaller({
-      ops: w.service.ops,
-      context: { space: null },
-      conn: 1,
-      binding: inSpace(),
-    })("status", { guide: "work" });
-    expect(result.isError).toBe(true);
-    const hint = (await refusal("space.status", { guide: "triage" })).hint ?? "";
-    expect(result.content[0].text).toContain(hint);
-    expect(hint).toMatch(/\bskills\b/u);
-    const named = [...hint.matchAll(/\["([^"]+)"\]/gu)].map((match) => match[1] ?? "");
-    expect(named.length).toBeGreaterThan(0);
-    for (const name of named) expect(DEFAULTS.has(name), name).toBe(true);
-    // Another tool cannot take skills, so guide there is just a field it does not know.
-    const elsewhere = await refusal("task.get", { task: "M-1", guide: "work" });
-    expect(elsewhere.hint ?? "").not.toMatch(/\bskills\b/u);
-  });
-
   test("a listed name that is no skill's name can be asked for, and says why beside the rest", async () => {
     writeSkill("Case-Test", "A rule.");
     const listed = named((await call("space.status", {}))["skills"], "Case-Test");

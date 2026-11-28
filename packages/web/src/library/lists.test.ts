@@ -2,7 +2,7 @@
 // the live store's pages. Rows from the contract's examples.
 import { PAGE_FEED_EXAMPLES } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
-import type { PageRow } from "../store/rows.ts";
+import type { PageRow } from "@ttasks/client/store";
 import { agentPages, taskLists } from "./lists.ts";
 
 const [onProject, onTask] = PAGE_FEED_EXAMPLES.snapshotPages as unknown as [PageRow, PageRow];

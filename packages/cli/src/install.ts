@@ -18,10 +18,9 @@
 //      background runs, so it never happens unasked.
 // It loads the service's install code, and with it storage, only for this command.
 import { existsSync, readdirSync, rmdirSync } from "node:fs";
-import { join } from "node:path";
-import { CLI_NAME, EARLIER_DATA_FOLDER, PRODUCT_NAME } from "@ttasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { shellLine } from "@ttasks/launch";
-import { homeFolder, hostFacts, type HostFacts, type Layout } from "@ttasks/service/paths";
+import { hostFacts, type Layout } from "@ttasks/service/paths";
 import type { Globals } from "./args.ts";
 import { candidateRows, versionChecks, type Check } from "./doctor.ts";
 import type { Io } from "./io.ts";
@@ -55,35 +54,6 @@ function removeIfMade(layout: Pick<Layout, "state" | "tmp">): void {
   }
 }
 
-/**
- * The line that names the data folder of a build from before the rename, so its spaces do not look
- * lost. Only the install that makes this version's data folder shows it: once, and never to a
- * person who already uses this version.
- */
-export function earlierDataNotice(facts: HostFacts, madeData: boolean): string | undefined {
-  if (!madeData) return undefined;
-  let home: string;
-  try {
-    home = homeFolder(facts);
-  } catch {
-    return undefined;
-  }
-  const folder = join(home, EARLIER_DATA_FOLDER);
-  if (!existsSync(folder)) return undefined;
-  return `${folder} holds the spaces and settings of a build from before the product was called ${PRODUCT_NAME}. This version does not use that folder and leaves it untouched.`;
-}
-
-/**
- * Whether this install makes the data folder. A separate install keeps its data in its root, which
- * the install script made in this run when it names "." among what it created.
- */
-export function makesDataFolder(
-  layout: Pick<Layout, "data" | "home">,
-  created: readonly string[],
-): boolean {
-  return layout.home === undefined ? !existsSync(layout.data) : created.includes(".");
-}
-
 export async function installCommand(
   io: Io,
   globals: Globals,
@@ -115,7 +85,6 @@ export async function installCommand(
   }
   const state = target.layout.state;
   const stateExisted = existsSync(state);
-  const madeData = makesDataFolder(target.layout, parsed.created);
 
   const checks: Check[] = [
     ...(await versionChecks(io, versionFolder, undefined, { launchers: false })),
@@ -184,8 +153,6 @@ export async function installCommand(
       "",
     ].join("\n"),
   );
-  const earlier = earlierDataNotice(facts, madeData);
-  if (earlier !== undefined) io.stdout(`${earlier}\n`);
   if (pending && service !== undefined) {
     await offerRestart(
       io,

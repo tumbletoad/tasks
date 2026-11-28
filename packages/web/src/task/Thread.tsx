@@ -16,12 +16,13 @@
 // records of what happened: no pen.
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { localDate } from "@ttasks/contracts/day";
-import type { Instance, Receipt, Run } from "../api.ts";
+import type { Instance } from "@ttasks/contracts/runs";
+import type { Receipt, Run } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { ViewIcon } from "../app/Icons.tsx";
 import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
-import { formatInstant, type Clock } from "../row/dates.ts";
+import { formatInstant, type Clock } from "@ttasks/client/today";
 import { useClock } from "../row/useClock.ts";
 import { TEXT_MAX, type TextPart } from "../unsent.ts";
 import type { DetailLog, DetailNote, Edited } from "./detail.ts";

@@ -27,10 +27,10 @@ import { Session } from "../context.ts";
 import { groupingChange } from "../edit/change.ts";
 import { useEdits } from "../edit/useEdits.ts";
 import { refusalText } from "../folder/FolderDialog.tsx";
-import { archivedGroup, areaSlots } from "../groups.ts";
+import { archivedGroup, areaSlots } from "@ttasks/client/today";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import { closeName, sameName } from "./areaNames.ts";
 import css from "./Picker.module.css";
 

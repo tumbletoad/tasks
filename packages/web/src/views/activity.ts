@@ -11,7 +11,7 @@
 // agents changed something, older ones at the end as the person reads on.
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { MessageId, Translate } from "../i18n/intl.tsx";
-import { formatDay, formatInstant, type Clock } from "../row/dates.ts";
+import { formatDay, formatInstant, type Clock } from "@ttasks/client/today";
 import { AGENT_KINDS } from "../app/changes.ts";
 import type { Changes } from "../store/store.ts";
 

@@ -142,7 +142,7 @@ describe("[A2.3.7.bridge.frames] lines through the forwarder", () => {
   );
 
   test(
-    "a service line over the limit ends that connection: the call gets connection_lost and the binding comes back",
+    "a service line over the limit ends that connection: the call gets connection_lost and the session goes on in its space",
     { timeout: 180_000 },
     async () => {
       const where = home("overout");
@@ -156,8 +156,11 @@ describe("[A2.3.7.bridge.frames] lines through the forwarder", () => {
       const big = await bridge.call("big", { bytes: 9 * MiB });
       expect(isOfflineText(big, "connection_lost")).toBe(true);
       const after = await who();
-      expect(after["binding"]).toBe(before["binding"]);
-      expect(after["restored"]).toBe(true);
+      expect(after["binding"]).not.toBe(before["binding"]);
+      expect(after["space"]).toBe(before["space"]);
+      // The new connection went on from mcp_init: the client is not asked to initialize again.
+      expect(after["init"]).toBe(true);
+      expect(after["started"]).toBe(true);
       expect(bridge.stray).toEqual([]);
     },
   );

@@ -7,7 +7,7 @@ import { useToast } from "../app/frame.ts";
 import { Session } from "../context.ts";
 import { refusalText } from "../folder/FolderDialog.tsx";
 import { useT } from "../i18n/intl.tsx";
-import { formatWhen } from "../row/dates.ts";
+import { formatWhen } from "@ttasks/client/today";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
 import type { TrashedPage } from "./calls.ts";

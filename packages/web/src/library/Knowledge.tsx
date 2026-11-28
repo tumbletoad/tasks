@@ -9,7 +9,7 @@ import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
-import type { PageRow, TaskRow } from "../store/rows.ts";
+import type { PageRow, TaskRow } from "@ttasks/client/store";
 import css from "./Library.module.css";
 import { LibraryLink } from "./Library.tsx";
 import { taskLists } from "./lists.ts";

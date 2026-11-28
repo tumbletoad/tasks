@@ -12,7 +12,7 @@ import type { Api } from "../api.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
-import type { SnapshotMessage } from "../store/rows.ts";
+import type { SnapshotMessage } from "@ttasks/client/store";
 import { keepDraft, keepNote, readDraft, readNotes } from "../unsent.ts";
 import { TaskList } from "./TaskList.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";

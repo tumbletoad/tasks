@@ -6,9 +6,6 @@ level = "warn"
 id = "sp_3z8sm956jp8dajmtsar5kx026c"
 path = "/Users/mira/Tasks/work"
 
-[roots.work]
-path = "/Users/mira/work"
-
 [terminal]
 app = "custom"
 custom = ["{terminal}", "--working-directory={cwd}", "-e", "{shim}"]

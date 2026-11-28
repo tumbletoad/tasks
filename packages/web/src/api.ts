@@ -10,6 +10,7 @@
 // Stop, have routes of their own (`/api/v1/launch/…`).
 import { httpHeader } from "@ttasks/brand";
 import { createClient, type Client } from "@ttasks/contracts/generated/client.ts";
+import type { LastUsed } from "@ttasks/contracts/runs";
 import { TOKEN_SHAPE } from "./stored.ts";
 
 /** The headers the service reads (its http/app.ts): names from the identifier, never a display name. */
@@ -27,21 +28,6 @@ export function copyGoneWhy(error: unknown): "closed" | "replaced" | undefined {
   if (code !== "space_unavailable" || typeof data !== "object" || data === null) return undefined;
   const reason = (data as Record<string, unknown>)["reason"];
   return reason === "closed" || reason === "replaced" ? reason : undefined;
-}
-
-/** An instance the page draws a tile for (the service's UiInstance). */
-export interface Instance {
-  readonly key: string;
-  /** The app's name, which menus group instances by: "Codex". */
-  readonly app: string;
-  /** Its name, the same everywhere: "Codex", or "Codex · work" beside another Codex. */
-  readonly label: string;
-  readonly glyph: string;
-  readonly ring: number;
-  /** How Open opens it here; absent when it cannot, and the tile is for Run. */
-  readonly route?: string;
-  /** It can work on a task in the background: Run. */
-  readonly runs?: true;
 }
 
 /**
@@ -95,14 +81,6 @@ export interface Busy {
   readonly task: string;
   readonly instance: string;
   readonly state: "opening" | "running";
-}
-
-/** The instances a space last opened a task in and ran one with on this machine, by key. */
-export interface LastUsed {
-  readonly open?: string;
-  /** The route of that Open (`t3-mcp`), which still names its app when its key is gone. */
-  readonly open_route?: string;
-  readonly run?: string;
 }
 
 /** A launch receipt (the service's UiReceipt): IDs, states, instants and codes only. */

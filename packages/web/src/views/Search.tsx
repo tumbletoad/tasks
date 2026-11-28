@@ -12,7 +12,7 @@ import { useEditState } from "../edit/useEdits.ts";
 import { useT } from "../i18n/intl.tsx";
 import { pageDay, useClock } from "../row/useClock.ts";
 import { useLive, usePagedQuery } from "../store/hooks.ts";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import {
   filtersOnly,
   hasWords,

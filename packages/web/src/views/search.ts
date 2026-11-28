@@ -9,11 +9,10 @@
 // by effort (`sort:effort`) splits To do into one group per effort, in the service's order.
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { filterOf } from "@ttasks/contracts/query-terms";
-import type { Group } from "../groups.ts";
+import type { Group } from "../list/items.ts";
 import type { MessageId } from "../i18n/intl.tsx";
-import { landedOf } from "../store/pending.ts";
+import { landedOf, type AreaRow, type ProjectRow, type TaskRow } from "@ttasks/client/store";
 import type { Page, PageSource } from "../store/queries.ts";
-import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
 import type { HeldRow } from "./TaskList.tsx";
 
 type SearchResult = Awaited<ReturnType<Client["task"]["search"]>>;

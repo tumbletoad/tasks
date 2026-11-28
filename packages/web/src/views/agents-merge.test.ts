@@ -8,7 +8,7 @@ import type {
   AgentsThread,
 } from "@ttasks/contracts/monitor";
 import { describe, expect, test } from "vitest";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import { linkedOutside, mergeAgents } from "./agents-merge.ts";
 const row = (id: string, patch: Partial<TaskRow> = {}): TaskRow => ({
   id,

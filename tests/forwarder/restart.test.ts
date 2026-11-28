@@ -1,8 +1,7 @@
 // Forwarder conformance (A2 3.7.5, 3.7.6): a service restart in the middle of calls. 10 bridges
-// through a service restart see at most one connection_lost each and keep their binding (A7
-// M2.01's Verify line; A2 5's integration test). The service here is the scripted peer, killed
-// hard and started again on a new endpoint; it restores a binding from `resume.handle` as A3's
-// session record will.
+// through a service restart see at most one connection_lost each and go on in the space they
+// opened (A7 M2.01's Verify line; A2 5's integration test). The service here is the scripted peer,
+// killed hard and started again on a new endpoint with a new default space.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -29,7 +28,7 @@ afterEach(async () => {
 
 interface Who {
   readonly binding: string;
-  readonly restored: boolean;
+  readonly space: string | null;
   readonly started: boolean;
   readonly init: boolean;
   readonly pid: number;
@@ -54,20 +53,24 @@ const slowCalls = (home: Home): number => {
 
 describe("[A2.3.7.bridge.restart] bridges through a service restart", () => {
   test(
-    "10 bridges: one call in flight each gets connection_lost, calls during the outage wait and succeed, and every binding is kept",
+    "10 bridges: one call in flight each gets connection_lost, calls during the outage wait and succeed, and every session goes on in its space",
     { timeout: 180_000 },
     async () => {
       const home = makeHome("restart");
       homes.push(home);
       const first = await procs.peer(home);
-      const bridges = Array.from({ length: 10 }, () => procs.bridge(home));
+      // Entries that name no space: each bridge takes the first service's default.
+      const args = ["--instance", "test-agent", "--app", "test"];
+      const bridges = Array.from({ length: 10 }, () => procs.bridge(home, { args }));
       const before = await Promise.all(
         bridges.map(async (bridge) => {
           await bridge.initialize();
           return whoami(bridge);
         }),
       );
-      expect(new Set(before.map((who) => who.binding)).size).toBe(10);
+      const space = before[0]?.space;
+      expect(space).toMatch(/^sp_/);
+      for (const who of before) expect(who.space).toBe(space);
 
       // One call in flight per bridge, then the service dies.
       const inFlight = bridges.map((bridge, n) =>
@@ -87,19 +90,20 @@ describe("[A2.3.7.bridge.restart] bridges through a service restart", () => {
         expect(textOf(reply)).toBe(JSON.stringify({ n }));
       });
 
-      // Each bridge keeps its binding: the new service restored it from the handle, and the
+      // Each bridge goes on in the space it opened, not the new service's default, and its
       // session went on from mcp_init without a new initialize.
       const after = await Promise.all(bridges.map((bridge) => whoami(bridge)));
-      after.forEach((who, n) => {
-        expect(who.binding).toBe(before[n]?.binding);
-        expect(who.restored).toBe(true);
+      for (const who of after) {
+        expect(who.space).toBe(space);
         expect(who.init).toBe(true);
+        expect(who.started).toBe(true);
         expect(who.pid).not.toBe(first.pid);
-      });
+      }
       const rebinds = peerBinds(home).filter((bind) => bind.pid !== first.pid);
       expect(rebinds).toHaveLength(10);
       for (const bind of rebinds) {
-        expect((bind.context["resume"] as Json)["handle"]).toMatch(/^bh_/);
+        expect(bind.context["held_space"]).toBe(space);
+        expect(bind.context).not.toHaveProperty("resume");
         expect(bind.context["mcp_init"]).toMatchObject({ method: "initialize" });
       }
 

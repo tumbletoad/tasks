@@ -11,7 +11,7 @@ import type { Api } from "../api.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import { keepDraft } from "../unsent.ts";
 import { TaskList } from "../views/TaskList.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";

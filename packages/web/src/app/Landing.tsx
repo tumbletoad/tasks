@@ -21,7 +21,7 @@ import {
   type NotOpen,
   type SpaceList,
 } from "./spaces.ts";
-import { LANDING } from "./views.ts";
+import { LANDING } from "@ttasks/client/today";
 import { classes } from "./css.ts";
 
 const styles = classes(css, ["line", "page", "space", "spaces", "start"]);
