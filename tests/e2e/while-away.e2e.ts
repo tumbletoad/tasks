@@ -115,7 +115,7 @@ test.describe("[A5.while-away.e2e.recent] agents' changes are read from the serv
 });
 
 test.describe("[A5.while-away.e2e.question] an agent's questions wait under Needs you", () => {
-  test("they show with their words until the person dismisses them, Undo brings them back, a note answers them, and they wait on a finished task too", async ({
+  test("they show with their words until the person dismisses them or a note answers them, and they wait on a finished task too", async ({
     page,
     world,
   }) => {
@@ -132,11 +132,12 @@ test.describe("[A5.while-away.e2e.question] an agent's questions wait under Need
       await expect(waiting.locator('[data-part="question"]')).toContainText(question);
       await shots(page, world, "question");
 
-      // Dismissed: it leaves Needs you, and Undo puts it back.
+      // Dismissed: it leaves Needs you, with no Undo; a new question waits again.
       await waiting.getByRole("button", { name: "Dismiss" }).click();
       await expect(waiting).toHaveCount(0, { timeout: SLOW_MS });
       await expect(rowIn(page, "Today", ref)).toBeVisible();
-      await page.locator('[data-part="toast-action"]').click();
+      await expect(page.locator('[data-part="toast-action"]')).toHaveCount(0);
+      await ask(ref, question);
       await expect(waiting).toBeVisible({ timeout: SLOW_MS });
 
       // The person's note after the question answers it.

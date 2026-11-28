@@ -1051,6 +1051,18 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
 });
 
 describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their conflicts", () => {
+  /** An answer's newer work: one author who changed one task since. */
+  const work = (task: string | undefined, by: string) => ({
+    ...(task === undefined ? {} : { task }),
+    by,
+    at: "2026-11-12T10:42:00.000Z",
+  });
+  const intl = createIntl({ locale: SOURCE_LOCALE, messages: CATALOGUE });
+  const said = (text: string | Msg | undefined): string =>
+    text === undefined || typeof text === "string"
+      ? String(text)
+      : sayMsg((id, values) => intl.formatMessage({ id }, values), text);
+
   test("a check-off shows the row checked for a moment and then it leaves, never open again while its write is on its way; clicking again during the hold undoes it", async () => {
     const w = new World([task(1), task(2)]);
     let answer!: (value: unknown) => void;
@@ -1179,7 +1191,7 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
     expect(w.lastToast()?.action).toBeUndefined();
   });
 
-  test("an undo whose every field an agent changed since says who changed which task, offers no action and sends nothing more", async () => {
+  test("an undo someone's newer work kept says who changed which task, offers no action and sends nothing more", async () => {
     const w = new World([task(1)]);
     w.answer("task.update", () => ({
       result: "updated",
@@ -1196,29 +1208,20 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
       ["due"],
     );
     w.feed([task(1, { due_date: "2026-11-22", version: 3 })], "agent-1", ["due"], "agent");
-    w.answer("history.undo", () => {
-      throw appError("conflict", {
-        cause: "UNDO_CONFLICT",
-        commit: `op_${"11".padStart(26, "0")}`,
-        conflicts: [
-          {
-            task: "M-1",
-            field: "due",
-            value: { due_date: "2026-11-22", due_at: null, due_tz: null },
-            wrote: { due_date: "2026-11-13", due_at: null, due_tz: null },
-            restore: { due_date: "2026-11-17", due_at: null, due_tz: null },
-            version: 12,
-            by: "Codex",
-            at: "2026-11-12T10:42:00.000Z",
-          },
-        ],
-        newer_work: [{ task: "M-1", by: "Codex", at: "2026-11-12T10:42:00.000Z" }],
-      });
-    });
+    w.answer("history.undo", () => ({
+      result: "kept",
+      commit: `op_${"11".padStart(26, "0")}`,
+      tasks: ["M-1"],
+      task_count: 1,
+      newer_work: [{ task: "M-1", by: "Codex", at: "2026-11-12T10:42:00.000Z" }],
+      as_of: w.asOf(12),
+    }));
     await w.edits.undo(STEP);
     const sent = w.calls.length;
     const shown = w.lastToast();
-    expect(said(shown?.text)).toBe("Not undone: Codex changed M-1 since");
+    expect(said(shown?.text)).toBe(
+      "Not undone: Codex changed M-1 since, so it stays as they left it",
+    );
     expect(shown?.kind).toBe("error");
     expect(shown?.action).toBeUndefined();
     await flush();
@@ -1297,81 +1300,7 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
     expect(w.calls.at(-1)).toMatchObject({ name: "history.undo", input: { commit: checked } });
   });
 
-  test("an undo where only some of the tab's own step's fields conflict offers Undo the rest; a page that does not know the step offers nothing", async () => {
-    const w = new World([task(1)]);
-    w.answer("task.update", () => ({
-      result: "updated",
-      task: "M-1",
-      fields: ["priority", "due"],
-      as_of: w.asOf(11),
-      warnings: [],
-    }));
-    w.edits.edit(task(1), { ...priorityChange(1), fields: ["priority", "due"] });
-    await flush();
-    w.feed([task(1, { priority: 1, version: 2 })], String(w.calls[0]?.input["request_id"]), [
-      "priority",
-      "due",
-    ]);
-    const step = `op_${"11".padStart(26, "0")}`;
-    const refusal = () => {
-      throw appError("conflict", {
-        cause: "UNDO_CONFLICT",
-        commit: step,
-        conflicts: [
-          {
-            task: "M-1",
-            field: "due",
-            restore: { due_date: null, due_at: 1, due_tz: "UTC" },
-            version: 12,
-            by: "Codex",
-            at: "2026-11-12T10:42:00.000Z",
-          },
-        ],
-      });
-    };
-    w.answer("history.undo", refusal);
-    await w.edits.undo(step);
-    expect(w.lastToast()?.action?.label).toEqual({ id: "toast.undoRest" });
-    w.answer("history.undo", () => ({
-      result: "partial",
-      commit: "op_z",
-      tasks: ["M-1"],
-      task_count: 1,
-      as_of: w.asOf(13),
-      unresolved: [],
-    }));
-    const before = w.calls.length;
-    w.lastToast()?.action?.run();
-    await flush();
-    // The service decides what passes when it is asked: the page sends only the step.
-    expect(w.calls.slice(before)).toEqual([
-      expect.objectContaining({
-        name: "history.undo",
-        input: expect.objectContaining({ partial: true, commit: step }) as unknown,
-      }),
-    ]);
-    expect(w.lastToast()?.text).toEqual({ id: "toast.undoneRest" });
-    // A fresh page (a reload, another window) does not know the step's other fields.
-    const fresh = new World([task(1, { priority: 1 })]);
-    fresh.answer("history.undo", refusal);
-    await fresh.edits.undo(STEP);
-    expect(fresh.lastToast()).toMatchObject({ kind: "error" });
-    expect(fresh.lastToast()?.action).toBeUndefined();
-  });
-
-  /** An answer's newer work: one author who changed one task since. */
-  const work = (task: string | undefined, by: string) => ({
-    ...(task === undefined ? {} : { task }),
-    by,
-    at: "2026-11-12T10:42:00.000Z",
-  });
-  const intl = createIntl({ locale: SOURCE_LOCALE, messages: CATALOGUE });
-  const said = (text: string | Msg | undefined): string =>
-    text === undefined || typeof text === "string"
-      ? String(text)
-      : sayMsg((id, values) => intl.formatMessage({ id }, values), text);
-
-  test("a refused undo or redo says which tasks and who, each list short, as the command line says it, and offers nothing for a redo", async () => {
+  test("a kept undo or redo says which tasks and who, each list short, as the command line says it, and offers nothing", async () => {
     const w = new World([task(1)]);
     const newer = [
       work("M-1", "Codex · work"),
@@ -1380,119 +1309,30 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
       work("M-3", "user"),
       work("M-4", "Claude · work"),
     ];
-    w.answer("history.redo", () => {
-      throw appError("conflict", {
-        cause: "UNDO_CONFLICT",
-        commit: `op_${"11".padStart(26, "0")}`,
-        conflicts: [
-          {
-            task: "M-1",
-            entity: "notes",
-            id: "n-1",
-            field: "deleted",
-            by: "Codex · work",
-            at: newer[0]?.at,
-          },
-        ],
-        newer_work: newer,
-      });
+    const kept = (n: number, newer_work: unknown[]) => () => ({
+      result: "kept",
+      commit: `op_${String(n).padStart(26, "0")}`,
+      tasks: [],
+      task_count: 0,
+      newer_work,
+      as_of: w.asOf(n),
     });
+    w.answer("history.redo", kept(11, newer));
     await w.edits.redo(STEP);
     const shown = w.lastToast();
-    expect(said(shown?.text)).toBe(`Not redone: ${String(newerText(newer))}`);
     expect(said(shown?.text)).toBe(
-      "Not redone: Codex · work, a run and 2 more changed M-1, M-2 and 2 more since",
+      `Not redone: ${String(newerText(newer))}, so it stays as they left it`,
+    );
+    expect(said(shown?.text)).toBe(
+      "Not redone: Codex · work, a run and 2 more changed M-1, M-2 and 2 more since, so it stays as they left it",
     );
     expect(shown?.action).toBeUndefined();
     // A group's change names no task.
-    w.answer("history.undo", () => {
-      throw appError("conflict", {
-        cause: "UNDO_CONFLICT",
-        commit: `op_${"12".padStart(26, "0")}`,
-        conflicts: [
-          { entity: "projects", id: "p-1", field: "title", by: "import", at: newer[0]?.at },
-        ],
-        newer_work: [work(undefined, "import")],
-      });
-    });
+    w.answer("history.undo", kept(12, [work(undefined, "import")]));
     await w.edits.undo(STEP);
-    expect(said(w.lastToast()?.text)).toBe("Not undone: the import changed it since");
-  });
-
-  test("a refused redo over two steps offers nothing: one click never writes over two changes", async () => {
-    const w = new World([task(1), task(2, { priority: 2 })]);
-    const by = { by: "Codex · work", at: "2026-11-12T10:42:00.000Z" };
-    w.answer("history.redo", () => {
-      throw appError("conflict", {
-        cause: "UNDO_CONFLICT",
-        commit: `op_${"11".padStart(26, "0")}`,
-        passed_over: [`op_${"11".padStart(26, "0")}`, `op_${"12".padStart(26, "0")}`],
-        conflicts: [
-          { task: "M-1", field: "title", value: "Theirs", wrote: "Mine", restore: "Mine", ...by },
-          { task: "M-2", field: "priority", value: 3, wrote: 1, restore: 1, ...by },
-        ],
-        newer_work: [work("M-1", "Codex · work"), work("M-2", "Codex · work")],
-      });
-    });
-    await w.edits.redo(STEP);
-    const shown = w.lastToast();
-    expect(said(shown?.text)).toBe("Not redone: Codex · work changed M-1 and M-2 since");
-    expect(shown?.action).toBeUndefined();
-  });
-
-  test("a refused redo of one change with one field says who changed which task and offers no action", async () => {
-    const w = new World([task(1, { priority: 3 })]);
-    w.answer("history.redo", () => {
-      throw appError("conflict", {
-        cause: "UNDO_CONFLICT",
-        commit: `op_${"11".padStart(26, "0")}`,
-        passed_over: [`op_${"11".padStart(26, "0")}`],
-        conflicts: [
-          {
-            task: "M-1",
-            field: "priority",
-            value: 3,
-            wrote: 1,
-            restore: 1,
-            version: 12,
-            by: "Codex · work",
-            at: "2026-11-12T10:42:00.000Z",
-          },
-        ],
-        newer_work: [work("M-1", "Codex · work")],
-      });
-    });
-    await w.edits.redo(STEP);
-    const shown = w.lastToast();
-    expect(said(shown?.text)).toBe("Not redone: Codex · work changed M-1 since");
-    expect(shown?.action).toBeUndefined();
-  });
-
-  test("an undo whose two fields an agent changed since says who changed which task and offers no action", async () => {
-    const w = new World([task(1)]);
-    const by = { by: "Codex · work", at: "2026-11-12T10:42:00.000Z" };
-    w.answer("history.undo", () => {
-      throw appError("conflict", {
-        cause: "UNDO_CONFLICT",
-        commit: `op_${"11".padStart(26, "0")}`,
-        conflicts: [
-          { task: "M-1", field: "priority", value: 3, wrote: 1, restore: 4, ...by },
-          {
-            task: "M-1",
-            field: "due",
-            value: { due_date: "2026-11-22", due_at: null, due_tz: null },
-            wrote: { due_date: "2026-11-13", due_at: null, due_tz: null },
-            restore: { due_date: "2026-11-17", due_at: null, due_tz: null },
-            ...by,
-          },
-        ],
-        newer_work: [work("M-1", "Codex · work")],
-      });
-    });
-    await w.edits.undo(STEP);
-    const shown = w.lastToast();
-    expect(said(shown?.text)).toBe("Not undone: Codex · work changed M-1 since");
-    expect(shown?.action).toBeUndefined();
+    expect(said(w.lastToast()?.text)).toBe(
+      "Not undone: the import changed it since, so it stays as they left it",
+    );
   });
 
   test("nothing to undo, a newer change first, and a toast whose commit is unknown each say so and change nothing", async () => {
@@ -1912,33 +1752,7 @@ describe("[A5.3.12.web.undo-late] Undo and Redo when answers come late, or not a
   });
 });
 
-describe("[A5.3.12.web.undo-levels] Undo of a change of the effort levels, made in this tab or elsewhere", () => {
-  const intl = createIntl({ locale: SOURCE_LOCALE, messages: CATALOGUE });
-  const said = (text: string | Msg | undefined): string =>
-    text === undefined || typeof text === "string"
-      ? String(text)
-      : sayMsg((id, values) => intl.formatMessage({ id }, values), text);
-
-  test("its toast says what it wrote and names tasks off the levels; a checked row stays checked", async () => {
-    const w = new World([task(1), task(2)]);
-    w.edits.hold(task(1), undefined, 0);
-    w.answer("history.undo", () => ({
-      result: "undone",
-      commit: "op_l",
-      tasks: ["M-1", "M-2"],
-      task_count: 2,
-      levels: { list: true, tasks: 2 },
-      off_list: [{ effort: "Medium", tasks: ["M-2"], count: 1 }],
-      as_of: w.asOf(12),
-    }));
-    await w.edits.undo(STEP);
-    expect(said(w.lastToast()?.text)).toBe(
-      "Effort levels put back. 1 task is on a size that is not a level now: M-2",
-    );
-    expect(w.lastToast()?.second?.label).toEqual({ id: "toast.redo" });
-    expect(w.edits.getState().leaving.get("t_00001")).toMatchObject({ done: true });
-  });
-
+describe("[A5.3.12.web.undo-levels] the effort levels beside Undo: a checked row and a kept size", () => {
   test("a checked row's box undoes the check-off that checked it, whatever was redone since", async () => {
     const w = new World([task(1), task(2)]);
     // The check-off, redone: its row holds, checked.
@@ -1976,50 +1790,6 @@ describe("[A5.3.12.web.undo-levels] Undo of a change of the effort levels, made 
     expect(w.calls.at(-1)).toMatchObject({ name: "history.undo", input: { commit: "op_check" } });
   });
 
-  test("an undo of it that wrote nothing says so, and offers no redo of nothing", async () => {
-    const w = new World([task(1)]);
-    w.answer("history.undo", () => ({
-      result: "partial",
-      commit: "op_l",
-      tasks: [],
-      task_count: 0,
-      levels: { list: false, tasks: 0 },
-      as_of: w.asOf(12),
-      unresolved: [
-        {
-          entity: "tasks",
-          task: "M-1",
-          field: "effort",
-          by: "script",
-          at: "2026-11-12T10:42:00.000Z",
-        },
-      ],
-    }));
-    await w.edits.undo(STEP, true);
-    expect(said(w.lastToast()?.text)).toBe(
-      "Nothing of the change of the effort levels was left to undo: 1 task kept a newer size",
-    );
-    expect(w.lastToast()?.action).toBeUndefined();
-  });
-
-  test("a redo of an undo that wrote nothing says nothing was redone, and names the tasks off the levels", async () => {
-    const w = new World([task(1)]);
-    w.answer("history.redo", () => ({
-      result: "redone",
-      commit: "op_l",
-      tasks: [],
-      task_count: 0,
-      levels: { list: false, tasks: 0 },
-      off_list: [{ effort: "Medium", tasks: ["M-2"], count: 1 }],
-      as_of: w.asOf(12),
-    }));
-    await w.edits.redo(STEP);
-    expect(said(w.lastToast()?.text)).toBe(
-      "Nothing of the change of the effort levels was left to redo. 1 task is on a size that is not a level now: M-2",
-    );
-    expect(w.lastToast()?.action).toBeUndefined();
-  });
-
   test("a size kept unsent is not sent again, by its line or its toast, once the levels changed", async () => {
     const w = new World([task(1)]);
     w.answer("task.update", () => {
@@ -2035,70 +1805,6 @@ describe("[A5.3.12.web.undo-levels] Undo of a change of the effort levels, made 
     await flush();
     expect(w.calls.filter((c) => c.name === "task.update")).toHaveLength(1);
     expect(w.edits.unsaved("t_00001", "effort")?.change.set).toEqual({ effort: "M" });
-  });
-
-  test("a refused one offers Undo the rest, also where the page does not know the step's fields", async () => {
-    const w = new World([task(1)]);
-    const step = `op_${"12".padStart(26, "0")}`;
-    const list = {
-      entity: "preferences",
-      id: "tasks.effort_scale",
-      field: "value",
-      by: "user",
-      at: "2026-11-12T10:42:00.000Z",
-    };
-    w.answer("history.undo", () => {
-      throw appError("conflict", {
-        cause: "UNDO_CONFLICT",
-        commit: step,
-        levels: true,
-        conflicts: [{ ...list, version: 13 }],
-      });
-    });
-    await w.edits.undo(step);
-    expect(w.lastToast()?.action?.label).toEqual({ id: "toast.undoRest" });
-    // The rest of a change of levels whose list someone changed since is nothing: it says so.
-    w.answer("history.undo", () => ({
-      result: "partial",
-      commit: step,
-      tasks: [],
-      task_count: 0,
-      levels: { list: false, tasks: 0 },
-      off_list: [{ effort: "Medium", tasks: ["M-2"], count: 1 }],
-      as_of: w.asOf(14),
-      unresolved: [list],
-    }));
-    w.lastToast()?.action?.run();
-    await flush();
-    expect(w.calls.at(-1)).toMatchObject({
-      name: "history.undo",
-      input: { partial: true, commit: step },
-    });
-    expect(said(w.lastToast()?.text)).toBe(
-      "Not undone: someone else changed the effort levels since, and the levels stay as they are. 1 task is on a size that is not a level now: M-2",
-    );
-    expect(w.lastToast()?.action).toBeUndefined();
-  });
-
-  test("a refused undo of one task's size made elsewhere is no change of levels: nothing to undo the rest of", async () => {
-    const w = new World([task(1)]);
-    w.answer("history.undo", () => {
-      throw appError("conflict", {
-        cause: "UNDO_CONFLICT",
-        commit: `op_${"12".padStart(26, "0")}`,
-        conflicts: [
-          {
-            task: "M-1",
-            field: "effort",
-            version: 13,
-            by: "Codex",
-            at: "2026-11-12T10:42:00.000Z",
-          },
-        ],
-      });
-    });
-    await w.edits.undo(STEP);
-    expect(w.lastToast()?.action).toBeUndefined();
   });
 
   test("a size kept by an earlier build, which does not say its levels, is chosen again", async () => {
@@ -2179,28 +1885,6 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     ]);
     expect(w.toasts.some((t) => t?.text.id === "toast.undone")).toBe(true);
     expect(w.edits.getState().unsaved.size).toBe(0);
-  });
-
-  test("an undo of a change of levels recovered from its receipt still says so, with what is off the levels", async () => {
-    const w = new World([task(1)]);
-    w.answer("history.undo", never);
-    w.answer("history.undo", never);
-    void w.edits.undo(STEP);
-    await flush();
-    const off = [{ effort: "Medium", tasks: ["M-1"], count: 1 }];
-    w.answer("receipt.get", (input) => {
-      const found = applied(w, String(input["request"]), 11);
-      return {
-        ...found,
-        results: [{ ...found.results[0], levels: { list: true, tasks: 1 }, off_list: off }],
-      };
-    });
-    await vi.advanceTimersByTimeAsync(ASK_MS);
-    await flush();
-    expect(w.toasts.map((t) => t?.text)).toContainEqual({
-      id: "toast.levels",
-      values: { kind: "undo", list: "yes", newer: 0, count: 1, tasks: "M-1" },
-    });
   });
 
   test("an undo the service has not decided yet is sent again with its own ID, and that answer lets the queue go on", async () => {

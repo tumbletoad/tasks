@@ -406,7 +406,7 @@ test.describe("[A5.archived.e2e.added-where] New project says where the project 
 });
 
 test.describe("[A5.archived.e2e.address] a project's page is the project's, whatever its address says", () => {
-  test("a project moved into an area and the move undone: its page on either address lists its open task, takes the present address without a step for Back, and the top field files where the project is now", async ({
+  test("a project moved into an area: its page on either address lists its open task, takes the present address without a step for Back, and the top field files where the project is now", async ({
     page,
     world,
   }) => {
@@ -456,27 +456,7 @@ test.describe("[A5.archived.e2e.address] a project's page is the project's, what
     await expect(chips).toHaveText([`${yard} › ${hut}`]);
     await adding(page).fill("");
 
-    // The move undone: the page follows it back.
-    await world.op(world.mira.id, "history.undo", {});
-    await at(loose);
-    expect(await steps()).toBe(before);
-    await expect(listedTask).toBeVisible();
-
-    // An old link under the area it left: the project's page, its task, and a capture that goes
-    // where the project is, the Inbox.
-    await page.goto(new URL(nested, page.url()).href);
-    await showsSpace(page, world.mira.name);
-    await at(loose);
-    await expect(listedTask).toBeVisible({ timeout: SLOW_MS });
-    const sweep = `Sweep the hut (${tag})`;
-    await adding(page).fill(sweep);
-    await expect(chips).toHaveText(["Inbox"]);
-    await adding(page).press("Enter");
-    await expect(toast(page)).toHaveText("Added to Inbox");
-    expect(await taskOf(world, sweep)).toMatchObject({ inbox: true });
-
-    // Moved again, an old link without the area: its page under the area, and a capture in it.
-    await move();
+    // An old link without the area: its page under the area, and a capture in it.
     await page.goto(new URL(loose, page.url()).href);
     await showsSpace(page, world.mira.name);
     await at(nested);

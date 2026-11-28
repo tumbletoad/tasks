@@ -71,7 +71,8 @@ async function whole(page: Page): Promise<void> {
   expect(await sideways(page)).toBeLessThanOrEqual(0);
 }
 
-const AFTER_UNDO = ["S", "XS", "Medium", "L", "XL", "XXL"];
+/** The levels after the removal of Medium, which is no step of Undo: changed back by hand. */
+const AFTER_REMOVE = ["S", "XS", "L", "XL", "XXL"];
 
 test.describe("[A5.3.7.e2e.levels-grid] a space's effort levels changed in Settings", () => {
   test("add, rename with tasks, a time, a move and a removal with Undo, by keyboard at 1,440 px and by mouse at 390 px, held after a reload; levels a newer build wrote are read-only", async ({
@@ -171,19 +172,14 @@ test.describe("[A5.3.7.e2e.levels-grid] a space's effort levels changed in Setti
         await page.keyboard.press("Tab");
         await page.keyboard.press("Enter");
         await expect(toast(page)).toHaveText(`Medium removed. ${onM(keyboard)} tasks moved to L`);
-        await expect.poll(() => values(page)).toEqual(["S", "XS", "L", "XL", "XXL"]);
+        await expect.poll(() => values(page)).toEqual(AFTER_REMOVE);
         expect(await held(world, keyboard)).toEqual(movedTo(keyboard, "L"));
-
-        // Undo from the toast puts the level and its tasks back.
-        await toastAction(page).focus();
-        await page.keyboard.press("Enter");
-        await expect(toast(page)).toHaveText("Effort levels put back");
-        await expect.poll(() => values(page)).toEqual(AFTER_UNDO);
-        expect(await held(world, keyboard)).toEqual(movedTo(keyboard, "Medium"));
+        // A change of the levels is no step of Undo: its toast offers none.
+        await expect(toastAction(page)).toHaveCount(0);
 
         await page.reload();
         await showsSpace(page, keyboard.name);
-        await expect.poll(() => values(page), { timeout: SLOW_MS }).toEqual(AFTER_UNDO);
+        await expect.poll(() => values(page), { timeout: SLOW_MS }).toEqual(AFTER_REMOVE);
         await expect(level(page, "L").locator('[data-part="level-amount"]')).toHaveValue("3");
         await expect(level(page, "L").locator('[data-part="level-unit"]')).toHaveValue("days");
       });
@@ -226,14 +222,10 @@ test.describe("[A5.3.7.e2e.levels-grid] a space's effort levels changed in Setti
         await section(page).locator('[data-part="level-ask-remove"]').click();
         await expect(toast(page)).toHaveText(`Medium removed. ${onM(mouse)} tasks moved to L`);
         expect(await held(world, mouse)).toEqual(movedTo(mouse, "L"));
-
-        await toastAction(page).click();
-        await expect(toast(page)).toHaveText("Effort levels put back");
-        await expect.poll(() => values(page)).toEqual(AFTER_UNDO);
-        expect(await held(world, mouse)).toEqual(movedTo(mouse, "Medium"));
+        await expect(toastAction(page)).toHaveCount(0);
 
         await page.reload();
-        await expect.poll(() => values(page), { timeout: SLOW_MS }).toEqual(AFTER_UNDO);
+        await expect.poll(() => values(page), { timeout: SLOW_MS }).toEqual(AFTER_REMOVE);
         await expect(level(page, "L").locator('[data-part="level-unit"]')).toHaveValue("weeks");
         expect(await sideways(page)).toBeLessThanOrEqual(0);
       });
