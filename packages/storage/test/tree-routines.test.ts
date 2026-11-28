@@ -1,13 +1,11 @@
-// Routines on the tree writer, as a person and the service use them: a weekly chore checked off
-// early, late after two missed Saturdays, skipped, paused and resumed, undone, finished for good and
-// put in the Trash; an agent's daily routine claimed by the service once its time has passed, never
-// twice, retried after a start that failed, done for its own due time, checked off by the person
-// and run once after a week with the computer off. The clock is one the tests move. Fixture text
-// only.
+// Routines on the tree writer, as a person and the service use them, walked through a month with a
+// clock the tests move: a weekly chore, a weekday agent routine, a monthly one from the 31st, and a
+// routine in a project that is archived. After every step of a walk the routine holds its open time
+// and exactly one entry for each time. Fixture text only.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import { newId } from "../src/ids.ts";
 import { TreeWriter, type TreeActor, type TreeResult } from "../src/tree/core.ts";
-import { claimRequestId, RETRY_MS } from "../src/tree/routines.ts";
+import { claimRequestId } from "../src/tree/routines.ts";
 import { searchTree } from "../src/tree/search.ts";
 import { checkedDriver, tempFolders, TEST_MACHINE } from "./space-helpers.ts";
 import { openTree, treeHistoryProblems, type TreeFixture } from "./tree-helpers.ts";
@@ -126,33 +124,99 @@ describe("[S2.tree.routines] routines on the tree writer, by a person and by the
     );
   };
 
-  test("the weekly chore: checked off early, late after two missed Saturdays, and skipped", () => {
+  /** A time as the log shows it: its date, and its local time when it has one. */
+  const timeText = (date: unknown, at: unknown): string =>
+    typeof at === "number"
+      ? `${String(date)} ${new Date(at).toLocaleTimeString("en-GB", { timeZone: ZONE, hour: "2-digit", minute: "2-digit" })}`
+      : String(date);
+  /**
+   * What must hold after every step of a walk: the routine's open time, and its live entries in
+   * order of their times, exactly one for each time.
+   */
+  const holds = (id: string, openTime: string, log: string[]): void => {
+    const r = routine(id);
+    expect(timeText(r["due_date"], r["due_at"])).toBe(openTime);
+    const live = fx.conn
+      .prepare(
+        "SELECT due_date, due_at, state FROM occurrences WHERE routine_id = $id " +
+          "AND deleted_at IS NULL ORDER BY due_date, due_at",
+      )
+      .all({ id })
+      .map((e) => `${timeText(e["due_date"], e["due_at"])} ${String(e["state"])}`);
+    expect(live).toEqual(log);
+    const times = live.map((e) => e.slice(0, e.lastIndexOf(" ")));
+    expect(new Set(times).size).toBe(times.length);
+  };
+  /** The service's look, with the request ID it sends: one more attempt than the runs for the time. */
+  const look = (id: string) => {
+    const due = Number(routine(id)["due_at"]);
+    const count = fx.conn
+      .prepare(
+        "SELECT count(*) AS n FROM runs WHERE task_id = $id AND json_extract(spec, '$.due_at') = $due",
+      )
+      .get({ id, due })?.["n"];
+    const request_id = claimRequestId(id, due, Number(count) + 1);
+    return { request_id, result: claimNow(id, { request_id }) };
+  };
+  const claimed = (id: string): string => {
+    const said = ok(look(id).result) as { claimed: boolean; run: { id: string } };
+    expect(said.claimed).toBe(true);
+    return said.run.id;
+  };
+  const idle = (id: string, why: string): void => {
+    expect(look(id).result.result).toMatchObject({ claimed: false, why });
+  };
+  /** The agent's done from inside its run: the run in its envelope, only the routine named. */
+  const agentDone = (id: string, run: string) =>
+    send(
+      "routine.done",
+      { routine: id, note: "Read the mail." },
+      { who: { ...fx.agent, run_id: run as never }, base: null },
+    );
+  const running = (run: string): void => {
+    move(run, "queued", "starting");
+    move(run, "starting", "running");
+  };
+
+  test("the weekly chore's month: early, paused and resumed, late, skipped, undone", () => {
     const id = chore();
-    // Watered on Friday: Saturday's time is done and the next Saturday comes.
+    holds(id, "2026-12-05", []);
+    // Watered on Friday: Saturday's time is done, and a pause and resume that day keep it done.
     now = t(4);
-    expect(ok(send("routine.done", { routine: id }))["routine"]).toMatchObject({
-      due: { due_date: "2026-12-12", due_at: null },
-    });
-    // Two Saturdays pass unchecked: the open time stays the first of them, and one check-off logs
-    // one entry and moves to the next Saturday after now.
-    now = t(23);
-    expect(open(id)).toEqual({ due_date: "2026-12-12", due_at: null });
     ok(send("routine.done", { routine: id }));
-    expect(open(id)).toEqual({ due_date: "2026-12-26", due_at: null });
-    now = t(26);
+    holds(id, "2026-12-12", ["2026-12-05 done"]);
+    ok(send("routine.pause", { routine: id }));
+    ok(send("routine.resume", { routine: id }));
+    holds(id, "2026-12-12", ["2026-12-05 done"]);
+    // Saturday the 12th passes unchecked: it stays open, late, until the Wednesday after.
+    now = t(13);
+    holds(id, "2026-12-12", ["2026-12-05 done"]);
+    now = t(16);
+    ok(send("routine.done", { routine: id }));
+    holds(id, "2026-12-19", ["2026-12-05 done", "2026-12-12 done"]);
+    now = t(19);
     ok(send("routine.skip", { routine: id }));
-    expect(open(id)).toEqual({ due_date: "2027-01-02", due_at: null });
-    expect(entries(id)).toEqual([
-      expect.objectContaining({ due_date: "2026-12-05", state: "done", why: null }),
-      expect.objectContaining({ due_date: "2026-12-12", state: "done", why: null }),
-      expect.objectContaining({ due_date: "2026-12-26", state: "skipped", why: "you" }),
-    ]);
+    holds(id, "2026-12-26", ["2026-12-05 done", "2026-12-12 done", "2026-12-19 skipped"]);
+    now = t(26);
+    ok(send("routine.done", { routine: id }));
+    const month = ["2026-12-05 done", "2026-12-12 done", "2026-12-19 skipped", "2026-12-26 done"];
+    holds(id, "2027-01-02", month);
+    ok(send("undo", {}));
+    holds(id, "2026-12-26", month.slice(0, 3));
+    ok(send("redo", {}));
+    holds(id, "2027-01-02", month);
+    // A new start that leaves the next date where it was still keeps the done's Undo back.
+    ok(send("routine.set", { routine: id, start: "2026-12-30" }));
+    holds(id, "2027-01-02", month);
+    expect(send("undo", {})).toMatchObject({ status: "unchanged", result: { kept: {} } });
+    holds(id, "2027-01-02", month);
     // A stale second click is held to what the person saw.
     const seen = fx.asOf();
-    now = t(27);
+    now = Date.parse("2027-01-02T10:00:00+01:00");
     ok(send("routine.done", { routine: id }, { base: seen }));
     expect(send("routine.done", { routine: id }, { base: seen }).status).toBe("conflict");
-    // It is found as a task is, holds notes, and is no task: no task command takes it and it holds
+    holds(id, "2027-01-09", [...month, "2027-01-02 done"]);
+    // It is found as a task is, holds notes, and is no task: no task command takes it, and it holds
     // no task.
     expect(searchTree(fx.conn, "plants")).toEqual([{ kind: "task", entityId: id, nodeId: id }]);
     ok(send("note.add", { on: id, body: "The fern needs less." }));
@@ -160,6 +224,149 @@ describe("[S2.tree.routines] routines on the tree writer, by a person and by the
     expect(send("tasks.add", { tasks: [{ title: "Buy soil", under: id }] }).error?.field).toBe(
       "tasks.0.under",
     );
+  });
+
+  test("a weekday agent routine's month: retries, check-offs by hand, a late done and a question", () => {
+    now = t(6, "06:00");
+    const made = ok(
+      send("routine.set", {
+        title: "Read the mail",
+        rule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=7;BYMINUTE=0",
+        tz: ZONE,
+        instance: "codex-work",
+        instruction: "Read the new mail into tasks.",
+      }),
+    ) as { routine: { id: string } };
+    const id = made.routine.id;
+    holds(id, "2026-12-07 07:00", []);
+    // Monday: the start fails; the look four minutes on queues nothing and keeps no receipt, so the
+    // same request a quarter of an hour on queues the retry, and a second start replays that one.
+    now = t(7, "07:00") + 30_000;
+    const first = claimed(id);
+    move(first, "queued", "starting");
+    move(first, "starting", "failed", { reason: "spawn_failed" });
+    now = t(7, "07:04");
+    const retry = look(id);
+    expect(retry.result.result).toMatchObject({ claimed: false, why: "waiting" });
+    now = t(7, "07:16") + 30_000;
+    const again = ok(claimNow(id, { request_id: retry.request_id })) as { run: { id: string } };
+    expect(claimNow(id, { request_id: retry.request_id })).toMatchObject({ replayed: true });
+    expect(runs(id).map((r) => r["attempt"])).toEqual([1, 2]);
+    idle(id, "working");
+    running(again.run.id);
+    now = t(7, "07:40");
+    ok(agentDone(id, again.run.id));
+    holds(id, "2026-12-08 07:00", ["2026-12-07 07:00 done"]);
+    move(again.run.id, "running", "succeeded");
+    // Tuesday: checked off by hand while its run is queued, which cancels it; the Undo opens the
+    // time again for a fresh claim, and a check-off while that run works is the only Tuesday entry.
+    now = t(8, "07:00") + 30_000;
+    const queued = claimed(id);
+    now = t(8, "07:05");
+    ok(send("routine.done", { routine: id }));
+    expect(runs(id).find((r) => r["id"] === queued)?.["state"]).toBe("cancelled");
+    holds(id, "2026-12-09 07:00", ["2026-12-07 07:00 done", "2026-12-08 07:00 done"]);
+    ok(send("undo", {}));
+    holds(id, "2026-12-08 07:00", ["2026-12-07 07:00 done"]);
+    const fresh = claimed(id);
+    running(fresh);
+    now = t(8, "07:20");
+    ok(send("routine.done", { routine: id }));
+    now = t(8, "07:30");
+    expect(agentDone(id, fresh).status).toBe("unchanged");
+    holds(id, "2026-12-09 07:00", ["2026-12-07 07:00 done", "2026-12-08 07:00 done"]);
+    move(fresh, "running", "succeeded");
+    // Wednesday's run works past Thursday 07:00: its done is Wednesday's, and Thursday is claimed.
+    now = t(9, "07:00") + 30_000;
+    const long = claimed(id);
+    running(long);
+    now = t(10, "07:30");
+    ok(agentDone(id, long));
+    move(long, "running", "succeeded");
+    const week = ["2026-12-07 07:00 done", "2026-12-08 07:00 done", "2026-12-09 07:00 done"];
+    holds(id, "2026-12-10 07:00", week);
+    const thursday = claimed(id);
+    running(thursday);
+    // Thursday's run asks the person: nothing is claimed or skipped for two working days.
+    move(thursday, "running", "failed", { reason: "needs_input" });
+    now = t(11, "07:00") + 30_000;
+    idle(id, "question");
+    now = t(14, "07:00") + 30_000;
+    idle(id, "question");
+    holds(id, "2026-12-10 07:00", week);
+    // The person replies; the reply's run carries Thursday's time and its done is Thursday's. The
+    // slots missed meanwhile run once: Monday's.
+    now = t(14, "08:00");
+    ok(send("note.add", { on: id, body: "Archive the newsletters." }));
+    const reply = ok(
+      send(
+        "run.create",
+        {
+          ...RUN,
+          task: id,
+          instance: "codex-work",
+          request: "Archive the newsletters.",
+          due_at: t(10, "07:00"),
+        },
+        { base: null },
+      ),
+    ) as { run: { id: string } };
+    idle(id, "working");
+    running(reply.run.id);
+    ok(agentDone(id, reply.run.id));
+    move(reply.run.id, "running", "succeeded");
+    expect(ok(look(id).result)["due"]).toEqual({ due_date: "2026-12-14", due_at: t(14, "07:00") });
+    holds(id, "2026-12-14 07:00", [...week, "2026-12-10 07:00 done"]);
+  });
+
+  test("a monthly routine from the 31st falls on each month's last day", () => {
+    const day = (date: string) => Date.parse(`${date}T10:00:00+01:00`);
+    now = day("2027-01-31");
+    const made = ok(
+      send("routine.set", { title: "Pay the rent", rule: "FREQ=MONTHLY;BYMONTHDAY=31", tz: ZONE }),
+    ) as { routine: { id: string } };
+    const id = made.routine.id;
+    holds(id, "2027-01-31", []);
+    ok(send("routine.done", { routine: id }));
+    holds(id, "2027-02-28", ["2027-01-31 done"]);
+    now = day("2027-02-28");
+    ok(send("routine.done", { routine: id }));
+    holds(id, "2027-03-31", ["2027-01-31 done", "2027-02-28 done"]);
+    now = day("2027-04-01");
+    ok(send("routine.done", { routine: id }));
+    holds(id, "2027-04-30", ["2027-01-31 done", "2027-02-28 done", "2027-03-31 done"]);
+  });
+
+  test("archiving a project pauses its routines, and neither Undo nor unarchive switches them on", () => {
+    now = t(6, "06:00");
+    const project = ok(send("project.create", { title: "Library" })) as {
+      project: { id: string };
+    };
+    const library = project.project.id;
+    const made = ok(
+      send("routine.set", {
+        title: "Tidy the library",
+        under: library,
+        rule: "FREQ=DAILY;BYHOUR=7;BYMINUTE=0",
+        tz: ZONE,
+        instance: "codex-work",
+        instruction: "Tidy the library.",
+      }),
+    ) as { routine: { id: string } };
+    const id = made.routine.id;
+    ok(send("project.archive", { project: library }));
+    expect(routine(id)["paused"]).toBe(1);
+    now = t(7, "07:00") + 30_000;
+    idle(id, "paused");
+    ok(send("undo", {}));
+    const archived = fx.conn.prepare("SELECT archived_at FROM nodes WHERE id = $id");
+    expect(archived.get({ id: library })).toEqual({ archived_at: null });
+    expect(routine(id)["paused"]).toBe(1);
+    ok(send("project.archive", { project: library }));
+    ok(send("project.unarchive", { project: library }));
+    expect(routine(id)["paused"]).toBe(1);
+    ok(send("routine.resume", { routine: id }));
+    holds(id, "2026-12-08 07:00", []);
   });
 
   test("a pause over two weeks, and a resume at the next time after now", () => {
@@ -288,75 +495,6 @@ describe("[S2.tree.routines] routines on the tree writer, by a person and by the
     expect(claimNow(id).result).toMatchObject({ claimed: false, why: "question" });
     expect(entries(id)).toEqual([]);
     expect(open(id)).toEqual({ due_date: "2026-12-07", due_at: t(7, "07:00") });
-  });
-
-  test("a retried start: a second start replays the claim, and a start that failed is tried again", () => {
-    const id = daily();
-    now = t(7, "07:00") + 30_000;
-    const due = t(7, "07:00");
-    const request_id = claimRequestId(id, due, 1);
-    const first = ok(claimNow(id, { request_id })) as { run: { id: string } };
-    expect(claimNow(id, { request_id })).toMatchObject({ status: "applied", replayed: true });
-    expect(runs(id)).toHaveLength(1);
-    move(first.run.id, "queued", "starting");
-    move(first.run.id, "starting", "failed", { reason: "spawn_failed" });
-    now += 4 * MINUTE;
-    expect(claimNow(id, { request_id: claimRequestId(id, due, 2) }).result).toMatchObject({
-      claimed: false,
-      why: "waiting",
-    });
-    now += RETRY_MS;
-    const second = ok(claimNow(id, { request_id: claimRequestId(id, due, 2) + "x" })) as {
-      run: { id: string };
-    };
-    expect(runs(id).map((r) => r["attempt"])).toEqual([1, 2]);
-    expect(JSON.parse(String(runs(id)[1]?.["spec"]))).toMatchObject({ due_at: due });
-    expect(second.run.id).not.toBe(first.run.id);
-  });
-
-  test("a run's done is bound to its own due time, also when the next time has come", () => {
-    const id = daily();
-    now = t(7, "07:00") + 30_000;
-    const claimed = ok(claimNow(id)) as { run: { id: string } };
-    move(claimed.run.id, "queued", "starting");
-    move(claimed.run.id, "starting", "running");
-    now = t(8, "07:30");
-    const done = (due: number) =>
-      send(
-        "routine.done",
-        { routine: id, run: claimed.run.id, due, note: "Read the mail; added two tasks." },
-        { who: { ...fx.agent, run_id: claimed.run.id as never }, base: null },
-      );
-    expect(done(t(8, "07:00")).error?.field).toBe("due");
-    ok(done(t(7, "07:00")));
-    expect(entries(id)).toEqual([
-      {
-        due_date: "2026-12-07",
-        due_at: t(7, "07:00"),
-        state: "done",
-        why: null,
-        run_id: claimed.run.id,
-        note: "Read the mail; added two tasks.",
-      },
-    ]);
-    // The slot that passed while it worked is the open time now, and the next look claims it once.
-    expect(open(id)).toEqual({ due_date: "2026-12-08", due_at: t(8, "07:00") });
-    expect(done(t(7, "07:00")).status).toBe("unchanged");
-    move(claimed.run.id, "running", "succeeded");
-    expect(ok(claimNow(id))["due"]).toEqual({ due_date: "2026-12-08", due_at: t(8, "07:00") });
-  });
-
-  test("a check-off by the person logs the time as theirs and cancels the queued run", () => {
-    const id = daily();
-    now = t(7, "07:00") + 30_000;
-    const claimed = ok(claimNow(id)) as { run: { id: string } };
-    ok(send("routine.done", { routine: id }));
-    expect(entries(id)).toEqual([
-      expect.objectContaining({ due_at: t(7, "07:00"), state: "done", run_id: null }),
-    ]);
-    expect(runs(id)[0]).toMatchObject({ id: claimed.run.id, state: "cancelled" });
-    expect(open(id)).toEqual({ due_date: "2026-12-08", due_at: t(8, "07:00") });
-    expect(claimNow(id).result).toMatchObject({ claimed: false, why: "not_due" });
   });
 
   test("after a week with the computer off, one claim for the latest time; a failed run's time is skipped", () => {
