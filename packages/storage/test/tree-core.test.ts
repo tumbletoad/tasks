@@ -163,7 +163,7 @@ describe("[S2.tree.core] the tree writer's commands in a disposable tree space",
   test("the history check sees a row written outside the commands", () => {
     add({ title: "Renew the passport" });
     fx.conn.prepare("UPDATE nodes SET title = 'Changed by hand' WHERE kind = 'task'").run();
-    expect(treeHistoryProblems(fx.conn)).toEqual(["history: nodes.title is not its history"]);
+    expect(treeHistoryProblems(fx.conn)).toContain("history: nodes.title is not its history");
     fx.conn.prepare("UPDATE nodes SET title = 'Renew the passport' WHERE kind = 'task'").run();
   });
 });

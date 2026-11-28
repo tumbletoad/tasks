@@ -10,13 +10,16 @@
 // text only from fields.ts, so no input can.
 import type { Connection } from "../driver.ts";
 import { newId, osRandom, type Id, type RandomSource } from "../ids.ts";
+import { PREFERENCES } from "@ttasks/contracts/preferences";
 import { RowReader } from "../rows.ts";
+import { agentLabel, notTheAuthority, spaceHuman } from "../write/actors.ts";
 import { intentFingerprint } from "../write/receipts.ts";
 import { formatTaskRef } from "../refs.ts";
 import {
   checkBaseOf,
   checkEnvelope,
   checkHistoryEnvelope,
+  Fields,
   formatAsOf,
   RequestProblem,
   type WriteProblem,
@@ -24,7 +27,9 @@ import {
 import { checkHistory } from "./commands.ts";
 import { COMMANDS } from "./registry.ts";
 import { TreeProblem } from "./fields.ts";
+import { DERIVED } from "./schema.ts";
 import { planHistory, STEP_SQL } from "./steps.ts";
+import { indexTreeChanges } from "./search.ts";
 import {
   Tx,
   type CheckedTreeRequest,
@@ -60,12 +65,25 @@ const SQL = {
   markUndone: "UPDATE commits SET undo_status = 'undone', undone_by = $seq WHERE seq = $target",
   markRedone: "UPDATE commits SET undo_status = 'done', undone_by = NULL WHERE seq = $target",
   markDead: "UPDATE commits SET undo_status = 'dead' WHERE seq = $target",
+  preference: "SELECT version FROM preferences WHERE key = $key",
+  preferenceRow: "SELECT * FROM preferences WHERE key = $key",
+  machine: "SELECT * FROM machines WHERE id = $id",
+  insertMachine:
+    "INSERT INTO machines (id, name, os, first_seen, created_seq, version) " +
+    "VALUES ($id, $name, $os, $at, $seq, $seq)",
+  system: "SELECT id FROM actors WHERE kind = 'system' ORDER BY created_at, id LIMIT 1",
+  firstHuman: "SELECT id FROM actors WHERE kind = 'human' ORDER BY created_at, id LIMIT 1",
+  actorByLabel: "SELECT id FROM actors WHERE kind = $kind AND label = $label",
+  insertActor: "INSERT INTO actors (id, kind, label, created_at) VALUES ($id, $kind, $label, $at)",
   /** Who made commit `$seq`, and when. */
   author:
     "SELECT k.author_id AS actor, a.kind AS kind, a.label AS label, k.origin AS origin, k.at AS at " +
     "FROM commits k JOIN actors a ON a.id = k.author_id WHERE k.seq = $seq",
   ref: "SELECT t.ref AS ref, s.ref_prefix AS prefix FROM tasks t, space s WHERE t.id = $id",
 } as const;
+
+/** What a preview throws to roll its transaction back. */
+const PREVIEW = new Error("A preview rolls its transaction back");
 
 export type TreeStatus = "applied" | "unchanged" | "conflict" | "rejected";
 
@@ -82,6 +100,8 @@ export interface TreeResult {
   warnings?: string[];
   /** What the caller decided before the writer, kept with an accepted result. */
   answer?: Record<string, unknown>;
+  /** A preview's: the version of the preference it would change, 0 when the space holds none. */
+  version?: number;
   replayed?: true;
 }
 
@@ -115,6 +135,157 @@ export class TreeWriter {
   }
 
   /**
+   * Registers this machine in the space once, by a system commit with the machine's create row.
+   * Only the authority writes. Returns whether it wrote.
+   */
+  registerMachine(machine: { name: string; os: "linux" | "windows" | "macos" }): boolean {
+    return this.#conn.transaction("immediate", () => {
+      if (this.#conn.prepare(SQL.machine).get({ id: this.#machine }) !== undefined) return false;
+      if (this.#space().machine !== this.#machine) return false;
+      const input = { name: machine.name, os: machine.os };
+      this.#system(
+        `register-machine-${this.#machine.slice(2)}`,
+        "machine.register",
+        input,
+        (seq, at) => {
+          this.#conn.prepare(SQL.insertMachine).run({ id: this.#machine, ...input, at, seq });
+          const row = this.#conn.prepare(SQL.machine).get({ id: this.#machine }) ?? {};
+          return [{ entity: "machines", id: this.#machine, row }];
+        },
+      );
+      return true;
+    });
+  }
+
+  /**
+   * The actor a connection writes as: the space's person for `human`, or the agent of that label,
+   * which joins the space on its first act by a system commit with no change rows (an actor has no
+   * versions). A label is one line of 1 to 100 characters, as today's writer takes it.
+   */
+  actor(kind: "human" | "agent", label: string): Id<"ac"> {
+    if (kind === "human") {
+      const found = this.#conn.transaction("deferred", () =>
+        this.#conn.prepare(SQL.firstHuman).get(),
+      );
+      return spaceHuman(found?.["id"]);
+    }
+    const name = agentLabel(label);
+    return this.#conn.transaction("immediate", () => {
+      const found = this.#conn.prepare(SQL.actorByLabel).get({ kind, label: name })?.["id"];
+      if (typeof found === "string") return found as Id<"ac">;
+      if (this.#space().machine !== this.#machine) throw notTheAuthority();
+      const id = newId("ac", this.#random);
+      this.#system(
+        `register-actor-${id.slice(3)}`,
+        "actor.register",
+        { kind, label: name },
+        (_, at) => {
+          this.#conn.prepare(SQL.insertActor).run({ id, kind, label: name, at });
+          return [];
+        },
+      );
+      return id;
+    });
+  }
+
+  /**
+   * Stores the default of each preference a space always holds (PreferenceSpec.stored) where it
+   * holds none or a reset, as the space's system actor, a request each. Safe to call again.
+   */
+  storeDefaults(): boolean {
+    const { missing, system, space } = this.#conn.transaction("deferred", () => ({
+      missing: PREFERENCES.filter((p) => {
+        if (p.scope !== "space" || p.stored !== true) return false;
+        const row = this.#conn.prepare(SQL.preferenceRow).get({ key: p.key });
+        return row === undefined || row["value"] === "null";
+      }),
+      system: this.#conn.prepare(SQL.system).get()?.["id"] as Id<"ac">,
+      space: this.#space(),
+    }));
+    if (missing.length === 0 || space.machine !== this.#machine) return false;
+    for (const p of missing) {
+      const result = this.submit({
+        space_id: space.spaceId,
+        request_id: `store-defaults-${newId("op", this.#random).slice(3)}`,
+        actor: {
+          scope_id: "defaults",
+          principal_id: system,
+          actor_kind: "system",
+          machine_id: this.#machine,
+          origin: "system",
+        },
+        base: formatAsOf({
+          epoch: space.epoch,
+          incarnation: space.incarnation,
+          seq: this.#space().lastSeq,
+        }),
+        command: "pref.set",
+        input: { key: p.key, value: p.default },
+      });
+      if (result.status !== "applied")
+        throw new Error("The space's default preferences were not stored");
+    }
+    return true;
+  }
+
+  /**
+   * One system commit in the caller's transaction: the commit row, the rows `write` makes with
+   * their create rows, and the space's last seq. A system commit has no receipt.
+   */
+  #system(
+    request: string,
+    command: string,
+    input: Record<string, unknown>,
+    write: (
+      seq: number,
+      at: number,
+    ) => { entity: string; id: string; row: Record<string, unknown> }[],
+  ): void {
+    const space = this.#space();
+    const seq = space.lastSeq + 1;
+    const at = this.#instant();
+    const system = this.#conn.prepare(SQL.system).get()?.["id"];
+    this.#conn.prepare(SQL.insertCommit).run({
+      seq,
+      id: newId("op", this.#random),
+      epoch: space.epoch,
+      incarnation: space.incarnation,
+      at,
+      actor_kind: "system",
+      principal: String(system),
+      author: String(system),
+      scope: "system",
+      machine: this.#machine,
+      session: null,
+      run: null,
+      origin: "system",
+      request,
+      kind: command,
+      ops: JSON.stringify([{ v: 1, command, input }]),
+      reason: null,
+      undo_of: null,
+      redo_of: null,
+    });
+    write(seq, at).forEach((made, i) => {
+      const after = Object.fromEntries(Object.entries(made.row).filter(([c]) => !DERIVED.has(c)));
+      this.#conn.prepare(SQL.insertChange).run({
+        seq,
+        n: i + 1,
+        entity: made.entity,
+        entity_id: made.id,
+        node: null,
+        action: "create",
+        field: null,
+        before: null,
+        after: JSON.stringify(after),
+        before_ver: null,
+        before_prov: null,
+      });
+    });
+    this.#conn.prepare(SQL.lastSeq).run({ seq });
+  }
+
+  /**
    * Decides one request. Its shape is checked first, by the checks today's writer runs
    * (write/request.ts `checkEnvelope`) and the command's own: such a refusal depends on the input
    * alone, so it is decided by nothing and stores nothing, and the same request ID can carry the
@@ -138,6 +309,7 @@ export class TreeWriter {
         error: problemOf(error.problem),
       };
     }
+    if (request.dry_run === true) return this.#preview(request);
     const result = this.#conn.transaction("immediate", () => {
       const decided = this.#decide(request);
       this.#at?.("before-commit", decided);
@@ -145,6 +317,38 @@ export class TreeWriter {
     });
     this.#at?.("after-commit", result);
     return result;
+  }
+
+  /**
+   * A preview: decided whole, its receipt included, then rolled back, so nothing of it stays. Its
+   * answer says the space as it is, and the version of the preference it would change.
+   */
+  #preview(request: CheckedTreeRequest): TreeResult {
+    let would: TreeResult | undefined;
+    try {
+      this.#conn.transaction("immediate", () => {
+        const asOf = this.#space();
+        const key = String(request.input["key"]);
+        const row = this.#conn.prepare(SQL.preference).get({ key });
+        const decided = this.#decide(request);
+        would = {
+          ...decided,
+          as_of: formatAsOf({
+            epoch: asOf.epoch,
+            incarnation: asOf.incarnation,
+            seq: asOf.lastSeq,
+          }),
+          seq: asOf.lastSeq,
+          version: row === undefined ? 0 : Number(row["version"]),
+        };
+        delete would.commit;
+        throw PREVIEW;
+      });
+    } catch (error) {
+      if (error !== PREVIEW) throw error;
+    }
+    if (would === undefined) throw new Error("A preview is decided before it is rolled back");
+    return would;
   }
 
   #space(): SpaceState {
@@ -322,6 +526,7 @@ export class TreeWriter {
           before_prov: c.beforeProv,
         });
       });
+      indexTreeChanges(this.#conn, seq, changes);
       if (plan !== undefined) {
         const target = plan.target;
         if (plan.kind === "undo") this.#conn.prepare(SQL.markUndone).run({ target, seq });
@@ -446,15 +651,19 @@ export function checkTreeRequest(value: unknown): CheckedTreeRequest {
   if (!history && named === undefined) {
     return f.fail("VALIDATION_FAILED", "No command of that name", "command");
   }
+  // The input's fields are named as the command names them (`tasks.0.title`), as a refusal of its
+  // run names them too.
+  const input = new Fields(f.raw("input"), "");
   const request: CheckedTreeRequest = {
     ...envelope,
     command: command as string,
-    input: history ? checkHistory(f.sub("input")) : (named?.check(f.sub("input")) ?? {}),
+    input: history ? checkHistory(input) : (named?.check(input) ?? {}),
   };
   if (f.has("entry")) request.entry = f.text("entry", { chars: 64, line: true });
-  // A preview decides preferences only, as today; the tree has its preferences from piece (iii).
-  if (envelope.dry_run === true)
+  // A preview decides preferences only, as today.
+  if (envelope.dry_run === true && command !== "pref.set") {
     f.fail("VALIDATION_FAILED", "A dry run decides preferences only", "dry_run");
+  }
   if (history) checkHistoryEnvelope(f, envelope);
   f.done();
   return request;
