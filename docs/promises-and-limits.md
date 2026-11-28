@@ -23,10 +23,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   not what it says.
 - Undo and Redo take back what is a nuisance to put back by hand: checking off and reopening,
   moving to the Trash and restoring, a whole change from the Trash too, removing a note and putting
-  it back, the words of a title, a summary, a context, a note or a log entry, a move out of the
-  Inbox or into it, a task's first area, setting questions aside, a new project or area, and
-  archiving or unarchiving one. Anything else you change back by doing it again, and Undo passes
-  over it, in the page and at the command line alike.
+  it back, the words of a title, a summary, a context, a note or a log entry, the words of a page
+  and moving it to the Trash and back, a description, the space's brief and a text for agents, a
+  move out of the Inbox or into it, a task's first area, setting questions aside, a new project
+  or area, and archiving or unarchiving one. Anything else you change back by doing it again, and
+  Undo passes over it, in the page and at the command line alike.
 - Undo and Redo never write over a change made since: not where what your change wrote was changed
   again, by anyone, you included, not where a wrap-up was written since a finish, and never by
   taking a task or a note out of sight that someone else worked on since. What counts is what a
@@ -36,6 +37,14 @@ the behaviour it describes, and keep each one to a sentence or two.
   queued or stopped and a session you opened are yours; what a run did since, from its start on, is
   the run's work.
 - Your undo history survives a restart and is shared by your windows and the command line.
+- Every version of a page and of a description is kept, also of a page in the Trash; bringing back
+  an earlier one is a new change of its own. A page's reference, such as M-180, is never given to a
+  task or another page.
+- An agent's edit of a page changes only the words it names, and only while they stand once in the
+  page: two agents editing different passages both keep their words, and words that are gone
+  change nothing. A page whose task or project is in the Trash goes with it, unchanged, and comes
+  back with it.
+- Only you write a text for agents on the space, an area or a project: an agent is refused.
 - In the page, a change Undo is not for saves without Undo, and from then on that tab offers no
   Undo or Redo of what came before it, so Undo never takes back something you did not expect. An
   Undo or Redo that got no answer keeps its step to try again. Limit: the page offers only what
@@ -328,6 +337,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   profile and model, which you change in T3 Code. A folder that is no T3
   project's root or worktree is added to T3 Code's projects as it is, never opened in a project
   that only contains it, and removing it there is yours to do.
+- That thread is the task's: Open again brings it forward, and the words you typed stay on the
+  task as your note. The task's entry and the Agents page say whether its agent works, needs you
+  or is idle, as T3 Code tells, with or without the Agent Monitor. A thread you delete or archive
+  in T3 Code is noticed at the next Open, which makes a new one, and its entry says it ended. Not
+  protected: a thread made in T3 Code itself is not the task's.
 - A pairing with T3 Code is approved on T3 Code's own page and lasts the 30 days T3 Code gives it;
   then Open asks to pair again. TTasks keeps the pairing's token in its own state and never reads
   T3 Code's.

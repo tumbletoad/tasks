@@ -314,13 +314,14 @@ describe("[A5.agents.pace] the service asks the monitor at the pace of the most 
         picture: null,
         trouble: { kind: "not_installed", reason: "not_found" },
       });
-      expect(p.due()).toBeUndefined();
+      // The tasks' T3 threads are read on at the page's pace; the monitor is not looked for again.
       p.clock.advance(600_000);
       expect(p.looked()).toBe(1);
       feed.send({ type: "watch", ...VISIBLE });
       feed.send({ type: "watch", ...LOOKED });
       expect(await view(feed)).toMatchObject({ trouble: { kind: "not_installed" } });
-      expect(p.looked()).toBe(2);
+      // A pass already on its way for the threads answers first; the look follows right after it.
+      await expect.poll(() => p.looked(), SLOW).toBe(2);
     },
   );
 });
@@ -371,6 +372,7 @@ describe("[A5.agents.pace] a tab that stops watching gets nothing more", () => {
     const view = (n: number) => ({
       picture: { ageMs: n, settling: false, sessions: [], unseen: [], accounts: [] },
       trouble: null,
+      threads: [],
     });
     message({ type: "watch", ...LOOKED });
     const [tab] = watchers;
