@@ -340,7 +340,7 @@ test.describe("[A7.3.12.m5-03.e2e.rows] The rows as a person sees them", () => {
         }
       }
     }
-    // The tests of a worker share its service: the theme goes back to its default.
+    // The tests of a file share its service: the theme goes back to its default.
     await bulk.machine("ui.theme", null);
   });
 });
@@ -420,7 +420,7 @@ test.describe("[A5.3.6.e2e.row-due-effort] A row's due date fits its column at e
       }
     }
     expect(await violations(page)).toEqual([]);
-    // The tests of a worker share its service: the theme goes back to its default.
+    // The tests of a file share its service: the theme goes back to its default.
     await world.machine("ui.theme", null);
   });
 });

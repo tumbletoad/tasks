@@ -3,7 +3,7 @@
 // applied after, text that only looks like a shortcut kept as text, search results as one list
 // with check-off and undo, a result that changes while the list is open, the keyboard through
 // both modes, a space without the word index, and the screenshots in both themes at 1,440 and
-// 390 px. Each test makes tasks with words of its own: the tests of one worker share its world.
+// 390 px. Each test makes tasks with words of its own: the tests of one file share its world.
 import { expect, type Page } from "@playwright/test";
 import { beforeMidnight, day, onOneDay } from "./days.ts";
 import { test } from "./fixture.ts";
@@ -815,7 +815,7 @@ test.describe("[A7.3.12.m5-10.e2e.screens] The capture and the search in both th
         await context.close();
       }
     }
-    // The tests of a worker share its service: the theme goes back to its default.
+    // The tests of a file share its service: the theme goes back to its default.
     await world.machine("ui.theme", null);
   });
 });
