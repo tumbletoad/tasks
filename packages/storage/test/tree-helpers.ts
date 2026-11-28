@@ -58,17 +58,16 @@ export function openTree(
       human: "user",
       at: 1_794_000_000_000,
     });
-    conn
-      .prepare(
-        "INSERT INTO actors (id, kind, label, created_at) VALUES ($id, 'agent', 'agent:codex', 0)",
-      )
-      .run({ id: newId("ac") });
   }
   const spaceId = conn.prepare("SELECT space_id FROM space").get()?.["space_id"] as Id<"sp">;
-  const id = (kind: string) =>
-    conn.prepare("SELECT id FROM actors WHERE kind = $kind").get({ kind })?.["id"] as Id<"ac">;
-  const human = actor(id("human"), "human", "ui:test");
-  const agent = actor(id("agent"), "agent", "mcp:codex");
+  const writer = new TreeWriter(conn, {
+    machineId: TEST_MACHINE,
+    ...(at === undefined ? {} : { at }),
+  });
+  // The machine and the agent join the space as the service has them join: by system commits.
+  if (create) writer.registerMachine({ name: "test", os: "windows" });
+  const human = actor(writer.actor("human", "user"), "human", "ui:test");
+  const agent = actor(writer.actor("agent", "agent:codex"), "agent", "mcp:codex");
   const asOf = (): string => {
     const r =
       conn
@@ -82,10 +81,6 @@ export function openTree(
       incarnation: String(r["i"]) as Id<"ai">,
     });
   };
-  const writer = new TreeWriter(conn, {
-    machineId: TEST_MACHINE,
-    ...(at === undefined ? {} : { at }),
-  });
   return {
     conn,
     writer,
@@ -141,6 +136,26 @@ export function treeHistoryProblems(conn: Connection): string[] {
     )
     .get()?.["n"];
   if (unreceipted !== 0 || orphan !== 0) problems.push("receipt-per-commit");
+  // A system commit holds exactly what it writes: the space's root, a machine's create row, or no
+  // change row at all for an actor joining.
+  const system = conn
+    .prepare(
+      "SELECT k.kind AS kind, (SELECT count(*) FROM changes c WHERE c.seq = k.seq) AS n, " +
+        "(SELECT group_concat(c.entity || ':' || c.action) FROM changes c WHERE c.seq = k.seq) AS rows " +
+        "FROM commits k WHERE k.scope_id = 'system'",
+    )
+    .all();
+  const holds: Record<string, string | null> = {
+    "space.create": "nodes:create",
+    "machine.register": "machines:create",
+    "actor.register": null,
+  };
+  for (const k of system) {
+    const kind = String(k["kind"]);
+    if (!(kind in holds) || (holds[kind] ?? null) !== (k["rows"] ?? null)) {
+      problems.push(`system-commit: ${kind} holds what it should not`);
+    }
+  }
   const rows = new Map<string, Record<string, unknown>>();
   const versions = new Map<
     string,

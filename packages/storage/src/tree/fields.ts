@@ -37,6 +37,8 @@ export const FIELDS = {
   },
   sources: { owner: ["owner_id"], deleted: ["deleted_at"] },
   links: { removed: ["removed_at"] },
+  // A machine is registered once, by a system commit, and no command changes it after.
+  machines: {},
   // A preference's value with the version of its shape, which `pref.set` writes as a unit.
   preferences: { value: ["value", "schema_ver"] },
 } as const satisfies Record<string, Record<string, readonly string[]>>;
@@ -79,6 +81,7 @@ export const KEYS: Record<Entity, readonly string[]> = {
   ],
   links: ["id", "owner_id", "target_id", "position", "added_by"],
   preferences: ["key", "policy"],
+  machines: ["id", "name", "os", "first_seen"],
 };
 
 /** The column that names a row: its `id`, or a preference's `key`. */

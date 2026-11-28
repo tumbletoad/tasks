@@ -2154,6 +2154,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "S2.tree.actors",
+      "title": "What joins a tree space by its own system commits: the machine registers once with its create row and another machine registers nothing; an agent joins by its label once with no change row, the person is the space's own, and a label is one line; the preferences a space always holds are stored where it holds none, once, and again after a reset",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "S2.tree.crash",
       "title": "The tree writer killed for real in a child process before a COMMIT, after one and by a timer, each followed by a resend of the lost request: every acknowledged result stays, a decision killed before its COMMIT leaves no receipt, no request is applied twice, and every row is its history played back with each commit's receipt",
       "owner": "M3",

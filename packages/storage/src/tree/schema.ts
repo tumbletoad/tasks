@@ -40,6 +40,11 @@ export const TREE_STATEMENTS: readonly string[] = [
   kind TEXT NOT NULL CHECK (kind IN ('human','agent','routine','system','import')),
   label TEXT NOT NULL, instance_id TEXT, routine_id TEXT, created_at INTEGER NOT NULL
 ) STRICT`,
+  `CREATE TABLE machines (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, os TEXT NOT NULL CHECK (os IN ('linux','windows','macos')),
+  first_seen INTEGER NOT NULL, retired_at INTEGER,
+  ${VERSIONS}
+) STRICT`,
   `CREATE TABLE commits (
   seq INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, epoch INTEGER NOT NULL,
   incarnation TEXT NOT NULL, at INTEGER NOT NULL,

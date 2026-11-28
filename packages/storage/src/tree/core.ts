@@ -10,7 +10,8 @@
 // text only from fields.ts, so no input can.
 import type { Connection } from "../driver.ts";
 import { newId, osRandom, type Id, type RandomSource } from "../ids.ts";
-import { RowReader } from "../rows.ts";
+import { PREFERENCES } from "@ttasks/contracts/preferences";
+import { isSpaceName, RowReader } from "../rows.ts";
 import { intentFingerprint } from "../write/receipts.ts";
 import { formatTaskRef } from "../refs.ts";
 import {
@@ -19,12 +20,14 @@ import {
   checkHistoryEnvelope,
   Fields,
   formatAsOf,
+  normaliseStored,
   RequestProblem,
   type WriteProblem,
 } from "../write/request.ts";
 import { checkHistory } from "./commands.ts";
 import { COMMANDS } from "./registry.ts";
 import { TreeProblem } from "./fields.ts";
+import { DERIVED } from "./schema.ts";
 import { planHistory, STEP_SQL } from "./steps.ts";
 import {
   Tx,
@@ -62,6 +65,15 @@ const SQL = {
   markRedone: "UPDATE commits SET undo_status = 'done', undone_by = NULL WHERE seq = $target",
   markDead: "UPDATE commits SET undo_status = 'dead' WHERE seq = $target",
   preference: "SELECT version FROM preferences WHERE key = $key",
+  preferenceRow: "SELECT * FROM preferences WHERE key = $key",
+  machine: "SELECT * FROM machines WHERE id = $id",
+  insertMachine:
+    "INSERT INTO machines (id, name, os, first_seen, created_seq, version) " +
+    "VALUES ($id, $name, $os, $at, $seq, $seq)",
+  system: "SELECT id FROM actors WHERE kind = 'system' ORDER BY created_at, id LIMIT 1",
+  firstHuman: "SELECT id FROM actors WHERE kind = 'human' ORDER BY created_at, id LIMIT 1",
+  actorByLabel: "SELECT id FROM actors WHERE kind = $kind AND label = $label",
+  insertActor: "INSERT INTO actors (id, kind, label, created_at) VALUES ($id, $kind, $label, $at)",
   /** Who made commit `$seq`, and when. */
   author:
     "SELECT k.author_id AS actor, a.kind AS kind, a.label AS label, k.origin AS origin, k.at AS at " +
@@ -119,6 +131,168 @@ export class TreeWriter {
 
   get connection(): Connection {
     return this.#conn;
+  }
+
+  /**
+   * Registers this machine in the space once, by a system commit with the machine's create row.
+   * Only the authority writes. Returns whether it wrote.
+   */
+  registerMachine(machine: { name: string; os: "linux" | "windows" | "macos" }): boolean {
+    return this.#conn.transaction("immediate", () => {
+      if (this.#conn.prepare(SQL.machine).get({ id: this.#machine }) !== undefined) return false;
+      if (this.#space().machine !== this.#machine) return false;
+      const input = { name: machine.name, os: machine.os };
+      this.#system(
+        `register-machine-${this.#machine.slice(2)}`,
+        "machine.register",
+        input,
+        (seq, at) => {
+          this.#conn.prepare(SQL.insertMachine).run({ id: this.#machine, ...input, at, seq });
+          const row = this.#conn.prepare(SQL.machine).get({ id: this.#machine }) ?? {};
+          return [{ entity: "machines", id: this.#machine, row }];
+        },
+      );
+      return true;
+    });
+  }
+
+  /**
+   * The actor a connection writes as: the space's person for `human`, or the agent of that label,
+   * which joins the space on its first act by a system commit with no change rows (an actor has no
+   * versions). A label is one line of 1 to 100 characters, as today's writer takes it.
+   */
+  actor(kind: "human" | "agent", label: string): Id<"ac"> {
+    if (kind === "human") {
+      const found = this.#conn.transaction("deferred", () =>
+        this.#conn.prepare(SQL.firstHuman).get(),
+      );
+      return found?.["id"] as Id<"ac">;
+    }
+    const name = normaliseStored(label);
+    if (!isSpaceName(name) || name !== label) {
+      throw new TreeProblem(
+        "VALIDATION_FAILED",
+        "An actor label is one line of 1 to 100 characters",
+        "label",
+      );
+    }
+    return this.#conn.transaction("immediate", () => {
+      const found = this.#conn.prepare(SQL.actorByLabel).get({ kind, label: name })?.["id"];
+      if (typeof found === "string") return found as Id<"ac">;
+      if (this.#space().machine !== this.#machine) {
+        throw new TreeProblem("SPACE_READ_ONLY", "This machine is not the space's authority");
+      }
+      const id = newId("ac", this.#random);
+      this.#system(
+        `register-actor-${id.slice(3)}`,
+        "actor.register",
+        { kind, label: name },
+        (_, at) => {
+          this.#conn.prepare(SQL.insertActor).run({ id, kind, label: name, at });
+          return [];
+        },
+      );
+      return id;
+    });
+  }
+
+  /**
+   * Stores the default of each preference a space always holds (PreferenceSpec.stored) where it
+   * holds none or a reset, as the space's system actor, a request each. Safe to call again.
+   */
+  storeDefaults(): boolean {
+    const { missing, system, space } = this.#conn.transaction("deferred", () => ({
+      missing: PREFERENCES.filter((p) => {
+        if (p.scope !== "space" || p.stored !== true) return false;
+        const row = this.#conn.prepare(SQL.preferenceRow).get({ key: p.key });
+        if (row === undefined) return true;
+        // A newer build's row is read-only here, its reset included: that build fills it.
+        return row["value"] === "null" && Number(row["schema_ver"]) <= p.schemaVer;
+      }),
+      system: this.#conn.prepare(SQL.system).get()?.["id"] as Id<"ac">,
+      space: this.#space(),
+    }));
+    if (missing.length === 0 || space.machine !== this.#machine) return false;
+    for (const p of missing) {
+      const result = this.submit({
+        space_id: space.spaceId,
+        request_id: `store-defaults-${newId("op", this.#random).slice(3)}`,
+        actor: {
+          scope_id: "defaults",
+          principal_id: system,
+          actor_kind: "system",
+          machine_id: this.#machine,
+          origin: "system",
+        },
+        base: formatAsOf({
+          epoch: space.epoch,
+          incarnation: space.incarnation,
+          seq: this.#space().lastSeq,
+        }),
+        command: "pref.set",
+        input: { key: p.key, value: p.default },
+      });
+      if (result.status !== "applied")
+        throw new Error("The space's default preferences were not stored");
+    }
+    return true;
+  }
+
+  /**
+   * One system commit in the caller's transaction: the commit row, the rows `write` makes with
+   * their create rows, and the space's last seq. A system commit has no receipt.
+   */
+  #system(
+    request: string,
+    command: string,
+    input: Record<string, unknown>,
+    write: (
+      seq: number,
+      at: number,
+    ) => { entity: string; id: string; row: Record<string, unknown> }[],
+  ): void {
+    const space = this.#space();
+    const seq = space.lastSeq + 1;
+    const at = this.#instant();
+    const system = this.#conn.prepare(SQL.system).get()?.["id"];
+    this.#conn.prepare(SQL.insertCommit).run({
+      seq,
+      id: newId("op", this.#random),
+      epoch: space.epoch,
+      incarnation: space.incarnation,
+      at,
+      actor_kind: "system",
+      principal: String(system),
+      author: String(system),
+      scope: "system",
+      machine: this.#machine,
+      session: null,
+      run: null,
+      origin: "system",
+      request,
+      kind: command,
+      ops: JSON.stringify([{ v: 1, command, input }]),
+      reason: null,
+      undo_of: null,
+      redo_of: null,
+    });
+    write(seq, at).forEach((made, i) => {
+      const after = Object.fromEntries(Object.entries(made.row).filter(([c]) => !DERIVED.has(c)));
+      this.#conn.prepare(SQL.insertChange).run({
+        seq,
+        n: i + 1,
+        entity: made.entity,
+        entity_id: made.id,
+        node: null,
+        action: "create",
+        field: null,
+        before: null,
+        after: JSON.stringify(after),
+        before_ver: null,
+        before_prov: null,
+      });
+    });
+    this.#conn.prepare(SQL.lastSeq).run({ seq });
   }
 
   /**
