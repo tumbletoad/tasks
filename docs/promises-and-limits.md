@@ -368,6 +368,12 @@ the behaviour it describes, and keep each one to a sentence or two.
   and is given the questions that waited when you started it, each quoted as the agent asked it,
   then your words; one dismissed or answered after that stays in it. Nothing else of the earlier
   run's conversation comes along.
+- Continue opens a run's own conversation in its agent app's terminal, in the task's folder and on
+  the run's account, as Open opens a task, and the agent there works as that session. A run that
+  may still work is stopped first, and the app opens only once nothing of the run runs, so two
+  agents never write one conversation. Continue is offered once the agent named its
+  conversation, and for Claude Code and Codex only. It opens the conversation the agent app still
+  keeps: one its own history has removed by then does not open.
 - Stop ends the agent and everything it started, and the run is called ended only once the system
   confirms none of it is left. Where no process group can hold a run, it starts anyway, and Stop
   ends what TTasks could find of it: the run is called ended once the agent itself is gone, and a

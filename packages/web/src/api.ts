@@ -71,6 +71,8 @@ export interface Run {
   readonly error?: string;
   /** How many of the agent's requests its permission refused, when any were. */
   readonly refused?: number;
+  /** The run holds its agent's own conversation, which Continue opens again. */
+  readonly resumable?: true;
   /** Grows with every change of the run: of two reads, the higher is newer. */
   readonly version: number;
 }
@@ -481,12 +483,14 @@ export class Api {
       request,
       markFolder = false,
       another = false,
+      run,
     }: {
       readonly pack?: boolean;
       readonly text?: string;
       readonly request?: string;
       readonly markFolder?: boolean;
       readonly another?: boolean;
+      readonly run?: string;
     } = {},
   ): Promise<Opened> {
     const result = await this.client.launch.open({
@@ -500,6 +504,8 @@ export class Api {
       ...(markFolder ? { mark_folder: true } : {}),
       // "Open another": a second session, although the app runs the task here.
       ...(another ? { another: true } : {}),
+      // Continue: the run's own conversation, once nothing of the run runs.
+      ...(run === undefined ? {} : { run }),
       request_id: id,
     });
     const { launch } = result;

@@ -1,8 +1,9 @@
 // A background run's entry in the thread, below its actor line (Thread.tsx): what the person asked,
-// the run's state in plain words with Stop while it may still work, then what the agent said. The
-// answer and the question are the agent's text: Markdown that is never HTML, links made safe
-// (markdown.tsx), a long one folded at ten lines until More. The state line is announced politely
-// as it changes, so Stop's outcome is heard where Stop was pressed.
+// the run's state in plain words with Stop while it may still work, then what the agent said, and
+// Continue where its conversation can go on in the agent app. The answer and the question are the
+// agent's text: Markdown that is never HTML, links made safe (markdown.tsx), a long one folded at
+// ten lines until More. The state line is announced politely as it changes, so Stop's outcome is
+// heard where Stop was pressed.
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Run } from "../api.ts";
 import { classes } from "../app/css.ts";
@@ -22,6 +23,7 @@ const styles = classes(css, [
   "more",
   "error",
   "text",
+  "again",
 ]);
 
 export interface RunBodyProps {
@@ -29,6 +31,8 @@ export interface RunBodyProps {
   /** The run's agent, as the thread names it. */
   readonly label: string;
   readonly onStop?: (run: Run) => void;
+  /** Continue: the agent app opens the run's own conversation, the run stopped first. */
+  readonly onContinue?: (run: Run) => void;
 }
 
 /** `text`, drawn by `children`, clamped at ten lines with More when it is longer. */
@@ -112,7 +116,7 @@ function useTick(on: boolean): void {
   }, [on]);
 }
 
-export function RunBody({ run, label, onStop }: RunBodyProps) {
+export function RunBody({ run, label, onStop, onContinue }: RunBodyProps) {
   const t = useT();
   useTick(run.quiet_since !== undefined);
   const view = runView(run, label);
@@ -162,6 +166,22 @@ export function RunBody({ run, label, onStop }: RunBodyProps) {
           </Folded>
           {said.cut ? <p className={styles.asked}>{t("run.cut")}</p> : null}
         </>
+      )}
+      {view.continues === undefined || onContinue === undefined ? null : (
+        <button
+          type="button"
+          className={styles.again}
+          data-part="run-continue"
+          aria-label={t("run.continueLabel", {
+            label,
+            stop: view.continues === "after_stop" ? "yes" : "no",
+          })}
+          onClick={() => {
+            onContinue(run);
+          }}
+        >
+          {t("run.continue", { stop: view.continues === "after_stop" ? "yes" : "no" })}
+        </button>
       )}
     </div>
   );

@@ -180,6 +180,23 @@ describe("[M6.page.run-words] a run's entry says what is the case and what the p
   });
 });
 
+describe("[M6.page.run-continue] a run that holds its agent's conversation offers Continue", () => {
+  test("an ended run continues now, one that may still work after it is stopped, and one without a conversation not at all", () => {
+    for (const state of ["succeeded", "failed", "cancelled", "timed_out"]) {
+      expect(runView(run({ state, resumable: true }), "Codex").continues).toBe("now");
+    }
+    expect(
+      runView(run({ state: "failed", reason: "needs_input", resumable: true }), "Codex").continues,
+    ).toBe("now");
+    expect(runView(run({ resumable: true }), "Codex").continues).toBe("after_stop");
+    expect(
+      runView(run({ state: "unknown", reason: "stop_timed_out", resumable: true }), "Codex")
+        .continues,
+    ).toBe("after_stop");
+    expect(runView(run({ state: "succeeded" }), "Codex").continues).toBeUndefined();
+  });
+});
+
 describe("[M6.page.run-follow] the page shows a run as the service has it", () => {
   test("a read keeps what the page holds newer, and a run queued after the read began", () => {
     const answered = run({ state: "cancelling", version: 5 });
