@@ -84,6 +84,8 @@ export interface PlanContext {
   readonly keep: number;
   /** Tasks with a live session: `is:bound`. */
   readonly live: readonly string[];
+  /** Rows that hold any of the words, those holding more of them first: nothing holds them all. */
+  readonly some?: boolean;
   /**
    * A `folder:` value as this machine stores it, with its OS's case rule: `cwd` is the caller's
    * working folder. `no_cwd` without one, `not_a_folder` for a value that names no folder here.
@@ -642,8 +644,14 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
   const order = effortOrder(query, ctx, b);
   const limit = b.bind(ctx.keep + 1);
 
+  // With some words only, how many of the groups a row holds orders it first.
+  const held = (holds: (group: string) => string): string =>
+    ctx.some === true
+      ? `${groups.map((g) => `CASE WHEN ${holds(b.bind(g))} THEN 1 ELSE 0 END`).join(" + ")} DESC, `
+      : "";
+
   if (ctx.scope === "learnings") {
-    const match = groups.length === 0 ? null : groups.join(" AND ");
+    const match = groups.length === 0 ? null : groups.join(ctx.some === true ? " OR " : " AND ");
     where.push("l.deleted_at IS NULL");
     if (negative !== null) {
       where.push(
@@ -661,7 +669,8 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
           "FROM search_fts JOIN search_docs d ON d.doc = search_fts.rowid " +
           "JOIN learnings l ON l.id = d.entity_id JOIN tasks t ON t.id = l.task_id " +
           `WHERE search_fts MATCH ${b.bind(match)} AND d.kind = 'learning'${audience} AND ` +
-          `${where.join(" AND ")} ORDER BY ${order}score DESC, l.created_at DESC, l.id LIMIT ${limit}`;
+          `${where.join(" AND ")} ORDER BY ${order}${held((g) => `d.doc IN (SELECT rowid FROM search_fts WHERE search_fts MATCH ${g})`)}` +
+          `score DESC, l.created_at DESC, l.id LIMIT ${limit}`;
     return { kind: "learnings", sql, params: b.params, match };
   }
 
@@ -703,7 +712,7 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
   const match = groups.join(" OR ");
   // With two groups or more, only the tasks where each group matches a document of their own.
   const everyGroup =
-    groups.length < 2
+    groups.length < 2 || ctx.some === true
       ? ""
       : groups
           .map(
@@ -728,6 +737,10 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
     "SELECT t.id AS id, t.ref AS ref, hit.doc AS doc, hit.entity AS entity, " +
     `hit.score * ${boosts.join(" * ")} AS score ` +
     `FROM hit JOIN tasks t ON t.id = hit.task_id WHERE ${where.join(" AND ")} ` +
-    `ORDER BY ${order}score DESC, t.touched DESC, t.ref LIMIT ${limit}`;
+    `ORDER BY ${order}${held(
+      (g) =>
+        "t.id IN (SELECT g.task_id FROM search_fts JOIN search_docs g ON g.doc = search_fts.rowid " +
+        `WHERE search_fts MATCH ${g} AND g.kind IN ${TASK_TEXT}${ctx.audience === "agent" ? " AND g.audience = 'all'" : ""})`,
+    )}score DESC, t.touched DESC, t.ref LIMIT ${limit}`;
   return { kind: "tasks", sql, params: b.params, match };
 }

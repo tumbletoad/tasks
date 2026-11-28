@@ -1506,6 +1506,7 @@ MCP tool `write_page`, "Write a page": Keep the library: create a page (leave on
 | `found` | integer, 0 to 1000000 | no | stale: 0, ambiguous: how often the old words stand |
 | `excerpt` | string, max 1240 | no | stale, ambiguous: the page's start as it is now |
 | `cursor` | string, max 80 | no | stale, ambiguous: pass it to read for the whole page |
+| `over` | ("page" \| "holder")[], 1 to 2 items | no | An agent's write: the page is over 16 KB, or what holds it has over 12 pages |
 | `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
 | `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 
@@ -3866,6 +3867,8 @@ MCP tool `search`, "Search tasks and learnings": Use to find tasks before you ad
 | `rows[].id` | string | yes | Task or learning ID |
 | `rows[].ref` | string | yes | Task reference |
 | `cursor` | string | no | Pass it for the next page |
+| `some_words` | true | no | No row holds every word: these hold some of them, more of them first |
+| `try_scope` | "all" | no | library: no row holds every word; all also searches finished tasks' logs |
 
 ### Examples
 

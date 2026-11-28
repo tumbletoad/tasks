@@ -11,7 +11,7 @@
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { safeLine, safeText } from "../safe-text.ts";
-import { EXCERPT_CHARS, PAGE_LIMITS, ReadCursor } from "../pages.ts";
+import { EXCERPT_CHARS, LIBRARY_BUDGET, PAGE_LIMITS, ReadCursor } from "../pages.ts";
 import { Base, Replayed, RequestId, SessionTask, WriteAsOf } from "../schemas.ts";
 import { AS_OF, AS_OF_NEXT, M14, requestId } from "./fixture.ts";
 import { LUMEN, M180, TIME_ZONES } from "./page-read.ts";
@@ -93,6 +93,15 @@ export const PageWriteResult = z.strictObject({
     .describe("stale, ambiguous: the page's start as it is now")
     .optional(),
   cursor: ReadCursor.describe("stale, ambiguous: pass it to read for the whole page").optional(),
+  over: z
+    .array(z.enum(["page", "holder"]))
+    .min(1)
+    .max(2)
+    .describe(
+      `An agent's write: the page is over ${String(LIBRARY_BUDGET.pageBytes / 1024)} KB, or what ` +
+        `holds it has over ${String(LIBRARY_BUDGET.nodePages)} pages`,
+    )
+    .optional(),
   as_of: WriteAsOf,
   replayed: Replayed.optional(),
 });

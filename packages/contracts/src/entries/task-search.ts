@@ -93,6 +93,14 @@ export const TaskSearchResult = z.strictObject({
   first: z.int().min(0).max(SEARCH_IDS).describe("Position of the first row; 0 without rows"),
   rows: z.array(SearchRow).max(50).describe("This page's rows, in the search's order"),
   cursor: z.string().regex(CURSOR_PATTERN).describe("Pass it for the next page").optional(),
+  some_words: z
+    .literal(true)
+    .describe("No row holds every word: these hold some of them, more of them first")
+    .optional(),
+  try_scope: z
+    .literal("all")
+    .describe("library: no row holds every word; all also searches finished tasks' logs")
+    .optional(),
 });
 
 const m14 = {
