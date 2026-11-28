@@ -1212,6 +1212,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         },
         monitor,
         held,
+        threads: () => launching.service?.t3Agents() ?? Promise.resolve([]),
         ...(options.monitor?.unseenMs === undefined ? {} : { unseenMs: options.monitor.unseenMs }),
         db: grantsDb.db,
         grants: grantsDb.grants,

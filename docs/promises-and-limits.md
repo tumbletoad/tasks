@@ -333,6 +333,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   profile and model, which you change in T3 Code. A folder that is no T3
   project's root or worktree is added to T3 Code's projects as it is, never opened in a project
   that only contains it, and removing it there is yours to do.
+- That thread is the task's: Open again brings it forward, and the words you typed stay on the
+  task as your note. The task's entry and the Agents page say whether its agent works, needs you
+  or is idle, as T3 Code tells, with or without the Agent Monitor. A thread you delete or archive
+  in T3 Code is noticed at the next Open, which makes a new one, and its entry says it ended. Not
+  protected: a thread made in T3 Code itself is not the task's.
 - A pairing with T3 Code is approved on T3 Code's own page and lasts the 30 days T3 Code gives it;
   then Open asks to pair again. TTasks keeps the pairing's token in its own state and never reads
   T3 Code's.
