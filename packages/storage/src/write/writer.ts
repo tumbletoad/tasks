@@ -82,7 +82,7 @@ import {
   type FolderOs,
 } from "./folders.ts";
 import { brokenIn, groupBreaks, type GroupTouch } from "./groups.ts";
-import { appended, excerptOf, findPage, occurrences, PAGE_SQL } from "./pages.ts";
+import { appended, excerptOf, findPage, finishedBody, occurrences, PAGE_SQL } from "./pages.ts";
 import {
   newerOn,
   oppositeOf,
@@ -3167,9 +3167,13 @@ export class SpaceWriter {
     }
     return this.#execute(conn, request, space, plan, asOf, at, undefined, (run) => {
       ensureStart(conn, run, "pages", id);
-      const edited = body.slice(0, first) + op.new + body.slice(first + op.old.length);
+      const edited = finishedBody(
+        body.slice(0, first) + op.new + body.slice(first + op.old.length),
+      );
+      if (edited === undefined)
+        problem("TOO_LARGE", "The page would be larger than a page may be", 0, "new");
       conn.prepare(PAGE_SQL.body).run({ id, value: edited });
-      wrote(run, 0, "pages", id, null, ["body"]);
+      wrote(run, 0, "pages", id, pageTask(conn, id), ["body"]);
     });
   }
 
@@ -4913,15 +4917,25 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         by: author,
         seq: run.seq,
       });
-      wrote(run, i, "pages", staged.target, null, null);
+      wrote(
+        run,
+        i,
+        "pages",
+        staged.target,
+        owner.kind === "task" ? (owner.id as Id<"t">) : null,
+        null,
+      );
       return;
     }
     case "page.append": {
       // The body as it is now, earlier operations of nothing else in between: a request of its own.
       const body = String(readRow(conn, "pages", staged.target)["body"]);
       ensureStart(conn, run, "pages", staged.target);
-      conn.prepare(PAGE_SQL.body).run({ id: staged.target, value: appended(body, op.text) });
-      wrote(run, i, "pages", staged.target, null, ["body"]);
+      const value = finishedBody(appended(body, op.text));
+      if (value === undefined)
+        problem("TOO_LARGE", "The page would be larger than a page may be", i, "text");
+      conn.prepare(PAGE_SQL.body).run({ id: staged.target, value });
+      wrote(run, i, "pages", staged.target, pageTask(conn, staged.target), ["body"]);
       return;
     }
     case "page.set": {
@@ -4933,15 +4947,16 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
           field === "title" ? PAGE_SQL.title : field === "brief" ? PAGE_SQL.brief : PAGE_SQL.body;
         conn.prepare(sql).run({ id: staged.target, value });
       }
-      wrote(run, i, "pages", staged.target, null, Object.keys(set));
+      wrote(run, i, "pages", staged.target, pageTask(conn, staged.target), Object.keys(set));
       return;
     }
     case "page.move": {
       if (staged.skip === true) return;
       const owner = must(staged.page?.owner, "A move has its holder");
       ensureStart(conn, run, "pages", staged.target);
+      const left = pageTask(conn, staged.target);
       conn.prepare(PAGE_SQL.owner).run({ id: staged.target, kind: owner.kind, owner: owner.id });
-      wrote(run, i, "pages", staged.target, null, ["owner"]);
+      wrote(run, i, "pages", staged.target, pageTask(conn, staged.target) ?? left, ["owner"]);
       return;
     }
     case "page.trash":
@@ -4952,7 +4967,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       conn
         .prepare(PAGE_SQL.deleted)
         .run({ id: staged.target, at: trash ? run.at : null, by: trash ? author : null });
-      wrote(run, i, "pages", staged.target, null, ["deleted"]);
+      wrote(run, i, "pages", staged.target, pageTask(conn, staged.target), ["deleted"]);
       return;
     }
     case "node.set":
@@ -5411,4 +5426,13 @@ function insertChanges(conn: Connection, seq: number, changes: readonly ChangeRo
       after_prov: change.afterProv ?? seq,
     });
   });
+}
+
+/**
+ * The task a page is on, or null: its change rows carry it, so work on a page counts as work on
+ * its task, which Undo will not take out of sight unseen.
+ */
+function pageTask(conn: Connection, id: string): Id<"t"> | null {
+  const row = readRow(conn, "pages", id);
+  return row["owner_kind"] === "task" ? (String(row["owner_id"]) as Id<"t">) : null;
 }

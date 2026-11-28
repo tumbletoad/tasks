@@ -3,6 +3,7 @@
 // task or project went to the Trash is not found, and comes back with it unwritten.
 import type { Connection, Row } from "../driver.ts";
 import { parseTaskRef } from "../refs.ts";
+import { normaliseStored, WRITE_LIMITS } from "./request.ts";
 
 /** The characters of a page an unapplied edit answers with: the rest is read with its cursor. */
 export const EXCERPT_CHARS = 1_200;
@@ -64,11 +65,14 @@ export function findPage(
   return row as (Row & { shown: number }) | undefined;
 }
 
-/** How often `words` stand in `text`, not overlapping, and where the first stands. */
+/**
+ * How often `words` stand in `text`, overlapping ones too (`..` stands twice in `...`), and where
+ * the first stands. An edit applies only to words that stand once.
+ */
 export function occurrences(text: string, words: string): { count: number; first: number } {
   let count = 0;
   let first = -1;
-  for (let at = text.indexOf(words); at !== -1; at = text.indexOf(words, at + words.length)) {
+  for (let at = text.indexOf(words); at !== -1; at = text.indexOf(words, at + 1)) {
     if (first === -1) first = at;
     count += 1;
   }
@@ -80,6 +84,16 @@ export function excerptOf(body: string): string {
   const chars = Array.from(body);
   if (chars.length <= EXCERPT_CHARS) return body;
   return `${chars.slice(0, EXCERPT_CHARS).join("")}... (+${String(chars.length - EXCERPT_CHARS)} chars)`;
+}
+
+/**
+ * A body an append or an edit finished, in the form and within the size of a body sent whole:
+ * normalised as stored text is, so words joined across the edit read as they show; undefined when
+ * it would be larger than a body may be.
+ */
+export function finishedBody(body: string): string | undefined {
+  const text = normaliseStored(body);
+  return Buffer.byteLength(text, "utf8") > WRITE_LIMITS.note ? undefined : text;
 }
 
 /** What `page.append` leaves: the text after a blank line, or the text alone on an empty body. */

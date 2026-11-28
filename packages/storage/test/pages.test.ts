@@ -171,4 +171,50 @@ describe("[A1.5.pages.write] pages and a node's texts through the write path", (
     ]);
     expect(result.error?.code).toBe("VALIDATION_FAILED");
   });
+
+  test("overlapping words stand twice: the edit writes nothing and answers how often", () => {
+    const ref = create({ kind: "space" }, "Wait...");
+    const result = submit([{ kind: "page.edit", page: ref, old: "..", new: "!" }]);
+    expectStatus(result, "unchanged");
+    expect(result.results[0]).toMatchObject({ found: 2 });
+    expect(page(ref)["body"]).toBe("Wait...");
+  });
+
+  test("an append or an edit that would pass a page's size is refused, and the finished body is in stored form", () => {
+    const ref = create({ kind: "space" }, "a".repeat(65_534));
+    const grown = submit([{ kind: "page.append", page: ref, text: "bc" }]);
+    expect(grown.error?.code).toBe("TOO_LARGE");
+    const cafe = create({ kind: "space" }, "Cafe \u0301 menu");
+    send([{ kind: "page.edit", page: cafe, old: "Cafe ", new: "Cafe" }]);
+    expect(page(cafe)["body"]).toBe("Caf\u00e9 menu");
+    expect(words("caf\u00e9")).toContain(page(cafe)["id"]);
+  });
+
+  test("Undo of a restore keeps a task an agent made a page on since, and names the agent", () => {
+    const task = newId("t");
+    send([{ kind: "task.create", id: task, title: "Renew the passport" }], fx.human);
+    send([{ kind: "task.delete", task }], fx.human);
+    send([{ kind: "task.restore", task }], fx.human);
+    create({ kind: "task", task });
+    const undone = fx.writer.submit(fx.request(fx.human, [{ kind: "undo" }]));
+    expect(undone.kept).toBeDefined();
+    expect(
+      fx.reader.prepare("SELECT deleted_at FROM tasks WHERE id = $id").get({ id: task }),
+    ).toEqual({
+      deleted_at: null,
+    });
+  });
+
+  test("a person's first text for agents undoes alone, whatever an agent wrote in the description since", () => {
+    const node = { kind: "project", project: fx.project } as const;
+    send([{ kind: "node.instruct", node, text: "Never mail the clinic." }], fx.human);
+    send([{ kind: "node.set", node, description: "The clinic group's portal." }]);
+    const undone = fx.writer.submit(fx.request(fx.human, [{ kind: "undo" }]));
+    expectStatus(undone, "applied");
+    expect(undone.kept).toBeUndefined();
+    expect(fx.reader.prepare("SELECT description, for_agents FROM node_texts").get()).toEqual({
+      description: "The clinic group's portal.",
+      for_agents: "",
+    });
+  });
 });
