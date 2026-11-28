@@ -7,10 +7,12 @@
 // The vocabulary is the list of step makers below, one per call. Each family that moves to the tree
 // adds its calls here. What the backends differ in by decision is left out of it, each with its
 // reason: a project without an area (S2.replay.projects marks it), a node's history (marked in
-// S2.replay.reviewed), and a task's history section (refused on a tree for now). One difference
-// the sequences meet is left out of both answers (`KNOWN`).
+// S2.replay.reviewed), and a task's history section (refused on a tree for now). What the
+// sequences meet that differs by decision is left out of both sides (`known`, `marked`).
 //
-// A failure prints its seed; FC_SEED replays it, and FC_RUNS sets how many sequences run.
+// CI runs a fixed list of seeds, 13 sequences each, about a minute (`SEEDS`). A failure prints its
+// seed; FC_SEED runs one seed and FC_RUNS sets how many sequences it runs. The nightly deep job runs
+// a new seed with 300.
 // Fixture text only.
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, onTestFailed, test } from "vitest";
@@ -18,7 +20,8 @@ import { both, type Answer, type Sequence, type Side } from "../../storage/test/
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 import { backend, newSpaces, type Session, type Step } from "./replay-helpers.ts";
 
-const LONG = 600_000;
+/** The nightly deep job's 300 sequences take minutes. */
+const LONG = process.env["TTASKS_DEEP"] === "1" ? 3_600_000 : 600_000;
 let w: ContractWorld & { root: string };
 
 beforeAll(async () => {
@@ -34,6 +37,10 @@ afterAll(async () => {
  * tree does not keep, so a conflict on every field of a task names it only today.
  */
 function known(answer: Answer): Answer {
+  // When a step is refused, only that it is refused is compared, with what a reader sees after
+  // it: which refusal is named when several apply is each writer's own order, and the written
+  // sequences hold the ones a person meets.
+  if (answer.status === "error") return { status: "error" };
   const said = answer.said as { data?: { conflicts?: { field?: string }[] } } | undefined;
   const conflicts = said?.data?.conflicts;
   if (said?.data === undefined || conflicts === undefined) return answer;
@@ -41,10 +48,59 @@ function known(answer: Answer): Answer {
   return { ...answer, said: { ...said, data: { ...said.data, conflicts: kept } } };
 }
 
+/**
+ * Today's writer leaves a task's source link removed when the task comes back from the Trash by
+ * Undo; the tree keeps it, and today's writer goes at the switch. So a task's sources are not
+ * compared once a step of the sequence put it in the Trash; every other task's are.
+ */
+const trashed = new WeakMap<Session, Set<string>>();
+
+function trashedOf(s: Session): Set<string> {
+  let names = trashed.get(s);
+  if (names === undefined) {
+    names = new Set();
+    trashed.set(s, names);
+  }
+  return names;
+}
+
+function withoutTrashedSources(s: Session, seen: unknown): unknown {
+  const read = { ...(seen as Record<string, unknown>) };
+  for (const name of trashedOf(s)) {
+    const one = read[name] as { task?: Record<string, unknown> } | undefined;
+    if (one?.task === undefined) continue;
+    const task: Record<string, unknown> = { ...one.task };
+    delete task["sources"];
+    const more = task["more"] as Record<string, unknown> | undefined;
+    read[name] = {
+      ...one,
+      task: { ...task, ...(more === undefined ? {} : { more: { ...more, sources: "<marked>" } }) },
+    };
+  }
+  return read;
+}
+
 const marked = (side: Side<Step, Session>): Side<Step, Session> => ({
   ...side,
-  step: async (s, step) => known(await side.step(s, step)),
+  step: async (s, step) => {
+    const answer = known(await side.step(s, step));
+    if (step.op === "task.delete" && step.input["restore"] !== true) {
+      for (const key of (step.input["tasks"] as string[] | undefined) ?? []) {
+        trashedOf(s).add(key.replace(/^\{(\w+)\}$/u, "$1"));
+      }
+    }
+    return answer;
+  },
+  seen: async (s) => withoutTrashedSources(s, await side.seen(s)),
 });
+
+/**
+ * The seeds CI runs, the same every run, so a pull request that changes nothing here never meets
+ * a new sequence by chance: those run wide by hand, and one a run found. FC_SEED runs one seed of
+ * its own; the nightly deep job (TTASKS_DEEP=1) runs a new seed with 300 sequences.
+ */
+const SEEDS = [271828, 99991, 424242, 1001, 55555, 1900855630];
+const DEEP = process.env["TTASKS_DEEP"] === "1";
 
 /** The names steps give what they make, and refer to: a name nothing made yet is not found. */
 const TASKS = ["t0", "t1", "t2", "t3"] as const;
@@ -273,6 +329,31 @@ const sections = task.map((t): Step => ({
   input: { task: `{${t}}`, sections: ["context", "notes", "log", "sources", "outcome"] },
 }));
 
+/** The reads: a search by words and the filters a tree answers, the finished list, the status. */
+const reads = fc.oneof(
+  fc
+    .constantFrom(
+      "photo",
+      "passport OR invoice",
+      "status:waiting",
+      "due<2026-12-05",
+      "area:Home",
+      "project:Papers",
+      "is:inbox",
+      "is:focus",
+      "is:completed",
+      "is:overdue",
+      "bank -photo",
+      "Home passport",
+      "gate Garden",
+      "id:{t0}",
+      "id:{t1}",
+    )
+    .chain((q) => who.map((by): Step => ({ op: "task.search", input: { q }, ...by }))),
+  fc.constant<Step>({ op: "task.finished", input: {}, user: true }),
+  fc.constant<Step>({ op: "space.status", input: {}, user: true }),
+);
+
 /** The vocabulary: one maker per call of the families on a tree space. */
 const VOCABULARY: fc.Arbitrary<Step>[] = [
   add,
@@ -289,6 +370,7 @@ const VOCABULARY: fc.Arbitrary<Step>[] = [
   pageRead,
   instruct,
   sections,
+  reads,
 ];
 
 /** A sequence starts by making something to act on. */
@@ -300,25 +382,39 @@ describe("[S2.replay.generated] random ordinary sequences of the tree's families
   test(
     "each sequence answers and reads the same on both, by the strict comparison",
     async () => {
-      const seed = Number(process.env["FC_SEED"] ?? Math.floor(Math.random() * 2 ** 31));
+      const given = process.env["FC_SEED"];
+      const seeds =
+        given !== undefined
+          ? [Number(given)]
+          : DEEP
+            ? [Math.floor(Math.random() * 2 ** 31)]
+            : SEEDS;
+      const runs = Number(process.env["FC_RUNS"] ?? (DEEP ? 300 : given !== undefined ? 80 : 13));
+      let seed = 0;
       onTestFailed(() => {
-        console.error(`Replay with FC_SEED=${String(seed)}`);
+        console.error(`Replay with FC_SEED=${String(seed)} FC_RUNS=${String(runs)}`);
       });
       let n = 0;
-      await fc.assert(
-        fc.asyncProperty(sequence, async (steps) => {
-          n += 1;
-          const spaces = await newSpaces(w, `gen-${String(n)}`);
-          await both(
-            {
-              today: marked(backend(w.service.ops, () => spaces.today)),
-              tree: marked(backend(w.service.ops, () => spaces.tree)),
-            },
-            steps as Sequence<Step>,
-          );
-        }),
-        { seed, numRuns: Number(process.env["FC_RUNS"] ?? 6), endOnFailure: true },
-      );
+      for (seed of seeds) {
+        await fc.assert(
+          fc.asyncProperty(sequence, async (steps) => {
+            n += 1;
+            const spaces = await newSpaces(w, `gen-${String(n)}`);
+            try {
+              await both(
+                {
+                  today: marked(backend(w.service.ops, () => spaces.today)),
+                  tree: marked(backend(w.service.ops, () => spaces.tree)),
+                },
+                steps as Sequence<Step>,
+              );
+            } finally {
+              await spaces.close();
+            }
+          }),
+          { seed, numRuns: runs, endOnFailure: true },
+        );
+      }
     },
     LONG,
   );

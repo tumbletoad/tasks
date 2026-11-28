@@ -12,6 +12,7 @@ import type { Row, SqlValue } from "../driver.ts";
 import type { Id } from "../ids.ts";
 import { formatEntryRef, parseTaskRef } from "../refs.ts";
 import {
+  NO_SUCH_ENTRY,
   NO_SUCH_TASK,
   notActive,
   NOT_NOW,
@@ -27,6 +28,7 @@ import {
 import { captured, problem, refText } from "./commands.ts";
 import { TreeProblem } from "./fields.ts";
 import type { TreeConflict, Tx } from "./tx.ts";
+import { TASK_FIELDS as TODAY_TASK_FIELDS } from "../write/fields.ts";
 
 const SQL = {
   task:
@@ -290,9 +292,9 @@ export function runPlan(tx: Tx, ops: readonly Operation[]): OpResult[] {
         throw new TreeProblem(refusal.code, refusal.message, refusal.field);
       }
       runs.push({ i, from, to: tx.mark, done });
-      todayConflicts(tx, clashes, i);
+      todayConflicts(tx, clashes, i, fieldOrder(op));
     } catch (error) {
-      todayConflicts(tx, clashes, i);
+      todayConflicts(tx, clashes, i, fieldOrder(op));
       if (error instanceof TreeProblem && error.op === undefined) error.op = i;
       throw error;
     }
@@ -314,15 +316,39 @@ export function runPlan(tx: Tx, ops: readonly Operation[]): OpResult[] {
 }
 
 /** The conflicts operation `i` met from `from` on, as today's writer names them. */
-function todayConflicts(tx: Tx, from: number, i: number): void {
+/** The order today's writer names a task's conflicts in: an update's own, else its row's. */
+function fieldOrder(op: Operation): readonly string[] {
+  return op.kind === "task.patch"
+    ? [...Object.keys(op.set ?? {}), ...(op.unset ?? [])]
+    : TASK_ORDER;
+}
+
+function todayConflicts(tx: Tx, from: number, i: number, order: readonly string[]): void {
   const mine = tx.conflicts.splice(from);
+  const kept: TreeConflict[] = [];
   for (const c of mine) {
     const task = c.entity === "nodes" && tx.get(SQL.node, { id: c.id })?.["kind"] === "task";
     if (task && NODE_ONLY.has(c.field)) continue;
     asToday(tx, c, i);
-    tx.conflicts.push(c);
+    kept.push(c);
   }
+  // A task's fields in today's order; each row's place among the others as it came.
+  const rank = (c: TreeConflict) => {
+    const at = order.indexOf(TODAY_NAME[c.field] ?? c.field);
+    return c.task === undefined || at < 0 ? order.length : at;
+  };
+  const rows = [...new Set(kept.map((c) => `${c.entity}|${c.id}`))];
+  kept.sort(
+    (a, b) =>
+      rows.indexOf(`${a.entity}|${a.id}`) - rows.indexOf(`${b.entity}|${b.id}`) ||
+      rank(a) - rank(b),
+  );
+  tx.conflicts.push(...kept);
 }
+
+/** Today's task fields in order, and today's name of a tree's node field. */
+const TASK_ORDER: readonly string[] = Object.keys(TODAY_TASK_FIELDS);
+const TODAY_NAME: Readonly<Record<string, string>> = { brief: "summary", description: "context" };
 
 /**
  * A conflict as today's writer names it: of operation `i`, and a task's place in the tree as its
@@ -566,6 +592,12 @@ function runOne(plan: Plan, i: number): Done {
     case "task.complete":
     case "task.archive": {
       const task = taskRow(plan, op.task);
+      const id = String(task["id"]);
+      // The base first, as today's writer checks it: a finish from a stale read is a conflict. A
+      // task finished already is left as it is with `if_active`, so nothing of it is held then.
+      const fields = op.kind === "task.archive" ? ["lifecycle"] : ["lifecycle", "wrap"];
+      const leftAsItIs = task["lifecycle"] !== "active" && op.if_active === true;
+      if (!leftAsItIs && tx.held("tasks", id, id, fields)) return finished(tx, id, false);
       if (task["lifecycle"] !== "active" && op.if_active !== true) {
         problem(
           "INVALID_TRANSITION",
@@ -586,6 +618,9 @@ function runOne(plan: Plan, i: number): Done {
       return wrapUp(plan, op.task, op.outcome, op.once === true);
     case "task.reopen": {
       const task = taskRow(plan, op.task);
+      if (tx.held("tasks", String(task["id"]), String(task["id"]), ["lifecycle", "wrap"])) {
+        return finished(tx, String(task["id"]), true);
+      }
       if (task["lifecycle"] === "active") problem("INVALID_TRANSITION", NOT_NOW.reopen, "task");
       call(tx, "task.reopen", { task: String(task["id"]) });
       return finished(tx, String(task["id"]), true);
@@ -648,7 +683,7 @@ function runOne(plan: Plan, i: number): Done {
         (note["kind"] === "note") !== op.kind.startsWith("note.") ||
         (patch && note["deleted_at"] !== null)
       ) {
-        problem("NOT_FOUND", "The task has no entry with this number", "ordinal");
+        problem("NOT_FOUND", NO_SUCH_ENTRY[patch ? "entry" : "note"], "ordinal");
       }
       const command =
         op.kind === "note.delete"

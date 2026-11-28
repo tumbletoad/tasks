@@ -35,9 +35,7 @@ const AUTHOR =
 const SQL = {
   prefix: "SELECT ref_prefix FROM space WHERE one = 1",
   lastSeq: "SELECT last_seq FROM space WHERE one = 1",
-  node:
-    "SELECT n.*, t.ref, t.outcome, p.kind AS parent_kind, p.title AS parent_title FROM nodes n " +
-    "LEFT JOIN tasks t ON t.id = n.id LEFT JOIN nodes p ON p.id = n.parent_id WHERE n.id = $id",
+  node: "SELECT n.*, t.ref, t.outcome FROM nodes n LEFT JOIN tasks t ON t.id = n.id WHERE n.id = $id",
   live: "SELECT id FROM nodes WHERE deleted_at IS NULL ORDER BY id",
   /** A node's sources: those it holds, and those its live links point at, as today's links. */
   sources:
@@ -49,7 +47,17 @@ const SQL = {
   notes:
     `SELECT e.id, e.kind, e.body, ${AUTHOR} AS author FROM notes e ` +
     "JOIN actors x ON x.id = e.author_id WHERE e.owner_id = $id AND e.deleted_at IS NULL",
-  childTasks: "SELECT id FROM nodes WHERE parent_id = $id AND kind = 'task'",
+  /** The tasks below a node, at any depth. */
+  tasksBelow:
+    "WITH RECURSIVE down(id) AS (SELECT id FROM nodes WHERE parent_id = $id UNION ALL " +
+    "SELECT n.id FROM nodes n JOIN down ON n.parent_id = down.id) " +
+    "SELECT d.id FROM down d JOIN nodes n ON n.id = d.id WHERE n.kind = 'task'",
+  /** The titles of the nodes above a node, the space's left out, from the top. */
+  titlesAbove:
+    "WITH RECURSIVE up(id, depth) AS (SELECT parent_id, 1 FROM nodes WHERE id = $id UNION ALL " +
+    "SELECT n.parent_id, up.depth + 1 FROM nodes n JOIN up ON n.id = up.id " +
+    "WHERE n.parent_id IS NOT NULL) SELECT n.title FROM up JOIN nodes n ON n.id = up.id " +
+    "WHERE n.kind <> 'space' ORDER BY up.depth DESC",
   stored:
     "SELECT d.doc, d.kind, d.entity_id, d.node_id, f.title, f.body, f.extra FROM search_docs d " +
     "LEFT JOIN search_fts f ON f.rowid = d.doc",
@@ -119,7 +127,11 @@ function nodeDocuments(conn: Connection, prefix: string, id: string): TreeDocume
             url: s["url"],
           }),
         ),
-        node["parent_kind"] === "space" ? null : node["parent_title"],
+        // What it sits in, as today's holds its area's and its project's names.
+        ...conn
+          .prepare(SQL.titlesAbove)
+          .all({ id })
+          .map((p: Row) => p["title"]),
         formatTaskRef(prefix, Number(node["ref"])),
       ]),
     });
@@ -246,8 +258,9 @@ export function indexTreeChanges(conn: Connection, seq: number, changes: readonl
     if (change.field === "owner" && change.before !== null) {
       nodes.add(String(JSON.parse(change.before)));
     }
-    if (change.entity === "nodes" && change.field === "title") {
-      for (const row of conn.prepare(SQL.childTasks).all({ id: change.node })) {
+    // A project's name, or where it sits, reaches the words of every task below it.
+    if (change.entity === "nodes" && (change.field === "title" || change.field === "place")) {
+      for (const row of conn.prepare(SQL.tasksBelow).all({ id: change.node })) {
         nodes.add(str(row["id"]));
       }
     }

@@ -686,7 +686,8 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
     const sql =
       "SELECT t.id AS id, t.ref AS ref, NULL AS doc, NULL AS entity FROM tasks t " +
       `WHERE ${where.join(" AND ")} ` +
-      `ORDER BY ${order}${DUE} IS NULL, ${DUE}, t.priority, t.touched DESC, t.id LIMIT ${limit}`;
+      // Tasks one commit touched stay in the order they were made, not by their random IDs.
+      `ORDER BY ${order}${DUE} IS NULL, ${DUE}, t.priority, t.touched DESC, t.ref LIMIT ${limit}`;
     return { kind: "tasks", sql, params: b.params, match: null };
   }
 
@@ -740,6 +741,6 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
       (g) =>
         "t.id IN (SELECT g.task_id FROM search_fts JOIN search_docs g ON g.doc = search_fts.rowid " +
         `WHERE search_fts MATCH ${g} AND g.kind IN ${TASK_TEXT}${ctx.audience === "agent" ? " AND g.audience = 'all'" : ""})`,
-    )}score DESC, t.touched DESC, t.id LIMIT ${limit}`;
+    )}score DESC, t.touched DESC, t.ref LIMIT ${limit}`;
   return { kind: "tasks", sql, params: b.params, match };
 }

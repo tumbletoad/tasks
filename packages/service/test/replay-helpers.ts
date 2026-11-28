@@ -10,23 +10,28 @@ import { expect } from "vitest";
 import { AppError, findEntry, type ErrorBody } from "@ttasks/contracts";
 import { CheckedDriver, createSpace, loadDriver, DEFAULT_DRIVER } from "@ttasks/storage";
 import type { Side } from "../../storage/test/both-helpers.ts";
+
+export type { Side };
 import { opCall, type Caller, type OpsHost } from "../src/ops/index.ts";
 import type { ContractWorld } from "./contract/suite.ts";
 import { classSession } from "./ops-helpers.ts";
 
 /**
  * A new space of each backend in the world's service, named and prefixed alike, so what one
- * shows of itself (its name, its prefix) is the other's too.
+ * shows of itself (its name, its prefix) is the other's too. `close` closes both, with their
+ * workers: a run of many sequences holds only the spaces of the one it runs.
  */
 export async function newSpaces(
   w: ContractWorld & { root: string },
   name: string,
-): Promise<{ today: string; tree: string }> {
+): Promise<{ today: string; tree: string; close(): Promise<void> }> {
   const checked = await CheckedDriver.check(await loadDriver(DEFAULT_DRIVER));
   const person = await classSession(w.home, w.path, "cli-interactive");
   try {
+    const folders: string[] = [];
     const open = async (tree: boolean) => {
       const folder = join(w.root, "s", `${name}-${tree ? "tree" : "today"}`);
+      folders.push(folder);
       createSpace(checked, folder, {
         name: "Mira",
         refPrefix: "M",
@@ -39,7 +44,20 @@ export async function newSpaces(
       };
       return opened.space.id;
     };
-    return { today: await open(false), tree: await open(true) };
+    const today = await open(false);
+    const tree = await open(true);
+    return {
+      today,
+      tree,
+      close: async () => {
+        const closer = await classSession(w.home, w.path, "cli-interactive");
+        try {
+          for (const folder of folders) await closer.call("space/close", { space: folder });
+        } finally {
+          closer.close();
+        }
+      },
+    };
   } finally {
     person.close();
   }
@@ -115,22 +133,32 @@ export function normal(value: unknown, s: Session, task = ""): unknown {
   if (typeof value === "string") {
     // An entry's number is its space's own: the tree numbers a task's notes and log in one thread.
     if (ENTRY.test(value)) return token(s, "e", `${task}|${value}`);
-    return value
-      .replace(/\b\d+\.\d+\.[0-9a-z]{8,}\b/gu, (asOf) => token(s, "as_of", asOf))
-      .replace(/\b\d{4}-\d\d-\d\dT[\d:.]+Z\b/gu, "<at>")
-      .replace(/\b(?:[a-z]{1,3}_[0-9a-z]{26}|[A-Z]{1,6}-\d+)\b/gu, (id) => token(s, "", id));
+    return (
+      value
+        .replace(/\b\d+\.\d+\.[0-9a-z]{8,}\b/gu, (asOf) => token(s, "as_of", asOf))
+        .replace(/\b\d{4}-\d\d-\d\dT[\d:.]+Z\b/gu, "<at>")
+        .replace(/\b(?:[a-z]{1,3}_[0-9a-z]{26}|[A-Z]{1,6}-\d+)\b/gu, (id) => token(s, "", id))
+        // A system commit's request ID ends in a random part of its own.
+        .replace(/\b(register-[a-z]+)-[0-9a-z]{26}\b/gu, (_, name: string) => `${name}-<random>`)
+    );
   }
   if (Array.isArray(value)) return value.map((v) => normal(v, s, task));
   if (typeof value === "object" && value !== null) {
     const own = (value as Record<string, unknown>)["task"];
     const scope = typeof own === "string" ? own : task;
+    // A batch's coverage is in commit seqs.
+    const batch = (value as Record<string, unknown>)["type"] === "batch";
     // A version and a seq count the space's own commits; a time in milliseconds is a time.
     return Object.fromEntries(
       Object.entries(value).map(([k, v]) => [
         k,
-        (k === "version" || k === "seq") && typeof v === "number"
+        (k === "version" ||
+          k === "seq" ||
+          k === "touched" ||
+          (batch && (k === "from" || k === "through"))) &&
+        typeof v === "number"
           ? token(s, "v", String(v))
-          : /(?:^|_)at$/u.test(k) && typeof v === "number"
+          : /(?:^|_)(?:at|since)$/u.test(k) && typeof v === "number"
             ? "<at>"
             : normal(v, s, scope),
       ]),

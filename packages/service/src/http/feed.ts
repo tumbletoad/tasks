@@ -248,6 +248,36 @@ const LAUNCH_TASKS =
   "(SELECT entity_id FROM changes WHERE seq > $after AND entity = 'launches')";
 const AREA_ROWS = `SELECT ${AREA_COLUMNS} FROM areas a WHERE a.id IN (${touched("areas")})`;
 const PROJECT_ROWS = `SELECT ${PROJECT_COLUMNS} FROM projects p WHERE p.id IN (${touched("projects")})`;
+
+/** A tree space's projects, read from its tree at any depth: the feed sends them as they are. */
+const TREE_NODE_COLUMNS =
+  "n.id, n.parent_id, n.title, n.position, n.color, n.archived_at, n.deleted_at";
+const LIVE_TREE_NODES =
+  `SELECT ${TREE_NODE_COLUMNS} FROM nodes n JOIN nodes p ON p.id = n.parent_id ` +
+  "WHERE n.kind = 'project' AND n.deleted_at IS NULL ORDER BY p.kind <> 'space', n.position, n.id";
+const TREE_NODE_ROWS =
+  `SELECT ${TREE_NODE_COLUMNS}, CASE p.kind WHEN 'space' THEN 'areas' ELSE 'projects' END ` +
+  "AS entity FROM nodes n JOIN nodes p ON p.id = n.parent_id WHERE n.kind = 'project' AND n.id IN " +
+  `(${touched("areas")} UNION ${touched("projects")})`;
+
+/** No rows, for a batch's parameters. */
+const NO_ROWS = "SELECT 1 WHERE $after < 0 AND $upto < 0";
+
+/** A project of a tree space as the feed sends a node, under the node it sits in. */
+function treeNodeOf(row: Row): CompactNode & CompactRow {
+  const color = row["color"];
+  const deleted = row["deleted_at"];
+  return {
+    id: String(row["id"]),
+    kind: "project",
+    parent: String(row["parent_id"]),
+    title: String(row["title"]),
+    position: String(row["position"]),
+    ...(typeof color === "string" ? { color } : {}),
+    state: row["archived_at"] === null ? "active" : "archived",
+    ...(typeof deleted === "number" ? { deleted_at: deleted } : {}),
+  };
+}
 /**
  * The pages a batch's commits changed, and those whose task, project or area they moved to the
  * Trash, brought back or filed elsewhere: their rows say whether they are shown, and where.
@@ -340,12 +370,13 @@ export async function readSnapshot(
   const folders = await hasFolderTable(reader);
   const since = { since: now - AGENT_CHANGE_DAYS * 86_400_000 };
   const withPages = await hasPageTable(reader);
+  const tree = reader.backend === "tree";
   const [space, tasks, areas, projects, preferences, changed, finished, asking, livePages] =
     await reader.transaction("deferred", [
       { sql: SPACE_SQL, mode: "get" },
       { sql: openTasks(folders), mode: "all" },
-      { sql: LIVE_AREAS, mode: "all" },
-      { sql: LIVE_PROJECTS, mode: "all" },
+      { sql: tree ? LIVE_TREE_NODES : LIVE_AREAS, mode: "all" },
+      { sql: tree ? "SELECT 1 WHERE 0" : LIVE_PROJECTS, mode: "all" },
       { sql: PREFERENCE_ROWS, mode: "all" },
       { sql: AGENT_CHANGES, mode: "all", params: since },
       { sql: agentChangedRows(folders), mode: "all", params: since },
@@ -377,8 +408,12 @@ export async function readSnapshot(
     asking: await taskRows(asking as Row[], head.ref_prefix, here),
     nodes: [
       { id: head.id, kind: "space", title: head.name, state: "active" },
-      ...(areas as Row[]).map((row) => nodeOf("areas", row, head.id)),
-      ...(projects as Row[]).map((row) => nodeOf("projects", row, head.id)),
+      ...(tree
+        ? (areas as Row[]).map(treeNodeOf)
+        : [
+            ...(areas as Row[]).map((row) => nodeOf("areas", row, head.id)),
+            ...(projects as Row[]).map((row) => nodeOf("projects", row, head.id)),
+          ]),
     ],
     ...(pages === undefined ? {} : { pages }),
     preferences: spacePreferencesOf(preferences as Row[]),
@@ -407,6 +442,7 @@ export async function readBatch(
   const params = { after, upto: after + limit };
   const withPages = await hasPageTable(reader);
   const folders = await hasFolderTable(reader);
+  const tree = reader.backend === "tree";
   const [
     space,
     commits,
@@ -426,8 +462,9 @@ export async function readBatch(
     { sql: CHANGES, mode: "all", params },
     { sql: ACTORS, mode: "all", params },
     { sql: taskRowsSql(folders), mode: "all", params },
-    { sql: AREA_ROWS, mode: "all", params },
-    { sql: PROJECT_ROWS, mode: "all", params },
+    { sql: tree ? TREE_NODE_ROWS : AREA_ROWS, mode: "all", params },
+    // A tree space's projects are all in the one read above.
+    { sql: tree ? NO_ROWS : PROJECT_ROWS, mode: "all", params },
     { sql: LAUNCH_TASKS, mode: "all", params: { after } },
     { sql: LATER, mode: "all", params: { upto: params.upto } },
     ...(folders
@@ -452,12 +489,18 @@ export async function readBatch(
     const id = row["id"];
     if (typeof id === "string") rows.set(`tasks:${id}`, row);
   }
-  for (const [table, list] of [
-    ["areas", areas],
-    ["projects", projects],
-  ] as const) {
-    for (const row of list as Row[]) {
-      rows.set(`${table}:${String(row["id"])}`, nodeOf(table, row, head.id));
+  if (tree) {
+    for (const row of areas as Row[]) {
+      rows.set(`${String(row["entity"])}:${String(row["id"])}`, treeNodeOf(row));
+    }
+  } else {
+    for (const [table, list] of [
+      ["areas", areas],
+      ["projects", projects],
+    ] as const) {
+      for (const row of list as Row[]) {
+        rows.set(`${table}:${String(row["id"])}`, nodeOf(table, row, head.id));
+      }
     }
   }
   /** The pages of each task, project or area a batch moved to the Trash, back or elsewhere. */
