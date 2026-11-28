@@ -1,4 +1,4 @@
-// `ttasks shim` is entered before the CLI loads (A4 3.6.3, the way in `ttasks mcp` has too):
+// `ttasks shim` is entered before the CLI loads (the way in `ttasks mcp` has too):
 // bin.ts imports the shim only for its verb, and the shim loads only its own modules, the protocol
 // client and discovery of @ttasks/bridge, three leaf modules of @ttasks/launch (the start time
 // readers, the wire, and places with its Git remote reader for the in-folder check), @ttasks/brand
@@ -22,7 +22,7 @@ const RECORDER = new URL("../../../tests/forwarder/load-recorder.ts", import.met
 /**
  * The built-ins the shim may load: the bridge's, a child process for the agent, tty, and
  * fs/promises for the in-folder check (the build's SHIM_BUILTINS hold the same list), and v8,
- * which the entry's safe-exit loads before the shim (A2 3.12.1).
+ * which the entry's safe-exit loads before the shim.
  */
 const BUILTINS = [
   "child_process",
@@ -41,7 +41,7 @@ const BUILTINS = [
 /** The files the shim may load, by their path in the repository. */
 const ALLOWED: readonly RegExp[] = [
   /^packages\/cli\/src\/(bin|mcp)\.ts$/,
-  // The entry's first import (A2 3.12.1).
+  // The entry's first import.
   /^packages\/bridge\/src\/safe-exit\.ts$/,
   /^packages\/cli\/src\/shim\/[a-z-]+\.ts$/,
   /^packages\/bridge\/src\/protocol\/[a-z-]+\.ts$/,
@@ -51,7 +51,7 @@ const ALLOWED: readonly RegExp[] = [
   /^packages\/launch\/src\/(places|git-remote|intents)\.ts$/,
   /^packages\/launch\/src\/shim\/wire\.ts$/,
   /^packages\/brand\/src\/index\.ts$/,
-  // exit.json's exact mode (A2 3.2.2 rule 5): a leaf that imports only Node built-ins.
+  // exit.json's exact mode: a leaf that imports only Node built-ins.
   /^packages\/files\/src\/index\.ts$/,
 ];
 

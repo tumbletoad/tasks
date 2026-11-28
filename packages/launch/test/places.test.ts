@@ -1,4 +1,4 @@
-// Places on the real file system (A1 3.15, A4 3.3, R11; M2.07's Verify line): symbolic link and
+// Places on the real file system: symbolic link and
 // junction escapes, `..`, Windows case, a missing root, a nested folder and a sibling clone each
 // give their reason, and no case returns another folder. Every tree is built in a temporary folder
 // of its own, with real links: junctions on Windows (no special right needed), symbolic links

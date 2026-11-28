@@ -1,4 +1,4 @@
-// A fake terminal program (A4 3.6.2; M2.09). The service's terminal adapters start it in place of
+// A fake terminal program. The service's terminal adapters start it in place of
 // Ghostty, GNOME Terminal, Windows Terminal and the others: a test's spawner (fakes.ts) maps the
 // terminal's program path to `node <this file>` and passes every argument the service built.
 //

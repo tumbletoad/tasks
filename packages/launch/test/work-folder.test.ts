@@ -1,4 +1,4 @@
-// The space's TTasks work folder (A4 3.3): `<state>/workdirs/space-<id>/`, where a
+// The space's TTasks work folder: `<state>/workdirs/space-<id>/`, where a
 // task without a place works. Before anything is made or entered, `workdirs` and the space's folder
 // must each be a real folder (no link, junction or other reparse point), this user's, user-only on
 // POSIX, and inside its parent by identity; only then is the work folder resolved like a place.

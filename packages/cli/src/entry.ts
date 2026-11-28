@@ -1,17 +1,17 @@
-// `lib/ttasks.mjs`, the entry of a built version folder (A2 3.12.2). The launchers run it as
+// `lib/ttasks.mjs`, the entry of a built version folder. The launchers run it as
 // `runtime/node --report-exclude-env lib/ttasks.mjs <args>`. From source, bin.ts is the entry.
 //
 // 1. It turns on Node's on-disk compile cache in `<cache>/compile/` before anything else loads, so
-//    later starts skip most parsing (A2 3.12.2). The build bundles this file on its own, without
+//    later starts skip most parsing. The build bundles this file on its own, without
 //    code splitting, so it imports no chunk before the cache is on.
 // 2. It routes before it loads, as bin.ts does: `ttasks mcp` hands over to the bridge, which the
-//    build ships as its own `lib/bridge.mjs` of Node built-ins only (A2 3.7.1); `ttasks shim` hands
-//    over to the launch shim, which the build ships as its own `lib/shim.mjs` (A4 3.6.3); every
+//    build ships as its own `lib/bridge.mjs` of Node built-ins only; `ttasks shim` hands
+//    over to the launch shim, which the build ships as its own `lib/shim.mjs`; every
 //    other command loads the CLI, which the build ships as `lib/chunks/cli.mjs`.
 // 3. It tells the CLI which version folder it runs from: its own parent, whose manifest.json
-//    doctor's integrity and runtime rows check, and whose `ui/` the service serves (M2.13).
+//    doctor's integrity and runtime rows check, and whose `ui/` the service serves.
 // Before all of these, safe-exit: the bridge, the shim and `ttasks serve` end through
-// `process.exit`, which the pinned Node can otherwise hang in (A2 3.12.1).
+// `process.exit`, which the pinned Node can otherwise hang in.
 import "@ttasks/bridge/safe-exit";
 import module from "node:module";
 import { dirname, join } from "node:path";
@@ -31,7 +31,7 @@ if (isBridge(argv)) {
   process.exit(await runBridge(argv.slice(1)));
 }
 if (argv[0] === "shim") {
-  // The launch shim (A4 3.6.3): the agent's exit code is its own.
+  // The launch shim: the agent's exit code is its own.
   const { runShim } = await import("./shim/run.ts");
   process.exit(await runShim(argv.slice(1)));
 }

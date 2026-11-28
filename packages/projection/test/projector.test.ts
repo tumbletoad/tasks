@@ -1,4 +1,4 @@
-// The projection over a real space (A1 3.13, A7 3.10 M3.10's Verify line): after quiescence the
+// The projection over a real space: after quiescence the
 // tree equals a fresh render, the watermark never covers an unrendered task, batches cross moves,
 // files are read-only, and what is not the projection's is never written through, overwritten,
 // deleted or changed in mode: where a generated file needs its place it is moved aside by one

@@ -1,6 +1,6 @@
 // What the bridge needs to know about an MCP line: its kind, its ID and its method, from one
-// parse (A2 3.7.2 step 3). The line itself is forwarded unchanged. And which MCP era a request
-// belongs to, which only the offline responder needs (A2 3.7.4).
+// parse. The line itself is forwarded unchanged. And which MCP era a request
+// belongs to, which only the offline responder needs.
 import type { JsonObject } from "../protocol/index.ts";
 
 export type RequestId = string | number;
@@ -50,7 +50,7 @@ export function inspect(line: string): Message {
   return isRequestId(id) ? { kind: "response", id } : OTHER;
 }
 
-// --- MCP eras (A2 3.6.4, A3 3.3; the 2025-11-25 and 2026-07-28 schemas)
+// --- MCP eras (the 2025-11-25 and 2026-07-28 schemas)
 
 export type Era = "legacy" | "modern";
 
@@ -114,6 +114,6 @@ export function lightParams(params: JsonObject | undefined): JsonObject | undefi
   return light;
 }
 
-/** A request that starts a session, which the bridge keeps as `mcp_init` (A2 3.7.4). */
+/** A request that starts a session, which the bridge keeps as `mcp_init`. */
 export const isInitRequest = (method: string): boolean =>
   method === "initialize" || method === "server/discover";

@@ -1,4 +1,4 @@
-// `ttasks mcp`, the bridge (A2 3.7): a thin forwarder between an agent app's stdio and the
+// `ttasks mcp`, the bridge: a thin forwarder between an agent app's stdio and the
 // service's mcp mode. Node built-ins and its own package only, so it starts fast and stays small.
 export { USAGE, parseArgs, type McpArgs } from "./args.ts";
 export {

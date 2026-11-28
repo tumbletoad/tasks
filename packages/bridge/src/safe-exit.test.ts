@@ -1,4 +1,4 @@
-// safe-exit.ts (A2 3.12.1): with it loaded, no Sparkplug batch is compiled on a V8 worker thread and
+// safe-exit.ts: with it loaded, no Sparkplug batch is compiled on a V8 worker thread and
 // no function is compiled by Maglev, so `process.exit` cannot meet a compile job that waits on a
 // worker for a collection the main thread never makes. tests/runtime/safe-exit-entries.test.ts
 // checks that every script that needs it loads it first.

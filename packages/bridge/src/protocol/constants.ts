@@ -1,24 +1,24 @@
-// The fixed values of `ttasks-local/1` (A2 3.6, docs/protocol/ttasks-local-1.md). They are wire
+// The fixed values of `ttasks-local/1` (docs/protocol/ttasks-local-1.md). They are wire
 // constants that a forwarder hard-codes too. Every bound the protocol applies is named here.
 
-/** The protocol this build speaks (A2 3.6.6). An integer that changes only for incompatible changes. */
+/** The protocol this build speaks. An integer that changes only for incompatible changes. */
 export const PROTOCOL = 1;
 
-/** The modes a hello may name (A2 3.6.4). */
+/** The modes a hello may name. */
 export const MODES = ["rpc", "mcp"] as const;
 export type Mode = (typeof MODES)[number];
 
-/** `client.kind` values of the bind frame (A2 3.6.3). */
+/** `client.kind` values of the bind frame. */
 export const CLIENT_KINDS = ["cli", "bridge", "shim", "forwarder"] as const;
 export type ClientKind = (typeof CLIENT_KINDS)[number];
 
-/** `ipc.key` holds 32 random bytes as base64url (A2 3.2.3). */
+/** `ipc.key` holds 32 random bytes as base64url. */
 export const KEY_BYTES = 32;
 
-/** `Ns` and `Nc`: 32 random bytes, base64url (A2 3.6.3). */
+/** `Ns` and `Nc`: 32 random bytes, base64url. */
 export const NONCE_BYTES = 32;
 
-/** The longest line either side accepts once the handshake is done (A2 3.6.2). */
+/** The longest line either side accepts once the handshake is done. */
 export const MAX_LINE_BYTES = 8 * 1024 * 1024;
 
 /**
@@ -32,7 +32,7 @@ export const HELLO_MAX_BYTES = 1024;
 export const BIND_MAX_BYTES = 1024 * 1024;
 
 /**
- * rpc requests a connection may have in flight (A2 3.6.4). The service refuses a request beyond
+ * rpc requests a connection may have in flight. The service refuses a request beyond
  * it at once and keeps reading, so `$/cancel` always arrives. The client sends no more than this
  * and queues the rest. A cancelled request counts until the service answers it.
  */
@@ -41,7 +41,7 @@ export const MAX_IN_FLIGHT = 64;
 /** The deepest nesting accepted in a value that canonical JSON covers (bind frame and result). */
 export const MAX_JSON_DEPTH = 64;
 
-/** The most protocol versions a challenge may list. The service lists two at most (A2 3.6.6). */
+/** The most protocol versions a challenge may list. The service lists two at most. */
 export const MAX_PROTOCOLS = 8;
 
 /** The longest instance ID a challenge may carry. */
@@ -60,7 +60,7 @@ export const CONNECT_TIMEOUT_MS = 5_000;
  * from accept to a verified bind frame. */
 export const HANDSHAKE_TIMEOUT_MS = 5_000;
 
-/** A wrong proof or bind closes the connection after this fixed delay (A2 3.6.3). */
+/** A wrong proof or bind closes the connection after this fixed delay. */
 export const REFUSAL_DELAY_MS = 200;
 
 /**
@@ -71,7 +71,7 @@ export const REFUSAL_DELAY_MS = 200;
  */
 export const OUTPUT_STALL_MS = 30_000;
 
-/** Handshake method names (A2 3.6.3) and rpc mode's cancellation (A2 3.6.2). */
+/** Handshake method names and rpc mode's cancellation. */
 export const METHOD = {
   challenge: "ttasks/challenge",
   hello: "ttasks/hello",
@@ -83,7 +83,7 @@ export const METHOD = {
 export const HELLO_ID = 0;
 export const BIND_ID = 1;
 
-/** JSON-RPC error codes the protocol uses. TTasks errors travel as `app` with A3's body in `data`. */
+/** JSON-RPC error codes the protocol uses. TTasks errors travel as `app` with the TTasks error body in `data`. */
 export const RPC_ERROR = {
   parse: -32700,
   invalidRequest: -32600,
@@ -94,12 +94,12 @@ export const RPC_ERROR = {
   cancelled: -32800,
 } as const;
 
-/** The error message of a line over the limit, sent once before the service closes (A2 3.6.2). */
+/** The error message of a line over the limit, sent once before the service closes. */
 export const FRAME_TOO_LARGE = "frame_too_large";
 
 /**
- * Environment names that make the service classify a CLI connection as `cli-agent` (A2 3.6.5).
- * A3 maintains the list. `CODEX_SANDBOX` is a prefix: every name that starts with it counts.
+ * Environment names that make the service classify a CLI connection as `cli-agent`.
+ * `CODEX_SANDBOX` is a prefix: every name that starts with it counts.
  */
 export const AGENT_MARKERS = [
   "CLAUDECODE",
@@ -124,8 +124,8 @@ export function isContextEnvName(name: string): boolean {
 }
 
 /**
- * The environment names a bridge copies into an mcp mode bind context, and no others (A2 3.6.4,
- * A3 3.7.2): the native session IDs, A4's ticket and A4's two hints. A3 maintains the list.
+ * The environment names a bridge copies into an mcp mode bind context, and no others:
+ * the native session IDs, the launch ticket and the launch's two hints.
  */
 export const MCP_CONTEXT_ENV = [
   "CLAUDE_CODE_SESSION_ID",

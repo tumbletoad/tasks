@@ -1,5 +1,4 @@
-// Two installs on one machine (A7 3.8 M1.14's Verify line, gate G2's install predicate S06, A2
-// 3.2.1, review SL-03): installed by the install script into two temporary TTASKS_HOMEs, each has
+// Two installs on one machine: installed by the install script into two temporary TTASKS_HOMEs, each has
 // its own install ID, state and endpoint, and a test install started and stopped beside another
 // leaves the other's CLI and bridge calls working, before, during and after. Real processes, a
 // release built offline, fixture text only; every PID is stopped by this test.

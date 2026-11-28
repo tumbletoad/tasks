@@ -1,7 +1,7 @@
-// A test install around a built version folder (A2 3.12.2's layout), laid out by hand in a
+// A test install around a built version folder, laid out by hand in a
 // temporary folder: the build's runtime gate and `pnpm accept --installed` run the build through
 // its launchers in it, as real processes, with the install root as TTASKS_HOME (it holds
-// home.marker, so the launchers set TTASKS_HOME to it). Install itself is M1.14's; this is only the
+// home.marker, so the launchers set TTASKS_HOME to it). Install itself is the install scripts'; this is only the
 // layout, never the user's install, PATH or registry.
 //
 //   <root>/versions/<v>/   the version folder, its files hard-linked (copied where a link fails)

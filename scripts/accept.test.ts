@@ -1,4 +1,4 @@
-// pnpm accept (A7 3.3, 3.18.6): the arguments, and which manifest entries a run takes.
+// pnpm accept: the arguments, and which manifest entries a run takes.
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -51,7 +51,7 @@ describe("[A7.3.18.6.accept.parts] pnpm accept m<N> [--part <name>]", () => {
     ]);
     expect(PARTS["m1"]?.["cli"]).toEqual(["A2.3.10.cli.accept"]);
     expect(PARTS["m1"]?.["build"]).toEqual(["A2.3.10.cli.accept", "A2.3.10.cli.space"]);
-    // M2's build part is M1's and the launch shim from the build (A4 3.6.3).
+    // M2's build part is M1's and the launch shim from the build.
     expect(PARTS["m2"]?.["build"]).toEqual([
       ...(PARTS["m1"]?.["build"] ?? []),
       "A4.5.shim.installed",
@@ -62,7 +62,7 @@ describe("[A7.3.18.6.accept.parts] pnpm accept m<N> [--part <name>]", () => {
       profile: "v1",
       installed: "dist/linux-x64",
     });
-    // M3.01's installed-build migration drill.
+    // The installed-build migration drill.
     expect(PARTS["m3"]?.["migration"]).toEqual(["A1.5.migration.drill"]);
     const drill = [...entries, entry("A1.5.migration.drill", "M3"), entry("A3.d", "M3")];
     expect(
@@ -119,7 +119,7 @@ describe("[A7.3.18.6.accept.parts] pnpm accept m<N> [--part <name>]", () => {
 
   test("every part runs all of its entries against an installed build, in the real manifest", () => {
     // An installed run takes only `installed` entries: a part naming a `ci` entry would run nothing
-    // there and still pass (M3.01's drill, once M1.14 made --installed run `installed` entries).
+    // there and still pass (the migration drill).
     const { entries, errors } = parseManifest(
       JSON.parse(readFileSync(join(repoRoot, "tests", "manifest.json"), "utf8")) as unknown,
     );

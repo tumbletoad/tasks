@@ -1,4 +1,4 @@
-// One bounded run of a helper program whose output the service reads (A4 3.8: the session layer,
+// One bounded run of a helper program whose output the service reads (the session layer,
 // the login-shell snapshot, the registry layers). Never through a shell, stdin closed, a hard
 // deadline, a bound on what is read, and a defined result for every way it can go:
 // - `done`: the program wrote what the caller waits for (`complete` said so), or it ended. When

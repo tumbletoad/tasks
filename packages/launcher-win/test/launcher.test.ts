@@ -1,4 +1,4 @@
-// ttasks.exe and ttasksw.exe (A2 3.12.3, A7 3.8 M1.11): the build, hostile argv, the job object and
+// ttasks.exe and ttasksw.exe: the build, hostile argv, the job object and
 // the two modes. Windows only: on other platforms every test is collected and skipped.
 import { spawn, spawnSync } from "node:child_process";
 import {
@@ -990,7 +990,7 @@ describe.runIf(windows)("Windows launchers", () => {
     });
 
     test("an install root inside a folder named versions is still a stable install", () => {
-      // A TTASKS_HOME root whose parent folder happens to be named versions (A2 3.12.3 step 1).
+      // A TTASKS_HOME root whose parent folder happens to be named versions.
       const root = join(work, "parent", "versions", "home");
       mkdirSync(root, { recursive: true });
       writeFileSync(join(root, "home.marker"), "");

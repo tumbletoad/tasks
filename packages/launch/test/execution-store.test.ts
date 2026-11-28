@@ -1,6 +1,6 @@
-// The execution store's contract suite against each v1 backend (A4 3.16.1, 5.1), the space
+// The execution store's contract suite against each v1 backend, the space
 // database's through a storage worker as the service runs it, and the rules the writer keeps a
-// copy of, compared with A4's own.
+// copy of, compared with the launch package's own.
 import fc from "fast-check";
 import {
   APP_TOOLS_STATES,

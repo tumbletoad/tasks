@@ -1,4 +1,4 @@
-// T3's machine state (A4 3.16 "T3 state", A7 3.9 M2.11): the plans file is read back whole, and the
+// T3's machine state: the plans file is read back whole, and the
 // service's reader takes no file over T3_FILE_MAX_BYTES (hub/t3.ts). A write must never grow it past
 // that size, or the next read finds nothing and the next write drops every plan, among them the ones
 // a repeat or a folder check still needs. Fixture data only, in memory.

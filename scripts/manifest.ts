@@ -1,4 +1,4 @@
-// The test-manifest check (A7 3.18.6, AGENTS.md "Every new test carries its ID").
+// The test-manifest check (AGENTS.md "Every new test carries its ID").
 //
 // How a test carries its ID: put the manifest ID in square brackets in the test title or in the
 // title of an enclosing `describe`, for example
@@ -36,7 +36,7 @@ import { binPath, repoRoot, runNode } from "./run.ts";
 export const KINDS = ["ci", "installed", "manual"] as const;
 export type Kind = (typeof KINDS)[number];
 
-/** The scope profiles of A7 3.18.6. */
+/** The scope profiles. */
 export const PROFILES = [
   "v1",
   "v1-cut-1",

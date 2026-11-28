@@ -1,15 +1,14 @@
-// Exact-folder binding for T3 (A4 3.4.1 "Exact-folder binding", R11, L5): a resolved folder P maps
+// Exact-folder binding for T3: a resolved folder P maps
 // to a T3 project whose root is exactly P, or to an existing git worktree of a registered project,
 // or to nothing, never to a containing project. T3's own path resolution (the deepest containing
 // project) is never used.
 //
-// Everything is compared by directory identity (volume and file number), as places are (A1
-// 3.15): a project root names P when a stat of it gives P's identity, whatever its spelling, case,
+// Everything is compared by directory identity (volume and file number), as places
+// are: a project root names P when a stat of it gives P's identity, whatever its spelling, case,
 // links or short names. A root T3 lists that has no identity here (missing, unreachable, a volume
-// without file numbers) names nothing. A4 3.4.1 compares real paths; identity is the stricter form
-// of the same rule.
+// without file numbers) names nothing. Identity is stricter than comparing real paths.
 //
-// Git is read from its files, never by starting git (A1 3.15): `.git` as a folder
+// Git is read from its files, never by starting git: `.git` as a folder
 // (the main worktree) or a file `gitdir: <path>` whose git folder has a `commondir` (a linked
 // worktree). A linked worktree is in its repository's `git worktree list` when its git folder lies
 // in `<common>/worktrees/` and that folder's `gitdir` file names this worktree's `.git` back; the
@@ -31,7 +30,7 @@ export interface T3Project {
   readonly root: string;
 }
 
-/** What binding found: a project and strategy for P, or nothing (A4 3.4.1 step 4). */
+/** What binding found: a project and strategy for P, or nothing. */
 export type T3Binding =
   | { readonly kind: "bound"; readonly projectId: string; readonly strategy: T3Strategy }
   | { readonly kind: "none" };
@@ -134,8 +133,8 @@ export async function worktreeAt(
 }
 
 /**
- * Binds `folder` to a T3 project (A4 3.4.1 steps 2 and 3), or finds none (step 4). Step 2: a
- * project whose root is the folder. Step 3: the folder is the top level of a git worktree listed in
+ * Binds `folder` to a T3 project, or finds none. First a
+ * project whose root is the folder, then the folder is the top level of a git worktree listed in
  * its repository's worktree list, and a project's root is a worktree of the same repository; the
  * one whose root is the main worktree is preferred. A project whose root merely contains the folder
  * is never a binding.

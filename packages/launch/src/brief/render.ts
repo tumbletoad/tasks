@@ -22,14 +22,14 @@ import { SPACE_ID } from "../shim/records.ts";
 import { isBriefSafe, sanitiseComposer, sanitisePath, sanitiseTitle } from "./sanitise.ts";
 
 /**
- * Which template (A4 3.15.2): `sent` for the CLI terminal routes (the brief is the first turn),
+ * Which template: `sent` for the CLI terminal routes (the brief is the first turn),
  * `prefilled` for routes that put it in a composer unsent (Claude Code, a link, T3 Code), and
- * `pointer` for Copy (A4 3.15.4).
+ * `pointer` for Copy.
  */
 export type BriefKind = "sent" | "prefilled" | "pointer";
 export const BRIEF_KINDS: readonly BriefKind[] = ["sent", "prefilled", "pointer"];
 
-/** The tool and command names the brief names, from the registry (A4 3.15.1). */
+/** The tool and command names the brief names, from the registry. */
 export interface BriefNames {
   /** The MCP server's key: "the ttasks tool get_task". */
   readonly server: string;
@@ -39,11 +39,11 @@ export interface BriefNames {
   readonly command: string;
 }
 
-/** Where the task works, for the pointer brief's folder line (A4 3.15.4). */
+/** Where the task works, for the pointer brief's folder line. */
 export type BriefFolder =
   /** The task's or its project's folder here, the home as `~`, and whether it is there now. */
   | { readonly kind: "folder"; readonly path: string; readonly found: boolean }
-  /** The space's TTasks work folder on this machine (A4 3.3). */
+  /** The space's TTasks work folder on this machine. */
   | { readonly kind: "work_folder"; readonly absolute: string | undefined }
   /** A folder on another machine only, by that machine's name. */
   | { readonly kind: "elsewhere"; readonly machine: string };
@@ -65,7 +65,7 @@ export interface BriefInput {
   readonly composer?: string | undefined;
   /** The pointer brief's folder line. Required for `pointer`, ignored otherwise. */
   readonly folder?: BriefFolder;
-  /** The route's budget in characters (A4 3.15.3). */
+  /** The route's budget in characters. */
   readonly budget: number;
   readonly names: BriefNames;
 }
@@ -76,7 +76,7 @@ export type Brief =
       readonly text: string;
       /**
        * SHA-256 of the brief with its launch reference as a slot and the composer text as a
-       * marker, lower-case hex: what the click records (A4 3.16). The reference is the writer's to
+       * marker, lower-case hex: what the click records. The reference is the writer's to
        * give, after the click is recorded; the composer text is the person's own and never
        * reaches the space, not even as a hash a short text could be found from.
        */
@@ -101,19 +101,19 @@ export const REFERENCE_SLOT = "{{launch.ref}}";
 /** Stands for the composer text in the hashed text: the person's words never reach the space. */
 export const COMPOSER_MARK = "{{composer}}";
 
-/** A task's reference (A1: the space's prefix, a dash and a number). */
+/** A task's reference (the space's prefix, a dash and a number). */
 export const TASK_REF = /^[A-Z][A-Z0-9]{0,15}-[1-9][0-9]{0,9}$/;
 /** A name the brief takes from the registry: a tool, a server key, a command. */
 const NAME = /^[a-z][a-z0-9_ -]{0,63}$/;
 
-/** The last line of a sent brief without composer text (A4 3.15.2). */
+/** The last line of a sent brief without composer text. */
 export const WAIT_LINE = "Read the task, then wait for my instructions.";
-/** The last line when the composer text was saved as a note (A4 3.15.3). */
+/** The last line when the composer text was saved as a note. */
 export const NOTE_LINE = "Read my latest note on the task first.";
 /** The last line of an Open route's brief when the person's words are the launch's request. */
 export const REQUEST_LINE = "Load it now: my request for this launch comes with it.";
 
-/** The fixed lines every brief starts with (A4 3.15.2). */
+/** The fixed lines every brief starts with. */
 function head(input: BriefInput, reference: string): string[] {
   const { space, names } = input;
   return [
@@ -132,7 +132,7 @@ function firstLine(input: BriefInput, reference: string): string {
   return `${PRODUCT_NAME} task ${input.task}${named} (launch ${reference}).`;
 }
 
-/** The folder line of the pointer brief and the context pack (A4 3.15.4, 3.15.5). */
+/** The folder line of the pointer brief and the context pack. */
 export function folderLine(folder: BriefFolder): string {
   switch (folder.kind) {
     case "folder":
@@ -148,7 +148,7 @@ export function folderLine(folder: BriefFolder): string {
   }
 }
 
-/** The pointer brief's two lines (A4 3.15.4). */
+/** The pointer brief's two lines. */
 function pointerLines(folder: BriefFolder, names: BriefNames): string[] {
   return [
     folderLine(folder),
@@ -199,13 +199,13 @@ export function briefReference(text: string): string | undefined {
   return found !== undefined && isLaunchRef(found) ? found : undefined;
 }
 
-/** SHA-256 of a brief as the click records it (A4 3.16), with its domain. */
+/** SHA-256 of a brief as the click records it, with its domain. */
 export function briefHash(text: string): string {
   return createHash("sha256").update(`${PRODUCT_ID}-brief/1\n${text}`, "utf8").digest("hex");
 }
 
 /**
- * The brief for a route (A4 3.15). Throws on an input that is not one (a reference, a task
+ * The brief for a route. Throws on an input that is not one (a reference, a task
  * reference or a name of the wrong form): a launch is refused rather than given a brief that
  * could carry anything else.
  */

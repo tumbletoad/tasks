@@ -1,10 +1,10 @@
-// The service's side of the launch shim (A4 3.6.3, 3.9.3): tickets, the one spawn
+// The service's side of the launch shim: tickets, the one spawn
 // claim, the attachment credential, re-attaching, the shim's reports, and what recovery and the
 // PID check observe. Transport-free: the service's rpc handlers (packages/service/src/launch) call
 // it with the params as they came and the connection's attachment.
 //
 // The rules it keeps:
-// - A ticket is issued once per intent, when its dispatch starts (A4 3.6.3: the window runs
+// - A ticket is issued once per intent, when its dispatch starts (the window runs
 //   from Dispatching), and stored as a hash bound to its launch (secrets.ts). Its shim role is
 //   claimed once, within 120 s of issue, by a process that is alive with exactly the start time
 //   the claim names. From the claim until the launch is released it names that live launch for
@@ -56,7 +56,7 @@ import {
   type ReportMethod,
 } from "./wire.ts";
 
-/** A4 3.6.3: a launch folder whose shim is gone or that is older than this is removed. */
+/** A launch folder whose shim is gone or that is older than this is removed. */
 export const FOLDER_MAX_AGE_MS = 24 * 60 * 60_000;
 
 /** What a connection holds once it claimed or attached: the launch it may report about. */
@@ -180,7 +180,7 @@ const exitCode = (code: number | null): Evidence =>
     : {};
 
 /**
- * What an agent's end means for its launch (A4 3.9.2's terminal row). A folder the shim's check
+ * What an agent's end means for its launch. A folder the shim's check
  * refused is recorded with the folder's own reason, so the task says why.
  */
 export function exitObservation(exit: {
@@ -241,7 +241,7 @@ export class ShimHost {
   }
 
   /**
-   * Keeps a terminal launch's spawn plan in machine state, at the click (A4 3.9.1 Prepared), with
+   * Keeps a terminal launch's spawn plan in machine state, at the click (Prepared), with
    * the agent's app, its home and the session ID the click preset for it, and the session the
    * launch is. A repeated click that returned the same intent keeps the record it has.
    */
@@ -266,7 +266,7 @@ export class ShimHost {
    * Issues the launch's ticket, durably as its hash with the folder resolved for it, and returns
    * it: the terminal's dispatch step calls it once, after Dispatching is committed and the folder
    * resolved, and before the terminal starts in that folder. The claim's reply hands the shim the
-   * folder's check (A4 3.3).
+   * folder's check.
    */
   issueTicket(launch: string, folder: { path: string; check: FolderCheck }): string {
     const record = this.#records.get(launch);
@@ -288,8 +288,8 @@ export class ShimHost {
   }
 
   /**
-   * Whether the launch's ticket has had its shim role spent: a claim is under way or done (A4
-   * 3.6.2's "the shim claimed" for a direct terminal). The spend happens before the claim waits
+   * Whether the launch's ticket has had its shim role spent: a claim is under way or done (the
+   * shim claimed, for a direct terminal). The spend happens before the claim waits
    * for the intent's section, so the terminal's dispatch step sees it while it still runs.
    */
   ticketSpent(launch: string): boolean {
@@ -297,7 +297,7 @@ export class ShimHost {
   }
 
   /**
-   * A direct terminal took its window with it before any claim (A4 3.6.2): the launch's ticket is
+   * A direct terminal took its window with it before any claim: the launch's ticket is
    * revoked and the next terminal gets a new one, with a window of its own. In one synchronous step,
    * so a claim either spent the old ticket first (then nothing is revoked and this returns
    * undefined: a claim came) or finds it gone (a claim already reading it is refused, since it
@@ -356,7 +356,7 @@ export class ShimHost {
   }
 
   /**
-   * `launch.claim` (A4 3.6.3 step 3). `send` is the reply, run inside the claim's section once the
+   * `launch.claim`. `send` is the reply, run inside the claim's section once the
    * claim is durable and the credential is stored.
    */
   async claim(params: unknown, send: SendReply): Promise<ClaimOutcome> {
@@ -470,7 +470,7 @@ export class ShimHost {
     }
   }
 
-  /** `launch.attach` (A4 3.6.3 "Re-attaching"): the credential, the same PID and start time, alive. */
+  /** `launch.attach`: the credential, the same PID and start time, alive. */
   async attach(params: unknown): Promise<AttachOutcome> {
     if (!isObject(params)) return refused("malformed");
     const { credential, pid, start_time: startTime } = params;
@@ -677,7 +677,7 @@ export class ShimHost {
   }
 
   /**
-   * Recovery's look at a claimed terminal launch after a restart (A4 3.9.3, RecoverySteps.observe):
+   * Recovery's look at a claimed terminal launch after a restart (RecoverySteps.observe):
    * `exit.json` finalizes; a shim that is alive with its start time is pending until it re-attaches
    * and reports; one that is gone, or never got its credential, is lost. A check the OS could not
    * answer is pending, never lost. `copy`: the copy of the space whose recovery asks, when it is
@@ -696,7 +696,7 @@ export class ShimHost {
   }
 
   /**
-   * The PID check (A4 3.6.3, every 30 s in the service, and after recovery): each attached shim
+   * The PID check (every 30 s in the service, and after recovery): each attached shim
    * whose agent ended is settled by its `exit.json` (also while the shim still waits for Enter),
    * and one whose process ended without it as lost, and its record goes. A folder nothing more can
    * come from goes too: an unclaimed ticket past its window, a plan never dispatched past the

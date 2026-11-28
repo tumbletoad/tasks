@@ -1,5 +1,4 @@
-// A kill at every act on disk (A7 3.10 M3.10's Verify line, A1 5 "Crash points": the projection
-// rename): at the n-th act of a start and a batch, renames, temporary files, the record and the
+// A kill at every act on disk: at the n-th act of a start and a batch, renames, temporary files, the record and the
 // journal included, the run stops for good, as a killed process does: that act and every one after
 // it never happen, and the writer answers nothing more. A new projector then starts on the same
 // folder and state. The tree must be valid at once: complete files only, no temporary file, and a

@@ -1,4 +1,4 @@
-// T3 Code's server as an outside MCP client reaches it (A4 3.4.1): its origin, read from T3's own
+// T3 Code's server as an outside MCP client reaches it: its origin, read from T3's own
 // `server-runtime.json`; HTTP with a deadline on every request; and MCP over Streamable HTTP at
 // `<origin>/mcp` with the pairing's bearer token (the 2025-11-25 era: `initialize`, then calls in
 // the session it opens). Nothing here writes; the route decides what a failure means.
@@ -21,7 +21,7 @@ export const T3_MAX_ANSWER = 4 * 1024 * 1024;
 /** The largest `server-runtime.json` read. */
 const MAX_RUNTIME_FILE = 64 * 1024;
 
-/** The MCP versions this client speaks, newest first (the 2025-11-25 era, A3 3.3). */
+/** The MCP versions this client speaks, newest first (the 2025-11-25 era). */
 export const T3_PROTOCOLS = ["2025-11-25", "2025-06-18", "2025-03-26"] as const;
 
 /**
@@ -132,7 +132,7 @@ export type T3Origin =
 const READ_NO_LINK = constants.O_RDONLY | ((constants as { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0);
 
 /**
- * Whether facts of T3's folder or file fail the rule of A2 3.2.2 rule 5: a link, another owner,
+ * Whether facts of T3's folder or file fail the rule for folders that hold code: a link, another owner,
  * write for every user, or write for a group other than the person's own private group (which T3
  * gives what it makes under umask 002).
  */
@@ -149,11 +149,11 @@ const unsafe = (info: {
 };
 
 /**
- * The origin of T3's server: `<home>/userdata/server-runtime.json`'s `origin` (A4 3.4.1), read
+ * The origin of T3's server: `<home>/userdata/server-runtime.json`'s `origin`, read
  * fresh each time, because T3 may start on another port. On Linux and macOS the file and its
  * folder must belong to this user and not be writable by others: the token goes where it says. The
  * file is opened without following a link (O_NOFOLLOW) and judged by its open descriptor, so what is
- * read is what was judged, as TTasks reads its own configuration (A2 3.2.2 rule 5).
+ * read is what was judged, as TTasks reads its own configuration.
  */
 export async function readT3Origin(
   home: string,

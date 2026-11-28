@@ -1,4 +1,4 @@
-// Instance detection (A4 3.2) per OS, on fixture homes in an in-memory file system: one golden file
+// Instance detection per OS, on fixture homes in an in-memory file system: one golden file
 // per OS, every OS's rules checked on every OS. The fake host records every path detection looked
 // at and every command it ran, so the tests prove what it never touched: nothing inside an agent
 // home, no wrapper and no shim run. Fixture paths only (the user "mira").
@@ -20,7 +20,7 @@ const LINUX: FakeHostSpec = {
   entries: {
     "/home/mira/.local/bin/claude": { kind: "link", to: "../share/claude/versions/2.1.322" },
     "/home/mira/.local/share/claude/versions/2.1.322": { kind: "file", executable: true },
-    // The fixture user's wrappers (A4 3.2): one per account.
+    // The fixture user's wrappers: one per account.
     "/home/mira/.local/bin/codex-work": { kind: "file", executable: true },
     "/home/mira/.local/bin/codex-second": { kind: "file", executable: true },
     // Not wrappers: not executable, a name TTasks cannot turn into an ID, a folder.
@@ -67,7 +67,7 @@ const WINDOWS: FakeHostSpec = {
     "C:\\Users\\mira\\npm-global\\codex.ps1": { kind: "file" },
     "C:\\Users\\mira\\npm-global\\node_modules\\@openai\\codex\\bin\\codex.js": { kind: "file" },
     "C:\\Program Files\\nodejs\\node.exe": { kind: "file" },
-    // T3's shim is not on PATH and is a .cmd: found in its folder, never run (M2.09 reads it).
+    // T3's shim is not on PATH and is a .cmd: found in its folder, never run.
     "C:\\Users\\mira\\.t3\\bin\\t3.cmd": { kind: "file" },
     "C:\\Users\\mira\\.Codex\\auth.json": { kind: "file" },
     "C:\\Users\\mira\\.codex-second\\auth.json": { kind: "file" },
@@ -251,7 +251,7 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
   });
 
   test("a home is selected by the instance alone: the inherited home variables are scrubbed, every other home names its variable, and a chosen home moves the variable with it", async () => {
-    // The launch removes these from the inherited environment (A4 3.8), so an instance without
+    // The launch removes these from the inherited environment, so an instance without
     // one runs the default home. Pinning the default instead would move Claude's .claude.json.
     expect(HOME_VARIABLES).toEqual(["CLAUDE_CONFIG_DIR", "CODEX_HOME"]);
     // Both homes in the home folder, and the agent environment selecting the second one, as an

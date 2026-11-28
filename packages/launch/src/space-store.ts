@@ -1,7 +1,7 @@
-// The v1 execution store: the space database (A4 3.16.1, X7). Each call is one A1 operation,
+// The v1 execution store: the space database. Each call is one operation,
 // `launch.create`, `launch.transition`, `run.create` or `run.transition`, sent to the space's writer, which commits the record, its
-// history and the request's receipt in one transaction (A1 3.7). Reads go to the
-// same writer, behind the requests sent before them. Launch code never imports storage (A7 3.2):
+// history and the request's receipt in one transaction. Reads go to the
+// same writer, behind the requests sent before them. Launch code never imports storage:
 // the writer reaches this store as a port, the in-thread SpaceWriter in tests and the worker's
 // SpaceWriterHandle in the service, which both fit it.
 import {
@@ -80,7 +80,7 @@ export interface SpaceLaunchRow {
 
 /**
  * A run row as the space's writer reads it back (storage: `RunRow`): its JSON columns decoded, each
- * key checked here against A4's lists.
+ * key checked here against the launch's lists.
  */
 export interface SpaceRunRow {
   id: string;
@@ -113,8 +113,8 @@ export interface SpaceWriteResult {
 }
 
 /**
- * The credential the store's requests carry (A1 3.21; storage: `Credential`). The writer refuses
- * launch operations from any actor but a human or the space's system (R7).
+ * The credential the store's requests carry (storage: `Credential`). The writer refuses
+ * launch operations from any actor but a human or the space's system.
  */
 export interface SpaceCredential {
   scope_id: string;
@@ -132,7 +132,7 @@ export interface SpaceWriterPort {
   run(id: string): MaybePromise<SpaceRunRow | null | undefined>;
   openRuns(machine: string): MaybePromise<readonly SpaceRunRow[]>;
   /**
-   * A request's receipt in a writer scope (storage: `receipt`, A1 3.8), read only: whether the
+   * A request's receipt in a writer scope (storage: `receipt`), read only: whether the
    * scope already decided a request with this ID. Behind the requests sent before it.
    */
   receipt(lookup: {
@@ -161,7 +161,7 @@ export interface SpaceExecutionStoreOptions {
   writer: SpaceWriterPort;
   spaceId: string;
   /**
-   * Who writes the records: the person who clicked (A4 3.16: `created_by = user`), in the writer
+   * Who writes the records: the person who clicked (`created_by = user`), in the writer
    * scope of the service's launch path. Its machine is the one the records belong to.
    */
   credential: SpaceCredential;
@@ -171,7 +171,7 @@ const ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz";
 
 /**
  * A fresh request ID for each transition call: 130 random bits. A call is never repeated under the
- * same ID: a transition whose answer was lost leaves its outcome open (A1 3.8), and the caller
+ * same ID: a transition whose answer was lost leaves its outcome open, and the caller
  * reads the record again instead. The compare-and-set then refuses the repeat of a transition that
  * did commit, so no caller can take a lost answer as permission to act twice.
  */
@@ -239,7 +239,7 @@ export class SpaceExecutionStore implements ExecutionStore {
   }
 
   /**
-   * Whether this store's writer scope already decided a request with this ID (A1 3.8), read only.
+   * Whether this store's writer scope already decided a request with this ID, read only.
    * Then `createIntent` with it replays that decision (the same intent, as it is now) or refuses it
    * as `request_id_reused`, and never makes a new intent: a check that guards only a new intent
    * must not stand in front of its replay.
@@ -253,9 +253,9 @@ export class SpaceExecutionStore implements ExecutionStore {
   }
 
   /**
-   * The intent a request this scope already decided made (or was given by A4's 5 s rule), as it
+   * The intent a request this scope already decided made (or was given by the 5 s rule), as it
    * is now: a replay read from the receipt alone, before anything the click would be built from is
-   * read again (A1 3.8). Undefined when the scope has not decided the request or it made no
+   * read again. Undefined when the scope has not decided the request or it made no
    * intent; `createIntent` then decides it, a refusal included. Read only.
    */
   async replayed(requestId: string): Promise<LaunchIntent | undefined> {
@@ -419,7 +419,7 @@ export function decodeLaunch(row: SpaceLaunchRow): LaunchIntent {
     if (!isIntentState(key) || typeof value !== "number") return bad("at");
     at[key] = value;
   }
-  // A4's keys, checked by their kind. A key a newer build added is left out, not refused: the
+  // The known keys, checked by their kind. A key a newer build added is left out, not refused: the
   // writer has checked its shape, and evidence only grows.
   const evidence: Record<string, unknown> = {};
   for (const key of Object.keys(row.evidence).sort()) {
@@ -535,7 +535,7 @@ export function decodeRun(row: SpaceRunRow): RunRecord {
     if (!isOf(RUN_STATES, key) || typeof value !== "number") return bad("at");
     at[key] = value;
   }
-  // A4's keys, checked by their kind. A key a newer build added is left out, not refused: the
+  // The known keys, checked by their kind. A key a newer build added is left out, not refused: the
   // writer has checked its shape, and evidence only grows.
   const evidence: Record<string, unknown> = {};
   for (const key of Object.keys(row.evidence).sort()) {

@@ -1,8 +1,8 @@
-// The client's failures, as A3 3.5's transport reasons of `service_unavailable`. This module
+// The client's failures, as the transport reasons of `service_unavailable`. This module
 // imports nothing from the repository, so the bridge bundle stays small. The CLI turns a
 // LocalError into contracts' AppError with `toBody()`.
 
-/** A3 3.5's transport reasons that the local client reports, with `retryable` from its table. */
+/** The transport reasons that the local client reports, with `retryable` from its table. */
 export const TRANSPORT_REASONS = {
   /** No endpoint: the socket or pipe does not exist, or the connection was refused. */
   not_running: { retryable: false },
@@ -47,7 +47,7 @@ export class LocalError extends Error {
     this.detail = detail;
   }
 
-  /** A3 3.5's error body. */
+  /** The TTasks error body. */
   toBody(): {
     code: "service_unavailable";
     message: string;
@@ -61,7 +61,7 @@ export class LocalError extends Error {
   }
 }
 
-/** A JSON-RPC error reply to an rpc mode call. `data` holds A3's error body for TTasks errors. */
+/** A JSON-RPC error reply to an rpc mode call. `data` holds the error body for TTasks errors. */
 export class RpcError extends Error {
   readonly code: number;
   readonly data: unknown;

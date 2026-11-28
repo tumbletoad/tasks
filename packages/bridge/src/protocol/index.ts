@@ -1,4 +1,4 @@
-// `ttasks-local/1` (A2 3.6, docs/protocol/ttasks-local-1.md): the wire constants, framing,
+// `ttasks-local/1` (docs/protocol/ttasks-local-1.md): the wire constants, framing,
 // canonical JSON, proofs, handshake messages and the client. The service's side is
 // `@ttasks/service/local`, which builds on this module. Node built-ins only.
 export * from "./constants.ts";

@@ -1,10 +1,10 @@
-// Codex's native thread ID by reference match (A4 3.4.3, L15): Codex cannot preset an ID, so for
+// Codex's native thread ID by reference match: Codex cannot preset an ID, so for
 // up to two minutes after its start TTasks looks for the session file of this launch. A file
 // matches only when its `session_meta` record names this launch's folder and a user message in it
 // starts with this launch's brief: the reference counts only in the brief's first line, after the
 // title's closing quote (briefReference), never where a title or an instruction file quotes one.
 // The reference is unique among the space's launches, so the match is identity, not a guess by
-// folder and time (A4 L15); two files that both match give no ID at all.
+// folder and time; two files that both match give no ID at all.
 //
 // What is read, and nothing else: in the instance's own Codex home, `sessions/<yyyy>/<mm>/<dd>/`
 // of the days around the launch, files named `rollout-*.jsonl` that were not there when the
@@ -12,16 +12,16 @@
 // `.jsonl.zst`, a link, or another home. Nothing read is logged or kept but the thread ID.
 //
 // Measured and assumed: the layout and the record shapes are taken from
-// A4 3.4.3 and Codex's source as A4 read it. Lab row L04 has not run, so a file in another shape
+// Codex's source as read then. Lab row L04 has not run, so a file in another shape
 // matches nothing: no native ID, and therefore no Resume, never a wrong one.
 import { closeSync, lstatSync, openSync, readdirSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { briefReference } from "../brief/render.ts";
 import { EVIDENCE_ID } from "../intents.ts";
 
-/** A4 3.4.3: at most the first 64 KB of a file is read. */
+/** At most the first 64 KB of a file is read. */
 export const ROLLOUT_READ_BYTES = 64 * 1024;
-/** A4 3.4.3: TTasks looks for two minutes after the agent's start. */
+/** TTasks looks for two minutes after the agent's start. */
 export const MATCH_WINDOW_MS = 120_000;
 /** How often the folders are looked at while the window is open. */
 export const MATCH_POLL_MS = 1_000;

@@ -1,5 +1,5 @@
-// `ttasks setup instances` (A4 3.2 "Detection proposes, the user confirms"; A5 3.17 step 3's CLI
-// counterpart): the agent apps Open can open a task in on this machine, as machine.toml's
+// `ttasks setup instances` (detection proposes, the person
+// confirms): the agent apps Open can open a task in on this machine, as machine.toml's
 // `[[instance]]` entries. Loaded only for this command (setup.ts).
 //
 //   ttasks setup instances [--preview]   what detection found (each agent command with its version,

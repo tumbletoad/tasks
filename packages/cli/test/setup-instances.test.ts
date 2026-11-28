@@ -1,5 +1,5 @@
-// `ttasks setup instances` through the CLI and a real service (A4 3.2 "Detection proposes, the
-// user confirms"; A2 3.2.4): the preview shows what detection found and the exact entries and
+// `ttasks setup instances` through the CLI and a real service (detection proposes, the
+// person confirms): the preview shows what detection found and the exact entries and
 // writes nothing, only the person applies, the service writes machine.toml through its editor and
 // Open offers the instances at once, doctor says what is still missing, and remove takes back only
 // an entry that is still exactly as written.
@@ -283,7 +283,7 @@ describe("[A4.3.2.setup.instances] ttasks setup instances through the CLI and th
   test(
     "T3 Code: one instance whatever profiles T3's settings hold, naming no profile or model, applied and removed like the others",
     async () => {
-      // T3's folder and its settings in T3's own shape (A3 3.13.6), in the test's scratch home.
+      // T3's folder and its settings in T3's own shape, in the test's scratch home.
       const t3 = join(user, ".t3", "userdata");
       mkdirSync(t3, { recursive: true, mode: 0o700 });
       const settings = join(t3, "settings.json");

@@ -1,14 +1,14 @@
-// Files and folders created with exactly the mode the plan names, whatever the umask (A2 3.2.2
-// rule 5). This is the one implementation the service,
+// Files and folders created with exactly the mode the plan names, whatever the umask.
+// This is the one implementation the service,
 // storage, launch and the CLI's shim create through. It is a package of its own because launch and
-// the shim may import neither the service nor storage (A7 3.2), and it depends on nothing in the
+// the shim may import neither the service nor storage, and it depends on nothing in the
 // repository, so every package may use it.
 //
 // The mode given to open or mkdir is masked by the process's umask, which differs per system (002
 // on a desktop with user private groups, 022 elsewhere, 077 on a hardened one). So the mode is set
 // on the new object itself, through a descriptor, which ignores the umask and follows no link. A
 // file or folder that was already there keeps its mode: it may be the person's choice. Windows keeps
-// the ACL the object inherited (A2 3.2.2 rule 5), so no mode is set there. Node's errors pass
+// the ACL the object inherited, so no mode is set there. Node's errors pass
 // through with their code; callers map them.
 import { randomBytes } from "node:crypto";
 import {
@@ -102,8 +102,8 @@ function openForAppend(path: string, mode: number): number {
 }
 
 /**
- * Writes every byte of `data` (a string as UTF-8) at `fd`'s position, or throws (A2 3.2.2 rule 5,
- * "whole writes"). One write may take fewer bytes than it was given (a full volume, a signal, a
+ * Writes every byte of `data` (a string as UTF-8) at `fd`'s position, or throws.
+ * One write may take fewer bytes than it was given (a full volume, a signal, a
  * network file system), so the count each returns is followed until nothing is left; a write that
  * takes none throws EIO rather than spin. Every write of durable state goes through this.
  */
@@ -137,7 +137,7 @@ export function appendPrivate(path: string, text: string, mode = 0o600): void {
  * following a link (O_NOFOLLOW) and only as a folder (O_DIRECTORY), and its descriptor must show a
  * folder of this user before the mode is set on that descriptor. What remains is the moment
  * between the mkdir and the open, in which a process of this same user could put another folder
- * of its own there (A2 3.2.2 rule 5): another user cannot, since every folder TTasks creates in sits
+ * of its own there: another user cannot, since every folder TTasks creates in sits
  * in a parent others cannot write.
  */
 function setNewFolderMode(folder: string, mode: number): void {

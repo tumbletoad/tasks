@@ -1,6 +1,6 @@
 // The bridge's process: its streams, its signals and its last-resort error handler. This is the
 // only file of the bridge that names stdout (a lint rule enforces it): stdout carries MCP frames
-// and nothing else, and the forwarder is the one writer (A2 3.7.2). Diagnostics go to stderr.
+// and nothing else, and the forwarder is the one writer. Diagnostics go to stderr.
 import process from "node:process";
 import type { Readable, Writable } from "node:stream";
 

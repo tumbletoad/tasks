@@ -1,4 +1,4 @@
-// `ttasks setup agents` through the CLI and a real service (A3 3.13.1, A2 3.2.5; A7 3.9 M2.14): the
+// `ttasks setup agents` through the CLI and a real service: the
 // preview names the served space and writes nothing, only the user applies and removes, the
 // service keeps one agent-home row per home in its grants table and revokes it with the entry, and
 // the homes come back key for key. A real service in this process, the CLI in this process, fake

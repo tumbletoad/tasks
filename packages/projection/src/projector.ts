@@ -1,4 +1,4 @@
-// The projection's consumer of the outbox (A1 3.13 "Regeneration"): one batch at a time, from a
+// The projection's consumer of the outbox: one batch at a time, from a
 // reader connection of the space and through the space's writer, which alone writes the outbox.
 // What the projection placed, and the journal of the batch in progress, are its trusted state in
 // the product's machine state (state.ts), never in the tree.
@@ -44,7 +44,7 @@
 // conflict) is queued like a reconciliation's, so it comes back while the service runs and no
 // watermark is published over it. A file that is there is left to reconciliation, whatever it holds.
 //
-// **Evidence goes last** (A1 3.13): the journal is dropped, and a record that no longer says why
+// **Evidence goes last**: the journal is dropped, and a record that no longer says why
 // something must still happen is written, only once what depends on it is durable elsewhere: the
 // writer's outbox for tasks to render again, the receiver's answer for a stem told. A kill in
 // between finds the evidence and does the work again; each is safe to repeat.
@@ -112,7 +112,7 @@ export interface ProjectorOptions {
   /** Default: this machine's. Dates and the year folders follow it. */
   readonly timeZone?: string;
   readonly now?: () => number;
-  /** Tasks per batch. Default: A1's 200. */
+  /** Tasks per batch. Default: 200. */
   readonly batch?: number;
   /** Tests only: runs before every act on disk; throwing is a kill (tree.ts). */
   readonly at?: Hook;
@@ -120,7 +120,7 @@ export interface ProjectorOptions {
   /** Each reconciliation, as soon as it has run: `ttasks view rebuild` is answered by a full one. */
   readonly onReconciled?: (reconciled: Reconciled) => void;
   /**
-   * Each batch's rescues (rule 3), for the record of rescues the UI shows (A1 3.13): once per stem
+   * Each batch's rescues (rule 3), for the record of rescues the UI shows: once per stem
    * of the rescue folders on disk, told at least once. The rescue folders are the evidence: a stem
    * whose telling throws or rejects stays untold and is told again at the next batch and the next
    * start, and one told is kept in the record only once the receiver returned, so the receiver
@@ -192,7 +192,7 @@ export interface StartReport {
 }
 
 /**
- * A1 3.13 rule 7: a task whose file could not be placed waits a pause of its own before it is read
+ * A task whose file could not be placed waits a pause of its own before it is read
  * again, doubling from this up to RETRY_MAX_MS, so tasks that cannot be placed never fill every
  * batch. A full reconciliation (`ttasks view rebuild`) ends every pause.
  */

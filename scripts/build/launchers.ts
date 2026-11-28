@@ -1,6 +1,6 @@
-// The launchers of a version folder (A2 3.12.3): the POSIX script `bin/ttasks` for Linux and macOS,
+// The launchers of a version folder: the POSIX script `bin/ttasks` for Linux and macOS,
 // written here, and `ttasks.exe` and `ttasksw.exe` for Windows, compiled by @ttasks/launcher-win's
-// release build and checked again for test hooks before they ship (A2 3.12.8).
+// release build and checked again for test hooks before they ship.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
@@ -12,7 +12,7 @@ import {
 } from "../../packages/launcher-win/src/build.ts";
 
 /**
- * `versions/<v>/bin/ttasks`: A2 3.12.3's script with its rules for what reaches Node (step 3).
+ * `versions/<v>/bin/ttasks`: the POSIX launcher, with its rules for what reaches Node.
  *
  * - The shell first turns off what it may have taken from the environment before the first line:
  *   bash, which is /bin/sh on Fedora and macOS, reads SHELLOPTS and exported functions from it. With
@@ -63,8 +63,8 @@ exec "$root/runtime/node" --report-exclude-env "$root/lib/${PRODUCT_ID}.mjs" "$@
 `;
 
 /**
- * The launchd wrapper `bin/ttasks-launchd` (A2 3.3.4) of a macOS build, mode 0755. Its text is
- * M1.12's (A2 3.3.4), so the service install and the build agree on it.
+ * The launchd wrapper `bin/ttasks-launchd` of a macOS build, mode 0755. Its text is
+ * the service install's own, so the two agree on it.
  */
 export { LAUNCHD_WRAPPER } from "../../packages/service/src/install/render.ts";
 
@@ -75,7 +75,7 @@ export interface WindowsLaunchers extends Launchers {
 
 /**
  * Compiles the Windows release launchers and ttasks-run.exe into `dir` (never with test hooks) and
- * checks each for test hooks again, as A2 3.12.8 asks of the binaries the build ships.
+ * checks each for test hooks again, so no binary the build ships has them.
  */
 export function windowsLaunchers(dir: string): WindowsLaunchers {
   if (process.platform !== "win32") {
