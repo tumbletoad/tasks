@@ -190,6 +190,8 @@ export interface NodeRow {
   /** None for the space. */
   readonly parent?: string;
   readonly title: string;
+  /** A project's one line: what it is. None when it has none. */
+  readonly brief?: string;
   /** Its order among its siblings; none for the space. */
   readonly position?: string;
   readonly color?: string;
@@ -239,6 +241,8 @@ export interface SpaceHead {
   readonly read_only?: { readonly reason: string; readonly message?: string };
   /** A restored copy not claimed: when it was restored, and the backup file it came from. */
   readonly restored?: { readonly at: string; readonly backup?: string };
+  /** The space is one tree of nodes: its projects at the top are what today's operations call areas. */
+  readonly tree?: true;
 }
 
 /** A restored copy's record, checked by its shape. */
@@ -271,6 +275,7 @@ function headOf(space: Record<string, unknown> & { id: string }): SpaceHead {
     ...(isString(space["folder"]) ? { folder: space["folder"] } : {}),
     ...(readOnly === undefined ? {} : { read_only: readOnly }),
     ...(restored === undefined ? {} : { restored }),
+    ...(space["tree"] === true ? { tree: true as const } : {}),
   };
 }
 
@@ -529,6 +534,7 @@ export function nodeRow(value: unknown): NodeRow | undefined {
     !isString(v["title"]) ||
     !isString(v["state"]) ||
     !optional(v["parent"], isString) ||
+    !optional(v["brief"], isString) ||
     !optional(v["position"], isString) ||
     !optional(v["color"], isString) ||
     !optional(v["deleted_at"], isNumber)

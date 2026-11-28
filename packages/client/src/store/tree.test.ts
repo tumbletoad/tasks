@@ -2,7 +2,7 @@
 // where work is filed on today's operations, and a node found by the names a read gives.
 import { describe, expect, test } from "vitest";
 import { areaNode, projectNode, TEST_SPACE, treeOf } from "../../test/nodes.ts";
-import { childrenOf, filedAs, isUnder, nodeNamed, topLevel, trail } from "./tree.ts";
+import { childrenOf, filedAs, isUnder, nodeNamed, placeOf, topLevel, trail } from "./tree.ts";
 
 const lumen = areaNode({ id: "a_lumen", title: "Lumen", position: "a1" });
 const home = areaNode({ id: "a_home", title: "Home", position: "a0" });
@@ -31,6 +31,27 @@ describe("[A5.tree.client.tree] the space's tree in the store", () => {
     expect(filedAs(lumen, portal)).toEqual({ area: lumen, project: portal });
     expect(filedAs(lumen)).toEqual({ area: lumen });
     expect(filedAs(shed)).toEqual({ project: shed });
+  });
+
+  test("a tree space takes its top project as the area and a project at any depth by itself", () => {
+    const home = areaNode({ id: "p_home", title: "Home", position: "a0" });
+    const kitchen = projectNode("p_home", { id: "p_kitchen", title: "Kitchen", position: "b0" });
+    expect(filedAs(home, undefined, true)).toEqual({ area: home });
+    expect(filedAs(home, kitchen, true)).toEqual({ project: kitchen });
+  });
+
+  test("a task's place is its top project and its own project at any depth", () => {
+    const home = areaNode({ id: "p_home", title: "Home", position: "a0" });
+    const reno = projectNode("p_home", { id: "p_reno", title: "Renovation", position: "b0" });
+    const kitchen = projectNode("p_reno", { id: "p_kitchen", title: "Kitchen", position: "c0" });
+    const deep = treeOf(home, reno, kitchen);
+    expect(placeOf(deep, "p_kitchen").map((n) => n?.id)).toEqual(["p_home", "p_kitchen"]);
+    expect(placeOf(deep, "p_home").map((n) => n?.id)).toEqual(["p_home", undefined]);
+    expect(placeOf(deep, TEST_SPACE)).toEqual([undefined, undefined]);
+    // A read names a task deeper down by its two nearest levels.
+    expect(nodeNamed(deep, "Renovation", "Kitchen")).toBe("p_kitchen");
+    expect(nodeNamed(deep, "Home", "Renovation")).toBe("p_reno");
+    expect(nodeNamed(deep, "Home")).toBe("p_home");
   });
 
   test("a read's names find the project under its area, else the area, else a project at the top, else the space", () => {

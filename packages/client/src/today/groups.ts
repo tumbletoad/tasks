@@ -102,16 +102,20 @@ export function archivedGroup(
   return undefined;
 }
 
-/** The areas and projects new work can be filed into: live ones, and no project of an archived area. */
+/**
+ * The areas and projects new work can be filed into: live ones at any depth, and none below an
+ * archived one.
+ */
 export function liveGroups(nodes: Nodes): {
   readonly areas: NodeRow[];
   readonly projects: NodeRow[];
 } {
   const areas = topLevel(nodes).filter((a) => !archived(a));
-  return {
-    areas,
-    projects: areas.flatMap((a) => childrenOf(nodes, a.id).filter((p) => !archived(p))),
-  };
+  const below = (id: string): NodeRow[] =>
+    childrenOf(nodes, id)
+      .filter((p) => !archived(p))
+      .flatMap((p) => [p, ...below(p.id)]);
+  return { areas, projects: areas.flatMap((a) => below(a.id)) };
 }
 
 /** A project in the side menu, at its depth (1 at the top), with its colour and what lies under it. */

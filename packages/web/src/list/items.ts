@@ -1,7 +1,7 @@
 // A grouped list as one sequence of items, so group headings are virtual items too: each
 // group's heading, each project's label, then its rows, in order. Pure, so the order, the set sizes
 // and the positions are unit tests, and the list (List.tsx) only lays out what this gives it.
-import { trail, type Nodes, type NodeRow, type TaskRow } from "@ttasks/client/store";
+import { placeOf, type Nodes, type NodeRow, type TaskRow } from "@ttasks/client/store";
 import type { Group as KeyedGroup } from "@ttasks/client/today";
 import type { MessageId } from "../i18n/intl.tsx";
 
@@ -73,7 +73,7 @@ export function itemsOf(
         items.push({ kind: "section", key: sectionKey, group: group.key, title: section.title });
       }
       section.tasks.forEach((task, i) => {
-        const [area, project] = trail(nodes, task.parent);
+        const [area, project] = placeOf(nodes, task.parent);
         items.push({
           kind: "row",
           key: task.id,
