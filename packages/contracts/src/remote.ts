@@ -5,14 +5,13 @@
 // are built against it, not against a guess.
 
 /** What a remote command asks the target to do (A6 3.8.1). */
-export type RemoteAction = "open" | "open_folder" | "run" | "routine_run";
+export type RemoteAction = "open" | "open_folder" | "run";
 
 /** How long each action's envelope is valid, in seconds; receivers refuse more than 300. */
 export const REMOTE_VALIDITY_S: Readonly<Record<RemoteAction, number>> = {
   open: 60,
   open_folder: 60,
   run: 120,
-  routine_run: 120,
 };
 
 /** The longest validity a receiver accepts, in seconds (A6 3.8.1). */

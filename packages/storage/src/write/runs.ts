@@ -193,9 +193,9 @@ export const RUN_SQL = {
   run: "SELECT * FROM runs WHERE id = $id",
   place: "SELECT machine_id, deleted_at FROM places WHERE id = $id",
   insert:
-    "INSERT INTO runs (id, task_id, routine_id, session_id, instance_id, machine_id, adapter, " +
-    "place_id, request, spec, state, reason, attempt, detail, result, queued_at, started_at, " +
-    "ended_at, created_seq, version, fv, fp) VALUES ($id, $task, $routine, $session, $instance, " +
+    "INSERT INTO runs (id, task_id, session_id, instance_id, machine_id, adapter, place_id, " +
+    "request, spec, state, reason, attempt, detail, result, queued_at, started_at, ended_at, " +
+    "created_seq, version, fv, fp) VALUES ($id, $task, $session, $instance, " +
     "$machine, $adapter, $place, $request, $spec, 'queued', NULL, 1, $detail, '{}', $at, NULL, " +
     "NULL, $seq, $seq, '{}', '{}')",
   update:
@@ -232,7 +232,6 @@ export function runDetailText(detail: RunDetail): string {
 export interface RunRow {
   id: Id<"ru">;
   task_id: Id<"t"> | null;
-  routine_id: Id<"ro"> | null;
   session_id: Id<"se"> | null;
   instance_id: string;
   machine_id: Id<"m">;
@@ -292,7 +291,6 @@ export function decodeRun(row: Row): RunRow {
   return {
     id: r.id("id", "ru"),
     task_id: r.optText("task_id", (v) => isId(v, "t")) as Id<"t"> | null,
-    routine_id: r.optText("routine_id", (v) => isId(v, "ro")) as Id<"ro"> | null,
     session_id: r.optText("session_id", (v) => isId(v, "se")) as Id<"se"> | null,
     instance_id: r.text("instance_id"),
     machine_id: r.id("machine_id", "m"),

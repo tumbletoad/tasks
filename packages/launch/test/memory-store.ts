@@ -172,7 +172,6 @@ export class MemoryExecutionStore implements ExecutionStore {
     const run: RunRecord = {
       id: randomId("ru"),
       task: input.task,
-      routine: input.routine,
       session: input.session ?? null,
       machine: input.machine,
       instance: input.instance,

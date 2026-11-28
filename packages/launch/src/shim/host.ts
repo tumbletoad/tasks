@@ -126,7 +126,6 @@ export function sessionOf(of: { readonly id: string; readonly session?: string |
 export interface LiveLaunch {
   readonly launch: string;
   readonly space: string;
-  /** Null for a routine's launch. */
   readonly task: string | null;
   readonly session: string;
   /** The agent's app and home folder as the click recorded them; a launch can lack either. */

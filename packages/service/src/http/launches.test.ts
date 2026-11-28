@@ -106,7 +106,6 @@ describe("[A4.5.terminal.receipt] the receipt names the terminal and its source"
 const record = (patch: Partial<RunRecord> = {}): RunRecord => ({
   id: "ru_00r5mfcw5rfzxb9enb2vg50z3g",
   task: "t_00r5mfcw5rfzxb9enb2vg50z3h",
-  routine: null,
   session: null,
   machine: "m_00r5mfcw5rfzxb9enb2vg50z3j",
   instance: "codex-work",

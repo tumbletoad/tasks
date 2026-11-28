@@ -49,17 +49,18 @@ function task(): Id<"t"> {
   return id;
 }
 
-const createOp = (extra: Record<string, unknown> = {}): Operation => ({
-  kind: "run.create",
-  instance: "codex-work",
-  adapter: "codex",
-  place: null,
-  request: "Check the export\r\nand fix the time zone.",
-  brief_hash: HASH,
-  permission: "full-access",
-  limits: LIMITS,
-  ...extra,
-});
+const createOp = (extra: Record<string, unknown> = {}): Operation =>
+  ({
+    kind: "run.create",
+    instance: "codex-work",
+    adapter: "codex",
+    place: null,
+    request: "Check the export\r\nand fix the time zone.",
+    brief_hash: HASH,
+    permission: "full-access",
+    limits: LIMITS,
+    ...extra,
+  }) as Operation;
 
 function create(extra: Record<string, unknown> = { task: task() }): Id<"ru"> {
   const result = submit([createOp(extra)]);
@@ -114,7 +115,6 @@ describe("[A1.5.write.runs] run records through the write path", () => {
     expect(fx.writer.run(id)).toEqual({
       id,
       task_id: taskId,
-      routine_id: null,
       session_id: null,
       instance_id: "codex-work",
       machine_id: TEST_MACHINE,
@@ -148,20 +148,13 @@ describe("[A1.5.write.runs] run records through the write path", () => {
     ).toBe("run.create");
   });
 
-  test("a routine's run has no task; a run needs a task or a routine, never both", () => {
-    const routine = newId("ro");
-    const id = create({ routine, request: undefined, limits: { ...LIMITS, max_turns: 150 } });
-    expect(fx.writer.run(id)).toMatchObject({ task_id: null, routine_id: routine, request: null });
-    // A task's run takes the person's instruction; a routine's takes none (A4 3.11.7).
+  test("a run needs its task and the person's instruction (A4 3.11.7)", () => {
     expect(submit([createOp({ task: task(), request: undefined })]).error).toMatchObject({
       field: "ops[0].request",
     });
-    expect(submit([createOp({ routine })]).error).toMatchObject({ field: "ops[0].request" });
-    for (const extra of [{}, { task: task(), routine }]) {
-      const refused = submit([createOp(extra)]);
-      expectStatus(refused, "rejected");
-      expect(refused.error).toMatchObject({ code: "VALIDATION_FAILED", field: "ops[0].task" });
-    }
+    const refused = submit([createOp({})]);
+    expectStatus(refused, "rejected");
+    expect(refused.error).toMatchObject({ code: "VALIDATION_FAILED", field: "ops[0].task" });
   });
 
   test("a run moves along A4's edges: start, evidence, result and times", () => {

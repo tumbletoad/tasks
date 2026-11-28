@@ -86,7 +86,6 @@ async function startRun(task: string): Promise<{ id: string; end: () => Promise<
   const queued = await store.createRun(
     {
       task,
-      routine: null,
       machine,
       instance: "codex-work",
       adapter: "codex",

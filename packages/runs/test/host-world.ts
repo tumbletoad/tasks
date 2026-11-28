@@ -403,7 +403,6 @@ export class World {
           const run = await machine.queue(
             {
               task,
-              routine: null,
               instance: "claude-work",
               adapter: "claude-print",
               place: null,

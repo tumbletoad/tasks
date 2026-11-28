@@ -897,7 +897,7 @@ const RUN_STATE_WORDS: Readonly<Record<string, string>> = {
 
 const runLine = (run: HeldRun): string => {
   const where = run.space_name === null ? "" : ` in ${run.space_name}`;
-  return `  ${run.task ?? "A routine's run"}${where}: ${RUN_STATE_WORDS[run.state] ?? run.state}`;
+  return `  ${run.task ?? "A run"}${where}: ${RUN_STATE_WORDS[run.state] ?? run.state}`;
 };
 
 const runsCount = (n: number): string => (n === 1 ? "1 run" : `${String(n)} runs`);

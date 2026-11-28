@@ -949,20 +949,19 @@ export interface LaunchTransition {
 
 /**
  * `run.create` (A4 3.11.2 `queued`): a run, written before anything spawns. The machine is the
- * request's. Exactly one of `task` and `routine`. The writer gives it its `ru_` ID. `request` is
- * the person's instruction, the one text a run takes when it is queued.
+ * request's. The writer gives it its `ru_` ID. `request` is the person's instruction, the one text
+ * a run takes when it is queued.
  */
 export interface RunCreate {
   kind: "run.create";
-  task?: Id<"t">;
-  routine?: Id<"ro">;
+  task: Id<"t">;
   /** The instance's key in the machine's `machine.toml`. */
   instance: string;
   adapter: string;
   /** The place the folder resolved from, or null for a TTasks work folder. */
   place: Id<"pl"> | null;
   session?: Id<"se">;
-  request?: string;
+  request: string;
   /** SHA-256 of the brief, lower-case hex. */
   brief_hash: string;
   permission: string;
@@ -2010,27 +2009,18 @@ function checkOperation(value: unknown, i: number): Operation {
       if (typeof hash !== "string" || !SHA256_HEX.test(hash)) {
         f.fail("VALIDATION_FAILED", "Expected a SHA-256 in lower-case hex", "brief_hash");
       }
-      if (f.has("task") === f.has("routine")) {
-        f.fail("VALIDATION_FAILED", "A run belongs to a task or a routine, exactly one", "task");
-      }
       const create: RunCreate = {
         kind,
+        task: f.id("task", "t"),
         instance: instance as string,
         adapter: f.oneOf("adapter", OPEN_SETS["runs.adapter"]),
         place: place as Id<"pl"> | null,
         brief_hash: hash as string,
         permission: f.oneOf("permission", RUN_PERMISSIONS),
         limits: runLimits(f.sub("limits")),
+        request: f.text("request", { bytes: RUN_REQUEST_MAX_BYTES }),
       };
-      if (f.has("task")) create.task = f.id("task", "t");
-      if (f.has("routine")) create.routine = f.id("routine", "ro");
       if (f.has("session")) create.session = f.id("session", "se");
-      // A task's run takes the person's instruction (A4 3.11.7); a routine's takes its template.
-      if (create.task !== undefined) {
-        create.request = f.text("request", { bytes: RUN_REQUEST_MAX_BYTES });
-      } else if (f.has("request")) {
-        f.fail("VALIDATION_FAILED", "A routine's run takes no instruction", "request");
-      }
       op = create;
       break;
     }

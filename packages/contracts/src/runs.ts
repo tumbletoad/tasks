@@ -518,10 +518,8 @@ export interface RunResult {
 
 /** What Run records (A4 3.11.2: written in `queued` before anything spawns). */
 export interface NewRun {
-  /** The task (`t_` ID), or null for a routine's run. Exactly one of `task` and `routine`. */
-  task: string | null;
-  /** The routine (`ro_` ID), or null for a task's run. */
-  routine: string | null;
+  /** The task (`t_` ID). */
+  task: string;
   /** The machine that runs it (`m_` ID): the one whose `openWork` recovers it. */
   machine: string;
   /** The instance's key in this machine's `machine.toml`. */
@@ -531,8 +529,8 @@ export interface NewRun {
   place: string | null;
   /** The session it continues (`se_` ID), when there is one. */
   session?: string;
-  /** The person's instruction (A4 3.11.7), or null for a routine's run. */
-  request: string | null;
+  /** The person's instruction (A4 3.11.7). */
+  request: string;
   /** SHA-256 of the brief, lower-case hex. The brief itself is never stored. */
   briefHash: string;
   permission: RunPermission;
@@ -544,11 +542,10 @@ export interface RunRecord {
   /** `ru_` ID. */
   id: string;
   /**
-   * The task, or null for a routine's run. Never both with `routine`; neither for a run whose task
-   * was redacted, which keeps no request and no result text (A1 3.11.4, A4 3.11.1).
+   * The task, or null for a run whose task was redacted, which keeps no request and no result text
+   * (A1 3.11.4, A4 3.11.1).
    */
   task: string | null;
-  routine: string | null;
   session: string | null;
   machine: string;
   instance: string;

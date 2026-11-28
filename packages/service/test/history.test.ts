@@ -234,7 +234,6 @@ describe("[A1.5.history.runs] runs beside Undo, through the request path", () =>
         const run = await machine.queue(
           {
             task: String((await show(task))["id"]),
-            routine: null,
             instance: "codex-work",
             adapter: "codex",
             place: null,
@@ -270,7 +269,6 @@ describe("[A1.5.history.runs] runs beside Undo, through the request path", () =>
         const run = await machine.queue(
           {
             task: String((await show(answered))["id"]),
-            routine: null,
             instance: "codex-work",
             adapter: "codex",
             place: null,

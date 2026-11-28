@@ -122,15 +122,9 @@ export const OPERATIONS: Readonly<Record<string, OpSpec>> = {
   "session.end": user(),
   // R7 (A3 3.2.3, 3.10 item 1, A6 3.6.3).
   "launch.*": r7("launch:open", "launch:run"),
-  "run.start": r7("launch:run"),
-  "run.stop": r7("launch:run"),
   // A4's run record, written only through the execution store (A4 3.16.1), as a launch's is.
   "run.create": r7("launch:run"),
   "run.transition": r7("launch:run"),
-  // Running a routine needs launch:run. Every other routine kind edits one, which is policy and
-  // needs admin (A3 3.8.1, A4 3.12, A6 3.6.3).
-  "routine.run": r7("launch:run"),
-  "routine.*": r7("admin"),
   "machine.register": { class: "system", scopes: [], base: false },
   // An agent actor joins a space on its first act (A3 3.7.4, M1.10): the writer's own commit.
   "actor.register": { class: "system", scopes: [], base: false },
