@@ -1,8 +1,8 @@
 // Stand-in schema steps after the real ones, for the migration runner's tests and the restore's (a
 // schema whose restore fails at its first write). They never ship: migrations/index.ts holds the
-// real steps. The real chain ends at 0.5, so the stand-in is a 0.6: a table, a column and an index,
+// real steps. The real chain ends at 0.6, so the stand-in is a 0.7: a table, a column and an index,
 // and it raises the undo floor. A space built at 0.1 (revisions.ts) migrates through the real 0.2
-// to 0.5 and the stand-in 0.6 in one migration of five steps. The failing variants of 0.6 fail
+// to 0.6 and the stand-in 0.7 in one migration of six steps. The failing variants of 0.7 fail
 // midway through their `up`, in their `verify`, or leave a broken foreign key behind, after the
 // real steps ran in the same transaction. A new real step rebases the stand-ins above it.
 // A failing 0.2 serves the service's tests of a failed migration and, with a slow barrier backup,
@@ -13,11 +13,11 @@ import { StorageError } from "../src/errors.ts";
 import type { SchemaStep } from "../src/schema.ts";
 import { step0002 } from "../migrations/0002-schema-0.2.ts";
 import { step0004 } from "../migrations/0004-schema-0.4.ts";
-import { step0005 } from "../migrations/0005-schema-0.5.ts";
+import { step0006 } from "../migrations/0006-schema-0.6.ts";
 import { SCHEMA_STEPS } from "../migrations/index.ts";
-import { STEPS_0_1, STEPS_0_2, STEPS_0_3, STEPS_0_4, STEPS_0_5 } from "./revisions.ts";
+import { STEPS_0_1, STEPS_0_2, STEPS_0_3, STEPS_0_4, STEPS_0_5, STEPS_0_6 } from "./revisions.ts";
 
-const TABLES_0_6 = [...step0005.tables, "test_labels"];
+const TABLES_0_7 = [...step0006.tables, "test_labels"];
 
 /** The plain tables: an FTS5 table's shadow tables are SQLite's business. */
 function tableNames(conn: Connection): string[] {
@@ -37,16 +37,16 @@ function expectTables(conn: Connection, tables: readonly string[]): void {
   }
 }
 
-export const standIn0006: SchemaStep = {
-  id: 9006,
-  from: 5,
-  revision: { major: 0, minor: 6 },
+export const standIn0007: SchemaStep = {
+  id: 9007,
+  from: 6,
+  revision: { major: 0, minor: 7 },
   kind: "additive",
-  format: { major: 0, minor: 6 },
+  format: { major: 0, minor: 7 },
   minReader: "0.0.0",
   minWriter: "0.0.0",
   undoFloor: true,
-  tables: TABLES_0_6,
+  tables: TABLES_0_7,
   up(conn) {
     conn.exec(
       "CREATE TABLE test_labels (id TEXT PRIMARY KEY, task_id TEXT REFERENCES tasks(id), " +
@@ -56,13 +56,13 @@ export const standIn0006: SchemaStep = {
     );
   },
   verify(conn) {
-    expectTables(conn, TABLES_0_6);
+    expectTables(conn, TABLES_0_7);
   },
 };
 
-/** A 0.6 that creates its table, then fails before it finishes. */
+/** A 0.7 that creates its table, then fails before it finishes. */
 export const failingMidway: SchemaStep = {
-  ...standIn0006,
+  ...standIn0007,
   up(conn) {
     conn.exec(
       "CREATE TABLE test_labels (id TEXT PRIMARY KEY, task_id TEXT REFERENCES tasks(id), " +
@@ -72,19 +72,19 @@ export const failingMidway: SchemaStep = {
   },
 };
 
-/** A 0.6 whose own verify refuses what its up did. */
+/** A 0.7 whose own verify refuses what its up did. */
 export const failingVerify: SchemaStep = {
-  ...standIn0006,
+  ...standIn0007,
   verify() {
     throw new StorageError("SPACE_INVALID", "The stand-in step's verify refused");
   },
 };
 
-/** A 0.6 that leaves a label pointing at a task that does not exist (foreign keys are off). */
+/** A 0.7 that leaves a label pointing at a task that does not exist (foreign keys are off). */
 export const brokenForeignKey: SchemaStep = {
-  ...standIn0006,
+  ...standIn0007,
   up(conn) {
-    standIn0006.up(conn);
+    standIn0007.up(conn);
     conn.exec("INSERT INTO test_labels (id, task_id, name) VALUES ('lb_x', 't_missing', 'x')");
   },
 };
@@ -111,20 +111,20 @@ export const failing0004: SchemaStep = {
  */
 export const SLOW_BARRIER_MS = 3_000;
 
-/** This build's real steps, then the stand-in 0.6. */
-export const STEPS_0_6: readonly SchemaStep[] = [...SCHEMA_STEPS, standIn0006];
+/** This build's real steps, then the stand-in 0.7. */
+export const STEPS_0_7: readonly SchemaStep[] = [...SCHEMA_STEPS, standIn0007];
 
 /**
- * A 0.6 whose schema refuses a restore's first write once the space has three commits: an index on
+ * A 0.7 whose schema refuses a restore's first write once the space has three commits: an index on
  * `space` whose expression overflows when `transfer` is set. The exact-schema rule passes it (its
  * own steps made it), so only a restore that runs its first write finds it (the trial restore).
  * Backups taken before the third commit restore; later ones do not.
  */
-export const markGuard0006: SchemaStep = {
-  ...standIn0006,
-  id: 9016,
+export const markGuard0007: SchemaStep = {
+  ...standIn0007,
+  id: 9017,
   up(conn) {
-    standIn0006.up(conn);
+    standIn0007.up(conn);
     conn.exec(
       "CREATE INDEX space_mark_guard ON space ((CASE WHEN transfer IS NOT NULL AND last_seq >= 3 " +
         "THEN abs(-9223372036854775808) ELSE 0 END))",
@@ -132,8 +132,8 @@ export const markGuard0006: SchemaStep = {
   },
 };
 
-/** This build's real steps, then the 0.6 whose schema refuses a later restore's first write. */
-export const STEPS_MARK_GUARD: readonly SchemaStep[] = [...SCHEMA_STEPS, markGuard0006];
+/** This build's real steps, then the 0.7 whose schema refuses a later restore's first write. */
+export const STEPS_MARK_GUARD: readonly SchemaStep[] = [...SCHEMA_STEPS, markGuard0007];
 
 /** The step lists a test storage worker can serve (stand-in-steps-worker.ts), by name. */
 export const STEP_SETS = {
@@ -145,9 +145,11 @@ export const STEP_SETS = {
   "0.3": STEPS_0_3,
   /** A released 0.4 build: it knows no folders, and a 0.5 space is newer than it. */
   "0.4": STEPS_0_4,
-  /** A released 0.5 build: folders. */
+  /** A released 0.5 build: it knows no pages, and a 0.6 space is newer than it. */
   "0.5": STEPS_0_5,
+  /** A 0.6 build: pages and the texts of a node. */
   "0.6": STEPS_0_6,
+  "0.7": STEPS_0_7,
   midway: [...SCHEMA_STEPS, failingMidway],
   verify: [...SCHEMA_STEPS, failingVerify],
   "foreign-key": [...SCHEMA_STEPS, brokenForeignKey],

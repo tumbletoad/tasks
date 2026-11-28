@@ -91,6 +91,16 @@ export const CHILD_FIELDS = {
   },
   // A folder's path on its machine, and its tombstone. Its owner and machine never change.
   folders: { path: ["path"], deleted: ["deleted_at"] },
+  // A page's words, what holds it, and its tombstone: what `page.*` writes after its create.
+  pages: {
+    title: ["title"],
+    brief: ["brief"],
+    body: ["body"],
+    owner: ["owner_kind", "owner_id"],
+    deleted: ["deleted_at", "deleted_by"],
+  },
+  // A node's texts, each its own field: the space's brief, a description, the text for agents.
+  node_texts: { brief: ["brief"], description: ["description"], for_agents: ["for_agents"] },
 } as const satisfies Record<string, Record<string, readonly string[]>>;
 
 /**
