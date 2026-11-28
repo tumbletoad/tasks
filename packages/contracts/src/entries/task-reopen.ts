@@ -1,4 +1,4 @@
-// task.reopen: reopen a completed or archived task (A3 3.4.9). Its MCP tool is reopen_task. The
+// task.reopen: reopen a completed or archived task. Its MCP tool is reopen_task. The
 // previous outcome and learnings stay as the earlier result.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";

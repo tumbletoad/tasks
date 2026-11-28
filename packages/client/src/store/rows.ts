@@ -1,5 +1,5 @@
-// The rows the live store holds and the feed's messages as a page or an app reads them (A5 3.15;
-// the service's forms are packages/service/src/http/feed.ts and ws.ts). Everything that arrives
+// The rows the live store holds and the feed's messages as a page or an app reads them
+// (the service's forms are packages/service/src/http/feed.ts and ws.ts). Everything that arrives
 // over the socket is checked by its shape here, once, before the store sees it: a message or row
 // that does not read is no message or row. The page's own messages, the Agent Monitor's view and
 // this machine's settings, are read in packages/web/src/store/messages.ts.
@@ -39,7 +39,7 @@ export interface TaskRow {
    */
   readonly completed_on?: string;
   /**
-   * When its current wait began, in milliseconds since the epoch (A5 3.5, 3.6): the Waiting view's
+   * When its current wait began, in milliseconds since the epoch: the Waiting view's
    * age. Absent until the service's compact row carries it.
    */
   readonly waiting_since?: number;
@@ -53,11 +53,11 @@ export interface TaskRow {
   readonly created_at: number;
   readonly version: number;
   readonly touched?: number;
-  /** Its first three sources, with their own text and URL (A5 3.6). Absent: none. */
+  /** Its first three sources, with their own text and URL. Absent: none. */
   readonly sources?: readonly RowSource[];
   /** How many more sources it has than `sources` shows. */
   readonly sources_more?: number;
-  /** Its place's state on this machine. Absent: it has no place (A5 3.6). */
+  /** Its place's state on this machine. Absent: it has no place. */
   readonly place?: RowPlace;
   /** Its background run that works, else the one whose question waits for the person. */
   readonly run?: RowRun;
@@ -121,7 +121,7 @@ export type RowPlace =
   | { readonly state: "elsewhere"; readonly machine: string };
 
 /**
- * A task's logical fields and their columns (A1 3.4). A feed entity's `changed` names logical
+ * A task's logical fields and their columns. A feed entity's `changed` names logical
  * fields, never columns: clearing `due` clears `due_date`, `due_at` and `due_tz` together. This is
  * storage's TASK_FIELDS as the page needs it; a test holds the two equal.
  */
@@ -148,7 +148,7 @@ export const TASK_FIELD_COLUMNS: Readonly<Record<string, readonly string[]>> = {
 
 /**
  * Every column a logical field of a task stands for, what the compact row carries of the task's
- * children (A5 3.6), and the times it derives: each is the compact row's, present or left out.
+ * children, and the times it derives: each is the compact row's, present or left out.
  */
 const TASK_COLUMNS: ReadonlySet<string> = new Set([
   ...Object.values(TASK_FIELD_COLUMNS).flat(),
@@ -274,7 +274,7 @@ function headOf(space: Record<string, unknown> & { id: string }): SpaceHead {
   };
 }
 
-/** The applied-through cursor (A1 3.7): the space's authority and the last seq accounted for. */
+/** The applied-through cursor: the space's authority and the last seq accounted for. */
 export interface Cursor {
   readonly epoch: number;
   readonly incarnation: string;
@@ -293,7 +293,7 @@ export interface FeedEntity {
   readonly task?: string;
   /**
    * The compact post-change row as of the batch's `through`, for a task, a node or a page. Null
-   * for the other kinds, and for a working-set row the service withholds (A5 3.15).
+   * for the other kinds, and for a working-set row the service withholds.
    */
   readonly row: Readonly<Record<string, unknown>> | null;
   readonly changed: readonly string[];
@@ -304,7 +304,7 @@ export interface FeedEvent {
   readonly seq: number;
   /** The commit's time, in milliseconds since 1970. */
   readonly at?: number;
-  /** The commit's ID (`op_`): what a toast's Undo names (A5 3.12). */
+  /** The commit's ID (`op_`): what a toast's Undo names. */
   readonly op_id?: string;
   readonly request_id: string;
   readonly actor: { readonly kind: string; readonly label: string };

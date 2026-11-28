@@ -1,4 +1,4 @@
-// The forwarder against the real service's MCP endpoint (A3 3.3, A2 3.7.3, A7 3.9 M2.02): the
+// The forwarder against the real service's MCP endpoint: the
 // tool list a live connection gives is the offline file's, byte for byte, in both eras; a session
 // that starts offline goes on with the real service from mcp_init; and a forwarder newer than the
 // service gets service_too_old in both eras. The hub runs as a real process with a space from

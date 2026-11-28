@@ -1,4 +1,4 @@
-// A person's edits, check-offs, undo and redo (A5 3.11, 3.12): the one code path for "a person
+// A person's edits, check-offs, undo and redo: the one code path for "a person
 // changes a field", whatever control they used (the star, the title, a fact).
 // Plain code without React, one per live session (`editsOf`), so every view of the tab shares it
 // and what it holds survives a switch of view, a collapsed card and a fresh snapshot.
@@ -17,7 +17,7 @@
 //   step that newer work stands in the way of, saying whose it was.
 // - A check-off by mistake is undone with one action. The row shows checked and struck through for
 //   a moment, then leaves at once; its toast's Undo names its own commit.
-// - Two windows, or a person and an agent, on one task: every edit carries a base (A1 3.5), so the
+// - Two windows, or a person and an agent, on one task: every edit carries a base, so the
 //   service refuses a write over a change the person did not see, and the conflict names who made it.
 //
 // Bases. A control's change takes what its row showed when the person acts (`seen`): the applied
@@ -30,11 +30,11 @@
 // edit writes (one commit that wrote them all), so the person's quick choices never conflict with
 // each other, and a change someone else made to any of those fields meanwhile still does.
 // Writes go through the live store, so each shows at once as an overlay and settles only through
-// the feed (A5 3.15 item 4).
+// the feed.
 //
 // The queue waits for outcomes, never for ever: a request that gets no answer is asked about by
 // its own ID, and what waits behind a request whose outcome cannot be learned stays with the
-// person as not saved, never sent out of order (calls.ts, A5 3.11 "No request holds the queue").
+// person as not saved, never sent out of order (calls.ts).
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { newerSaid, type NewerWorkEntry, type ShortList } from "@ttasks/contracts/newer-work";
 import type { Msg } from "../row/model.ts";
@@ -69,7 +69,7 @@ function readOnlyText(error: unknown): Msg | undefined {
 
 /** How long a checked-off row stays where it is: long enough to see the check land. */
 export const HOLD_MS = 300;
-/** Then it collapses (A5 3.12, 3.20). */
+/** Then it collapses. */
 export const COLLAPSE_MS = 180;
 /** A row whose undo answered waits this long at most for the feed to bring it back. */
 const RETURN_MS = 10_000;
@@ -92,7 +92,7 @@ export interface Toast {
   readonly second?: ToastAction;
 }
 
-/** An edit the service did not take: the person's value waits here (A5 3.11 "Writes"). */
+/** An edit the service did not take: the person's value waits here. */
 export interface Unsaved {
   /**
    * Its own, until a save of it is acknowledged: a Try again refused again keeps it, and two tabs
@@ -114,7 +114,7 @@ export interface Unsaved {
   readonly at?: number;
 }
 
-/** A row that leaves its view and stays for the hold (A5 3.12). */
+/** A row that leaves its view and stays for the hold. */
 export interface Leaving {
   readonly row: TaskRow;
   /** Checked and struck through; false once its check-off was undone. */
@@ -151,7 +151,7 @@ export interface EditState {
   readonly finishing: ReadonlyMap<string, TaskRow>;
 }
 
-/** Someone else changed a field while an editor was open (A5 3.15 item 9). */
+/** Someone else changed a field while an editor was open. */
 export interface Remote {
   readonly by: string;
   readonly kind: string;
@@ -203,7 +203,7 @@ class AlreadyDone extends Error {}
 class NothingLeft extends Error {}
 
 /**
- * The codes of a refusal that is no decision: the request may still be decided (A1 3.8: busy,
+ * The codes of a refusal that is no decision: the request may still be decided (busy,
  * a timeout, a space that is opening). `internal` is a bug, refused the same way every time.
  */
 const UNDECIDED = new Set(["service_unavailable", "space_unavailable"]);
@@ -218,7 +218,7 @@ function receiptError(found: Found): Error {
     code: found.status === "conflict" ? "conflict" : "refused",
     data: {
       cause: found.error?.cause ?? "",
-      // A receipt keeps a conflict without its values (A1 3.10.1).
+      // A receipt keeps a conflict without its values.
       conflicts: (found.conflicts ?? []).map((c) => ({
         ...(c.ref === undefined ? {} : { task: c.ref }),
         ...(c.entity === "tasks" ? {} : { entity: c.entity, id: c.id }),
@@ -252,7 +252,7 @@ function writeOf(found: Found): Decision<Omit<WriteReceipt, "receipt">> {
   return { ok: false, error: receiptError(found) };
 }
 
-/** A conflict as the service names it (A3 3.5, A1 3.10.1). */
+/** A conflict as the service names it. */
 interface Conflict {
   readonly task?: string;
   readonly entity?: string;
@@ -470,7 +470,7 @@ function listText({ shown, more }: ShortList, name: (item: string) => string | M
 }
 
 /**
- * The toast of an undo or redo that someone's newer work kept (A5 3.12): who changed which tasks
+ * The toast of an undo or redo that someone's newer work kept: who changed which tasks
  * since, the tasks by their numbers and the authors by their names, as the command line says it
  * (newerSaid), or that it cannot be put back now. The step stays as it is and is gone from Undo.
  */
@@ -619,7 +619,7 @@ export class Edits {
   }
 
   /**
-   * A person's edit of a task (A5 3.11): shown at once, sent with a base, and on a refusal kept
+   * A person's edit of a task: shown at once, sent with a base, and on a refusal kept
    * with the person's value. `base` is what the person saw when they chose: an editor's, taken
    * when it opened; a control leaves it out. `refused` says a refusal after what came before it.
    */
@@ -806,7 +806,7 @@ export class Edits {
   }
 
   /**
-   * Check-off (D12, A5 3.12): final at once, no model. The row stays checked and struck through
+   * Check-off: final at once, no model. The row stays checked and struck through
    * for the hold, then collapses; the toast's Undo names the commit.
    */
   checkOff(task: TaskRow): void {
@@ -1095,7 +1095,7 @@ export class Edits {
   }
 
   /**
-   * A task the view shows was completed by a write the tab did not hold yet (A5 3.12): another
+   * A task the view shows was completed by a write the tab did not hold yet: another
    * actor's (it strikes through, says who, and leaves after the hold), or the tab's own redo.
    */
   hold(row: TaskRow, by: string | undefined, at: number, request?: string): void {
@@ -1108,7 +1108,7 @@ export class Edits {
   }
 
   /**
-   * Undo (A5 3.12): the step a toast names, or this tab's newest step (Ctrl+Z), always by its
+   * Undo: the step a toast names, or this tab's newest step (Ctrl+Z), always by its
    * commit. It takes its place in the queue at once, when the person acts, and a toast's write's
    * commit is resolved there. A commit the page cannot learn (the write was refused) is not guessed.
    */
@@ -1368,7 +1368,7 @@ export class Edits {
   }
 
   /**
-   * A request's outcome, the one place that acts on it (A5 3.11 "No request holds the queue").
+   * A request's outcome, the one place that acts on it.
    * `settle` runs once for `answer`: the decision, or, when no answer came (`Unanswered`), the
    * interim outcome the person sees as not saved. A decision that comes after that interim runs
    * `settle` once more (`late`), and only then: `Call` decides once, so a second answer or receipt

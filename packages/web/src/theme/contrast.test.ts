@@ -30,7 +30,7 @@ describe("[A5.3.19.web.contrast] every allowed token pair meets its contrast thr
         ({ pair, ratio: r }) => `${pair.fg} on ${pair.bg}: ${r.toFixed(2)} < ${String(pair.min)}`,
       );
       expect(failures).toEqual([]);
-      // Text needs 4.5:1, marks and controls 3:1, and every pair of A5 3.19 is checked: 16
+      // Text needs 4.5:1, marks and controls 3:1, and every allowed pair is checked: 16
       // foregrounds and 3 marks on the five surfaces, and the nine named pairs.
       expect(ALLOWED_PAIRS).toHaveLength(16 * 5 + 3 * 5 + 9);
       expect(new Set(ALLOWED_PAIRS.map((p) => p.min))).toEqual(new Set([TEXT_MIN, NON_TEXT_MIN]));

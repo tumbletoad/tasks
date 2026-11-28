@@ -1,4 +1,4 @@
-// Per-frame batching (A5 3.15 item 3): the feed's messages are queued as they arrive and applied
+// Per-frame batching: the feed's messages are queued as they arrive and applied
 // together once per animation frame, so a burst of agent writes costs one render. The queue keeps
 // every message and their order: a frame drains all that came before it, in arrival order, and a
 // message that arrives while a frame drains waits for the next frame.

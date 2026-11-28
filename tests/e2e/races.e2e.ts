@@ -1,4 +1,4 @@
-// The skeleton page when answers arrive late (A7 3.9 M2.13; A5 3.6, 3.9, 3.13), in Chromium and
+// The skeleton page when answers arrive late, in Chromium and
 // Firefox against the real service process. Each held answer is the service's real answer, given to
 // the page only later, the way a slow connection would; where the test needs it to be an answer
 // read EARLIER than something, it makes it one, and never counts on the machine being fast or slow.
@@ -48,7 +48,7 @@ test.describe("[A7.3.9.m2-13.e2e.races] Late answers and repeated clicks", () =>
     const row = page.locator(`li[data-task="${world.spare.ref}"]`);
     const main = row.locator('[data-part="title"]');
     const tile = row.locator('[data-part="tile"]');
-    // The row's one tile is the effective instance's (A5 3.6). An expanded row hides it (A5 3.7):
+    // The row's one tile is the effective instance's. An expanded row hides it:
     // the expanded row's strip has a button per instance, which opens like a Ready tile.
     await expect(tile).toHaveAccessibleName(`Open in ${FAKE_INSTANCE.label}`);
     await Promise.all([page.waitForResponse("**/api/v1/launch/list"), main.click()]);

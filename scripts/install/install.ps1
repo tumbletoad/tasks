@@ -50,7 +50,7 @@ $Namespace = "$Product-release"
 # version>\runtime\node.exe, must stay under MAX_PATH.
 $MaxRoot = 168
 
-# ---- The pinned release keys (A2 3.12.5) -------------------------------------------------------
+# ---- The pinned release keys -------------------------------------------------------------------
 # The current key and, during a rotation, the next one. Written by render.ts from
 # packages/service/src/version/release-keys.ts; a release build refuses that file's placeholder.
 $ReleaseKeys = @('@@RELEASE_KEYS@@')

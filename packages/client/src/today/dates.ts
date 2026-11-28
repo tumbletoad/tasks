@@ -1,5 +1,5 @@
-// Calendar formatting for the row (A5 3.6, 3.23): due dates are local calendar dates ("2026-11-14")
-// and instants are milliseconds since 1970 in UTC (A1). The row reads them on the viewer's
+// Calendar formatting for the row: due dates are local calendar dates ("2026-11-14")
+// and instants are milliseconds since 1970 in UTC. The row reads them on the viewer's
 // calendar, which the clock names, so every function here is pure: the same clock gives the same
 // answer on every machine, and tests pass their own. The calendar arithmetic is day.ts's, shared
 // with the service.

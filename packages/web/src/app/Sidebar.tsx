@@ -55,7 +55,7 @@ const styles = classes(css, [
   "sidebar",
 ]);
 
-/** A view stays the current item while it holds an expanded task (`?task=`, A5 3.3). */
+/** A view stays the current item while it holds an expanded task (`?task=`). */
 const IGNORE_TASK = { includeSearch: false } as const;
 const EXACT_IGNORE_TASK = { exact: true, includeSearch: false } as const;
 

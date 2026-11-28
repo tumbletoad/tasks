@@ -97,7 +97,7 @@ export function renderInstaller(
 export function checkReleaseKeys(pinned: readonly string[] = RELEASE_PUBLIC_KEYS): string[] {
   if (pinned.some((key) => key.includes(RELEASE_KEY_PLACEHOLDER))) {
     throw new ReleaseKeyError(
-      "The release key is not pinned yet: packages/service/src/version/release-keys.ts still holds its placeholder. Make the key (pnpm release keygen, A2 3.12.5) and commit its public line there first.",
+      "The release key is not pinned yet: packages/service/src/version/release-keys.ts still holds its placeholder. Make the key (pnpm release keygen) and commit its public line there first.",
     );
   }
   return checkKeys(pinned);

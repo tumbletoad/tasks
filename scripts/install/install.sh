@@ -54,7 +54,7 @@ NAMESPACE="$PRODUCT-release"
 # MAX_PATH. The same limit holds here, in bytes, so a root works on both systems alike.
 MAX_ROOT=168
 
-# ---- The pinned release keys (A2 3.12.5) -------------------------------------------------------
+# ---- The pinned release keys -------------------------------------------------------------------
 # One per line: the current key and, during a rotation, the next one. Written by render.ts from
 # packages/service/src/version/release-keys.ts; a release build refuses that file's placeholder.
 RELEASE_KEYS='@@RELEASE_KEYS@@'

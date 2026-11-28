@@ -63,7 +63,7 @@ const temp = (): string => {
 
 const SPACE = "sp_3q7k9d2xw8f4r6t1c5v0b2n8a7";
 
-describe("[A4.5.environment.scrub] A4 3.8's scrub and the two kinds of base", () => {
+describe("[A4.5.environment.scrub] the scrub and the two kinds of base", () => {
   test("the person's own environment is taken whole and scrubbed, the instance's own wins; the service's goes through the allow-list", () => {
     const base = {
       PATH: "/home/mira/.nvm/versions/node/v24/bin:/usr/bin",

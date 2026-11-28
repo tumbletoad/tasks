@@ -1,4 +1,4 @@
-// The shape of the recorded stream fixtures (fixtures/streams/, A7 3.7 M0.11 and N05). The
+// The shape of the recorded stream fixtures (fixtures/streams/). The
 // structural check (tests/stream-content.ts) asserts that every value in a committed fixture is
 // one its treatment can produce. That check, not the text scan, is what keeps private data out of
 // the fixtures: a field never lets an observed value through because the field is known.
@@ -590,7 +590,7 @@ export const CLAUDE: Record<string, Spec> = {
   },
 };
 
-// Codex exec --json (codex-cli 0.167.2, observed 2026-11-12; item types from A4 3.11.4).
+// Codex exec --json (codex-cli 0.167.2, observed 2026-11-12).
 const errorObj: Spec = { obj: { message: ERR } };
 const ITEM = id("item");
 const STATUS = e("item-status");

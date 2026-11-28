@@ -1,11 +1,10 @@
-// launch.open: Open a task in an agent app, or Copy its pointer brief (A4 3.4, 3.4.6, 3.9, 3.15;
-// A5 3.8). The user's only (R7): no agent tool launches. One click is one launch intent, recorded
+// launch.open: Open a task in an agent app, or Copy its pointer brief. The user's only (R7): no agent tool launches. One click is one launch intent, recorded
 // before anything external happens; a repeated request returns the same intent and starts
-// nothing (A1 3.8, A4 3.9.1). The composer text never goes on a command line or into a link: Open
+// nothing. The composer text never goes on a command line or into a link: Open
 // saves it on the task as a note of the person's that the launch names as its request, before the
 // launch is recorded, and the agent reads it with `get_task` and the launch reference. Copy puts it
 // after the pointer on the clipboard, or over Copy's budget saves it as a note addressed to agents
-// that the brief points at (A4 3.15.3). With `run`, it is Continue: the run's app opens the run's
+// that the brief points at. With `run`, it is Continue: the run's app opens the run's
 // own conversation again in a terminal, once nothing of the run runs, and takes no words or brief.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
@@ -13,12 +12,12 @@ import { safeText } from "../safe-text.ts";
 import { idPattern, patterns, RequestId, TaskRefInput, USER_LIMITS } from "../schemas.ts";
 import { requestId } from "./fixture.ts";
 
-/** A4 3.1's launch reference: `L`, four symbols and a check character. */
+/** A launch reference: `L`, four symbols and a check character. */
 const LaunchRef = z
   .string()
   .regex(/^L[0-9A-HJKMNP-TV-Z]{5}$/u)
   .describe("The launch reference in the brief");
-/** A wall-clock instant in milliseconds (A1 3.4's integer domain). */
+/** A wall-clock instant in milliseconds, within the stored integer's domain. */
 const Millis = z.int().min(0).max(253_402_300_799_999);
 
 export const LaunchOpenInput = z.strictObject({
@@ -66,7 +65,7 @@ export const LaunchReceipt = z.strictObject({
   route: z.enum(["terminal", "link", "t3-mcp", "t3-cli", "clipboard"]).describe("How it opens"),
   state: z
     .enum(["prepared", "dispatching", "dispatched", "confirmed", "failed", "unknown"])
-    .describe("A4 3.9's state"),
+    .describe("Where the launch is: prepared, on its way, confirmed, failed or unknown"),
   reason: z.string().max(40).describe("Why it failed or is unknown: a fixed code").optional(),
   left_out: z
     .array(z.enum(["full-access", "auto-edit", "read-only", "arguments", "environment", "home"]))
@@ -89,7 +88,7 @@ export const LaunchOpenResult = z.strictObject({
   launch: LaunchReceipt.describe("The launch's receipt: IDs, states, instants and codes only"),
   copy: z
     .string()
-    // The context pack's ceiling (A4 3.15.5, PACK_CEILING): the notes from the user are kept
+    // The context pack's ceiling (PACK_CEILING): the notes from the user are kept
     // whole, so a pack may pass its 8,000-character budget by far.
     .max(200_000)
     .describe("Text for the clipboard: the pointer brief, context pack or brief to paste")
@@ -127,7 +126,7 @@ export const launchOpen = defineEntry({
   kind: "write",
   actors: "user",
   scope: "launch:open",
-  // Remote launches (A6 3.8) are L1's: until then no linked device calls it.
+  // Remote launches are L1's: until then no linked device calls it.
   remote: "never",
   audience: "none",
   ops: ["launch.create", "launch.transition"],

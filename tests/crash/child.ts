@@ -1,5 +1,5 @@
 // The crash harness's child process: one round of real work on a real space folder, as the
-// service will do it (M1.08), until the parent kills it or the plan ends.
+// service will do it, until the parent kills it or the plan ends.
 //
 // It finishes an interrupted restore and opens the space's writer through a StorageWorker, which
 // migrates the space first when its revision is older (the harness's build has the stand-in steps
@@ -11,7 +11,7 @@
 // At the armed point the seam reports the point and waits to be killed (protocol.ts).
 //
 // Run by harness.ts only: node tests/crash/child.ts, with the plan on stdin.
-// First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
+// First, as in the product's entries: this script ends through process.exit.
 import "../../packages/bridge/src/safe-exit.ts";
 import { join } from "node:path";
 import { backupSpaceWith, makeDurableFolder } from "../../packages/storage/src/backup/backup.ts";
@@ -74,7 +74,7 @@ async function main(): Promise<void> {
   const backupSeam = faultSeam("backup", arm);
   const machine = FIXTURE_MACHINE;
   const checked = await CheckedDriver.check(nodeSqliteDriver);
-  // What the service does before a space opens (A1 3.18).
+  // What the service does before a space opens.
   finishInterruptedRestore(plan.folder);
   const backupDir = backupsBeside(plan.folder);
   makeDurableFolder(backupDir);

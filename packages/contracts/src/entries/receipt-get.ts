@@ -1,9 +1,9 @@
-// receipt.get: a write's stored result by its request ID, in the caller's own writer scope (A3
-// 3.2.3, 3.7.9; A1 3.8; A7 3.8 M1.05). The CLI calls it first when it is given --request-id, so a
+// receipt.get: a write's stored result by its request ID, in the caller's own writer scope.
+// The CLI calls it first when it is given --request-id, so a
 // command repeated after a lost reply prints the stored result instead of reading a fresh base
-// (A3 3.4.1, DA-18), and the page asks it for a request that got no answer (A5 3.11). Another
+// (DA-18), and the page asks it for a request that got no answer. Another
 // scope's receipts are never found. Not an MCP tool. From L1 it also looks up a remote command's
-// receipt by command ID (A6 3.8.4), which adds an optional input.
+// receipt by command ID, which adds an optional input.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { AsOf, idPattern, Lifecycle, patterns, TaskId, TaskRef, Warnings } from "../schemas.ts";
@@ -19,8 +19,8 @@ const OpIndex = z.int().min(0).max(999_999).describe("Index of the operation in 
 /** Any A1 ID: a task, note, log entry, source, place, area or project. */
 const RowId = z.string().regex(/^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}$/u);
 /**
- * A preference's key, such as `tasks.statuses` (A1 3.16): a preference has no ID, and its key is its
- * `changes.entity_id` (A1 3.4), so `pref.set`'s result names it.
+ * A preference's key, such as `tasks.statuses`: a preference has no ID, and its key is its
+ * `changes.entity_id`, so `pref.set`'s result names it.
  */
 const PreferenceKey = z
   .string()
@@ -70,7 +70,7 @@ const ReceiptOpResult = z.strictObject({
 const ReceiptConflict = z.strictObject({
   op: OpIndex,
   // Every table a request can conflict on: storage's ConflictEntity (write/request.ts). An undo
-  // or redo also names a child row that keeps a create from being undone (A1 3.10).
+  // or redo also names a child row that keeps a create from being undone.
   entity: z
     .enum([
       "tasks",
@@ -222,7 +222,7 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 
 /**
  * receipt.get's result for a stored receipt, or for none: instants as ISO text, the error as A1's
- * code in `cause` (A3 3.5). The handler passes what storage's receipt lookup returned.
+ * code in `cause`. The handler passes what storage's receipt lookup returned.
  */
 /** A conflict as a receipt stores it: the writer's FieldConflict, without its values. */
 interface StoredConflict {

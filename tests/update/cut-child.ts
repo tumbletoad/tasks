@@ -3,7 +3,7 @@
 // passes and no service, and ends at once at the update step `cut` names, as a closed terminal or
 // a power cut ends an update there. Exit 9 says it was cut there; any other code, that it never
 // reached it. Tests only.
-// First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
+// First, as in the product's entries: this script ends through process.exit.
 import "../../packages/bridge/src/safe-exit.ts";
 import type { HostFacts } from "../../packages/service/src/hub/paths.ts";
 import { updateFromArchive, type UpdatePoint } from "../../packages/service/src/version/update.ts";

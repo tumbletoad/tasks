@@ -1,4 +1,4 @@
-// The one list component (A5 3.5, 3.22, 3.25): a grouped sequence of items (items.ts) laid out in
+// The one list component: a grouped sequence of items (items.ts) laid out in
 // the page's own scroll. Lists over 200 rows are virtualised with TanStack Virtual against the
 // window: the visible items plus 10 above and below are mounted, group headings are items too, and
 // each item sits at its offset through a custom property set in the CSSOM (no style attribute in
@@ -11,7 +11,7 @@
 //   and the arrows move it, Home and End go to the ends, `[` and `]` to the previous or next
 //   group, Escape collapses the expanded row. The current row and the expanded row stay mounted
 //   whatever the scroll, so focus is never lost when a row leaves the window and comes back.
-// - Focus is sacred (A5 3.15 item 6): a row that holds focus stays in the list until focus leaves
+// - Focus is sacred: a row that holds focus stays in the list until focus leaves
 //   it, even when an update takes it out of the view, and an update keeps the focused row (or else
 //   the first visible row) at its place on screen.
 import { defaultRangeExtractor, useWindowVirtualizer, type Range } from "@tanstack/react-virtual";
@@ -61,9 +61,9 @@ const MOVES: Partial<Record<ActionId, Parameters<typeof moveFrom>[2]>> = {
   "previous-group": "previous-group",
 };
 
-/** Lists over this many rows are virtualised (A5 3.22: "Lists under 200 rows are not"). */
+/** Lists over this many rows are virtualised; shorter lists are not. */
 export const VIRTUAL_ABOVE = 200;
-/** Items mounted beyond the visible ones, each way (A5 3.25). */
+/** Items mounted beyond the visible ones, each way. */
 export const OVERSCAN = 10;
 /** The sticky top bar's height, and a little air: scrolling keeps rows clear of it. */
 const TOP = 64;
@@ -107,7 +107,7 @@ const estimate = (item: Item | undefined, expanded: string | undefined): number 
 };
 
 /**
- * The items to show. Nothing moves under focus (A5 3.15 item 6): while a row holds focus it keeps
+ * The items to show. Nothing moves under focus: while a row holds focus it keeps
  * its place and its group, so its element (and the focus in it) survives, whatever the update did.
  * A focused row the update took out of the view stays with its last data; one the update moved to
  * another group or project stays under its old heading with its new data; one the update re-sorted
@@ -236,7 +236,7 @@ export function List({
     if (Math.abs(top - margin) > 0.5) setMargin(top);
   });
 
-  // Scroll anchoring (A5 3.15 item 6): before an update lands, where the anchor row is on screen.
+  // Scroll anchoring: before an update lands, where the anchor row is on screen.
   const anchor = useRef<{ readonly key: string; readonly top: number } | undefined>(undefined);
   const anchored = useRef<Items | undefined>(undefined);
   if (anchored.current !== shown) {
@@ -385,7 +385,7 @@ export function List({
     >
       {groups.map((group) => {
         const title = titleOf(group.item);
-        // Today's sections are `section` elements (A5 3.22), named like every group by aria-label:
+        // Today's sections are `section` elements, named like every group by aria-label:
         // a virtualised list may have unmounted the heading. A flat group has no item, no heading
         // and no name: its rows are the view's own list.
         const kind = group.item?.group.kind;

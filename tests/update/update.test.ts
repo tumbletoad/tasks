@@ -1,4 +1,4 @@
-// The updater in-process (A2 3.12.6, A7 3.13 M6.12) on fixture installs and releases signed with
+// The updater in-process on fixture installs and releases signed with
 // throwaway keys: the release is verified with the installed version's keys before anything of
 // it is written, the candidate is self-tested before current changes, the switch is journalled
 // and ends on the complete new version, a failure rolls back to the complete old one, a repair

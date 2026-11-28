@@ -1,4 +1,4 @@
-// Fixture tasks in bulk for the list's end-to-end tests (A5 3.25: the design scale is 5,000 open
+// Fixture tasks in bulk for the list's end-to-end tests (the design scale is 5,000 open
 // tasks): written straight through the space's writer, before the service opens the space, in
 // requests of 50 creates. Deterministic: task n is the same on every run, and its dates are set
 // relative to the day the test runs, so the rows show late, soon and later dues, planned days,

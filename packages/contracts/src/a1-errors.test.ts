@@ -1,10 +1,10 @@
-// A1's error codes mapped onto the registry's (A3 3.5; A7 3.8 M1.05). Storage's own test checks
+// Storage's error codes mapped onto the registry's. Storage's own test checks
 // that every code it can raise is in the table (packages/storage/test/errors.test.ts).
 import { describe, expect, test } from "vitest";
 import { A1_ERRORS, a1ErrorBody, a1Mapping, type A1ErrorMapping } from "./a1-errors.ts";
 import { ERROR_CODES, isErrorCode } from "./errors.ts";
 
-/** The codes A1 3.7 owns, A1 3.6's HAS_ACTIVE_TASKS and SPACE_READ_ONLY among them. */
+/** The write path's codes, HAS_ACTIVE_TASKS and SPACE_READ_ONLY among them. */
 const A1_3_7 = [
   "VALIDATION_FAILED",
   "TOO_LARGE",
@@ -35,7 +35,7 @@ const A1_3_7 = [
 const mappings = Object.entries(A1_ERRORS) as [string, A1ErrorMapping][];
 
 describe("[A3.3.5.error-map] A1's codes map onto the registry's, with A1's code as the cause", () => {
-  test("every code of A1 3.7 is mapped, onto a code of the catalogue", () => {
+  test("every code of the write path is mapped, onto a code of the catalogue", () => {
     for (const code of A1_3_7) expect(Object.hasOwn(A1_ERRORS, code), code).toBe(true);
     for (const [cause, mapping] of mappings) {
       expect(isErrorCode(mapping.code), cause).toBe(true);
@@ -43,7 +43,7 @@ describe("[A3.3.5.error-map] A1's codes map onto the registry's, with A1's code 
     }
   });
 
-  test("a reason and a retry rule come only with the codes that carry them (A3 3.5)", () => {
+  test("a reason and a retry rule come only with the codes that carry them", () => {
     for (const [cause, mapping] of mappings) {
       const carries = mapping.code === "space_unavailable" || mapping.code === "read_only";
       if (!carries) {
@@ -69,7 +69,7 @@ describe("[A3.3.5.error-map] A1's codes map onto the registry's, with A1's code 
     }
     expect(a1Mapping("REQUEST_ID_REUSED").code).toBe("request_id_conflict");
     expect(ERROR_CODES.request_id_conflict.class).toBe("conflict");
-    // Another space's prefix is not_found, never a task elsewhere (A3 3.4.1).
+    // Another space's prefix is not_found, never a task elsewhere.
     expect(a1Mapping("SPACE_MISMATCH").code).toBe("not_found");
   });
 
@@ -86,7 +86,7 @@ describe("[A3.3.5.error-map] A1's codes map onto the registry's, with A1's code 
       message: "No answer in time",
       data: { cause: "STORAGE_TIMEOUT", reason: "timeout", retryable: true },
     });
-    // A reused request ID carries the time of the original (A3 3.5).
+    // A reused request ID carries the time of the original.
     expect(
       a1ErrorBody("REQUEST_ID_REUSED", "Used for another change", {
         field: "request_id",
@@ -97,7 +97,7 @@ describe("[A3.3.5.error-map] A1's codes map onto the registry's, with A1's code 
       field: "request_id",
       original_at: "2026-11-12T09:00:00.000Z",
     });
-    // SPACE_READ_ONLY carries the writer's reason (A3 3.5: read_only names the reason), which
+    // SPACE_READ_ONLY carries the writer's reason (read_only names the reason), which
     // replaces a mapping's own. Only a reason-shaped word passes, and only for the codes that
     // carry a reason, so no value reaches the body this way.
     expect(

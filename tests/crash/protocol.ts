@@ -18,7 +18,7 @@ export const backupsBeside = (spaceFolder: string): string => join(dirname(space
 export const WHERES = ["write", "backup", "barrier", "migrate", "restore"] as const;
 export type Where = (typeof WHERES)[number];
 
-/** Every named point, by where it is (the storage seams of A1 5 and M1.07). */
+/** Every named point, by where it is in storage. */
 export const POINTS: { readonly [W in Where]: readonly string[] } = {
   write: ["before-commit", "after-commit"],
   backup: ["copied", "checked", "compressed", "data-published", "sidecar-published"],
@@ -27,7 +27,7 @@ export const POINTS: { readonly [W in Where]: readonly string[] } = {
   restore: ["unpacked", "claimed", "moved-aside", "moved-into-place"],
 };
 
-/** The statuses of a decision the write path stores (A1 3.8). */
+/** The statuses of a decision the write path stores. */
 export const OUTCOMES: readonly string[] = ["applied", "unchanged", "conflict", "rejected"];
 
 /** The child stops at the `nth` time it reaches `where`/`point`, and waits to be killed. */
@@ -37,7 +37,7 @@ export interface Arm {
   nth: number;
   /**
    * At a write point: count only new decisions with this status, so a kill lands on the rarer
-   * outcomes too (a no-op's or a refusal's receipt is its only trace, A1 3.8).
+   * outcomes too (a no-op's or a refusal's receipt is its only trace).
    */
   outcome?: string;
 }
@@ -64,7 +64,7 @@ export interface PlannedRequest {
   base: "none" | "fresh" | "stale";
   ops: Operation[];
   /**
-   * The label of the agent actor the request is from (A3 3.7.4: `script`, `agent:unknown`), which
+   * The label of the agent actor the request is from (`script`, `agent:unknown`), which
    * joins the space on its first act through `actor.register`, as the service's request path adds
    * it. Absent: the space's human.
    */
@@ -123,7 +123,7 @@ export interface AckedConflict {
 
 /**
  * A write result, reduced to what the ledger compares: everything a receipt stores and a replay
- * returns (A1 3.8), as statuses, IDs, numbers, codes and field names. No values, no text:
+ * returns, as statuses, IDs, numbers, codes and field names. No values, no text:
  * a conflict's current value is in the first reply only, and an author's label and a problem's
  * sentence are left out.
  */
@@ -228,7 +228,7 @@ export function reduce(result: WriteResult): Acked {
 
 /**
  * Whether a replay returned what the first answer said: every reduced field but `replayed`. A
- * receipt stores the whole result but a conflict's value (A1 3.8), which `reduce` leaves out.
+ * receipt stores the whole result but a conflict's value, which `reduce` leaves out.
  */
 export function sameResult(a: Acked, b: Acked): boolean {
   return differingParts(a, b).length === 0;

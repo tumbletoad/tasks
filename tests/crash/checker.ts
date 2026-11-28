@@ -1,5 +1,5 @@
-// The invariant checker: it opens what a kill left and checks every guarantee of A1 5 and of
-// A1 3.7, 3.8 and 3.18 that a process kill can test. It reports violations as data (the
+// The invariant checker: it opens what a kill left and checks every guarantee of the
+// space's storage that a process kill can test. It reports violations as data (the
 // invariant's name and a detail of names, codes and numbers, never a value or task text), so the
 // harness can stop with the seed and the round.
 //
@@ -147,7 +147,7 @@ function replacedFolders(parent: string, slug: string): Map<string, string> {
 /**
  * Phase 1, before the restart: the folders as the kill left them. The space's folder is there, or
  * a swap stopped between its renames, with the replaced folder and the complete new folder of the
- * same stamp both there (A1 3.18), which the restart completes.
+ * same stamp both there, which the restart completes.
  */
 export function checkFolders(ledger: Ledger): Violation[] {
   const found = new Found();
@@ -194,7 +194,7 @@ export async function checkSpace(
   }
   const { conn } = opened;
   // The next writer must be able to open what the kill left: a reader's reason other than the
-  // older revision the writer migrates (A1 3.17) would refuse it, which a reader alone hides.
+  // older revision the writer migrates would refuse it, which a reader alone hides.
   const allowed = encodeRevision(opened.revision) < REVISION_0_7 ? ["older_revision"] : [];
   for (const reason of opened.readOnlyReasons) {
     if (!allowed.includes(reason)) {
@@ -254,7 +254,7 @@ function checkDatabase(conn: Connection, ledger: Ledger, found: Found): Observed
  * file system and the database. A swap leaves a new `<slug>.replaced-<stamp>` folder, one per
  * restore since the last check; restores that reported their end account for theirs. One more
  * means the interrupted restore swapped, and then the space must hold a new incarnation whose
- * claim names the restored backup (A1 3.18: the copy is claimed before the swap, so no crash
+ * claim names the restored backup (the copy is claimed before the swap, so no crash
  * leaves the old incarnation under the space's name). No new folder means it did not swap, and the
  * incarnation must be the one the ledger holds. Anything else is a violation.
  *
@@ -318,13 +318,13 @@ function checkMigration(conn: Connection, space: SpaceRow, revision: number, fou
         name,
       }),
     );
-  // The real 0.2 (M3.01): its tables and the space's hold.
+  // The real 0.2: its tables and the space's hold.
   const hold = one(conn, "SELECT count(*) FROM pragma_table_info('space') WHERE name = 'hold'");
   const atLeast02 = revision >= REVISION_0_2;
   if (tables(TABLES_0_2).some((n) => (n === 1) !== atLeast02) || (hold === 1) !== atLeast02) {
     found.add("migration-atomic", "the 0.2 step's tables and column do not match the revision");
   }
-  // The real 0.3 (M6.01): its tables.
+  // The real 0.3: its tables.
   const atLeast03 = revision >= REVISION_0_3;
   if (tables(TABLES_0_3).some((n) => (n === 1) !== atLeast03)) {
     found.add("migration-atomic", "the 0.3 step's tables do not match the revision");
@@ -550,8 +550,8 @@ const SYSTEM_OPERATIONS: Readonly<Record<string, string>> = {
 /**
  * Every commit the space wrote for itself is accounted for, as every request's commit is by its
  * receipt and its request: one of the system's own operations, holding exactly what that operation
- * writes. `machine.register` creates its machine's row with its change (A1 3.6). `actor.register`
- * (decision M1.10) adds the agent actor it names, with the kind, label and time of its commit, and
+ * writes. `machine.register` creates its machine's row with its change. `actor.register`
+ * adds the agent actor it names, with the kind, label and time of its commit, and
  * writes no change row: actors carry no versions. A claim and this build's migration steps change
  * no row with history. And every actor is accounted for: the human and the system a space is created
  * with, and each agent through its own `actor.register`, before any commit of its, one per label.
@@ -799,7 +799,7 @@ function storedValue(field: string, value: unknown): unknown {
 }
 
 /**
- * Every column of a task the workload creates (A1 3.7's defaults for what the input leaves
+ * Every column of a task the workload creates (the defaults for what the input leaves
  * out: status open, priority 4, the inbox flag off, empty text, no group), but its ID, reference,
  * position and time, which the writer chooses.
  */
@@ -848,7 +848,7 @@ const holds = (row: Row | undefined, expected: Row): boolean =>
 
 /**
  * Every decision that claims a state holds what the harness asked, independently of the database's
- * own record of the request (A1 3.7: a request applies whole or not at all; A1 3.8:
+ * own record of the request (a request applies whole or not at all, and
  * a no-op is decided on the state at its as_of). Judged with the operation results its receipt
  * stores, so for every decision, acknowledged or not:
  * - applied: each created task, note, log entry, source and link with the content sent and the
@@ -1003,7 +1003,7 @@ function requestIntent(
         const link = `${op.task}|${sourceId}`;
         allow("sources", sourceId, "create");
         allow("task_sources", link, "create");
-        // A new source has the content sent; one found by its key keeps its own (A1 3.6). A key an
+        // A new source has the content sent; one found by its key keeps its own. A key an
         // active task holds stays that task's: the new task's source is made without it.
         const fresh = createdHere("sources", sourceId);
         const source = fresh ?? existsAt("sources", sourceId);
@@ -1129,7 +1129,7 @@ function valueText(row: Record<string, unknown>, columns: readonly string[]): st
   );
 }
 
-/** The tables with history (A1 3.4), the expression of their `changes.entity_id`, their fields. */
+/** The tables with history, the expression of their `changes.entity_id`, their fields. */
 const HISTORY_TABLES: readonly { table: string; key: string; fields: Fields }[] = [
   { table: "tasks", key: "id", fields: TASK_FIELDS },
   { table: "task_sources", key: "task_id || '|' || source_id", fields: CHILD_FIELDS.task_sources },
@@ -1139,7 +1139,7 @@ const HISTORY_TABLES: readonly { table: string; key: string; fields: Fields }[] 
   { table: "log_entries", key: "id", fields: {} },
   { table: "sources", key: "id", fields: {} },
   { table: "machines", key: "id", fields: {} },
-  // Schema 0.3 (M6.01): there from that revision on. The workload writes none yet.
+  // Schema 0.3: there from that revision on. The workload writes none yet.
   { table: "sessions", key: "id", fields: {} },
   { table: "runs", key: "id", fields: CHILD_FIELDS.runs },
   // Schema 0.5: there from that revision on. The workload writes none yet.
@@ -1152,7 +1152,7 @@ const HISTORY_TABLES: readonly { table: string; key: string; fields: Fields }[] 
 const DERIVED = new Set<string>([...DERIVED_COLUMNS, "entity_id"]);
 
 /**
- * The change history of one table's rows (A1 3.4, 3.5, 3.7): it starts with the row's create, each
+ * The change history of one table's rows: it starts with the row's create, each
  * field's changes chain, fv and fp name the latest change, version and touched follow, and the row
  * is exactly its history played back: its create change's columns with every later field change
  * applied, every column but the derived ones (DERIVED_COLUMNS). So no column, immutable content
@@ -1278,7 +1278,7 @@ function checkHistory(conn: Connection, history: History, found: Found): void {
   let orphans = 0;
   for (const row of history.byRow.keys()) if (!rows.has(row)) orphans += 1;
   if (orphans > 0) found.add("history", `${String(orphans)} rows with change rows are not there`);
-  // Every request's commit waits in the outbox under `*` too (A1 3.7, 3.8).
+  // Every request's commit waits in the outbox under `*` too.
   const star = Number(
     one(conn, "SELECT coalesce(max(seq), 0) FROM outbox WHERE topic = 'projection' AND key = '*'"),
   );
@@ -1291,8 +1291,8 @@ function checkHistory(conn: Connection, history: History, found: Found): void {
 /**
  * Every folder a restore in place moved aside is still there and holds what it held, checked
  * again after every round (a later restore or a cleanup could harm it), and none holds the
- * incarnation that now has the space's name (A1 3.18: the copy is claimed before the swap).
- * M1.10's recovery swaps without a claim and must be told apart here when it joins the workload.
+ * incarnation that now has the space's name: the copy is claimed before the swap.
+ * A recovery that swaps without a claim must be told apart here when it joins the workload.
  */
 function checkReplaced(
   checked: CheckedDriver,

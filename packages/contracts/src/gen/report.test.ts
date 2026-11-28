@@ -1,4 +1,4 @@
-// The definition report (A3 3.2.5): every tool definition's size is reported in
+// The definition report: every tool definition's size is reported in
 // `mcp-definitions.json`, and the report matches the generated definitions byte for byte.
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";

@@ -1,4 +1,4 @@
-// Schema 0.2 (A7 3.10 M3.01) on a real 0.1 space: the Mira sample built by the 0.1 chain through
+// Schema 0.2 on a real 0.1 space: the Mira sample built by the 0.1 chain through
 // the write path (testkit's seedMira with STEPS_0_1, whose known digest is the 0.1 builds'), not a
 // checked-in database. The migration test from it to this build's latest revision, a fault at every
 // statement boundary of the 0.2 step's migration, and an older build that refuses the migrated space
@@ -141,7 +141,7 @@ describe("[A1.5.migration.from-0.1] the 0.1 fixture migrates to this build's 0.6
     const folder = copyOfFixture();
     const worker = await StorageWorker.start({ driver: "node:sqlite" });
     try {
-      // The storage worker's writer migrates on open, under the space's claim (A1 3.17).
+      // The storage worker's writer migrates on open, under the space's claim.
       const writer = await worker.openSpaceWriter(folder, {
         backupDir: backupsBeside(folder),
         machine: fixture.machine,
@@ -252,7 +252,7 @@ describe("[A1.5.migration.from-0.1] the 0.1 fixture migrates to this build's 0.6
       min_writer: "0.0.0",
     });
 
-    // The downgrade is a restore of the pre-migration backup (A1 3.17): the fixture's counts,
+    // The downgrade is a restore of the pre-migration backup: the fixture's counts,
     // last_seq and rows, with the read-only mark of a restored copy on the space row.
     const restoredFolder = join(temp(), "mira");
     const backups = (await import("../../packages/storage/src/backup/list.ts")).listBackups(
@@ -329,7 +329,7 @@ describe("[A1.5.migration.statement-faults] a fault at every statement boundary 
       if (outcome.state !== "failed") throw new Error(`${where}: the migration did not fail`);
       expect(outcome.stage, where).toBe("migration");
       expect(outcome.error.code, where).toBe("MIGRATION_FAILED");
-      // A1 3.17's message: the cause's code, never a path.
+      // The message names the cause's code, never a path.
       expect(outcome.error.message, where).toBe(
         "Migration to 0.2 failed (DURABILITY_FAILED). Your data is unchanged. " +
           `The space stays at 0.1. Backup: ${outcome.backup?.name ?? "?"}`,

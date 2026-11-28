@@ -1,4 +1,4 @@
-// The launch tile (A5 3.6, 3.9): which state it shows for the effective instance, and what a click
+// The launch tile: which state it shows for the effective instance, and what a click
 // on it does. Pure, so every state is a unit test.
 import type { Busy } from "../api.ts";
 import type { Instance, LastUsed } from "@ttasks/contracts/runs";
@@ -16,7 +16,7 @@ export type BusyOf = Readonly<Record<string, Busy["state"]>>;
  */
 export type BusyTileState = "ready" | Busy["state"];
 
-/** Every state the tile slot shows (A5 3.6's table). */
+/** Every state the tile slot shows. */
 export type TileState =
   | BusyTileState
   /** The place does not resolve, or the instance is not set up on this machine. */
@@ -60,7 +60,7 @@ export const tileState = (busy: BusyOf | undefined, instance: string): BusyTileS
 export type TileAction = "open" | "expand" | "copy" | "none";
 
 /**
- * What a click on the tile does (A5 3.6): Ready opens. Running expands the task, where its thread
+ * What a click on the tile does: Ready opens. Running expands the task, where its thread
  * shows the session and the strip opens another: a second session is a choice, never a slip.
  * Unavailable expands to where "Choose folder" or Copy is; Copy only copies the brief; Opening,
  * Elsewhere and None do nothing.

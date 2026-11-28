@@ -1,6 +1,6 @@
 // task.finish: finish or abandon a task with an outcome and the pages it updated, create
-// follow-ups in the same request, or wrap up a task the user checked off (A3 3.4.8). The user checks
-// a task off without an outcome or pages. Agents give both (A3 3.2.3), but for a session that began
+// follow-ups in the same request, or wrap up a task the user checked off. The user checks
+// a task off without an outcome or pages. Agents give both, but for a session that began
 // before the library, which still gives its lessons.
 import { z } from "zod";
 import { defineEntry, under } from "../define.ts";

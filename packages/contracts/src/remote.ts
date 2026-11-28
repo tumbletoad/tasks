@@ -1,10 +1,10 @@
-// The remote command envelope (A6 3.8.1, the "Remote envelope types" hook of A6 3.3): types only,
+// The remote command envelope: types only,
 // in the registry's type package, exposed by no transport. No entry, route, tool, RPC method or
 // generated file names them until linked machines arrive (phase L1), and nothing in v1 parses or
 // signs one. They fix the shape now so the execution store, receipts and `receipt.get`'s command ID
 // are built against it, not against a guess.
 
-/** What a remote command asks the target to do (A6 3.8.1). */
+/** What a remote command asks the target to do. */
 export type RemoteAction = "open" | "open_folder" | "run";
 
 /** How long each action's envelope is valid, in seconds; receivers refuse more than 300. */
@@ -14,10 +14,10 @@ export const REMOTE_VALIDITY_S: Readonly<Record<RemoteAction, number>> = {
   run: 120,
 };
 
-/** The longest validity a receiver accepts, in seconds (A6 3.8.1). */
+/** The longest validity a receiver accepts, in seconds. */
 export const REMOTE_MAX_VALIDITY_S = 300;
 
-/** The most characters `user_text` may hold (A6 3.8.1). */
+/** The most characters `user_text` may hold. */
 export const REMOTE_USER_TEXT_MAX = 4000;
 
 /**
@@ -38,7 +38,7 @@ export interface RemoteRequest {
   /** A4's `root_rev` from the target's last `place.check`. */
   readonly seen_root_rev: number;
   readonly instance_id: string;
-  /** At most 4,000 characters, passed to the brief as data, never through a shell (A4). */
+  /** At most 4,000 characters, passed to the brief as data, never through a shell. */
   readonly user_text?: string;
   /** ISO 8601 instants. */
   readonly issued_at: string;
@@ -52,7 +52,7 @@ export type RemotePlace =
       readonly machine_id: string;
       readonly root_id: string;
       readonly rel_path: string;
-      /** The newer of the task's place-field version and the place record's (A1). */
+      /** The newer of the task's place-field version and the place record's. */
       readonly version: number;
     }
   | { readonly kind: "work_folder"; readonly machine_id: string };
@@ -68,7 +68,7 @@ export interface RemoteAuthorization {
   readonly authorized_at: string;
 }
 
-/** A remote command as it travels (A6 3.8.1): the signed request and its authorization. */
+/** A remote command as it travels: the signed request and its authorization. */
 export interface RemoteEnvelope {
   readonly v: 1;
   readonly type: "remote.execute";
@@ -80,7 +80,7 @@ export interface RemoteEnvelope {
   readonly authority_sig: string;
 }
 
-/** Why a target refused a command (A6 3.8.3), or why a dispatch failed (A6 3.8.2). */
+/** Why a target refused a command, or why a dispatch failed. */
 export type RemoteDenial =
   | "request_reused"
   | "epoch_mismatch"
@@ -95,7 +95,7 @@ export type RemoteDenial =
   | "place_unresolved"
   | "not_delivered";
 
-/** A target's receipt for a command (A6 3.8.4): A4's outcome, or a denial. */
+/** A target's receipt for a command: A4's outcome, or a denial. */
 export type RemoteReceipt =
   | {
       readonly command_id: string;

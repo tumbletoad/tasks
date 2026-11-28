@@ -1,17 +1,17 @@
-// Builds the page with Vite (A5 3.24) into a folder the service serves through `HttpStart.ui`
-// (A5 3.28) and the version folder ships as `ui/` (A2 3.12.2). The output loads under
-// A2 3.8.3's strict CSP and nothing else:
+// Builds the page with Vite into a folder the service serves through `HttpStart.ui`
+// and the version folder ships as `ui/`. The output loads under
+// the service's strict CSP and nothing else:
 // - no inline script or style: one external module script and one stylesheet;
 // - every asset is a file of this origin with a content hash in its name (assetsInlineLimit 0,
 //   so nothing becomes a data: URL), and no public folder;
 // - every script, stylesheet and module preload carries a Subresource Integrity hash of its bytes
-//   as written, added after the build (A2 3.8.3 "Asset integrity");
+//   as written, added after the build;
 // - no service worker, no module-preload polyfill, no source maps;
 // - one script: a lazy chunk would load without an integrity hash, so the build refuses a second
-//   one (A5 3.24 says how lazy chunks get integrity when they come);
+//   one;
 // - the theme's custom properties come from the theme data (src/theme, `virtual:theme-tokens.css`),
 //   so the stylesheet and the contrast test read the same values;
-// - a web app manifest and its icons at the root, and no service worker (A5 3.24 `PWA`);
+// - a web app manifest and its icons at the root, and no service worker;
 // - `index.html` keeps the service's two placeholders: `__TTASKS_NONCE__` (the per-response style
 //   nonce, in `<meta name="csp-nonce">`) and `__TTASKS_BUILD__` (the serving build, sent back as
 //   the build header).
@@ -63,7 +63,7 @@ const brandTitle: Plugin = {
   },
 };
 
-/** The theme's custom properties, from the theme data (A5 3.19: themes are data, never CSS). */
+/** The theme's custom properties, from the theme data: themes are data, never CSS. */
 const THEME_MODULE = "virtual:theme-tokens.css";
 const themeTokens: Plugin = {
   name: "theme-tokens",
@@ -112,7 +112,7 @@ export function iconPng(size: number, background: string, ring: string): Buffer 
 }
 
 /**
- * The web app manifest (A5 3.24 "PWA"): Chromium-family browsers can install the page as an app
+ * The web app manifest: Chromium-family browsers can install the page as an app
  * window, and no service worker is registered (U27). The name comes from packages/brand; the icon
  * is a plain placeholder mark in Sumi's colours until the brand step draws one.
  */
@@ -180,7 +180,7 @@ let productionQueue: Promise<unknown> = Promise.resolve();
 /**
  * Runs `work` with NODE_ENV set to `production`, and gives the caller's value back after. Vite
  * reads NODE_ENV itself, whatever `mode` says: any other value makes a development build, whose
- * JSX carries the absolute source path of every component (A5 3.24). Vitest sets `test`. NODE_ENV
+ * JSX carries the absolute source path of every component. Vitest sets `test`. NODE_ENV
  * belongs to the whole process, so calls run one at a time: two at once would each give the other's
  * value back, and one would build with the caller's.
  */
@@ -247,7 +247,7 @@ function viteBuild(target: string): ReturnType<typeof build> {
       cssCodeSplit: false,
       sourcemap: false,
       reportCompressedSize: false,
-      // One script by design; its budget (A5 3.25) is the build test's, compressed.
+      // One script by design; its budget is the build test's, compressed.
       chunkSizeWarningLimit: 1024,
       target: "es2024",
       rolldownOptions: {

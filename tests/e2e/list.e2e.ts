@@ -1,4 +1,4 @@
-// The task list at the design scale and its rows (A7 3.12 M5.03; A5 3.6, 3.22, 3.25), in Chromium
+// The task list at the design scale and its rows, in Chromium
 // and Firefox against the real service process, with the built page and 5,000 open fixture tasks
 // written into the space before the service opens it (bulk.ts).
 //
@@ -6,8 +6,8 @@
 // from the top of the list to the bottom and back, how many items are mounted, whether any part of
 // the viewport below the top bar is left uncovered by an item (a blank frame), whether the focused
 // row still holds focus, and how long each frame took. What it cannot say: a CI runner or a
-// development machine is not the real Ubuntu 24.04 machine A5's targets name, so the frame times
-// are recorded, not judged; A5's 60 fps target is M5.13's measurement on a real machine.
+// development machine is not the real Ubuntu 24.04 machine the targets name, so the frame times
+// are recorded, not judged; the 60 fps target is measured on a real machine.
 // Programmatic scrolling also skips the compositor's own smooth scrolling, so it is a stricter test
 // of coverage than a wheel, and no test of smoothness.
 import { expect, type Page } from "@playwright/test";
@@ -187,7 +187,7 @@ test.describe("[A7.3.12.m5-03.e2e.scroll-5000] 5,000 rows in the real store", ()
     const third = await focusedKey(page);
     expect(third).not.toBe(firstKey);
 
-    // Focus is sacred (A5 3.15 item 6): an agent moves the focused row to the end of its group,
+    // Focus is sacred: an agent moves the focused row to the end of its group,
     // and it keeps its place on screen and its focus.
     await page.evaluate(() => {
       window.scrollTo(0, 120_000);

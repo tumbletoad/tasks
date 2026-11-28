@@ -1,4 +1,4 @@
-// The runtime behind the generated client (generated/client.ts, A3 3.2.2). It loads no Zod, so the
+// The runtime behind the generated client (generated/client.ts). It loads no Zod, so the
 // browser bundle stays small: the UI imports the types and trusts the service's validation.
 import { AppError, isErrorCode } from "./errors.ts";
 import { routePath } from "./http.ts";
@@ -6,7 +6,7 @@ import type { EntryName, InputOf, OutputOf } from "./registry.ts";
 
 /**
  * Sends one POST with a JSON body and returns the status and the body text. The UI wraps `fetch`
- * and adds its token (A2). Tests pass a fake.
+ * and adds its token. Tests pass a fake.
  */
 export interface ClientTransport {
   post(path: string, body: string): Promise<{ status: number; body: string }>;

@@ -19,9 +19,9 @@ import {
 import { AS_OF, M14, M3 } from "./fixture.ts";
 
 /**
- * The sections whose payload A3 3.4.4 defines. `sessions` and `proposals` arrive with the steps
- * that define their records: sessions with the session list (M4.06), proposals with autonomy and
- * proposals (M4.02). Inputs only grow (A3 3.2.4), so adding them later breaks no caller.
+ * The sections with a payload. `sessions` and `proposals` arrive with the steps
+ * that define their records: sessions with the session list, proposals with autonomy and
+ * proposals. Inputs only grow, so adding them later breaks no caller.
  */
 const SECTIONS = [
   "instructions",
@@ -72,12 +72,12 @@ const Author = z.string().describe("Actor that wrote it, from history");
 const At = z.string().describe("When, ISO date and time");
 const Count = z.int().min(0).max(Number.MAX_SAFE_INTEGER);
 
-/** Characters the digest left out of a text (A3 3.9.6): a sections read has them in full. */
+/** Characters the digest left out of a text: a sections read has them in full. */
 const Cut = Count.describe("Characters left out; a sections read has them");
 
 /**
- * The part of one text a page of a sections read holds, when the text is longer than a page
- * (A3 3.4.4): code points `from` up to `to` of `of`. The page's `before` token reads on.
+ * The part of one text a page of a sections read holds, when the text is longer than a page:
+ * code points `from` up to `to` of `of`. The page's `before` token reads on.
  */
 export const Slice = z
   .strictObject({
@@ -87,7 +87,7 @@ export const Slice = z
   })
   .describe("Only this part of the text is on this page");
 
-/** A launch reference (A4 3.1): `L`, four symbols and a check character. */
+/** A launch reference: `L`, four symbols and a check character. */
 const LaunchRef = z.string().regex(/^L[0-9A-HJKMNP-TV-Z]{5}$/u);
 
 /** The most launches a note names as their request: a note opened again and again stays small. */
@@ -155,7 +155,7 @@ const DigestFolder = z.union([
   }),
 ]);
 
-/** One operation on the task: A3 3.4.4's seq, actor and what. */
+/** One operation on the task: its seq, actor and what. */
 const HistoryRow = z.strictObject({
   seq: z.int().min(1).max(Number.MAX_SAFE_INTEGER).describe("Commit sequence number"),
   actor: Author,
@@ -165,9 +165,8 @@ const HistoryRow = z.strictObject({
 const Learnings = z.array(z.string()).describe("Learnings");
 
 /**
- * The digest's task (A3 3.9.6), digest v0: A3's limits per part, with what each part left out
- * counted (`more`, `cut`), so every face gets the same bounded digest. v1 with provenance labels
- * and related learnings is M4.03's.
+ * The digest's task, digest v0: limits per part, with what each part left out
+ * counted (`more`, `cut`), so every face gets the same bounded digest.
  */
 export const TaskDetail = TaskRow.extend({
   summary: z.string().describe("One line: the next step, whole"),
@@ -214,7 +213,7 @@ export const TaskDetail = TaskRow.extend({
 });
 
 /**
- * The sections asked for (A3 3.4.4), as far as this page reaches: a page holds what fits, in the
+ * The sections asked for, as far as this page reaches: a page holds what fits, in the
  * order of the section list, and ends with `before` when more remains. A text longer than a page
  * is split across pages, each part with its `slice`. Only the sections this page reaches are here.
  */

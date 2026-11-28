@@ -1,4 +1,4 @@
-// The preferences registry (A1 3.16, A3 3.8.2; A7 3.10 M3.11). The writer's side of `pref.set` is
+// The preferences registry. The writer's side of `pref.set` is
 // tested in packages/storage/test/preferences.test.ts, machine.toml's in the service.
 import { describe, expect, test } from "vitest";
 import { a1ErrorBody } from "./a1-errors.ts";
@@ -76,7 +76,7 @@ describe("[A1.3.16.prefs.registry] every preference is declared once, with a sha
     expect(checkPreferences([base], ["ui.sample"])).toEqual(["ui.sample: a retired name"]);
   });
 
-  test("A1 3.16's keys and A3 3.8.2's policy keys are declared as the plan names them", () => {
+  test("every preference is declared with its scope, policy and writers", () => {
     const table = PREFERENCES.map((p) => [p.key, p.scope, p.policy, p.writers.join("+")]);
     expect(table).toEqual([
       ["ui.theme", "machine", false, "human"],
@@ -111,7 +111,7 @@ describe("[A1.3.16.prefs.registry] every preference is declared once, with a sha
       for (const kind of ["system", "import", "other"]) expect(mayWrite(p, kind)).toBe(false);
       if (p.policy) expect(mayWrite(p, "agent"), p.key).toBe(false);
     }
-    // The writer's refusal reaches a caller as forbidden with rule policy (A3 3.4.11, 3.8.3).
+    // The writer's refusal reaches a caller as forbidden with rule policy.
     expect(a1ErrorBody("PREFERENCE_FORBIDDEN", "Only the user changes this preference")).toEqual({
       code: "forbidden",
       message: "Only the user changes this preference",

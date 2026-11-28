@@ -1,9 +1,9 @@
-// The tab's sessions (A5 3.3): one sign-in for the browser, and one live session per space the tab
+// The tab's sessions: one sign-in for the browser, and one live session per space the tab
 // shows. The space is the route's: a switch mounts a new SpaceSession, which opens its own feed
 // subscription with a fresh snapshot, and the old one stops and closes its socket. Nothing here
 // is shared between tabs; another tab keeps its own space, feed and drafts.
 //
-// The seam to the live store (M5.02, A5 3.15) is narrow on purpose: the shell reads rows only
+// The seam to the live store is narrow on purpose: the shell reads rows only
 // through the store's `useLive()` (store/hooks.ts), and creates and stops a `Live` here, nowhere
 // else. A stopped `Live` never comes back (its store takes no more messages), so every mount (a
 // new sign-in, another space, a reload) creates a fresh one.

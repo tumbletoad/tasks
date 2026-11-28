@@ -1,4 +1,4 @@
-// Completed holds every finished task (A5 3.5), in Chromium and Firefox against the real service
+// Completed holds every finished task, in Chromium and Firefox against the real service
 // process: a space with thousands of tasks finished in one month, some checked off, some dropped.
 // Each row says how its task ended, scrolling reads on to the last row without a click and without
 // a row moving under the pointer, "Show more" still reads on from the keyboard, a dropped task

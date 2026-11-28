@@ -1,5 +1,5 @@
 /*
- * The task row (A5 3.6, 3.20): marker 16 px, check 24 px, title and summary (flex), then fixed
+ * The task row: marker 16 px, check 24 px, title and summary (flex), then fixed
  * columns: due 66, age 40, priority 28, effort 24, sources 76, folder 24, star 24, launch 30. Widths
  * are fixed, so columns line up on every row. Narrow lists drop sources, folder, age, and priority
  * with effort, in that order; due, star and launch never drop. Hover gives a subtle background and nothing else. Tokens
@@ -33,7 +33,7 @@
   background: var(--k-hover);
 }
 
-/* Expanded: a card on `raised`, in place, with room around it (A5 3.7). */
+/* Expanded: a card on `raised`, in place, with room around it. */
 .row[data-expanded="true"] {
   padding-block: 6px 10px;
 }
@@ -66,7 +66,7 @@
 
 /*
  * Marker: at most one, the changed dot, the needs-input ring, a run's quiet working ring or the
- * draft's pencil (A5 3.6). The column keeps its width, so a run that starts or ends moves nothing.
+ * draft's pencil. The column keeps its width, so a run that starts or ends moves nothing.
  */
 .marker {
   display: grid;
@@ -139,7 +139,7 @@
   cursor: default;
 }
 
-/* Checked: the box fills and the title is struck through at once (A5 3.12). */
+/* Checked: the box fills and the title is struck through at once. */
 .box:checked {
   background: radial-gradient(circle, var(--k-accent) 8px, transparent 8.25px);
 }
@@ -186,7 +186,7 @@
   color: var(--k-muted);
 }
 
-/* After the hold the row leaves: it fades in 180 ms, at once under reduced motion (A5 3.12). */
+/* After the hold the row leaves: it fades in 180 ms, at once under reduced motion. */
 .row[data-leaving="out"] {
   opacity: 0;
   transition: opacity 180ms var(--k-ease);
@@ -198,7 +198,7 @@
   }
 }
 
-/* Someone else changed the title while it is being edited (A5 3.15 item 9). */
+/* Someone else changed the title while it is being edited. */
 .remote {
   margin-top: 4px;
   font-size: 0.75rem;
@@ -363,7 +363,7 @@
 }
 
 /* The expanded task's body owns these facts: the slots go, the star stays, and the collapse
-   button takes the launch tile's column (A5 3.7). The chip and the area and project prefix go
+   button takes the launch tile's column. The chip and the area and project prefix go
    too: the facts say them. */
 .row[data-expanded="true"] .due,
 .row[data-expanded="true"] .age,
@@ -534,7 +534,7 @@ a.source:hover {
 }
 
 /* The launch tile: the instance's monogram in a small box whose 1 px outline is its ring colour,
-   muted (A5 3.6). A 30 x 24 target around an 18 px box. */
+   muted. A 30 x 24 target around an 18 px box. */
 .tile {
   --k-ring: var(--k-control);
   position: relative;
@@ -646,7 +646,7 @@ a.source:hover {
   }
 }
 
-/* A row an agent just added fades in with an accent-soft background (A5 3.15 item 7, 3.20). */
+/* A row an agent just added fades in with an accent-soft background. */
 .row[data-fresh] .line {
   animation: fresh 1.2s var(--k-ease);
 }
@@ -684,7 +684,7 @@ a.source:hover {
   }
 }
 
-/* Narrow lists drop columns: sources, then folder, then age, then priority and effort (A5 3.6). The list is
+/* Narrow lists drop columns: sources, then folder, then age, then priority and effort. The list is
    a size container, so this follows the list's width, not the window's. */
 @container (max-width: 659px) {
   .slots {

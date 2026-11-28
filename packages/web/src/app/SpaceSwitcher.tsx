@@ -1,4 +1,4 @@
-// The space switcher (A5 3.3): the space's name and a chevron, which open a small popover with the
+// The space switcher: the space's name and a chevron, which open a small popover with the
 // spaces on this machine. Choosing one navigates this tab only: its route takes the new space, the
 // tab takes a fresh snapshot and moves its feed to it, and every other tab keeps its own space,
 // view, feed and drafts. Each space has Make default, and the machine's default carries a mark.
