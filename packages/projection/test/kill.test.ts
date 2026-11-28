@@ -43,7 +43,11 @@ function expectWholeFiles(dir: string): void {
   }
 }
 
-/** Changes that place, move and remove files: renames, a completion, a reopening, new tasks. */
+/**
+ * Changes that place, move and remove files: renames, a completion, a reopening, a new task. Two
+ * deletes balance the new task and the restore, so the open tasks stay as many and every round
+ * costs the same: the rounds run until the kill passes a batch's last act.
+ */
 function change(w: World, round: number): void {
   const active = w.reader
     .prepare("SELECT id FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL ORDER BY ref")
@@ -65,6 +69,7 @@ function change(w: World, round: number): void {
     .get()?.["id"];
   if (typeof gone === "string") w.submit([{ kind: "task.restore", task: gone }]);
   w.submit([{ kind: "task.delete", task: pick(4) }]);
+  w.submit([{ kind: "task.delete", task: pick(5) }]);
   w.submit([{ kind: "task.create", title: `Created in round ${String(round)}` }]);
 }
 
@@ -72,7 +77,7 @@ describe("[A1.5.projection.kill] a kill at any act of a start or a batch, rename
   test("every act, one kill each", async () => {
     const folder = join(root, "space");
     mkdirSync(folder);
-    const w = await world(folder);
+    const w = await world(folder, 12);
     try {
       const first = w.projector();
       await first.start();
@@ -130,7 +135,7 @@ describe("[A1.5.projection.kill] a kill at any act of a start or a batch, rename
         checkWatermark(w.dir, w.reader);
         fresh += 1;
         expectSameTree(treeOf(w.dir), await w.fresh(join(root, `fresh-${String(fresh)}`)));
-        if (kill > 400) throw new Error("the batch has no end");
+        if (kill > 100) throw new Error("the batch has no end");
       }
       expect(kills).toBeGreaterThan(30);
       // Every kind of act a batch does was killed at, renames and the trusted state included.
