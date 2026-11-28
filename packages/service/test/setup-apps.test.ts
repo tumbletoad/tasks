@@ -37,6 +37,7 @@ import {
   removeHome,
   runCommand,
   survey,
+  homesReadiness,
   t3HomesOf,
   type HomeView,
   type SetupInput,
@@ -665,6 +666,24 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       });
       expect(readFileSync(registered)).toEqual(applied);
       expect(readRecords(r.state)).toHaveLength(1);
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.ready-env] each home's check runs in the environment a launch builds, of its kind", () => {
+  test(
+    "the person's own environment reaches the app whole; the service's only through the launch's allow-list",
+    async () => {
+      const w = world("ready-env");
+      mkdirSync(join(w.home, ".claude"), { recursive: true });
+      const input = await inputOf(w);
+      const home = only(await survey(input), "claude-code").home;
+      // The stand-in refuses to run without FAKE_AGENT_HOME, which the allow-list does not pass on.
+      const [own] = await homesReadiness(input, [home]);
+      const [service] = await homesReadiness({ ...input, envKind: "service" }, [home]);
+      expect(own?.state).toBe("no_login");
+      expect(service?.state).toBe("unknown");
     },
     SLOW,
   );

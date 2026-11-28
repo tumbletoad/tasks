@@ -424,6 +424,14 @@ function tasksServerOf(args: readonly string[]): Json | undefined {
 
 /** Program mode. */
 async function main(): Promise<void> {
+  // What the login check asks: its version, and a login found as the recordings were made, or none
+  // with FAKE_CLAUDE_SIGNED_OUT=1.
+  const asked = process.argv.slice(2).join(" ");
+  if (asked === "--version") {
+    process.stdout.write("2.1.332 (Claude Code)\n");
+    process.exit(0);
+  }
+  if (asked === "auth status") process.exit(process.env["FAKE_CLAUDE_SIGNED_OUT"] === "1" ? 1 : 0);
   const scenario = JSON.parse(process.env["FAKE_CLAUDE_SCENARIO"] ?? "{}") as FakeClaudeScenario;
   if (scenario.token !== undefined && process.platform === "win32") {
     createServer()
