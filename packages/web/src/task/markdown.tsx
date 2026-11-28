@@ -78,6 +78,9 @@ const BLANK = /^\s*$/u;
  * run follows a space, so "C#" keeps its mark), or undefined when the line is no heading. Plain
  * scans, not one pattern: a lazy body between two runs of spaces backtracks without bound.
  */
+/** A `#` line's level, 1 to 6. */
+const levelOf = (line: string): number => /#+/u.exec(line)?.[0].length ?? 1;
+
 function headingOf(line: string): string | undefined {
   const start = HEADING_START.exec(line);
   if (start === null) return undefined;
@@ -88,8 +91,11 @@ function headingOf(line: string): string | undefined {
   return end < body.length && /\s/u.test(body[end - 1] ?? "") ? body.slice(0, end).trimEnd() : body;
 }
 
-/** The blocks of a Markdown text, as React elements. */
-export function markdown(text: string): ReactNode[] {
+/**
+ * The blocks of a Markdown text, as React elements. With `headings`, a `#` line is a heading one
+ * level below the screen's own (a page's title is its h1); otherwise a strong line, as in a task.
+ */
+export function markdown(text: string, headings = false): ReactNode[] {
   const all = text.replace(/\r\n?/gu, "\n").split("\n");
   const out: ReactNode[] = [];
   let i = 0;
@@ -119,10 +125,21 @@ export function markdown(text: string): ReactNode[] {
     const heading = headingOf(line);
     if (heading !== undefined) {
       const k = key();
+      const level = Math.min(levelOf(line) + 1, 4);
       out.push(
-        <p key={k}>
-          <strong>{inline(heading, k)}</strong>
-        </p>,
+        headings ? (
+          level === 2 ? (
+            <h2 key={k}>{inline(heading, k)}</h2>
+          ) : level === 3 ? (
+            <h3 key={k}>{inline(heading, k)}</h3>
+          ) : (
+            <h4 key={k}>{inline(heading, k)}</h4>
+          )
+        ) : (
+          <p key={k}>
+            <strong>{inline(heading, k)}</strong>
+          </p>
+        ),
       );
       i += 1;
       continue;
@@ -187,13 +204,16 @@ export function markdown(text: string): ReactNode[] {
 export function Markdown({
   text,
   className,
+  headings = false,
 }: {
   readonly text: string;
   readonly className?: string | undefined;
+  /** A page's body: its `#` lines are headings. */
+  readonly headings?: boolean;
 }) {
   return (
     <div className={className} dir="auto" data-md="">
-      {markdown(text)}
+      {markdown(text, headings)}
     </div>
   );
 }

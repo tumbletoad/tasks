@@ -11,8 +11,8 @@ describe("[A5.3.3.web.route] the tab's space comes from its route", () => {
     expect(pagePath(`/s/${SPACE}`)).toBe(`/s/${SPACE}`);
     expect(pagePath(`/s/${SPACE}/`)).toBe(`/s/${SPACE}`);
     expect(pagePath(`/s/${SPACE}/today`)).toBe(`/s/${SPACE}/today`);
-    expect(pagePath(`/s/${SPACE}/area/ar_1/project/pj_2`)).toBe(
-      `/s/${SPACE}/area/ar_1/project/pj_2`,
+    expect(pagePath(`/s/${SPACE}/area/ar_1/project/pj_2/library`)).toBe(
+      `/s/${SPACE}/area/ar_1/project/pj_2/library`,
     );
     expect(pagePath(`/s/${SPACE}/task/M-14`)).toBe(`/s/${SPACE}/task/M-14`);
     // The skeleton's task links, and a task without a space (the default space's).
@@ -33,7 +33,7 @@ describe("[A5.3.3.web.route] the tab's space comes from its route", () => {
 
   test.each([
     "/s/",
-    `/s/${SPACE}/area/ar_1/project/pj_2/more`,
+    `/s/${SPACE}/area/ar_1/project/pj_2/library/more`,
     `/s/${SPACE}/task/<script>`,
     `/s/${SPACE}/task/a b`,
     "/settings",
