@@ -3021,7 +3021,7 @@
     },
     {
       "id": "A3.3.7.binding.cli",
-      "title": "An agent's shell is the session when a live value names its launch, decided at each call with no bridge first: from the claim, its task the default, the same scope as its bridge so a retry through the other tool replays, also a write still held in the writer; run_report is refused to it; its home's revoke refuses its next call and a restore lets it go on; a retry across an exit on disk before the launch is released commits once; accepted as the limits say, a change from tools that got no value repeated through the shell, or repeated after setup changed the agent's entry, is written twice",
+      "title": "An agent's shell is the session when a live value names its launch, decided at each call with no bridge first: from the claim, its task the default, the same scope as its bridge so a retry through the other tool replays, also a write still held in the writer; its home's revoke refuses its next call and a restore lets it go on; a retry across an exit on disk before the launch is released commits once; accepted as the limits say, a change from tools that got no value repeated through the shell, or repeated after setup changed the agent's entry, is written twice",
       "source": "A2 3.10.5, A3 3.7.4, A7 3.9 M2.04",
       "owner": "M2",
       "kind": "ci",
@@ -6148,16 +6148,8 @@
     },
     {
       "id": "A3.3.4.tools.eleven",
-      "title": "The texts of search, add_tasks, reopen_task, organize, preferences and run_report: A3's example results read as A3 shows them, editable names, titles, snippets, queries, preference values and close names only inside the data block, and a page of 50 rows and fifty full areas within their budgets with the cut said",
-      "source": "A3 3.3, A3 3.4.3, A3 3.4.5, A3 3.4.9 to 3.4.12, A3 3.5, A3 3.9.4, A3 3.10, A7 3.11 M4.01",
-      "owner": "M4",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A3.3.4.tools.run-report",
-      "title": "run_report on an MCP connection that is no session in both eras, from a person's terminal and an agent's shell, and from a task's session, returns not_permitted with what the connection is, and writes nothing: no commit, no actor, no receipt",
-      "source": "A3 3.2.3, A3 3.3, A3 3.4.12, A3 3.5, A7 3.11 M4.01",
+      "title": "The texts of search, add_tasks, reopen_task, organize and preferences: A3's example results read as A3 shows them, editable names, titles, snippets, queries, preference values and close names only inside the data block, and a page of 50 rows and fifty full areas within their budgets with the cut said",
+      "source": "A3 3.3, A3 3.4.3, A3 3.4.5, A3 3.4.9 to 3.4.11, A3 3.5, A3 3.9.4, A3 3.10, A7 3.11 M4.01",
       "owner": "M4",
       "kind": "ci",
       "profiles": ["v1"]
@@ -6644,6 +6636,20 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.run.brief-asks-in-log",
+      "title": "Every run's brief tells the agent to log a decision it leaves the person as a question before it ends: with the person's words, without them, and with a reply",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.run.logged-question",
+      "title": "A question a run's agent logs on its task while it works waits on the task's row after the run ends done",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.run.reply-brief",
       "title": "A run queued while an earlier run's question waits starts with that question, as the agent asked it with its options, before the person's words, also when built again after it started; a run queued before the question, after a reply that ran or after the person's note replies to nothing; a run without words hears the question and to work on the task",
       "owner": "M6",
@@ -6667,6 +6673,20 @@
     {
       "id": "A5.while-away.service.reads",
       "title": "With an agent's question waiting on an active, a completed and a dropped task, every read that returns task rows answers: the snapshot, Completed's both lists, search in each scope, status with every section, and each task's read",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.top.web.paste",
+      "title": "A paste into the top field that is more than a title loses no word: one line that fits is the field's as it is; its first line becomes the title, cut at a word when it does not fit, with the text around a selection kept; everything after it is kept for the new task's context, and a second paste adds to it",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.top.e2e.paste",
+      "title": "Against the real service in Chromium: a paste into the top field that is more than a title puts its first line in the field and says under it that the rest goes in the task's context; the rest keeps across a reload and becomes the added task's context; it can be left out; a paste that fits is the field's as it is; screenshots at 1,440 and 390 px in Sumi and Washi and axe finds nothing in the top bar",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

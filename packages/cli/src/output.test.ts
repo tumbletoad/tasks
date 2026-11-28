@@ -56,7 +56,6 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
       conflict: 4,
       wrong_tool: 2,
       forbidden: 5,
-      not_permitted: 5,
       request_id_conflict: 4,
       applied_earlier: 4,
       too_large: 2,

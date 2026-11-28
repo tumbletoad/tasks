@@ -569,6 +569,37 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
       run: { id: a, state: "needs_you" },
     });
   });
+
+  test("[A4.3.11.run.logged-question] a question a run's agent logs waits on the row after the run ends done", async () => {
+    const { task: id, row } = task();
+    const run = queue(id);
+    move(run, "starting");
+    move(run, "running");
+    submit(
+      { ...fx.codex, run_id: run },
+      [{ kind: "log.add", task: id, body: "Fixture which name?", log_kind: "question" }],
+      (clock += 60_000),
+    );
+    move(run, "succeeded", {
+      result: {
+        ok: true,
+        outcome: "success",
+        exit_code: 0,
+        signal: null,
+        native_id: null,
+        text: "Fixture done, and one question logged.",
+        error: null,
+        usage: null,
+        app_tools: null,
+        declined: 0,
+        permission_denials: 0,
+        duration_ms: 1,
+      },
+    });
+    expect((await row())?.["questions"]).toEqual([
+      expect.objectContaining({ by: "Codex · work", text: "Fixture which name?" }),
+    ]);
+  });
 });
 
 describe("[A5.while-away.service.reads] a waiting question breaks no read of task rows", () => {

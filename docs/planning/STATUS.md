@@ -63,7 +63,8 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 |---|---|
 | Scale on Windows and Linux, on the new model | todo: steps 2 and 3 |
 | A quality pass over the app, on the new screens | todo: steps 2 and 3 |
-| `run_report` on a run's connection, and asking the person about an approval in Codex's narrower modes | ready |
+| A run reports through its answer and what it logs, and logs a decision it leaves the person as a question | done |
+| A run that stopped at a permission prompt goes on with Continue, in the agent app, on the run's own conversation | todo: 2b.3 |
 | Retiring old versions after an update | ready |
 
 ## Checks on real machines
