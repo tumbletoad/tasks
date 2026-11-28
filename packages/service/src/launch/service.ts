@@ -112,6 +112,7 @@ import type { OpeningSpace } from "../hub/spaces.ts";
 import type { ConnectionInfo, RpcContext, RpcHandlers } from "../local/index.ts";
 import type { SpaceWriterHandle } from "@ttasks/storage";
 import { readT3Threads, type ServedSpace, type T3ThreadRow } from "../ops/index.ts";
+import { copyOf } from "../ops/copies.ts";
 import { bounded, openPath } from "../ops/folders.ts";
 import type { FolderMarkers } from "../ops/marker.ts";
 import { readRestoredLaunches, type TaskFolder } from "../ops/read.ts";
@@ -1155,7 +1156,11 @@ export class LaunchService {
     const t3 = this.#options.t3;
     if (t3 === undefined || !(await t3.running())) return [];
     const now = (this.#options.now ?? Date.now)();
-    const spaces = this.#options.spaces().filter(isOpen);
+    const open = this.#options.spaces().filter(isOpen);
+    // One copy per space: the one that serves it, as the monitor's links read them.
+    const spaces = [...new Set(open.map((s) => s.id ?? ""))].flatMap(
+      (id) => copyOf(open, id) ?? [],
+    );
     const found = await Promise.all(
       spaces.map(async (served): Promise<T3Agent[]> => {
         const id = served.id ?? "";
