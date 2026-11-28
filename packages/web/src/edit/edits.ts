@@ -217,6 +217,8 @@ export interface ActionKeeper {
   keep(action: KeptAction): void;
   /** The action is decided: it goes. */
   done(request: string): void;
+  /** The task's state is what some of its kept actions asked: they go (unsent.ts `alreadyDone`). */
+  settle(task: TaskRow): void;
 }
 
 /** A kept action tried again: its own request ID, and for a lifecycle write the base it had. */
@@ -1963,6 +1965,7 @@ export class Edits {
       if (leaving !== undefined && !leaving.done && after?.lifecycle === "active") {
         this.#drop(change.task);
       }
+      if (after !== undefined) this.#deps.actions?.settle(after);
       if (this.#mine.has(change.request_id)) continue;
       this.#marks += 1;
       for (const field of change.changed) {

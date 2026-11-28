@@ -2544,6 +2544,7 @@ describe("[A5.3.11.web.kept-actions] a check-off, a reopen or an undo waiting be
     const actions: ActionKeeper = {
       keep: (action) => kept.set(action.request, action),
       done: (request) => kept.delete(request),
+      settle: () => undefined,
     };
     return { kept, actions };
   };

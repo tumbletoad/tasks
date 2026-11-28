@@ -605,6 +605,9 @@ export function actionKeeper(space: string): ActionKeeper {
     done(request) {
       letGoAction(space, request);
     },
+    settle(task) {
+      settleActions(space, task);
+    },
   };
 }
 
@@ -613,10 +616,62 @@ export function keptActions(space: string, task: string): KeptAction[] {
   return actionsAt(space, task).map(({ action }) => action);
 }
 
-/** The actions kept for a task, of every tab, as they come and go. */
-export function useKeptActions(space: string, task: string): readonly KeptAction[] {
-  const kept = useSyncExternalStore(onUnsent, () => JSON.stringify(keptActions(space, task)));
-  return useMemo(() => JSON.parse(kept) as KeptAction[], [kept]);
+/** What a kept action needs to know of its task: where it is now. */
+export interface TaskState {
+  readonly id: string;
+  readonly lifecycle: string;
+  readonly deleted_at?: number | undefined;
+}
+
+/**
+ * Whether the task already is as a kept action asked: a check-off of a finished task, a reopen of
+ * an open one, a move to the Trash of one in it, a restore of one out of it. An undo or a redo has
+ * no such test: it waits for the person.
+ */
+export function alreadyDone(action: KeptAction, task: TaskState): boolean {
+  switch (action.kind) {
+    case "finish":
+      return task.lifecycle !== "active";
+    case "reopen":
+      return task.lifecycle === "active";
+    case "trash":
+      return task.deleted_at !== undefined;
+    case "restore":
+      return task.deleted_at === undefined;
+    default:
+      return false;
+  }
+}
+
+/** Lets go of the task's kept actions that its state already is. */
+export function settleActions(space: string, task: TaskState): void {
+  for (const action of keptActions(space, task.id)) {
+    if (alreadyDone(action, task)) letGoAction(space, action.request);
+  }
+}
+
+/**
+ * The actions kept for a task, of every tab, as they come and go: those its state already is are
+ * not shown, and go. While this tab's own write of the task is on its way (`sending`), the state on
+ * screen is that write's, not yet the task's: nothing is judged by it.
+ */
+export function useKeptActions(
+  space: string,
+  task: TaskState,
+  sending = false,
+): readonly KeptAction[] {
+  const kept = useSyncExternalStore(onUnsent, () => JSON.stringify(keptActions(space, task.id)));
+  const { id, lifecycle, deleted_at } = task;
+  const all = useMemo(() => JSON.parse(kept) as KeptAction[], [kept]);
+  const due = useMemo(
+    () =>
+      sending ? all : all.filter((action) => !alreadyDone(action, { id, lifecycle, deleted_at })),
+    [all, sending, id, lifecycle, deleted_at],
+  );
+  useEffect(() => {
+    if (due.length < all.length) settleActions(space, { id, lifecycle, deleted_at });
+  }, [due, all, space, id, lifecycle, deleted_at]);
+  return due;
 }
 
 // Every kind together: what the foot of the Trash lists, and the one way to let a value go.

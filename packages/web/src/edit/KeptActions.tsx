@@ -2,24 +2,32 @@
 // reopen, a move to or from the Trash, an undo or a redo that waited behind an edit. "Not done yet:
 // check off · Try again · Discard", as a kept field edit shows its value (Unsaved.tsx). Try again is
 // the person's own action again, with its request ID; Discard lets it go. Every tab of the browser
-// shows them, and nothing is sent until the person asks.
+// shows them, and nothing is sent until the person asks. The row carries a mark while one waits.
 import { useContext } from "react";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { useT } from "../i18n/intl.tsx";
 import type { TaskRow } from "@ttasks/client/store";
-import { letGoAction, useKeptActions } from "../unsent.ts";
+import type { KeptAction } from "./edits.ts";
+import { letGoAction } from "../unsent.ts";
 import css from "./Unsaved.module.css";
 import { useEdits } from "./useEdits.ts";
 
 const styles = classes(css, ["line", "why", "act"]);
 
-export function KeptActions({ task }: { readonly task: TaskRow }) {
+export function KeptActions({
+  task,
+  actions,
+}: {
+  readonly task: TaskRow;
+  /** The task's kept actions still to do (`useKeptActions`). */
+  readonly actions: readonly KeptAction[];
+}) {
   const t = useT();
   const edits = useEdits();
   const { live } = useContext(Session);
   const space = live.spaceId ?? "";
-  return useKeptActions(space, task.id).map((action) => (
+  return actions.map((action) => (
     <span
       key={action.request}
       className={styles.line}

@@ -5809,6 +5809,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.11.web.kept-action-mark",
+      "title": "A row whose task has a kept check-off, reopen, move to or from the Trash, undo or redo carries the draft mark with its own name; a kept lifecycle action the task's state already is (finished, open, in the Trash, restored) is not shown and goes, also when the feed brings that state; an undo or a redo stays until the person tries it again or discards it",
+      "source": "A5 3.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.26.web.markdown",
       "title": "Task Markdown (context, notes, log, outcome, learnings) renders as React elements of an allow-list (paragraphs and line breaks, strong lines, lists, quotes, fenced and inline code, emphasis, links): raw HTML and the XSS payloads show as text, and only https, http and mailto links open, in a new tab with no opener and no referrer",
       "source": "A5 3.26, A5 3.7, A7 3.12 M5.06",
