@@ -9,8 +9,8 @@
 //   instances             machine.toml names no instance Open can start (run `ttasks setup
 //                         instances`), or a Claude Code or Codex instance's home has no entry of
 //                         setup's (run `ttasks setup agents`); reads machine.toml and the record only
-//   ready.<instance>      a Claude Code or Codex instance's program, version and sign-in, from the
-//                         app's own status command's exit code, with the next action
+//   ready.<instance>      a Claude Code or Codex instance's program, version and whether the app's
+//                         own status command found a login (its exit code alone), with the next step
 //   mcp.<instance>        the entry setup wrote: still there by the file and by the app's own
 //                         `mcp get`, running this install's command, its --space and --instance
 //                         the same as its grant row
@@ -467,8 +467,8 @@ function enabledInstances(
 }
 
 /**
- * `ready.<instance>`: each Claude Code or Codex instance's program, version and sign-in, with the
- * next action (readinessText). The apps' own status commands run side by side.
+ * `ready.<instance>`: what each Claude Code or Codex instance's app reported: its program, version
+ * and login, with the next step (readinessText). The apps' own status commands run side by side.
  */
 async function readinessChecks(io: Io, options: AgentDoctorOptions): Promise<Check[]> {
   const { instances, userHome } = enabledInstances(io, options);
@@ -476,7 +476,13 @@ async function readinessChecks(io: Io, options: AgentDoctorOptions): Promise<Che
   const found = await Promise.all(
     instances.map(async (instance) => ({
       instance,
-      ready: await instanceReadiness(instance, { platform: io.platform, base, home: userHome }),
+      // The terminal's environment is the person's own, as a launch from it would take it.
+      ready: await instanceReadiness(instance, {
+        platform: io.platform,
+        base,
+        baseKind: "user",
+        home: userHome,
+      }),
     })),
   );
   return found.flatMap(({ instance, ready }): Check[] =>
@@ -485,7 +491,7 @@ async function readinessChecks(io: Io, options: AgentDoctorOptions): Promise<Che
       : [
           {
             id: `ready.${instance.id}`,
-            status: ready.state === "signed_in" ? "ok" : "warn",
+            status: ready.state === "login_found" ? "ok" : "warn",
             detail: `${instance.id}: ${readinessText(ready)}`,
           },
         ],

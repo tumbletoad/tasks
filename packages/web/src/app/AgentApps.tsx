@@ -400,22 +400,24 @@ export function AgentApps({
 function ReadyLine({ t, ready }: { readonly t: Translate; readonly ready: Ready }) {
   const version = ready.state === "not_installed" ? "none" : (ready.version ?? "none");
   const command =
-    ready.state === "signed_out"
-      ? ready.login
-      : ready.state === "unknown"
-        ? ready.status
-        : undefined;
+    ready.state === "no_login" ? ready.login : ready.state === "unknown" ? ready.status : undefined;
   return (
     <p className={styles.ready} data-part="ready" data-state={ready.state}>
       {t("apps.ready", { state: ready.state, version })}
-      {command === undefined ? null : (
+      {command === undefined ? (
+        ready.state === "no_login" ? (
+          <> {t("apps.loginOwn")}</>
+        ) : null
+      ) : (
         <>
           {" "}
+          {t("apps.run", { what: ready.state === "no_login" ? "login" : "status" })}{" "}
           <code dir="ltr" {...(/[\\/]/u.test(command) ? { "data-machine": "" } : {})}>
             {command}
           </code>
         </>
       )}
+      {ready.state === "no_login" ? <> {t("apps.loginOther")}</> : null}
       {ready.state === "not_installed" ? (
         <>
           {" "}

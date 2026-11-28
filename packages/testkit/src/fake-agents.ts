@@ -3,7 +3,8 @@
 // them as `node <entry>` on every OS (A4 3.2), and doctor runs them as real processes. They read the
 // entries setup wrote (`.claude.json` in CLAUDE_CONFIG_DIR, else the user home, and
 // `$CODEX_HOME/config.toml`), and only in a scratch user home:
-// - `--version` prints a version in each tool's form.
+// - `--version` prints a version in each tool's form (Claude Code's FAKE_AGENT_CLAUDE_VERSION, else
+//   2.1.332).
 // - `claude auth status` and `codex login status` exit 0 while FAKE_SIGNED_IN is in the app's home,
 //   1 when it is not.
 // - `claude mcp get <name>` and `codex mcp get <name> --json` exit 0 and describe the entry when it
@@ -17,9 +18,9 @@
 //
 // A fake refuses to run unless FAKE_AGENT_HOME names the scratch user home, and refuses a file
 // outside it, so a test can never reach a real home. Each run appends one JSON line to
-// FAKE_AGENT_LOG: the tool, its arguments and the home variables it saw. FAKE_AGENT_FAIL=<tool>
-// makes that tool's `mcp` commands exit 1; `<tool>:get` makes its `mcp get` fail as an engine that
-// rejects the file.
+// FAKE_AGENT_LOG: the tool, its arguments, the home variables and whether ANTHROPIC_API_KEY it saw
+// (its value: scratch tests only). FAKE_AGENT_FAIL=<tool> makes that tool's `mcp` commands exit 1;
+// `<tool>:get` makes its `mcp get` fail as an engine that rejects the file.
 import {
   chmodSync,
   existsSync,
@@ -44,11 +45,13 @@ const log = (tool) => {
   const out = process.env.FAKE_AGENT_LOG;
   if (!out) return;
   const env = {};
-  for (const name of ["CLAUDE_CONFIG_DIR", "CODEX_HOME"]) env[name] = process.env[name] ?? null;
+  for (const name of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "ANTHROPIC_API_KEY"]) {
+    env[name] = process.env[name] ?? null;
+  }
   fs.appendFileSync(out, JSON.stringify({ tool, args, env }) + "\n");
 };
 const failModes = (process.env.FAKE_AGENT_FAIL ?? "").split(",");
-// The app's own status command: signed in while the marker file is in its home. It prints what a
+// The app's own status command: a login is found while the marker file is in its home. It prints what a
 // real one may (an account name), which nothing of TTasks may show. FAKE_AGENT_FAIL=<tool>:status
 // makes it answer neither way, <tool>:hang makes it never end.
 const status = (tool, home) => {
@@ -111,7 +114,10 @@ const callTool = (command, serverArgs, tool) => new Promise((resolve) => {
 
 const CLAUDE = String.raw`${COMMON}
 log("claude");
-if (args[0] === "--version") { process.stdout.write("2.1.9 (Claude Code)\n"); process.exit(0); }
+if (args[0] === "--version") {
+  process.stdout.write((process.env.FAKE_AGENT_CLAUDE_VERSION || "2.1.332") + " (Claude Code)\n");
+  process.exit(0);
+}
 const dir = process.env.CLAUDE_CONFIG_DIR;
 if (args[0] === "auth" && args[1] === "status" && status("claude", dir || path.join(base, ".claude"))) return;
 const file = dir ? path.join(dir, ".claude.json") : path.join(base, ".claude.json");
@@ -192,10 +198,14 @@ process.exit(2);
 export interface FakeAgentCall {
   readonly tool: "claude" | "codex";
   readonly args: readonly string[];
-  readonly env: { readonly CLAUDE_CONFIG_DIR: string | null; readonly CODEX_HOME: string | null };
+  readonly env: {
+    readonly CLAUDE_CONFIG_DIR: string | null;
+    readonly CODEX_HOME: string | null;
+    readonly ANTHROPIC_API_KEY: string | null;
+  };
 }
 
-/** The file whose presence in an app's home makes the fake's status command say signed in. */
+/** The file whose presence in an app's home makes the fake's status command find a login. */
 export const FAKE_SIGNED_IN = ".fake-signed-in";
 
 export interface FakeAgents {

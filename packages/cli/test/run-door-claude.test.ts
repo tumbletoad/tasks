@@ -8,6 +8,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { instanceReadiness } from "@ttasks/launch";
 import { RUNS_FOLDER, TOOLS_FILE } from "@ttasks/runs";
 import { startService, type RunningService } from "@ttasks/service/hub";
 import {
@@ -300,7 +301,7 @@ describe("[A4.3.11.run.door-claude] ttasks run with a Claude Code instance: the 
     );
   });
 
-  test("a Claude Code whose sign-in is gone by its turn ends the run with its own words and the command to sign in", async () => {
+  test("a signed-out Claude Code ends the run with its own words and the command to sign in", async () => {
     const ran = await user(["run", task, "--instance", "claude-out", "--wait", "--json", "Hi."]);
     const id = (await runsOf()).find((r) => r.instance === "claude-out")?.id ?? "";
     const shown = JSON.parse((await user(["run", "show", id, "--json"])).stdout) as Record<
@@ -311,16 +312,33 @@ describe("[A4.3.11.run.door-claude] ttasks run with a Claude Code instance: the 
     expect(JSON.stringify(shown)).toContain("Sign in with: claude auth login");
   });
 
-  test("a Claude Code that says it is not signed in is not started: Run says so with the line that signs it in", async () => {
-    const before = (await runsOf()).length;
-    const ran = await user(["run", task, "--instance", "claude-says-out", "--json", "Hi."]);
-    expect(ran.code).not.toBe(0);
-    const said = JSON.parse(ran.stdout) as {
-      error: { hint: string; data: Record<string, unknown> };
-    };
-    expect(said.error.data["reason"]).toBe("signed_out");
-    expect(String(said.error.data["login"])).toMatch(/ auth login$/u);
-    expect(said.error.hint).toContain(String(said.error.data["login"]));
-    expect((await runsOf()).length).toBe(before);
+  test("a Claude Code whose own status command found no login runs all the same: the check only informs", async () => {
+    const found = await instanceReadiness(
+      {
+        target: "claude-cli",
+        exec: process.execPath,
+        argsPrefix: [FAKE],
+        env: { FAKE_CLAUDE_SIGNED_OUT: "1" },
+        configHome: undefined,
+      },
+      { platform: process.platform, base: {}, baseKind: "user", home: undefined },
+    );
+    expect(found?.state).toBe("no_login");
+    const ran = await user([
+      "run",
+      task,
+      "--instance",
+      "claude-says-out",
+      "--wait",
+      "--json",
+      "Hi.",
+    ]);
+    expect(ran.code, ran.stdout + ran.stderr).toBe(0);
+    const id = (await runsOf()).find((r) => r.instance === "claude-says-out")?.id ?? "";
+    const shown = JSON.parse((await user(["run", "show", id, "--json"])).stdout) as Record<
+      string,
+      unknown
+    >;
+    expect(shown).toMatchObject({ state: "succeeded" });
   });
 });

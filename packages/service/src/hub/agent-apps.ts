@@ -33,7 +33,7 @@ import {
   instanceNames,
   targetDef,
   nodeDetectHost,
-  type Env,
+  type AgentBase,
   type EnvironmentSource,
   type Instance,
   type Proposal,
@@ -87,8 +87,8 @@ export interface AgentAppsHost {
   readonly tasks: string;
   /** The account's home folder: where detection looks, and what a path shows as `~`. */
   readonly userHome: string | undefined;
-  /** The person's environment, as Open's agents get it. */
-  env(): Promise<Env>;
+  /** The person's environment, as Open's agents get it, and what it is. */
+  base(): Promise<AgentBase>;
   readonly homes: AgentHomesHost;
   readonly instances: InstancesHost;
   /** A served space's name, for a home whose tools work in another space. */
@@ -163,7 +163,7 @@ export interface AppRow {
   readonly byName?: true;
   readonly open?: Part;
   readonly tools?: Part;
-  /** Claude Code and Codex: the home's app installed, its version, its sign-in (instanceReadiness). */
+  /** Claude Code and Codex: what the home's app reported, installed, version and login (instanceReadiness). */
   readonly ready?: Readiness;
 }
 
@@ -293,7 +293,8 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
   const { platform } = host;
   const userHome = host.userHome ?? "";
   const shown = (path: string) => shownPath(platform, host.userHome, path);
-  const env = await host.env();
+  const base = await host.base();
+  const { env } = base;
   const machine = loadMachineConfig(host.configDir, platform).config;
   const detection = await detect(nodeDetectHost({ platform, env, home: userHome }));
   const rows = host.homes
@@ -311,6 +312,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     platform,
     userHome,
     env,
+    envKind: base.kind,
     stateDir: host.stateDir,
     tasks: host.tasks,
     detection,
@@ -703,9 +705,11 @@ function fieldOf(error: unknown): string | undefined {
  * service started at sign-in lacks what the person's profile adds to PATH until their login shell
  * has been read once.
  */
-export async function personEnv(source: Pick<EnvironmentSource, "prepare" | "base">): Promise<Env> {
+export async function personBase(
+  source: Pick<EnvironmentSource, "prepare" | "base">,
+): Promise<AgentBase> {
   await source.prepare();
-  return (await source.base()).env;
+  return await source.base();
 }
 
 async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<unknown> {

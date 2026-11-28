@@ -3359,7 +3359,7 @@
     },
     {
       "id": "A4.3.2.readiness",
-      "title": "An instance reads as not installed with the vendor's install page, or with its version as signed in, not signed in with the login line for its own home, or unknown with the status command, from the exit code of the app's own status command alone",
+      "title": "An instance reads as not installed with the vendor's install page, or with its version as a login found, no confirmed login with a login line that changes its home for that one command, or unknown, from the exit code of the app's own status command alone, run in the environment a launch builds; a Claude Code older than the status command is not asked",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
@@ -3659,6 +3659,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.13.setup.ready-env",
+      "title": "Each home's login check runs in the environment a launch builds, of its kind: the person's own reaches the app whole, the service's only through the launch's allow-list",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.13.setup.apps",
       "title": "ttasks setup agents on scratch homes for the remaining apps: Claude Desktop's entry is spliced in and taken out leaving the file byte-identical (CRLF, byte order mark, mode, other servers), never in a file the app has not made, and several of its files ask for --home; the Codex app is a host of the default Codex home, whose engine doctor asks when no CLI is there; T3's provider instances' homes are offered and marked as read by T3 while T3's settings are only read; a managed home is left alone, also a Claude Desktop file a repository tracks through linked git metadata, by apply and by remove",
       "source": "A3 3.13.3, A3 3.13.5, A3 3.13.6, A3 3.12, A7 3.11 M4.05",
@@ -3684,14 +3691,14 @@
     },
     {
       "id": "A7.3.12.m5-12.page-ready",
-      "title": "Settings > Agent apps: each Claude Code and Codex row says whether its app is installed, its version, and whether it is signed in, with the login line or the vendor's install page, and the status command's output never reaches the page",
+      "title": "Settings > Agent apps: each Claude Code and Codex row says what its app reported: installed and its version, whether its own status command found a login, with the login line or the vendor's install page; the status command's output never reaches the page",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A3.3.14.doctor.readiness",
-      "title": "ttasks doctor and ttasks setup agents say per Claude Code or Codex instance whether it is installed, its version, and whether it is signed in from its app's own status command, with the login line for its own home or the vendor's install page, and never show that command's output",
+      "title": "ttasks doctor and ttasks setup agents say per Claude Code or Codex instance what its app reported: installed, its version, and whether its own status command found a login, with the login line for its own home or the vendor's install page, and never show that command's output",
       "owner": "M4",
       "kind": "ci",
       "profiles": ["v1"]

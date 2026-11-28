@@ -6,7 +6,6 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import { SHIM_METHODS } from "@ttasks/launch";
-import { FAKE_CLI_AGENT } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { COPY_HEADER, SPACE_HEADER } from "../src/http/app.ts";
 import { instanceToml, waitFor } from "./harness.ts";
@@ -262,7 +261,6 @@ describe("[A2.3.10.5.copies.history] a restored copy shows its launches and runs
             target: "claude-cli",
             label: "Fake agent · test",
             exec: process.execPath,
-            args_prefix: [FAKE_CLI_AGENT],
           }),
           launch: {
             terminal: ({ intent, ticket }) => {

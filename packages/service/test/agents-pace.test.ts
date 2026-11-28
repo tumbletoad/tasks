@@ -5,7 +5,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FAKE_CLI_AGENT, fakeTtam, readJsonLines } from "@ttasks/testkit";
+import { fakeTtam, readJsonLines } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import type { HttpTimerKind } from "../src/http/index.ts";
 import { DEFAULT_HTTP_LIMITS } from "../src/http/limits.ts";
@@ -271,7 +271,6 @@ describe("[A5.agents.pace] the service asks the monitor at the pace of the most 
           target: "claude-cli",
           label: "Fake agent · test",
           exec: process.execPath,
-          args_prefix: [FAKE_CLI_AGENT],
         }),
       });
       const feed = await p.tab(LOOKED);

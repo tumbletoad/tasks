@@ -1,6 +1,7 @@
 // `ttasks doctor` and `ttasks setup agents --status` say per instance whether its app is installed,
-// its version, whether it is signed in, and what to do next, against the testkit's stand-in
-// commands, whose status commands say signed in while a marker file is in the app's home.
+// its version, whether its own status command found a login, and what to do next, against the
+// testkit's stand-in commands, whose status commands find a login while a marker file is in the
+// app's home.
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -52,9 +53,15 @@ const instances = (work: string, gone: string) =>
     "",
   ].join("\n");
 
-describe("[A3.3.14.doctor.readiness] doctor and setup agents say whether each instance is installed and signed in", () => {
+/** Codex's login line for its default home: an override the terminal has is unset for it. */
+const codexLogin = windows
+  ? "& { $was = $env:CODEX_HOME; $env:CODEX_HOME = $null; try { codex login } finally { $env:CODEX_HOME = $was } }"
+  : "env -u CODEX_HOME codex login";
+const OTHER = "(a key in the environment or a gateway also works without a login)";
+
+describe("[A3.3.14.doctor.readiness] doctor and setup agents say what each instance's app reported: installed, its version, and whether its own status command found a login", () => {
   test(
-    "installed with its version and signed in, not signed in with the login line for its own home, not installed with the vendor's page; the status command's output never shows",
+    "a login found, no confirmed login with the login line for its own home, not installed with the vendor's page; the status command's output never shows",
     async () => {
       const work = join(user, ".claude-work");
       mkdirSync(work, { recursive: true });
@@ -67,15 +74,18 @@ describe("[A3.3.14.doctor.readiness] doctor and setup agents say whether each in
         expect(row(report, "ready.claude")).toEqual({
           id: "ready.claude",
           status: "ok",
-          detail: "claude: installed 2.1.9 · signed in",
+          detail: "claude: installed 2.1.332 · the app found a login for this home",
         });
         const signedOut = row(report, "ready.claude-work");
         expect(signedOut?.status).toBe("warn");
-        expect(signedOut?.detail).toContain("installed 2.1.9 · not signed in: run ");
+        expect(signedOut?.detail).toContain(
+          "installed 2.1.332 · the app found no confirmed login for this home. To sign in, run: ",
+        );
         expect(signedOut?.detail).toContain(work);
-        expect(signedOut?.detail).toMatch(/claude auth login$/u);
+        expect(signedOut?.detail).toContain("claude auth login");
+        expect(signedOut?.detail).toContain(OTHER);
         expect(row(report, "ready.codex")?.detail).toBe(
-          "codex: installed 0.167.2 · not signed in: run codex login",
+          `codex: installed 0.167.2 · the app found no confirmed login for this home. To sign in, run: ${codexLogin} ${OTHER}`,
         );
         expect(row(report, "ready.claude-gone")).toEqual({
           id: "ready.claude-gone",
@@ -86,16 +96,18 @@ describe("[A3.3.14.doctor.readiness] doctor and setup agents say whether each in
 
         const status = await run(["setup", "agents", "--status"]);
         expect(status.code, status.stderr).toBe(0);
-        expect(status.stdout).toContain("  installed 2.1.9 · signed in\n");
-        expect(status.stdout).toContain("  installed 0.167.2 · not signed in: run codex login\n");
+        expect(status.stdout).toContain(
+          "  installed 2.1.332 · the app found a login for this home\n",
+        );
+        expect(status.stdout).toContain(`run: ${codexLogin} ${OTHER}\n`);
         expect(status.stdout + status.stderr).not.toContain("FAKE-ACCOUNT-SECRET");
         const json = await run(["setup", "agents", "--status", "--json"], undefined, false);
         const homes = (JSON.parse(json.stdout) as { homes: { app: string; ready?: unknown }[] })
           .homes;
         expect(homes.find((h) => h.app === "codex")?.ready).toEqual({
-          state: "signed_out",
+          state: "no_login",
           version: "0.167.2",
-          login: "codex login",
+          login: codexLogin,
         });
       } finally {
         rmSync(config, { force: true });

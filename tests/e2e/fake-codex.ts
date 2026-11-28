@@ -97,14 +97,6 @@ function scenarioOf(chosen: FakeCodexCase): {
   }
 }
 
-// What Run asks before it starts the app: its version, and signed in.
-const asked = process.argv.slice(2).join(" ");
-if (asked === "--version") {
-  process.stdout.write("codex-cli 0.172.0\n");
-  process.exit(0);
-}
-if (asked === "login status") process.exit(0);
-
 const folder = process.env["FAKE_CODEX_CASES"];
 const task = process.env[ADDED.task];
 const chosen = take(folder, task);

@@ -51,12 +51,23 @@ export interface AppRow {
   readonly ready: Ready | undefined;
 }
 
-/** Whether the home's app is installed, its version, its sign-in, and the command or page next. */
+/**
+ * What the home's app reported about itself: installed, its version, whether its own status command
+ * found a login, and the line or page that comes next (none when no line could be quoted safely).
+ */
 export type Ready =
   | { readonly state: "not_installed"; readonly install: string }
-  | { readonly state: "signed_in"; readonly version: string | undefined }
-  | { readonly state: "signed_out"; readonly version: string | undefined; readonly login: string }
-  | { readonly state: "unknown"; readonly version: string | undefined; readonly status: string };
+  | { readonly state: "login_found"; readonly version: string | undefined }
+  | {
+      readonly state: "no_login";
+      readonly version: string | undefined;
+      readonly login: string | undefined;
+    }
+  | {
+      readonly state: "unknown";
+      readonly version: string | undefined;
+      readonly status: string | undefined;
+    };
 
 export interface AppsView {
   readonly space: string;
@@ -163,16 +174,12 @@ function readyOf(value: unknown): Ready | undefined {
         ? { state: "not_installed", install }
         : undefined;
     }
-    case "signed_in":
-      return { state: "signed_in", version };
-    case "signed_out": {
-      const login = text(value["login"]);
-      return login === undefined ? undefined : { state: "signed_out", version, login };
-    }
-    case "unknown": {
-      const status = text(value["status"]);
-      return status === undefined ? undefined : { state: "unknown", version, status };
-    }
+    case "login_found":
+      return { state: "login_found", version };
+    case "no_login":
+      return { state: "no_login", version, login: text(value["login"]) };
+    case "unknown":
+      return { state: "unknown", version, status: text(value["status"]) };
     default:
       return undefined;
   }

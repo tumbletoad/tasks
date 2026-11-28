@@ -55,8 +55,6 @@ export const UNAVAILABLE_REASONS = [
   "other_space",
   /** T3 Code cannot open it now: the error names why (T3Unavailable). */
   "t3",
-  /** The app's own status command says it is not signed in: it would only ask (readiness.ts). */
-  "signed_out",
 ] as const;
 export type UnavailableReason = (typeof UNAVAILABLE_REASONS)[number];
 
@@ -136,14 +134,11 @@ export class LaunchUnavailable extends Error {
   readonly works: string | undefined;
   /** `t3`: why T3 Code cannot open it now. */
   readonly t3: T3Unavailable | undefined;
-  /** `signed_out`: the line that signs the instance's app in. */
-  readonly login: string | undefined;
-  constructor(reason: UnavailableReason, works?: string, t3?: T3Unavailable, login?: string) {
+  constructor(reason: UnavailableReason, works?: string, t3?: T3Unavailable) {
     super(`This instance cannot open the task here: ${reason}`);
     this.reason = reason;
     this.works = works;
     this.t3 = t3;
-    this.login = login;
   }
 }
 

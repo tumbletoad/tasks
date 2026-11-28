@@ -58,6 +58,7 @@ import {
   proposedAccount,
   proposedInstanceId,
   targetDef,
+  type BaseKind,
   type BuiltInTargetId,
   type Detection,
   type Env,
@@ -323,6 +324,11 @@ export interface SetupInput {
   readonly userHome: string;
   /** The person's environment, in which detection and doctor's probes run the apps' commands. */
   readonly env: Env;
+  /**
+   * What `env` is, as a launch builds an agent's environment from it (shim/environment.ts): the
+   * person's own (a terminal's, the default), or the service's.
+   */
+  readonly envKind?: BaseKind;
   /** `<state>`: setup's record lives in `<state>/setup/`. */
   readonly stateDir: string;
   /** TTasks's stable command, which every entry runs (A2 3.12; never a moving version). */

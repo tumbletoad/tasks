@@ -20,7 +20,6 @@ import {
 } from "@ttasks/contracts/runs";
 import {
   decodeRun,
-  instanceReadiness,
   newTicket,
   RunRefused,
   servesSpace,
@@ -503,21 +502,6 @@ export class RunService {
               "Open the task in this folder once to confirm it, then run it.",
               folder.folder === undefined ? {} : { folder: folder.folder },
             );
-    }
-    const base = await agents.base();
-    const ready = await instanceReadiness(instance, {
-      platform: agents.platform,
-      base: base?.env ?? {},
-      baseKind: base?.kind ?? "service",
-      home: agents.home,
-    });
-    if (ready?.state === "signed_out") {
-      throw refusal(
-        "signed_out",
-        "This agent app is not signed in, so it could not work on the task. Nothing was started.",
-        `Sign in by running this in a terminal, then run the task again: ${ready.login}`,
-        { login: ready.login },
-      );
     }
     const settings = this.#settings();
     const queued = await hosted.machine

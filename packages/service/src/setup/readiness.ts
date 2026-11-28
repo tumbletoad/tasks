@@ -39,7 +39,12 @@ export function homesReadiness(
           env: found?.env ?? {},
           configHome: home.home,
         };
-      return instanceReadiness(program, { platform, base: input.env, home: userHome });
+      return instanceReadiness(program, {
+        platform,
+        base: input.env,
+        baseKind: input.envKind ?? "user",
+        home: userHome,
+      });
     }),
   );
 }

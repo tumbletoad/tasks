@@ -432,13 +432,6 @@ function leave(token: string, how: "detached" | "in-group"): void {
 
 /** Program mode. */
 async function main(): Promise<void> {
-  // What Run asks before it starts the app: its version, and signed in.
-  const asked = process.argv.slice(2).join(" ");
-  if (asked === "--version") {
-    process.stdout.write("codex-cli 0.172.0\n");
-    process.exit(0);
-  }
-  if (asked === "login status") process.exit(0);
   const scenario = JSON.parse(process.env["FAKE_CODEX_SCENARIO"] ?? "{}") as FakeScenario;
   if (scenario.token !== undefined && process.platform === "win32") {
     createServer()

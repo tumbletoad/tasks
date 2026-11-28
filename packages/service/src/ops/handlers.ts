@@ -4948,12 +4948,6 @@ export function launchError(error: unknown): unknown {
             message: "No terminal can open this instance here. Nothing was started.",
             hint: `Run ${CLI_NAME} doctor to see which terminal it would use.`,
           };
-        case "signed_out":
-          return {
-            message:
-              "This agent app is not signed in, so it would only ask you to. Nothing was started.",
-            hint: `Sign in by running this in a terminal, then open the task again: ${error.login ?? ""}`,
-          };
         case "own_home":
           return {
             message:
@@ -4975,7 +4969,6 @@ export function launchError(error: unknown): unknown {
         field: "instance",
         reason: error.reason,
         ...(error.t3 === undefined ? {} : { t3: error.t3 }),
-        ...(error.login === undefined ? {} : { login: error.login }),
       },
     });
   }

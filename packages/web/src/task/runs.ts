@@ -257,19 +257,13 @@ export function withStops(
 export function runRefusal(error: unknown): {
   readonly reason: string;
   readonly folder?: string;
-  readonly words: {
-    readonly reason: string;
-    readonly folder: string;
-    readonly machine: string;
-    readonly login: string;
-  };
+  readonly words: { readonly reason: string; readonly folder: string; readonly machine: string };
 } {
   const code = error instanceof Refused ? error.code : "unknown";
   const data = error instanceof Refused ? error.data : {};
   const named = typeof data["reason"] === "string" ? data["reason"] : undefined;
   const folder = typeof data["folder"] === "string" ? data["folder"] : undefined;
   const machine = typeof data["machine"] === "string" ? data["machine"] : "";
-  const login = typeof data["login"] === "string" ? data["login"] : "";
   const reason =
     named !== undefined && REFUSALS.has(named)
       ? named === "folder_missing" && folder === undefined
@@ -283,7 +277,7 @@ export function runRefusal(error: unknown): {
   return {
     reason,
     ...(folder === undefined ? {} : { folder }),
-    words: { reason, folder: folder ?? "", machine, login },
+    words: { reason, folder: folder ?? "", machine },
   };
 }
 
@@ -299,7 +293,6 @@ const REFUSALS: ReadonlySet<string> = new Set([
   "marker_other",
   "runs_unavailable",
   "not_served",
-  "signed_out",
 ]);
 
 /** The instances that can run, the default first: the first of them in the space's order. */

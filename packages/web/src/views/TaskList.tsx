@@ -70,7 +70,6 @@ const REFUSED_WORDS = {
   not_for_space: "row.openNotForSpace",
   no_terminal: "row.openNoTerminal",
   own_home: "row.openOwnHome",
-  signed_out: "row.openSignedOut",
 } as const;
 /** How long a row an agent added keeps its accent (A5 3.20: 1.2 s). */
 const FRESH_MS = 1_200;
@@ -1015,11 +1014,10 @@ export function TaskList({
               const cannot = instanceRefusal(error);
               if (cannot !== undefined) {
                 refuse(task.id, undefined);
-                refusedIn(instance.key, cannot.reason);
+                refusedIn(instance.key, cannot);
                 say(
-                  t(REFUSED_WORDS[cannot.reason], {
+                  t(REFUSED_WORDS[cannot], {
                     label: instance.label,
-                    login: cannot.reason === "signed_out" ? cannot.login : "",
                   }),
                 );
                 return undefined;

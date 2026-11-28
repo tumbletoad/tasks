@@ -205,7 +205,7 @@
   overflow-wrap: anywhere;
 }
 
-.ready:is([data-state="signed_out"], [data-state="not_installed"]) {
+.ready:is([data-state="no_login"], [data-state="not_installed"]) {
   color: var(--k-late);
 }
 
@@ -213,6 +213,9 @@
   color: var(--k-text);
   font-family: var(--k-font-mono);
   font-size: 0.75rem;
+  /* A line to paste reads whole on its own line, the sentence around it apart. */
+  display: block;
+  margin-block: 2px;
 }
 
 .why {

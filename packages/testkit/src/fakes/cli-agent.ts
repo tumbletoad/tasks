@@ -19,8 +19,8 @@
 //   would, and the session ID its `--session-id` names to `<ref>.sessions`, so a test can make
 //   the Agent Monitor report that session.
 // - FAKE_CLI_VERSION: what it answers to `--version` alone (default 2.1.332, which holds a prefill).
-// - FAKE_CLI_SIGNED_OUT=1: its status command (`auth status`, `login status`) exits 1, not signed
-//   in, as Open asks it before it starts the app; otherwise 0.
+// - FAKE_CLI_SIGNED_OUT=1: its status command (`auth status`, `login status`) exits 1, no login
+//   found; otherwise 0.
 // Its stdin is never read. No real agent, account or home is touched. Tests only.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";

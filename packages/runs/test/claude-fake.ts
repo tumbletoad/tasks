@@ -424,8 +424,8 @@ function tasksServerOf(args: readonly string[]): Json | undefined {
 
 /** Program mode. */
 async function main(): Promise<void> {
-  // What Run asks before it starts the app: its version, and signed in as the recordings were made,
-  // or not with FAKE_CLAUDE_SIGNED_OUT=1.
+  // What the login check asks: its version, and a login found as the recordings were made, or none
+  // with FAKE_CLAUDE_SIGNED_OUT=1.
   const asked = process.argv.slice(2).join(" ");
   if (asked === "--version") {
     process.stdout.write("2.1.332 (Claude Code)\n");

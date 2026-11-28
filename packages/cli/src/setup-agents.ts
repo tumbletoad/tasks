@@ -870,7 +870,7 @@ async function status(
   const answers = homes.map((views) =>
     views.map((view) => ({ view, answer: toolsOf(input, view, "", refusal(view)) })),
   );
-  // Each home's app: installed, its version and its sign-in, by the home's first file.
+  // What each home's app reported: installed, its version and its login, by the home's first file.
   const ready = await homesReadiness(
     input,
     answers.map((files) => files[0]?.view.home),
