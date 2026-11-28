@@ -28,7 +28,6 @@ export const FIELDS = {
     wrap: ["wrap_state", "outcome", "wrapped_at", "wrapped_by"],
   },
   notes: { body: ["body", "edited_at"], deleted: ["deleted_at"] },
-  sources: { deleted: ["deleted_at"] },
 } as const satisfies Record<string, Record<string, readonly string[]>>;
 
 export type Entity = keyof typeof FIELDS;
@@ -39,7 +38,7 @@ export const isEntity = (value: string): value is Entity => Object.hasOwn(FIELDS
 /** The columns a create may set besides the fields' own. */
 export const KEYS: Record<Entity, readonly string[]> = {
   nodes: ["id", "kind", "slug", "created_at", "created_by"],
-  tasks: ["id", "ref", "origin_source_id", "created_session"],
+  tasks: ["id", "ref", "created_session"],
   notes: [
     "id",
     "owner_id",
@@ -50,22 +49,6 @@ export const KEYS: Record<Entity, readonly string[]> = {
     "session_id",
     "run_id",
     "created_at",
-  ],
-  sources: [
-    "id",
-    "ref",
-    "owner_id",
-    "kind",
-    "title",
-    "brief",
-    "body",
-    "who",
-    "outside_ref",
-    "url",
-    "at",
-    "source_key",
-    "created_at",
-    "created_by",
   ],
 };
 

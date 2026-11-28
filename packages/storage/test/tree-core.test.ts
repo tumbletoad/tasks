@@ -1,8 +1,8 @@
 // The tree writer's one working path, in a disposable tree space: a task added under a project is
 // read with its trail and finished, with its follow-ups in the same commit. Also the request's
 // boundary (one transaction, one receipt, a base checked against the versions before it), the
-// finishing question for open subtasks, the Trash of a subtree, and a capture that finds its task
-// again through the source it came from. Fixture text only.
+// finishing question for open subtasks, and the Trash of a subtree. Fixture text
+// only.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import { readTreeTask } from "../src/tree/read.ts";
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
@@ -164,26 +164,5 @@ describe("[S2.tree.core] the tree writer's commands in a disposable tree space",
     fx.conn.prepare("UPDATE nodes SET title = 'Changed by hand' WHERE kind = 'task'").run();
     expect(treeHistoryProblems(fx.conn)).toEqual(["history: nodes.title is not its history"]);
     fx.conn.prepare("UPDATE nodes SET title = 'Renew the passport' WHERE kind = 'task'").run();
-  });
-
-  test("a repeat capture finds its task through the source it came from, also after the source window", () => {
-    const source = { kind: "ticket", title: "LUM-212", key: "jira:LUM-212" };
-    expect(add({ title: "Fix the export", source })).toMatchObject({
-      status: "created",
-      ref: "M-1",
-    });
-    expect(add({ title: "Fix the export again", source, log: "Asked again" })).toMatchObject({
-      status: "exists",
-      ref: "M-1",
-    });
-    expect(readTreeTask(fx.conn, "M-1")?.notes.map((n) => n.body)).toEqual(["Asked again"]);
-    // Finished long ago: a new task, made from the same source, and the next capture finds it.
-    fx.send("task.finish", { task: "M-1", at: 1 });
-    const second = add({ title: "Fix the export, part two", source });
-    expect(second).toMatchObject({ status: "created" });
-    expect(add({ title: "Once more", source })).toMatchObject({
-      status: "exists",
-      ref: second?.ref,
-    });
   });
 });

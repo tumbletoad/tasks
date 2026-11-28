@@ -2,7 +2,6 @@
 // statement, so every statement sees the ones before it; nothing is predicted in memory. A command
 // returns what it did, which the receipt stores. Input is checked here as well as by the service:
 // storage never trusts a caller with the space.
-import { readPreference } from "@ttasks/contracts/preferences";
 import type { Row, SqlValue } from "../driver.ts";
 import { formatTaskRef, parseTaskRef } from "../refs.ts";
 import { positionBetween } from "../write/positions.ts";
@@ -12,7 +11,6 @@ import { TreeProblem } from "./fields.ts";
 
 type Input = Record<string, unknown>;
 
-const DAY_MS = 86_400_000;
 const NOTE_KINDS = ["note", "progress", "evidence", "blocker", "decision", "question", "handoff"];
 
 const SQL = {
@@ -42,11 +40,6 @@ const SQL = {
   below:
     "WITH RECURSIVE up(id) AS (SELECT $under UNION ALL SELECT n.parent_id FROM nodes n JOIN up " +
     "ON n.id = up.id WHERE n.parent_id IS NOT NULL) SELECT 1 FROM up WHERE id = $id",
-  liveSource: "SELECT id FROM sources WHERE source_key = $key AND deleted_at IS NULL",
-  /** The newest live task a source is the origin of. */
-  originTask:
-    "SELECT t.id, t.ref, t.lifecycle, t.completed_at FROM tasks t JOIN nodes n ON n.id = t.id " +
-    "WHERE t.origin_source_id = $source AND n.deleted_at IS NULL ORDER BY n.created_seq DESC LIMIT 1",
   lastOrdinal: "SELECT max(ordinal) AS o FROM notes WHERE owner_id = $owner",
   note: "SELECT * FROM notes WHERE id = $id",
   noteAt: "SELECT * FROM notes WHERE owner_id = $owner AND ordinal = $ordinal",
@@ -156,20 +149,6 @@ function addNote(tx: Tx, owner: string, node: string, body: string, kind = "note
   return { id, ordinal };
 }
 
-/** A draft that names a source key the space captured before: the task it made, if it still counts. */
-function captured(tx: Tx, key: string): { task: Row | undefined; source: string | undefined } {
-  const source = tx.get(SQL.liveSource, { key })?.["id"];
-  if (typeof source !== "string") return { task: undefined, source: undefined };
-  const task = tx.get(SQL.originTask, { source });
-  if (task === undefined) return { task: undefined, source };
-  const days = readPreference("tasks.dedupe_window_days", undefined).value as number;
-  const finished = task["completed_at"];
-  const counts =
-    task["lifecycle"] === "active" ||
-    (typeof finished === "number" && finished >= tx.at - days * DAY_MS);
-  return { task: counts ? task : undefined, source };
-}
-
 const tasksAdd: Command = (tx, input) => {
   const drafts = input["tasks"];
   if (!Array.isArray(drafts) || drafts.length === 0 || drafts.length > 25) {
@@ -179,15 +158,7 @@ const tasksAdd: Command = (tx, input) => {
     tasks: drafts.map((raw: unknown, i) => {
       const draft = (typeof raw === "object" && raw !== null ? raw : {}) as Input;
       const at = (field: string) => `tasks.${String(i)}.${field}`;
-      const source = draft["source"] as Input | undefined;
-      const key = source === undefined ? undefined : text(source, "key", 200);
       const log = text(draft, "log", 4000, false);
-      const found = key === undefined ? { task: undefined, source: undefined } : captured(tx, key);
-      if (found.task !== undefined) {
-        const id = String(found.task["id"]);
-        if (log !== undefined) addNote(tx, id, id, log, "progress");
-        return { status: "exists", id, ref: refText(tx, found.task["ref"]) };
-      }
       const parent = parentFor(tx, draft["under"], at("under"));
       const id = typeof draft["id"] === "string" ? draft["id"] : tx.newId("t");
       const ref = tx.ref();
@@ -210,33 +181,11 @@ const tasksAdd: Command = (tx, input) => {
         },
         id,
       );
-      let origin: string | null = found.source ?? null;
-      if (source !== undefined && origin === null) {
-        origin = tx.newId("s");
-        tx.create(
-          "sources",
-          {
-            id: origin,
-            ref: tx.ref(),
-            owner_id: id,
-            kind: text(source, "kind", 40) ?? "other",
-            title: title(source),
-            url: text(source, "url", 2000) ?? null,
-            who: text(source, "who", 200) ?? null,
-            outside_ref: text(source, "ref", 200) ?? null,
-            source_key: key ?? null,
-            created_at: tx.at,
-            created_by: tx.author,
-          },
-          id,
-        );
-      }
       tx.create(
         "tasks",
         {
           id,
           ref,
-          origin_source_id: origin,
           status: text(draft, "status", 40) ?? "open",
           inbox: draft["inbox"] === true ? 1 : 0,
           priority: priority as number,

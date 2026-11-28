@@ -194,19 +194,10 @@ export function treeHistoryProblems(conn: Connection): string[] {
     }
   }
   const refs =
-    conn
-      .prepare(
-        "SELECT (SELECT count(*) FROM tasks) + (SELECT count(*) FROM sources) AS n, " +
-          "(SELECT count(*) FROM (SELECT ref FROM tasks UNION SELECT ref FROM sources)) AS u, " +
-          "(SELECT max(m) FROM (SELECT max(ref) AS m FROM tasks UNION ALL SELECT max(ref) FROM sources)) AS top, " +
-          "(SELECT next_ref FROM space) AS next",
-      )
-      .get() ?? {};
-  if (
-    refs["n"] !== refs["u"] ||
-    (refs["top"] !== null && Number(refs["next"]) <= Number(refs["top"]))
-  ) {
-    problems.push("counters: a reference given twice or the counter behind it");
+    conn.prepare("SELECT max(ref) AS top, (SELECT next_ref FROM space) AS next FROM tasks").get() ??
+    {};
+  if (refs["top"] !== null && Number(refs["next"]) <= Number(refs["top"])) {
+    problems.push("counters: the counter is behind a reference");
   }
   return problems;
 }

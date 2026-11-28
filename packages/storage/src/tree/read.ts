@@ -9,7 +9,7 @@ const SQL = {
   byRef: "SELECT id FROM tasks WHERE ref = $ref",
   task:
     "SELECT n.id, n.parent_id, n.title, n.brief, n.description, n.deleted_at, n.version AS node_version, " +
-    "t.ref, t.lifecycle, t.status, t.inbox, t.priority, t.outcome, t.origin_source_id, t.version " +
+    "t.ref, t.lifecycle, t.status, t.inbox, t.priority, t.outcome, t.version " +
     "FROM nodes n JOIN tasks t ON t.id = n.id WHERE n.id = $id",
   /** Every level above `$id`, nearest first, up to the space. */
   trail:

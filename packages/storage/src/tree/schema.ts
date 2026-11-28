@@ -80,19 +80,8 @@ export const TREE_STATEMENTS: readonly string[] = [
 ) STRICT`,
   "CREATE INDEX nodes_children ON nodes(parent_id, kind, position) WHERE deleted_at IS NULL",
   "CREATE UNIQUE INDEX nodes_slug ON nodes(parent_id, slug) WHERE kind = 'project'",
-  `CREATE TABLE sources (
-  id TEXT PRIMARY KEY, ref INTEGER NOT NULL UNIQUE, owner_id TEXT NOT NULL REFERENCES nodes(id),
-  kind TEXT NOT NULL, title TEXT NOT NULL, brief TEXT NOT NULL DEFAULT '' ${ONE_LINE("brief", 400)},
-  body TEXT NOT NULL DEFAULT '', who TEXT, outside_ref TEXT, url TEXT, at INTEGER, source_key TEXT,
-  created_at INTEGER NOT NULL, created_by TEXT NOT NULL REFERENCES actors(id), deleted_at INTEGER,
-  ${VERSIONS}
-) STRICT`,
-  "CREATE UNIQUE INDEX sources_key ON sources(source_key) " +
-    "WHERE source_key IS NOT NULL AND deleted_at IS NULL",
-  "CREATE INDEX sources_owner ON sources(owner_id) WHERE deleted_at IS NULL",
   `CREATE TABLE tasks (
   id TEXT PRIMARY KEY REFERENCES nodes(id), ref INTEGER NOT NULL UNIQUE,
-  origin_source_id TEXT REFERENCES sources(id),
   lifecycle TEXT NOT NULL DEFAULT 'active' CHECK (lifecycle IN ('active','completed','archived')),
   status TEXT NOT NULL DEFAULT 'open', inbox INTEGER NOT NULL DEFAULT 0 CHECK (inbox IN (0,1)),
   priority INTEGER NOT NULL DEFAULT 4 CHECK (priority BETWEEN 1 AND 4), effort TEXT,
@@ -108,7 +97,6 @@ export const TREE_STATEMENTS: readonly string[] = [
   "CREATE INDEX tasks_open ON tasks(lifecycle, status)",
   "CREATE INDEX tasks_due ON tasks(due_date) WHERE lifecycle = 'active'",
   "CREATE INDEX tasks_done ON tasks(completed_at) WHERE lifecycle = 'completed'",
-  "CREATE INDEX tasks_origin ON tasks(origin_source_id) WHERE origin_source_id IS NOT NULL",
   // Notes, log entries and learnings in one thread, numbered per owner.
   `CREATE TABLE notes (
   id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, ordinal INTEGER NOT NULL,
