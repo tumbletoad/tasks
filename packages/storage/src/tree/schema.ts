@@ -90,8 +90,22 @@ export const TREE_STATEMENTS: readonly string[] = [
   // Every child, live or in the Trash: the end of a parent's list counts them all.
   "CREATE INDEX nodes_children ON nodes(parent_id, kind, position)",
   "CREATE UNIQUE INDEX nodes_slug ON nodes(parent_id, slug) WHERE kind = 'project'",
+  // Something from outside, on one node. The key that recognises it again is its own column.
+  `CREATE TABLE sources (
+  id TEXT PRIMARY KEY, ref INTEGER NOT NULL UNIQUE, owner_id TEXT NOT NULL REFERENCES nodes(id),
+  kind TEXT NOT NULL, title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 300),
+  brief TEXT NOT NULL DEFAULT '' ${ONE_LINE("brief", 400)}, body TEXT NOT NULL DEFAULT '',
+  who TEXT, outside_ref TEXT, url TEXT, at INTEGER, source_key TEXT,
+  created_at INTEGER NOT NULL, created_by TEXT NOT NULL REFERENCES actors(id), deleted_at INTEGER,
+  ${VERSIONS}
+) STRICT`,
+  "CREATE UNIQUE INDEX sources_key ON sources(source_key) " +
+    "WHERE source_key IS NOT NULL AND deleted_at IS NULL",
+  "CREATE INDEX sources_owner ON sources(owner_id) WHERE deleted_at IS NULL",
+  // origin_source_id: the source a capture made the task from, which a repeat capture resolves.
   `CREATE TABLE tasks (
   id TEXT PRIMARY KEY REFERENCES nodes(id), ref INTEGER NOT NULL UNIQUE,
+  origin_source_id TEXT REFERENCES sources(id),
   lifecycle TEXT NOT NULL DEFAULT 'active' CHECK (lifecycle IN ('active','completed','archived')),
   status TEXT NOT NULL DEFAULT 'open', inbox INTEGER NOT NULL DEFAULT 0 CHECK (inbox IN (0,1)),
   priority INTEGER NOT NULL DEFAULT 4 CHECK (priority BETWEEN 1 AND 4), effort TEXT,
@@ -107,6 +121,7 @@ export const TREE_STATEMENTS: readonly string[] = [
   "CREATE INDEX tasks_open ON tasks(lifecycle, status)",
   "CREATE INDEX tasks_due ON tasks(due_date) WHERE lifecycle = 'active'",
   "CREATE INDEX tasks_done ON tasks(completed_at) WHERE lifecycle = 'completed'",
+  "CREATE INDEX tasks_origin ON tasks(origin_source_id) WHERE origin_source_id IS NOT NULL",
   // Knowledge written in the space, on one node. Its earlier versions are its change rows.
   `CREATE TABLE pages (
   id TEXT PRIMARY KEY, ref INTEGER NOT NULL UNIQUE, owner_id TEXT NOT NULL REFERENCES nodes(id),
@@ -117,6 +132,14 @@ export const TREE_STATEMENTS: readonly string[] = [
   ${VERSIONS}
 ) STRICT`,
   "CREATE INDEX pages_owner ON pages(owner_id) WHERE deleted_at IS NULL",
+  // A pointer from a node to a page or a source elsewhere in the space.
+  `CREATE TABLE links (
+  id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES nodes(id), target_id TEXT NOT NULL,
+  position TEXT NOT NULL, added_by TEXT NOT NULL REFERENCES actors(id), removed_at INTEGER,
+  ${VERSIONS},
+  UNIQUE (owner_id, target_id)
+) STRICT`,
+  "CREATE INDEX links_target ON links(target_id)",
   // The prototype import's task IDs, which text written before may hold: a task is found by them.
   `CREATE TABLE aliases (
   namespace TEXT NOT NULL CHECK (namespace IN ('planning')), alias TEXT NOT NULL,

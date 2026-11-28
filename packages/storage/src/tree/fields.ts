@@ -35,6 +35,8 @@ export const FIELDS = {
     owner: ["owner_id"],
     deleted: ["deleted_at", "deleted_by"],
   },
+  sources: { owner: ["owner_id"], deleted: ["deleted_at"] },
+  links: { removed: ["removed_at"] },
 } as const satisfies Record<string, Record<string, readonly string[]>>;
 
 export type Entity = keyof typeof FIELDS;
@@ -45,7 +47,7 @@ export const isEntity = (value: string): value is Entity => Object.hasOwn(FIELDS
 /** The columns a create may set besides the fields' own. */
 export const KEYS: Record<Entity, readonly string[]> = {
   nodes: ["id", "kind", "slug", "created_at", "created_by"],
-  tasks: ["id", "ref", "created_session"],
+  tasks: ["id", "ref", "origin_source_id", "created_session"],
   notes: [
     "id",
     "owner_id",
@@ -58,6 +60,22 @@ export const KEYS: Record<Entity, readonly string[]> = {
     "created_at",
   ],
   pages: ["id", "ref", "created_at", "created_by"],
+  sources: [
+    "id",
+    "ref",
+    "kind",
+    "title",
+    "brief",
+    "body",
+    "who",
+    "outside_ref",
+    "url",
+    "at",
+    "source_key",
+    "created_at",
+    "created_by",
+  ],
+  links: ["id", "owner_id", "target_id", "position", "added_by"],
 };
 
 /** A field's columns. */

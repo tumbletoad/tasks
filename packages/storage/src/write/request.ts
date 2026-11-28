@@ -2543,7 +2543,7 @@ function learningChanges(value: unknown, i: number): NonNullable<TaskWrapUp["lea
 }
 
 /** A source's fields (A1 3.4, 3.6, 3.7). */
-function sourceFields(f: Fields): SourceFields {
+export function sourceFields(f: Fields): SourceFields {
   const line = { chars: WRITE_LIMITS.line, line: true };
   const source: SourceFields = {
     kind: f.oneOf("kind", SOURCE_KINDS),
