@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, findEntry, type ErrorBody } from "@ttasks/contracts";
 import { CheckedDriver, createSpace, loadDriver, DEFAULT_DRIVER } from "@ttasks/storage";
 import { both, type Sequence, type Side } from "../../storage/test/both-helpers.ts";
+import { readBatch, readSnapshot } from "../src/http/feed.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 import { classSession } from "./ops-helpers.ts";
@@ -26,7 +27,8 @@ beforeAll(async () => {
   const folder = join(w.root, "s", "tree");
   createSpace(checked, folder, {
     name: "Mira",
-    refPrefix: "T",
+    // The prefix of the contract world's space: a status shows it.
+    refPrefix: "M",
     machineId: w.service.ops.machine.id as `m_${string}`,
     ownerLabel: "user",
     tree: true,
@@ -111,11 +113,12 @@ function normal(value: unknown, s: Session): unknown {
   }
   if (Array.isArray(value)) return value.map((v) => normal(v, s));
   if (typeof value === "object" && value !== null) {
-    // A version and a seq count the space's own commits; a time in milliseconds is a time.
+    // A version, a seq and when a row was touched count the space's own commits; a time in
+    // milliseconds is a time.
     return Object.fromEntries(
       Object.entries(value).map(([k, v]) => [
         k,
-        (k === "version" || k === "seq") && typeof v === "number"
+        (k === "version" || k === "seq" || k === "touched") && typeof v === "number"
           ? token(s, "v", String(v))
           : /(?:^|_)at$/u.test(k) && typeof v === "number"
             ? "<at>"
@@ -777,6 +780,119 @@ describe("[S2.replay.dates] today's service requests through both backends: date
     "a due date, a phrase and one refused; a star and a wait; a finished status refused; cleared twice",
     async () => {
       await replay(DATES);
+    },
+    LONG,
+  );
+});
+
+const search = (q: string, more: Record<string, unknown> = {}): Step => ({
+  op: "task.search",
+  input: { q, ...more },
+  user: true,
+});
+
+/** Search by words and the filters a person and an agent use most, as the search tests send it. */
+const SEARCH: Sequence<Step> = [
+  {
+    op: "task.add",
+    input: {
+      tasks: [
+        { title: "Renew the passport", summary: "Bring a photo", area: "Home", project: "Papers" },
+      ],
+    },
+    as: "a",
+    user: true,
+  },
+  { op: "task.add", input: { tasks: [{ title: "Pay the invoice", due: "2026-12-01" }] }, as: "b" },
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "Call the bank", focus: true, area: "Home" }] },
+    as: "c",
+    user: true,
+  },
+  { op: "task.update", input: { task: "{b}", set: { status: "waiting" } }, base: true },
+  {
+    op: "entry.add",
+    input: { task: "{a}", kind: "note", text: "Ask about the photo booth" },
+    user: true,
+  },
+  search("photo"),
+  search("passport OR invoice"),
+  search("status:waiting"),
+  search("due<2026-12-05"),
+  search("area:Home"),
+  search("project:Papers photo"),
+  search("is:inbox"),
+  search("is:focus"),
+  search("id:{a}"),
+  search("bank -photo"),
+  { op: "task.finish", input: { task: "{a}", outcome: "Renewed" }, base: true, user: true },
+  search("photo"),
+  search("photo", { scope: "all" }),
+  search("is:completed"),
+  { op: "task.finished", input: {}, user: true },
+  { op: "space.status", input: {}, user: true },
+  { op: "space.status", input: {} },
+];
+
+describe("[S2.replay.search] today's service requests through both backends: search", () => {
+  test(
+    "words, OR and a negation, status, due, area and project, the Inbox, the star, id:, a finished task by scope",
+    async () => {
+      await replay(SEARCH);
+    },
+    LONG,
+  );
+});
+
+/** A backend whose reader then sees the feed: the snapshot, and the batch since the last step. */
+const feedBackend = (space: () => string): Side<Step, Session & { seq: number }> => {
+  const inner = backend(space);
+  const reader = (s: Session) => {
+    const found = w.service.ops.spaces().find((x) => x.id === s.space)?.reader;
+    if (found === undefined) throw new Error("The space is not served");
+    return found;
+  };
+  return {
+    open: async () => ({ ...(await inner.open()), seq: 0 }),
+    step: (s, step) => inner.step(s, step),
+    seen: async (s) => {
+      const snapshot = await readSnapshot(reader(s), undefined, 0);
+      const { batch } = await readBatch(reader(s), s.seq);
+      const from = s.seq;
+      s.seq = snapshot.cursor.seq;
+      // The batch since the step before, its commits of earlier sequences left out.
+      return normal({ snapshot, batch: from === 0 ? undefined : batch }, s);
+    },
+    close: () => undefined,
+  };
+};
+
+/** What the page's feed sends of a tree space: the tree from the tree, and each change. */
+const FEED: Sequence<Step> = [
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "Fix the gate", area: "Garden", project: "Fence" }] },
+    as: "gate",
+    user: true,
+  },
+  { op: "task.add", input: { tasks: [{ title: "Water the beds", area: "Garden" }] }, as: "beds" },
+  {
+    op: "task.update",
+    input: { task: "{beds}", set: { title: "Water the raised beds", priority: 2 } },
+    base: true,
+    user: true,
+  },
+  { op: "entry.add", input: { task: "{gate}", kind: "question", text: "Which paint?" } },
+  { op: "task.finish", input: { task: "{beds}", outcome: "Watered" }, base: true, user: true },
+  { op: "task.delete", input: { tasks: ["{gate}"] }, base: true, user: true },
+];
+
+describe("[S2.replay.feed] the feed of both backends: the snapshot and each batch", () => {
+  test(
+    "the tree of areas and projects, a task's row, a question waiting, a finish and the Trash",
+    async () => {
+      await both({ today: feedBackend(() => w.space), tree: feedBackend(() => tree) }, FEED);
     },
     LONG,
   );

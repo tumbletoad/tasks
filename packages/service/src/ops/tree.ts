@@ -6,6 +6,7 @@
 import { AppError, type AnyEntry } from "@ttasks/contracts";
 import type { Operation, Query, SpaceWriterHandle, WorkerConnection } from "@ttasks/storage";
 import { planGap } from "@ttasks/storage";
+import { parseQuery, termsOf } from "../search/query.ts";
 
 /** Whether a space is a tree: its writer or its reader says so. */
 export const isTree = (space: {
@@ -40,7 +41,48 @@ const ON_TREE: Readonly<Record<string, readonly string[]>> = {
   "page.history": [],
   "page.trashed": [],
   "receipt.get": [],
+  "task.search": [],
+  "space.status": [],
+  "task.finished": [],
 };
+
+/**
+ * The search filters a tree space answers now: words, a task's status, size, priority, due date
+ * and dates, its area and project, the Inbox, the star, overdue, finished and wrapped, and `id:`.
+ * The others read what a tree keeps elsewhere (its folders, sources, notes, learnings, proposals
+ * and live sessions), and come with their families.
+ */
+const FILTERS: ReadonlySet<string> = new Set([
+  "status",
+  "effort",
+  "area",
+  "project",
+  "p",
+  "due",
+  "created",
+  "completed",
+  "id",
+]);
+const IS: ReadonlySet<string> = new Set([
+  "inbox",
+  "focus",
+  "overdue",
+  "completed",
+  "archived",
+  "unwrapped",
+]);
+
+/** A search's part the tree does not answer yet, by its name. */
+function searchGap(input: Record<string, unknown>): string | undefined {
+  if (input["scope"] === "library") return "scope library";
+  if (typeof input["q"] !== "string") return undefined;
+  for (const term of termsOf(parseQuery(input["q"]))) {
+    if (term.type !== "filter") continue;
+    if (term.key === "is" ? IS.has(term.value.toLowerCase()) : FILTERS.has(term.key)) continue;
+    return `${term.key}:${term.key === "is" ? term.value : ""}`;
+  }
+  return undefined;
+}
 
 /** Refuses on a tree space an entry, or a field of one, that the tree does not take yet. */
 export function checkOnTree(entry: AnyEntry, input: Record<string, unknown>): void {
@@ -52,7 +94,8 @@ export function checkOnTree(entry: AnyEntry, input: Record<string, unknown>): vo
     later.find((key) => input[key] !== undefined) ??
     listed("clear", "folder") ??
     // A task's history is read from today's commits; the tree's comes with the reads.
-    (entry.name === "task.get" ? listed("sections", "history") : undefined);
+    (entry.name === "task.get" ? listed("sections", "history") : undefined) ??
+    (entry.name === "task.search" ? searchGap(input) : undefined);
   if (field !== undefined) throw notOnTreeYet(`${entry.name} with ${field}`);
 }
 
@@ -71,7 +114,7 @@ export function checkPlan(entry: AnyEntry, ops: readonly Operation[]): void {
 const TASKS =
   "tasks AS (SELECT t.id, t.ref, n.title, n.brief AS summary, n.description AS context, " +
   "t.lifecycle, t.status, t.inbox, t.priority, t.effort, t.due_date, t.due_at, t.due_tz, " +
-  "t.focus_on, t.waiting_on, t.completed_at, t.completed_by, t.outcome, t.archived_reason, " +
+  "t.planned_for, NULL AS owner, t.focus_on, t.waiting_on, t.source_at, t.completed_at, t.completed_by, t.outcome, t.archived_reason, " +
   "t.wrap_state, t.reviewed_at, n.touched, max(n.version, t.version) AS version, n.deleted_at, " +
   "n.deleted_by, n.created_at, n.created_by, t.created_seq, t.fp, n.position, " +
   "CASE WHEN p.kind = 'project' THEN coalesce(g.id, p.id) END AS area_id, " +
@@ -122,12 +165,74 @@ const CHANGES =
   "c.node_id, c.action, c.field, c.before, c.after, c.before_ver, c.before_prov, c.after_prov " +
   "FROM main.changes c)";
 
+/** A search document's task: the task that holds it, when a task holds it. */
+const DOCS =
+  "search_docs AS (SELECT d.doc, d.kind, d.entity_id, d.seq, " +
+  "CASE WHEN h.kind = 'task' THEN d.node_id END AS task_id, " +
+  "CASE WHEN h.kind = 'task' THEN ht.lifecycle END AS lifecycle, 'all' AS audience " +
+  "FROM main.search_docs d JOIN main.nodes h ON h.id = d.node_id " +
+  "LEFT JOIN main.tasks ht ON ht.id = h.id)";
+
+/** A task's log: the entries of its one thread that are not notes. */
+const LOG_ENTRIES =
+  "log_entries AS (SELECT e.id, e.owner_id AS task_id, e.ordinal, e.author_id, e.session_id, " +
+  "e.run_id, e.kind, e.body, e.created_at, e.deleted_at, e.created_seq, e.version, e.fv, e.fp " +
+  "FROM main.notes e JOIN main.nodes h ON h.id = e.owner_id AND h.kind = 'task' " +
+  "WHERE e.kind NOT IN ('note', 'learning'))";
+
+/** A task's notes: the entries of its one thread that are notes. */
+const NOTES =
+  "notes AS (SELECT e.id, e.owner_id AS task_id, e.ordinal, e.author_id, e.session_id, " +
+  "e.run_id, CASE e.for_agents WHEN 1 THEN 'agents' ELSE 'self' END AS addressee, e.body, " +
+  "'all' AS audience, e.created_at, e.edited_at, e.deleted_at, e.created_seq, e.version, e.fv, " +
+  "e.fp FROM main.notes e JOIN main.nodes h ON h.id = e.owner_id AND h.kind = 'task' " +
+  "WHERE e.kind = 'note')";
+
+const SOURCES =
+  "sources AS (SELECT s.id, s.source_key, s.kind, s.title, s.who, s.outside_ref AS ref, s.url, " +
+  "s.at, s.created_at, s.created_by, s.deleted_at, s.created_seq, s.version, s.fv, s.fp, " +
+  "'{}' AS ext FROM main.sources s)";
+
+/**
+ * A task's sources: those on it, in the order they came, then those it links to elsewhere, in
+ * the links' order.
+ */
+const TASK_SOURCES =
+  "task_sources AS (SELECT s.owner_id AS task_id, s.id AS source_id, 'origin' AS role, " +
+  "'0' || printf('%012d', s.created_seq) AS position, s.created_by AS added_by, " +
+  "NULL AS removed_at, s.created_seq, s.version, s.fv, s.fp FROM main.sources s " +
+  "JOIN main.nodes h ON h.id = s.owner_id AND h.kind = 'task' UNION ALL " +
+  "SELECT l.owner_id, l.target_id, 'related', l.position, l.added_by, l.removed_at, " +
+  "l.created_seq, l.version, l.fv, l.fp FROM main.links l " +
+  "JOIN main.sources s ON s.id = l.target_id)";
+
+/** A node's folder on each machine: its default one. */
+const FOLDERS =
+  "folders AS (SELECT f.id, CASE o.kind WHEN 'task' THEN 'task' ELSE 'project' END " +
+  "AS owner_kind, f.owner_id, f.machine_id, f.path, f.created_at, f.deleted_at, f.created_seq, " +
+  "f.version, f.fv, f.fp FROM main.folders f JOIN main.nodes o ON o.id = f.owner_id " +
+  "WHERE f.is_default = 1)";
+
 /** A tree space keeps no aliases: none is found. */
 const ALIASES =
   "aliases AS (SELECT NULL AS namespace, NULL AS alias, NULL AS entity_kind, NULL AS entity_id " +
   "WHERE 0)";
 
-const VIEWS = [TASKS, AREAS, PROJECTS, PAGES, NODE_TEXTS, CHANGES, ALIASES].join(", ");
+const VIEWS = [
+  TASKS,
+  AREAS,
+  PROJECTS,
+  PAGES,
+  NODE_TEXTS,
+  CHANGES,
+  DOCS,
+  LOG_ENTRIES,
+  NOTES,
+  SOURCES,
+  TASK_SOURCES,
+  FOLDERS,
+  ALIASES,
+].join(", ");
 
 /** A statement of today's reads as it runs on a tree space. */
 export function treeSql(sql: string): string {
@@ -154,7 +259,7 @@ export function servedReader(reader: WorkerConnection): WorkerConnection {
       switch (key) {
         case "transaction":
           return (mode: Parameters<WorkerConnection["transaction"]>[0], queries: Query[]) =>
-            target.transaction(mode, queries.map(named));
+            target.transaction(mode, queries.map(named)).catch((e: unknown) => { for (const q of queries) console.error("SQLDEBUG", String(e), q.sql.slice(0, 3000)); throw e; });
         case "get":
           return (sql: string, params?: Parameters<WorkerConnection["get"]>[1]) =>
             target.get(treeSql(sql), params);
