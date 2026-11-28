@@ -1,16 +1,16 @@
 // @vitest-environment happy-dom
 //
-// The sidebar's folded areas (folds.ts): kept for the browser per space, back after a reload, and
-// what is read back is checked, so anything else stored there unfolds nothing and breaks nothing.
+// The side menu's folds (folds.ts): kept for the browser per space, back after a reload, and what
+// is read back is checked, so anything else stored there unfolds nothing and breaks nothing.
 import { PRODUCT_ID } from "@ttasks/brand";
 import { beforeEach, describe, expect, test } from "vitest";
-import { keepFolds, readFolds, shownFolds, toggleFold } from "./folds.ts";
+import { isFolded, keepFolds, readFolds, shownFolds, toggleFold } from "./folds.ts";
 
 beforeEach(() => {
   localStorage.clear();
 });
 
-describe("[A5.3.3.web.folds] folded areas are kept per space for the browser, and only area IDs are read back", () => {
+describe("[A5.3.3.web.folds] folds are kept per space for the browser, and only IDs are read back", () => {
   test("kept per space, back after a reload, and removed once nothing is folded", () => {
     keepFolds("sp_1", new Set(["ar_lumen", "ar_home"]));
     keepFolds("sp_2", new Set(["ar_other"]));
@@ -43,5 +43,15 @@ describe("[A5.3.3.web.folds] folded areas are kept per space for the browser, an
     toggleFold("sp_tabs", "ar_work");
     expect(shownFolds("sp_tabs").size).toBe(0);
     expect([...readFolds("sp_tabs")]).toEqual(["ar_home"]);
+  });
+
+  test("the first two levels start open and the deeper ones folded; a kept project is turned the other way", () => {
+    const turned = new Set(["ar_work", "pj_portal"]);
+    expect(isFolded(turned, "ar_home", 1)).toBe(false);
+    expect(isFolded(turned, "ar_work", 1)).toBe(true);
+    expect(isFolded(turned, "pj_lumen", 2)).toBe(false);
+    expect(isFolded(turned, "pj_login", 3)).toBe(true);
+    expect(isFolded(turned, "pj_portal", 3)).toBe(false);
+    expect(isFolded(turned, "pj_deeper", 5)).toBe(true);
   });
 });

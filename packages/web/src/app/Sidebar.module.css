@@ -13,8 +13,8 @@
   list-style: none;
 }
 
-/* The areas, after a gap. */
-.list[data-group="areas"] {
+/* The projects, after a gap. */
+.list[data-group="projects"] {
   margin-block-start: 20px;
 }
 
@@ -82,8 +82,9 @@
   color: var(--k-muted);
 }
 
-/* An area's line: its fold button (or its dot) where a view has its icon, then its link, so area
-   names start where view names do. The line as a whole shows hover and the current page. */
+/* A project's line: its fold button (or its dot) where a view has its icon, then its link, so the
+   names at the top start where view names do. The line as a whole shows hover and the current
+   page. */
 .area {
   position: relative;
   display: flex;
@@ -109,7 +110,7 @@
   background: var(--k-raised);
 }
 
-/* Folded, the area holds the project on screen: the way back to it. */
+/* Folded, the project holds the one on screen: the way back to it. */
 .area:has(> .item[data-within="true"]) {
   background: var(--k-hover);
 }
@@ -146,11 +147,11 @@ button.fold:hover {
   transition: transform var(--k-fast) var(--k-ease);
 }
 
-[data-folded="true"] .fold svg {
+[data-folded="true"] > .area > .fold svg {
   transform: rotate(-90deg);
 }
 
-[dir="rtl"] [data-folded="true"] .fold svg {
+[dir="rtl"] [data-folded="true"] > .area > .fold svg {
   transform: rotate(90deg);
 }
 
@@ -161,15 +162,26 @@ button.fold:hover {
   background: var(--k-slot, var(--k-muted));
 }
 
-/* A project's name a step in from its area's. */
-.projects {
+/* The projects under a project, a step in: three levels are laid out, a deeper one steps in less. */
+.children {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   margin: 2px 0 4px;
   padding: 0;
-  padding-inline-start: 38px;
+  padding-inline-start: 20px;
   list-style: none;
 }
 
-.projects .item {
+.children .children .children {
+  padding-inline-start: 12px;
+}
+
+.children .area {
+  min-height: 28px;
+}
+
+.children .item {
   min-height: 28px;
   font-size: 0.8125rem;
 }
@@ -282,7 +294,7 @@ button.item {
     background: transparent;
   }
 
-  .projects .item {
+  .children .item {
     padding-inline-end: 38px;
   }
 }

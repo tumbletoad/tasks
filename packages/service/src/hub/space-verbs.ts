@@ -734,9 +734,11 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
       if (running === undefined) throw viewNotKept(view.state);
       try {
         const found = await running;
+        // A tree space's files answer in files; today's projection in files checked and tasks queued.
+        if ("rewritten" in found) return { checked: found.checked, rewritten: found.rewritten };
         return { checked: found.checked, queued: found.queued, forgotten: found.forgotten };
       } catch (error) {
-        if (error instanceof StorageError) throw failure(error);
+        if (error instanceof StorageError || error instanceof AppError) throw failure(error);
         // The projection ended before its reconciliation ran: the space closed meanwhile.
         throw viewNotKept("closed");
       }

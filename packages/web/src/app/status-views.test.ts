@@ -3,11 +3,8 @@
 import fc from "fast-check";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
-  areaGroups,
   flatGroups,
   personGroups,
-  projectGroups,
-  underFilter,
   COUNTED,
   countedViewOf,
   recentOf,
@@ -103,37 +100,6 @@ describe("[A5.3.5.web.view-groups] each view's grouping", () => {
   test("Open and Backlog: area headings, then project labels", () => {
     expect(VIEW_LIST.open.grouping).toBe("area");
     expect(VIEW_LIST.backlog.grouping).toBe("area");
-  });
-
-  test("the area view: by project, no area heading, backlog last; a project's view: no label", () => {
-    const tasks = [
-      task({ title: "Later", parent: "ar_lumen", status: "backlog" }),
-      task({ title: "Admin", parent: "ar_lumen", status: "waiting", waiting_on: "Ana" }),
-      task({ title: "Fix zones", parent: "pj_portal" }),
-      task({ title: "Someday", parent: "pj_portal", status: "backlog" }),
-      task({ title: "Delays", parent: "pj_sync", status: "review" }),
-    ];
-    const groups = areaGroups(tasks, NODES);
-    expect(shape(groups)).toEqual([
-      [
-        "flat",
-        "Lumen Health",
-        [
-          [undefined, ["Admin", "Later"]],
-          ["Clinic sync", ["Delays"]],
-          ["Portal", ["Fix zones", "Someday"]],
-        ],
-      ],
-    ]);
-    // No area heading item; the project labels stay.
-    const items = itemsOf(groups, new Map(), new Map());
-    expect(items.items.filter((i) => i.kind === "group")).toEqual([]);
-    expect(items.items.filter((i) => i.kind === "section").map((i) => i.key)).toEqual([
-      "s:pj_sync",
-      "s:pj_portal",
-    ]);
-    const project = projectGroups(tasks.filter(underFilter(NODES, "pj_portal")), NODES);
-    expect(shape(project)).toEqual([["flat", undefined, [[undefined, ["Fix zones", "Someday"]]]]]);
   });
 
   test("Agents: a task an agent finished stays in Recent with its finished row, until it is deleted", () => {

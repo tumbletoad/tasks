@@ -33,7 +33,7 @@ describe("[A5.pages.web.card] a task's card lists its pages and what is known ab
     expect(own.map((page) => page.ref)).toEqual(["M-221"]);
     expect(above.map((level) => [level.node.kind, level.pages.map((page) => page.ref)])).toEqual([
       ["project", ["M-180"]],
-      ["area", []],
+      ["project", []],
       ["space", ["M-103"]],
     ]);
   });

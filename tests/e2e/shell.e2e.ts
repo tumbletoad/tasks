@@ -177,7 +177,7 @@ test.describe("[A7.3.12.m5-01.e2e.strict-csp] The shell under the strict CSP", (
     // The narrow layout's drawer is a React Aria modal too.
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: "Menu" }).click();
-    const drawer = page.getByRole("dialog", { name: "Views and areas" });
+    const drawer = page.getByRole("dialog", { name: "Views and projects" });
     await expect(drawer).toBeVisible();
     await drawer.getByRole("link", { name: /^Open, \d+ tasks?$/ }).click();
     await expect(drawer).toBeHidden();
@@ -266,7 +266,7 @@ test.describe("[A5.3.19.e2e.screens] The shell in Sumi, Washi and System, wide a
         await picture(page, `shell-${theme}-${String(width)}.png`, { fullPage: true });
       }
       await page.getByRole("button", { name: "Menu" }).click();
-      await expect(page.getByRole("dialog", { name: "Views and areas" })).toBeVisible();
+      await expect(page.getByRole("dialog", { name: "Views and projects" })).toBeVisible();
       await picture(page, `shell-${theme}-390-drawer.png`);
       await page.keyboard.press("Escape");
       await page.setViewportSize({ width: 1440, height: 900 });
@@ -395,9 +395,9 @@ test.describe("[A7.3.12.m5-01.e2e.add-once] An add on its way is sent once, and 
   });
 });
 
-/** A fixture task's host view with the task expanded: the area view of its area. */
+/** A fixture task's host view with the task expanded: its project's screen. */
 const hostOf = (world: World, ref: string) =>
-  new RegExp(`^${world.origin}/s/${world.mira.id}/area/[a-z0-9_]+\\?task=${ref}$`);
+  new RegExp(`^${world.origin}/s/${world.mira.id}/project/[a-z0-9_]+\\?task=${ref}$`);
 
 test.describe("[A7.3.12.m5-01.e2e.task-links] A route that names a task opens that task", () => {
   test("the chooser of a machine without a default keeps the task a link named", async ({
@@ -436,13 +436,15 @@ test.describe("[A7.3.12.m5-01.e2e.task-links] A route that names a task opens th
     await page.evaluate((path) => {
       history.pushState(null, "", path);
     }, `/s/${world.mira.id}/task/${world.spare.ref}`);
+    // One task is expanded at a time, whether the two share a screen or not.
+    const expanded = page.locator('li[data-task][data-expanded="true"]');
     await expect(second).toHaveAttribute("data-expanded", "true");
-    await expect(first).not.toHaveAttribute("data-expanded", "true");
+    await expect(expanded).toHaveCount(1);
     await expect(page).toHaveURL(hostOf(world, world.spare.ref));
     await page.goBack();
     await expect(page).toHaveURL(hostOf(world, world.task.ref));
     await expect(first).toHaveAttribute("data-expanded", "true");
-    await expect(second).not.toHaveAttribute("data-expanded", "true");
+    await expect(expanded).toHaveCount(1);
   });
 });
 

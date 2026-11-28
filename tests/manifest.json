@@ -2241,7 +2241,15 @@
     },
     {
       "id": "S3.files.loop",
-      "title": "When a pass of the readable files runs, on a moved clock: the first right after the start; then once commits stood still for 500 ms, and at most 5 s after the first unshown commit while commits keep coming; a pass that could not place everything again without a commit, after pauses of 500, 1,000 and 2,000 ms; while nothing changes, a sweep that finds a missing file brings a pass",
+      "title": "When a pass of the readable files runs, on a moved clock: the first right after the start; then once commits stood still for 500 ms, and at most 5 s after the first unshown commit while commits keep coming; a pass that could not place everything again without a commit, after pauses of 500, 1,000 and 2,000 ms; while nothing changes, a sweep that finds a missing file brings a pass; a rebuild is a request to the loop, so one that meets a held file is retried once the file is let go, with no commit and no second rebuild",
+      "source": "PLAN step 3",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S3.files.service",
+      "title": "The service keeps a tree space's readable files in the tree's layout: open as this machine's it gets README.md and _index.md and nothing of today's layout, with its record beside the space's settings; a task added through the request path shows; view/rebuild reads every file, puts back a person's edit after rescuing it to rescued/ and answers in files; one that cannot run, with a file where the files' folder goes, answers as a failure",
       "source": "PLAN step 3",
       "owner": "M3",
       "kind": "ci",
@@ -5237,7 +5245,7 @@
     },
     {
       "id": "A5.3.3.web.folds",
-      "title": "The sidebar's folded areas are kept per space for the browser and come back after a reload, removed once none is folded; anything else stored there folds nothing",
+      "title": "The side menu's folds are kept per space for the browser and come back after a reload, removed once none is turned; the first two levels start open and deeper ones folded; anything else stored there folds nothing",
       "source": "A5 3.3",
       "owner": "M5",
       "kind": "ci",
@@ -5808,7 +5816,7 @@
     },
     {
       "id": "A5.3.3.web.task-host",
-      "title": "A task link's host view for every row of A5 3.3's table: Inbox, the area view, the status view (Open for another status), Completed for completed and archived tasks, Trash for a restorable deleted task, and the landing view for an unknown one",
+      "title": "A task link's host view for every row of A5 3.3's table: Inbox, the screen of the project it sits in, the status view (Open for another status), Completed for completed and archived tasks, Trash for a restorable deleted task, and the landing view for an unknown one",
       "source": "A5 3.3, A7 3.12 M5.06",
       "owner": "M5",
       "kind": "ci",
@@ -6832,7 +6840,7 @@
     },
     {
       "id": "A5.archived.e2e.address",
-      "title": "In Chromium and Firefox against the real service: a project without an area, moved into an area while its page is open, and an old link to its former address, each show the project's open task, take the project's present address without a step for Back, and the top field says where a plain capture goes (the Inbox without an area, the area and project with one) and files it there",
+      "title": "In Chromium and Firefox against the real service: a project without an area, moved into an area while its screen is open, keeps its one address and its open task without a step for Back, its crumbs follow it, also after a reload, and the top field says where a plain capture goes (the project at the top, then the area and project) and files it there",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -7283,7 +7291,7 @@
     },
     {
       "id": "S5.phone.pairing",
-      "title": "The phone app's pairing against the real service: a code pairs the phone by its name and the pairing reopens without the code; an answer lost after the computer saved the phone gets one more open without the code and one phone; another key at the address gets nothing sent and leaves the code unspent; a removed phone is told so when it opens the link again",
+      "title": "The phone app's pairing against the real service: a code pairs the phone by its name and the pairing reopens without the code; an answer lost after the computer saved the phone gets one more open without the code and one phone; another key at the address gets nothing sent and leaves the code unspent; a removed phone is told so when it opens the link again; the link's one owner keeps the pairing while the computer is away and connects again when it is back, and stops for good once the phone was removed; it makes one attempt at a time, and a stop or a new attempt ends the one under way with its walk over the addresses",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -7299,6 +7307,34 @@
       "id": "S5.phones.e2e",
       "title": "Against the real service in Chromium and Firefox: Settings > Phones shows a pairing code as a QR code with its warning, a phone pairs with that code and the dialog says so, the list shows it with its space, Run is switched on and stays after a reload, a Run off the service reports as not saved is shown and saved again, and Remove asks first; screenshots of the list, the unsaved Run off, the dialog and the confirmation at 1,440 and 390 px in Sumi and Washi, axe clean, no sideways scroll",
       "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.status.line",
+      "title": "A project's status line from its open tasks: the open, the waiting, about how long the sized ones take by the space's effort levels (a day is a working day), the unsized ones and the earliest due day, late when it is past, also across a year's end and on the viewer's calendar; a part that is zero is left out",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.nav.tree",
+      "title": "The side menu's tree in the store: the live projects at every depth in their order with their colour, each archived project once under Archived with its trail and everything below it, and the open tasks counted through the whole subtree",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.nav.screen",
+      "title": "On a made-up tree four levels deep: the side menu nests and counts every level, folds at every level, starts the fourth level folded and keeps the person's folds; the project screen shows its breadcrumbs, each crumb to its project, its status line, its tabs and its tasks, then each subproject as a headed group with its own status line, foldable",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.nav.e2e",
+      "title": "Against the real service at 1,440 and 390 px: a project's one address with its Tasks and Library tabs, its breadcrumbs and status line, a crumb opening the project above; the narrow breadcrumbs keep the last two levels",
+      "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
     }

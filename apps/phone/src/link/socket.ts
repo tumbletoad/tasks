@@ -9,6 +9,10 @@ type Events = {
   message(event: { id: number; text: string }): void;
   error(event: { id: number; kind: Failure }): void;
   close(event: { id: number; code: number }): void;
+  /** The phone moved to another network. */
+  network(): void;
+  /** A code handed to the open scanner from inside the app (the installed-app test). */
+  scan(event: { text: string }): void;
 };
 
 declare class TTasksLink extends NativeModule<Events> {
@@ -17,8 +21,11 @@ declare class TTasksLink extends NativeModule<Events> {
   close(id: number, code: number, reason: string): void;
   /** The saved pairing's JSON, or null. */
   pairing(): string | null;
+  savePairing(json: string): void;
   /** Forgets the saved pairing. The phone's key stays: the computer knows it again by it. */
   clearPairing(): void;
+  /** The name the person gave the phone in Android's settings, else its model. */
+  deviceName(): string;
 }
 
 export const native = requireNativeModule<TTasksLink>("TTasksLink");

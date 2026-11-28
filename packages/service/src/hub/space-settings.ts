@@ -184,6 +184,10 @@ export const projectionStateOf = (
   };
 };
 
+/** A tree space's readable files' record (@ttasks/projection), per folder as the projection's. */
+export const filesRecordOf = (state: string, spaceId: Id<"sp">, folder: string): string =>
+  join(state, SPACES_FOLDER, `${spaceId}.${folderKey(folder)}.files.json`);
+
 /** The file's object, or an empty one when it is missing, too large or not an object. */
 function readRecord(path: string): Record<string, unknown> {
   try {
@@ -419,8 +423,11 @@ export function recordSyncedConfirmed(
 /** The projection's rescues kept for the UI. */
 export const MAX_RESCUES = 20;
 
-/** A batch's rescue stem as the projection names it, relative to the space's folder. */
-const RESCUE_STEM = /^exchange\/rescued\/[0-9]{8}T[0-9]{9}Z-[0-9a-f]{4}$/;
+/**
+ * A batch's rescue stem as the projection names it, relative to the space's folder: today's in
+ * `exchange/rescued/`, a tree space's readable files' in `rescued/`.
+ */
+const RESCUE_STEM = /^(exchange\/)?rescued\/[0-9]{8}T[0-9]{9}Z-[0-9a-f]{4}$/;
 
 /**
  * The file's object for a change that must keep every other field: an empty one only when the file

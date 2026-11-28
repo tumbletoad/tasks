@@ -2,11 +2,9 @@
 // and the levels above it with theirs, each by title. Pure, so the lists are unit tests.
 import { isUnder, trail, type Nodes, type PageRow } from "@ttasks/client/store";
 
-/** The space, an area or a project: what holds a Library. */
+/** The space or a project: what holds a Library. */
 export type LibraryNode =
-  | { readonly kind: "space" }
-  | { readonly kind: "area"; readonly id: string }
-  | { readonly kind: "project"; readonly id: string };
+  { readonly kind: "space" } | { readonly kind: "project"; readonly id: string };
 
 /** A level above a node: its name, where its Library is, and its pages. */
 export interface Level {
@@ -32,10 +30,6 @@ function ownedBy(pages: readonly PageRow[], node: LibraryNode, nodes: Nodes): Pa
   return pages.filter((page) => page.task === undefined && page.owner_id === owner).sort(byTitle);
 }
 
-/** A level of the tree as a Library names it: the project at the top is an area. */
-const levelOf = (id: string, depth: number): LibraryNode =>
-  depth === 0 ? { kind: "area", id } : { kind: "project", id };
-
 export function listsOf(
   node: LibraryNode,
   pages: Iterable<PageRow>,
@@ -52,8 +46,8 @@ export function listsOf(
   const above: Level[] = [];
   if (node.kind !== "space") {
     const path = trail(nodes, node.id);
-    path.slice(0, -1).forEach((n, depth) => {
-      const level = levelOf(n.id, depth);
+    path.slice(0, -1).forEach((n) => {
+      const level: LibraryNode = { kind: "project", id: n.id };
       above.unshift({ node: level, title: n.title, pages: ownedBy(all, level, nodes) });
     });
     above.push({
@@ -80,8 +74,8 @@ export function taskLists(
     .filter((page) => page.task !== undefined && page.owner_id === task.id)
     .sort(byTitle);
   const above: Level[] = trail(nodes, task.parent)
-    .map((n, depth) => {
-      const level = levelOf(n.id, depth);
+    .map((n) => {
+      const level: LibraryNode = { kind: "project", id: n.id };
       return { node: level, title: n.title, pages: ownedBy(all, level, nodes) };
     })
     .reverse();

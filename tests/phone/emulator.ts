@@ -1,20 +1,24 @@
-// pnpm phone-emulator --app <apk> --test <apk>: the phone app on a running Android emulator against
-// the real service in this process, counted on the computer's side of the link.
+// pnpm phone-emulator --app <apk> --test <apk> [--shots <folder>]: the phone app on a running
+// Android emulator against the real service in this process, counted on the computer's side of the
+// link; with --shots, a picture of each state the screen reaches, for the pull request.
 //
 // 1. A pairing code from Settings > Phones goes to the emulator as a file, never on a command line.
 // 2. Inside the installed app (apps/phone/android-test), a wrong pin fails the handshake: the phone
 //    reaches the listener's port and makes no upgrade, so it sent nothing of its own.
-// 3. The right pin and the code: one upgrade, one paired phone, and the app keeps the pairing.
+// 3. The screen a person meets: Scan the code, the code read (handed to the open scanner from inside
+//    the app, as an emulator has no camera to see it), the phone named, Pair, Connected: one phone,
+//    by its name.
 // 4. The app is force-stopped and started as a person starts it: it opens the link again without a
-//    code, the computer serves it, and the screen shows the space and Connected.
-// 5. The phone is removed on the computer. Started again, the app is told so and forgets the
-//    pairing; started once more, it shows it is not paired and opens no connection.
+//    code, the computer serves it, and the screen shows the space and Connected. Sent to the
+//    background and brought back, it opens the link again.
+// 5. The phone is removed on the computer. Started again, the app is told so, forgets the pairing
+//    and offers to scan a code; started once more, it is not paired and opens no connection.
 //
 // The emulator reaches this computer's loopback as 10.0.2.2, so that is the code's address. Fixture
 // data only. It exits with 0 when every step held and 1 at the first that did not.
 import "../../packages/bridge/src/safe-exit.ts";
 import { execFile } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { Server } from "node:https";
 import { join } from "node:path";
 import { parseArgs, promisify } from "node:util";
@@ -23,14 +27,16 @@ import { post } from "../../packages/service/test/http-client.ts";
 import { httpWorld, signIn } from "../../packages/service/test/http-world.ts";
 
 const { values } = parseArgs({
-  options: { app: { type: "string" }, test: { type: "string" } },
+  options: { app: { type: "string" }, test: { type: "string" }, shots: { type: "string" } },
   strict: true,
 });
 if (values.app === undefined || values.test === undefined) {
   console.error("usage: pnpm phone-emulator --app <apk> --test <apk>");
   process.exit(2);
 }
-const { app, test } = values;
+const { app, test, shots } = values;
+// adb pull writes only into a folder that is there.
+if (shots !== undefined) mkdirSync(shots, { recursive: true });
 
 const PAIRING_FILE = "/data/local/tmp/ttasks-pairing.txt";
 const RUNNER = `${ANDROID_APP_ID}.test/androidx.test.runner.AndroidJUnitRunner`;
@@ -53,6 +59,16 @@ const reset = () => {
 const run = promisify(execFile);
 const adb = async (...args: string[]): Promise<string> =>
   (await run("adb", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })).stdout;
+
+/** A picture of the screen as it is, for the pull request, when `--shots` names a folder. */
+async function shot(name: string): Promise<void> {
+  if (shots === undefined) return;
+  const png = await run("adb", ["exec-out", "screencap", "-p"], {
+    encoding: "buffer",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  writeFileSync(join(shots, `${name}.png`), png.stdout);
+}
 
 function check(holds: boolean, what: string): void {
   console.log(`${holds ? "ok  " : "FAIL"} ${what}`);
@@ -116,6 +132,8 @@ try {
 
   await adb("install", "-r", app);
   await adb("install", "-r", test);
+  // The scanner opens on the camera a person allows when it asks; here it is allowed beforehand.
+  await adb("shell", "pm", "grant", ANDROID_APP_ID, "android.permission.CAMERA");
 
   const made = await machine("phone_pair", { space: "Mira" });
   const file = join(world.root, "pairing.txt");
@@ -128,8 +146,18 @@ try {
   check(seen.upgrades === 0, `and made no upgrade (${String(seen.upgrades)})`);
 
   reset();
-  check(await instrument("pairs"), "the right pin and the code get the hello for the space");
-  check(seen.upgrades === 1, `one upgrade (${String(seen.upgrades)})`);
+  check(
+    await instrument("pairsThroughTheScreen"),
+    "Scan the code, the code read, the phone named, Pair: the screen says Connected",
+  );
+  check(seen.upgrades > 0, `the code went to the computer (${String(seen.upgrades)} upgrades)`);
+  if (shots !== undefined) {
+    await adb(
+      "pull",
+      `/sdcard/Android/data/${ANDROID_APP_ID}/files/name.png`,
+      join(shots, "2-name.png"),
+    );
+  }
   const paired = await phones();
   check(paired.length === 1 && paired[0]?.name === "Emulator", "one phone is paired, by its name");
   const before = paired[0]?.last_used_at;
@@ -141,19 +169,35 @@ try {
     `the started app was served again without a code (${String(seen.upgrades)} upgrade)`,
   );
   check(await shows("Mira", "Connected"), "the screen shows the space and Connected");
+  await shot("3-connected");
   check((await phones()).length === 1, "still one paired phone");
+
+  const resumed = (await phones())[0]?.last_used_at;
+  await adb("shell", "input", "keyevent", "KEYCODE_HOME");
+  reset();
+  await adb("shell", "am", "start", "-W", "-n", `${ANDROID_APP_ID}/.MainActivity`);
+  check(
+    await until(async () => (await phones())[0]?.last_used_at !== resumed, 60_000),
+    `back in front, it opened the link again (${String(seen.upgrades)} upgrade)`,
+  );
+  check(await shows("Mira", "Connected"), "and the screen shows Connected");
 
   // A code that waits keeps the listener open after the last phone is removed, so the app hears it.
   await machine("phone_pair", { space: "Mira" });
   await machine("phone_remove", { phone: paired[0]?.id });
   await restart();
   check(
-    await shows("This phone was removed on the computer."),
+    await shows("This phone was removed on the computer.", "Scan the code"),
     `the started app is told it was removed (${String(seen.upgrades)} upgrade)`,
   );
+  await shot("4-removed");
   await restart();
-  check(await shows("Not paired with a computer."), "started again, it is not paired");
+  check(
+    await shows("Not paired with a computer.", "Scan the code"),
+    "started again, it is not paired",
+  );
   check(seen.connections === 0, `and opens no connection (${String(seen.connections)} TCP)`);
+  await shot("1-not-paired");
 } catch (error) {
   failed = true;
   console.error(error instanceof Error ? error.message : error);

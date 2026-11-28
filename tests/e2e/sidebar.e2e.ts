@@ -7,7 +7,7 @@ import { test } from "./fixture.ts";
 import { picture, showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
-const sidebar = (page: Page) => page.getByRole("navigation", { name: "Views and areas" });
+const sidebar = (page: Page) => page.getByRole("navigation", { name: "Views and projects" });
 
 async function open(page: Page, world: World, path: string): Promise<void> {
   await signIn(page, world, `/s/${world.mira.id}/${path}`);
@@ -119,7 +119,7 @@ test.describe("[A5.3.3.e2e.sidebar-folds] an area folds in the side menu and cou
     await sidebar(page)
       .getByRole("link", { name: /^Home, / })
       .click();
-    await expect(page).toHaveURL(/\/area\//);
+    await expect(page).toHaveURL(/\/project\//);
     expect(await places(page)).toEqual(before);
     await sidebar(page)
       .getByRole("link", { name: /^Lumen portal, / })
@@ -139,7 +139,7 @@ test.describe("[A5.3.3.e2e.sidebar-folds] an area folds in the side menu and cou
   }) => {
     /** The area's count and its New project button, where they are and whether the count shows. */
     const line = async (menu: Locator) => {
-      const area = menu.locator('li[data-area] > div:has(a[aria-label^="Lumen, "])');
+      const area = menu.locator('li[data-depth="1"] > div:has(a[aria-label^="Lumen, "])');
       const count = area.locator('a span[aria-hidden="true"]').last();
       const add = area.getByRole("button", { name: "New project in Lumen" });
       return {
@@ -177,7 +177,7 @@ test.describe("[A5.3.3.e2e.sidebar-folds] an area folds in the side menu and cou
       const phone = await touch.newPage();
       await signIn(phone, world, `/s/${world.mira.id}/today`);
       await phone.getByRole("button", { name: "Menu" }).click();
-      const drawer = phone.getByRole("dialog", { name: "Views and areas" });
+      const drawer = phone.getByRole("dialog", { name: "Views and projects" });
       await expect(drawer.getByRole("link", { name: /^Lumen, \d/ })).toBeVisible({
         timeout: SLOW_MS,
       });

@@ -6,10 +6,12 @@
 //
 // The world writes only under its own folder. The agents' instances come from the trial; their
 // app homes are never touched: the service looks for agent apps in an empty folder of the world.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RpcSession } from "../../packages/bridge/src/protocol/index.ts";
+import { MCP_SERVER_KEY } from "../../packages/brand/src/index.ts";
 import { BIN } from "../../packages/cli/test/cli-harness.ts";
+import { STDOUT_FILE } from "../../packages/runs/src/run-files.ts";
 import { startService, type RunningService } from "../../packages/service/src/hub/index.ts";
 import { registerSpaces, serviceEnv, stateOf } from "../../packages/service/test/harness.ts";
 import { classSession } from "../../packages/service/test/ops-helpers.ts";
@@ -334,4 +336,69 @@ export function usageOf(world: World, run: string): Json {
   const row = world.db.prepare("SELECT result FROM runs WHERE id = $id").get({ id: run });
   const result = JSON.parse(textOf(row?.["result"]) || "{}") as Json;
   return (result["usage"] as Json | null | undefined) ?? {};
+}
+
+/** One call of a TTasks tool an agent made in a run: its tool and the arguments the checks read. */
+export interface CallLine {
+  readonly tool: string;
+  readonly target?: string;
+  readonly task?: string;
+  readonly action?: string;
+  readonly scope?: string;
+}
+
+const isJson = (value: unknown): value is Json =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** A call of `tool` with `args`, as the checks read it. */
+export function callLine(tool: string, args: unknown): CallLine {
+  const input = isJson(args) ? args : {};
+  const named = (key: string): Record<string, string> =>
+    typeof input[key] === "string" ? { [key]: input[key] } : {};
+  return { tool, ...named("target"), ...named("task"), ...named("action"), ...named("scope") };
+}
+
+const CLAUDE_TOOL = `mcp__${MCP_SERVER_KEY}__`;
+
+/**
+ * The TTasks tool calls a run made, from its agent's own output as the run kept it: Claude Code's
+ * `tool_use` blocks and Codex's `mcpToolCall` items as they start.
+ */
+export function callsOf(world: World, run: string): CallLine[] {
+  let text: string;
+  try {
+    text = readFileSync(join(stateOf(world.home), "runs", run, STDOUT_FILE), "utf8");
+  } catch {
+    return [];
+  }
+  const calls: CallLine[] = [];
+  for (const line of text.split("\n")) {
+    let message: unknown;
+    try {
+      message = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!isJson(message)) continue;
+    const content = isJson(message["message"]) ? message["message"]["content"] : undefined;
+    if (message["type"] === "assistant" && Array.isArray(content)) {
+      for (const block of content) {
+        if (!isJson(block) || block["type"] !== "tool_use") continue;
+        const name = typeof block["name"] === "string" ? block["name"] : "";
+        if (name.startsWith(CLAUDE_TOOL)) {
+          calls.push(callLine(name.slice(CLAUDE_TOOL.length), block["input"]));
+        }
+      }
+    }
+    const item = isJson(message["params"]) ? message["params"]["item"] : undefined;
+    if (
+      message["method"] === "item/started" &&
+      isJson(item) &&
+      item["type"] === "mcpToolCall" &&
+      item["server"] === MCP_SERVER_KEY
+    ) {
+      calls.push(callLine(String(item["tool"]), item["arguments"]));
+    }
+  }
+  return calls;
 }
