@@ -1,7 +1,7 @@
 // Undo and Redo on the tree, by the one rule of undo-rule.ts: a person's commit is a step when every
 // row it changed is of the few kinds Undo is for (a check-off or a reopen, the Trash and out of it,
 // a removed note, words, out of the Inbox, a first filing or one into a project just made, a
-// dismissal, a new project, an archive or unarchive). Undo takes a step back with the ordinary
+// dismissal, a new project, an archive or unarchive, a routine's time done or skipped). Undo takes a step back with the ordinary
 // commands that write what its change rows held before, and Redo does the same to the undo's own
 // commit. Neither writes over a change made since, by anyone: only where every field it writes
 // still stands as the step left it, and never taking a task or a note out of sight that someone
@@ -32,12 +32,19 @@ const INTO_NEW_PROJECT = filedIntoNewGroup(
 
 /** How the tree's change rows show each kind Undo is for (undo-rule.ts). */
 const KINDS: KindRows = {
+  // A routine's time done or skipped is its check-off, with the open time it moves on and the
+  // queued run it cancels.
   finish:
     "(c.entity = 'tasks' AND c.field = 'lifecycle') " +
-    `OR (c.entity = 'tasks' AND c.field = 'wrap' AND ${sameNode("lifecycle")})`,
+    `OR (c.entity = 'tasks' AND c.field = 'wrap' AND ${sameNode("lifecycle")}) ` +
+    "OR c.entity = 'occurrences' " +
+    `OR (c.entity IN ('routines', 'runs') AND c.field IN ('open', 'state') ` +
+    `AND EXISTS (SELECT 1 FROM changes d WHERE d.seq = c.seq AND d.entity = 'occurrences' ` +
+    "AND d.node_id = c.node_id))",
   trash:
     `(c.entity = 'nodes' AND c.field = 'deleted' AND ${IS_TASK}) ` +
-    "OR (c.entity = 'pages' AND c.field = 'deleted')",
+    "OR (c.entity = 'pages' AND c.field = 'deleted') " +
+    `OR (c.entity = 'routines' AND c.field = 'paused' AND ${sameNode("deleted")})`,
   note: "c.entity = 'notes' AND c.field = 'deleted'",
   words:
     `(c.entity = 'nodes' AND c.field IN ('title', 'brief', 'description') AND ${IS_TASK}) ` +
@@ -52,7 +59,11 @@ const KINDS: KindRows = {
     `(c.entity = 'nodes' AND c.field = 'place' AND ${IS_TASK} ` +
     "AND json_extract(c.before, '$.parent_id') = (SELECT space_id FROM space)) " +
     `OR (c.entity = 'nodes' AND c.field = 'place' AND ${IS_TASK} AND ${INTO_NEW_PROJECT})`,
-  group: `c.entity = 'nodes' AND ${IS_PROJECT} AND (c.action = 'create' OR c.field = 'archived')`,
+  // An archive pauses the routines in its project, and an unarchive leaves them paused.
+  group:
+    `(c.entity = 'nodes' AND ${IS_PROJECT} AND (c.action = 'create' OR c.field = 'archived')) ` +
+    "OR (c.entity = 'routines' AND c.field = 'paused' AND EXISTS (SELECT 1 FROM changes d " +
+    "WHERE d.seq = c.seq AND d.entity = 'nodes' AND d.field = 'archived'))",
   dismissal: "c.entity = 'tasks' AND c.field = 'reviewed_at'",
 };
 
@@ -141,7 +152,8 @@ function oppositeOf(conn: Connection, changes: readonly Stored[]): Call[] {
     const of = (field: string) => group.find((c) => c.field === field);
     if (first.entity === "nodes") {
       const node = conn.prepare(SQL.node).get({ id });
-      if (node?.["kind"] !== "task") {
+      const routine = node?.["kind"] === "routine";
+      if (node?.["kind"] !== "task" && !routine) {
         // The space's or a project's words, and its text for agents, are written back as they were.
         const words: Record<string, unknown> = {};
         for (const field of ["brief", "description"]) {
@@ -186,11 +198,23 @@ function oppositeOf(conn: Connection, changes: readonly Stored[]): Call[] {
         else if (c.field !== null) set[c.field] = parsed(c.before);
       }
       if (Object.keys(set).length > 0)
-        calls.push({ command: "task.update", input: { task: id, set } });
+        calls.push(
+          routine
+            ? { command: "routine.set", input: { routine: id, ...set } }
+            : { command: "task.update", input: { task: id, set } },
+        );
       continue;
     }
     if (first.entity === "tasks") {
       const life = of("lifecycle");
+      if (life !== undefined && conn.prepare(SQL.node).get({ id })?.["kind"] === "routine") {
+        const reopen = columns(life.before)["lifecycle"] === "active";
+        calls.push({
+          command: reopen ? "routine.reopen" : "routine.finish",
+          input: { routine: id },
+        });
+        continue;
+      }
       if (life !== undefined) {
         const was = columns(life.before);
         const wrap = columns(of("wrap")?.before ?? null);
@@ -224,6 +248,25 @@ function oppositeOf(conn: Connection, changes: readonly Stored[]): Call[] {
         calls.push({ command: "task.update", input: { task: id, set } });
       continue;
     }
+    // A time's entry is taken back or put back with the open time it moved; a routine's pause comes
+    // along with the Trash, and Restore leaves it paused.
+    if (first.entity === "occurrences") {
+      const deleted = of("deleted");
+      const open = changes.find(
+        (c) => c.entity === "routines" && c.id === first.node && c.field === "open",
+      );
+      calls.push({
+        command: "routine.entry",
+        input: {
+          entry: id,
+          removed: deleted === undefined || tombstoned(deleted.before),
+          ...(open === undefined ? {} : { open: columns(open.before) }),
+        },
+      });
+      continue;
+    }
+    // A routine's open time goes back with its entry; its pause and a cancelled run stay.
+    if (first.entity === "routines" || first.entity === "runs") continue;
     if (first.entity === "pages") {
       const deleted = of("deleted");
       if (deleted !== undefined) {
@@ -275,17 +318,21 @@ function written(changes: readonly Stored[]): Stored[] {
   });
 }
 
+/** The field a create's Undo writes: a new project's archive, a time's entry taken back. */
+const createdField = (c: Stored): "archived" | "deleted" =>
+  c.entity === "occurrences" ? "deleted" : "archived";
+
 /** What `c`'s field holds now, as a change row writes it; undefined for a row that is gone. */
 function valueNow(conn: Connection, c: Stored): string | undefined {
   if (!isEntity(c.entity)) return undefined;
   const row = conn.prepare(`SELECT * FROM ${c.entity} WHERE id = $id`).get({ id: c.id });
   if (row === undefined) return undefined;
-  const field = c.action === "create" ? "archived" : (c.field ?? "");
+  const field = c.action === "create" ? createdField(c) : (c.field ?? "");
   return fieldJson(columnsValue(row, columnsOf(c.entity, field)));
 }
 
 const wrote = (c: Stored): string =>
-  c.action === "create" ? fieldJson(columns(c.after)["archived_at"] ?? null) : c.after;
+  c.action === "create" ? fieldJson(columns(c.after)[`${createdField(c)}_at`] ?? null) : c.after;
 
 /** The state a value stands for, as a person sees it: never when it was written. */
 function stateOf(c: Stored, json: string | undefined): string | undefined {
@@ -394,6 +441,12 @@ function newerOn(
       field: c.action === "create" ? null : c.field,
       task: null,
     });
+  }
+  // A routine's open time written back under a schedule changed since would follow the old one.
+  for (const c of changes) {
+    if (c.entity !== "routines" || c.field !== "open") continue;
+    const schedule = { entity: "routines", id: c.id, field: "schedule", task: null };
+    if (work.add({ since, principal, anyone: true, ...schedule })) moved = true;
   }
   // A finish that left no wrap-up of its own: one written since is newer work a reopen would clear.
   for (const c of changes) {

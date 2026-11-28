@@ -435,7 +435,9 @@ export class TreeWriter {
             : { warnings: [...request.warnings] }),
           ...(request.answer === undefined ? {} : { answer: request.answer }),
         };
-    if (accepted || request.entry === undefined) {
+    // A poll that wrote nothing is decided again at the next look under the same request ID.
+    const polled = COMMANDS[request.command]?.poll === true && result.commit === undefined;
+    if (!polled && (accepted || request.entry === undefined)) {
       this.#conn.prepare(SQL.insertReceipt).run({
         ...lookup,
         fingerprint,
