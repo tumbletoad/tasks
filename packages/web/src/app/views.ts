@@ -40,6 +40,7 @@ export const VIEWS = [
   "completed",
   "agents",
   "activity",
+  "library",
   "trash",
 ] as const;
 export type View = (typeof VIEWS)[number];
@@ -60,6 +61,7 @@ export const VIEW_LABEL: Readonly<Record<View, MessageId>> = {
   completed: "nav.completed",
   agents: "nav.agents",
   activity: "nav.activity",
+  library: "nav.library",
   trash: "nav.trash",
 };
 

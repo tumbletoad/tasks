@@ -75,8 +75,8 @@ const PATHS = {
   other: "/nothing",
   // The page's own routes (A5 3.3) are the shell; a path of another shape is not.
   app: "/s/sp_0123456789abcdefghjkmnpqrs",
-  appTask: "/s/sp_0123456789abcdefghjkmnpqrs/area/ar_1/project/pj_2",
-  notApp: "/s/sp_0123456789abcdefghjkmnpqrs/area/ar_1/project/pj_2/x",
+  appTask: "/s/sp_0123456789abcdefghjkmnpqrs/area/ar_1/project/pj_2/library",
+  notApp: "/s/sp_0123456789abcdefghjkmnpqrs/area/ar_1/project/pj_2/library/x",
 } as const;
 
 interface Case {

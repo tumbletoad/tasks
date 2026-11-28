@@ -151,6 +151,8 @@ const SAMPLE = {
   to: "L",
   moved: 7,
   how: "to",
+  changed: "Codex · 2 days ago",
+  task: "M-14",
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {

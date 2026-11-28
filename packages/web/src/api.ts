@@ -10,6 +10,7 @@
 // Stop, have routes of their own (`/api/v1/launch/…`).
 import { httpHeader } from "@ttasks/brand";
 import { createClient, type Client } from "@ttasks/contracts/generated/client.ts";
+import { libraryCalls, type LibraryCalls } from "./library/calls.ts";
 import { TOKEN_SHAPE } from "./stored.ts";
 
 /** The headers the service reads (its http/app.ts): names from the identifier, never a display name. */
@@ -337,6 +338,8 @@ export class Api {
   readonly #copy: () => string | undefined;
   readonly #ended: () => boolean;
   readonly client: Client;
+  /** The library's calls, until their entries join the generated client. */
+  readonly library: LibraryCalls;
 
   /**
    * `ended`: the tab says nothing more is saved from it (its copy of the space is gone). From then
@@ -355,6 +358,7 @@ export class Api {
     this.#copy = copy;
     this.#ended = ended;
     this.client = createClient({ post: (path, body) => this.post(path, body) });
+    this.library = libraryCalls((name, input) => this.#result(`/api/v1/op/${name}`, input));
   }
 
   async post(path: string, body: string): Promise<{ status: number; body: string }> {

@@ -2,7 +2,8 @@
 // (trash.ts) because the live store never holds removed tasks. A change of several tasks is headed
 // by who moved them and when, with "Restore these"; every row says where its task was and has its
 // own Restore. One field finds an old one by reference or title words across every page. The page
-// reads again whenever the feed restores or removes a task (queries.ts). At its foot: the unsent
+// reads again whenever the feed restores or removes a task (queries.ts). The library's pages in the
+// Trash follow the tasks (library/TrashedPages.tsx), found by the same field. At its foot: the unsent
 // words of tasks in the Trash or that this space does not have now, with Copy and Discard, and
 // what the Trash promises.
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -24,6 +25,7 @@ import { onKept } from "../kept.ts";
 import { agentName } from "./agent-name.ts";
 import { letGo, useUnsent } from "../unsent.ts";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
+import { TrashedPages } from "../library/TrashedPages.tsx";
 import {
   keepTrashSeen,
   movedByOthers,
@@ -69,6 +71,8 @@ export function TrashPage({ task, onExpand }: TrashProps) {
   const t = useT();
   const [typed, setTyped] = useState("");
   const [q, setQ] = useState("");
+  // Pages in the Trash: it is not empty, whatever its tasks.
+  const [pages, setPages] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => {
       setQ(typed.trim());
@@ -91,7 +95,8 @@ export function TrashPage({ task, onExpand }: TrashProps) {
         }}
       />
       {/* Another search is another query: it starts at its top. */}
-      <TrashList key={q} q={q} task={task} onExpand={onExpand} />
+      <TrashList key={q} q={q} task={task} onExpand={onExpand} pages={pages} />
+      <TrashedPages q={q} onRows={setPages} />
       <UnsentWords />
       <p className={styles.foot}>{t("trash.footer")}</p>
     </div>
@@ -127,7 +132,12 @@ function whereOf(row: TrashedRow, t: Translate): string {
   return row.inbox ? t("nav.inbox") : t("nav.open");
 }
 
-function TrashList({ q, task, onExpand }: TrashProps & { readonly q: string }) {
+function TrashList({
+  q,
+  task,
+  onExpand,
+  pages,
+}: TrashProps & { readonly q: string; readonly pages: boolean }) {
   const t = useT();
   const say = useToast();
   const { api, live } = useContext(Session);
@@ -240,7 +250,9 @@ function TrashList({ q, task, onExpand }: TrashProps & { readonly q: string }) {
         groups={groups}
         clock={clock}
         empty={
-          state.phase !== "ready" ? undefined : t(q === "" ? "view.empty.trash" : "trash.noMatch")
+          state.phase !== "ready" || pages
+            ? undefined
+            : t(q === "" ? "view.empty.trash" : "trash.noMatch")
         }
         expand={task}
         onExpand={onExpand}

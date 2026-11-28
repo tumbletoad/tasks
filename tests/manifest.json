@@ -6715,6 +6715,38 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.pages.web.store",
+      "title": "The page holds the library's pages shown, from the snapshot and the batches after it: a page moved to the Trash leaves the lists, a page row the feed withholds asks for a fresh snapshot, and a change to a node's texts carries no row",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.library",
+      "title": "A project's Library against the contract's examples: its brief, its text for agents and its description, its pages and its tasks' pages by title with who changed each, each row to its page, what comes from above folded; a page an agent moves to the Trash leaves at once, a change to the texts reads them again, and the person's pen writes the text for agents from the base the Library read",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.page",
+      "title": "A page's screen against the contract's examples: who changed it and why, the way back named for where the person came from, the versions newest first with Show and Restore, Restore written as a set from the version's change over the body on screen, a Restore that meets a newer body reads the page again and offers Restore on it, and the feed never replaces the words on screen or in an open pen",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.trash",
+      "title": "The pages in the Trash list where each was, who moved it there and why, and restore with their own Restore",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.while-away.web.asking",
       "title": "The page holds every finished or dropped task an agent's question waits on, from the snapshot and the batches after it: a row with questions outside the open tasks joins, one dismissed, answered or deleted leaves, and a reopened one is an open task again",
       "owner": "M5",

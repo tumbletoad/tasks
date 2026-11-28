@@ -79,10 +79,10 @@ export const WELL_KNOWN_PATH = "/.well-known/ttasks";
 export const ASSET_PREFIX = "/assets/";
 /**
  * The page's own routes (A5 3.3: `/s/:space/…`), which a reload or a link asks for: the shell. At
- * most four plain segments after the space (`area/<id>/project/<id>`), so the shape alone decides
- * and no other path becomes the shell.
+ * most five plain segments after the space (`area/<id>/project/<id>/library`), so the shape alone
+ * decides and no other path becomes the shell.
  */
-export const APP_ROUTE = /^\/s\/[A-Za-z0-9_-]{1,64}(?:\/[A-Za-z0-9_-]{1,64}){0,4}\/?$/;
+export const APP_ROUTE = /^\/s\/[A-Za-z0-9_-]{1,64}(?:\/[A-Za-z0-9_-]{1,64}){0,5}\/?$/;
 
 /** What a request presents, before any byte of its body is read. */
 export interface RequestFacts {
