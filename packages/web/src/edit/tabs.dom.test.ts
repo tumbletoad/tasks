@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import { FakeFrames } from "../../test/fake-frames.ts";
 import { LiveStore } from "../store/store.ts";
-import type { SnapshotMessage, TaskRow } from "../store/rows.ts";
+import type { SnapshotMessage, TaskRow } from "@ttasks/client/store";
 import { priorityChange } from "./change.ts";
 import { Edits, type Unsaved } from "./edits.ts";
 import { unsavedKeeper } from "../unsent.ts";

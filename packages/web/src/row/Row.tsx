@@ -17,7 +17,8 @@ import {
   type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
-import type { Instance, LastUsed, Receipt, Run } from "../api.ts";
+import type { Instance, LastUsed } from "@ttasks/contracts/runs";
+import type { Receipt, Run } from "../api.ts";
 import { Session } from "../context.ts";
 import { titleChange } from "../edit/change.ts";
 import { whoOf, type Leaving } from "../edit/edits.ts";
@@ -26,7 +27,7 @@ import { useEdits } from "../edit/useEdits.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { is } from "../keys/keymap.ts";
 import { useIntl } from "react-intl";
-import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
+import type { AreaRow, ProjectRow, TaskRow } from "@ttasks/client/store";
 import { Expanded } from "../task/Expanded.tsx";
 import { NotSaved, Pen, TextEditor, useEditing, useSaved } from "../task/TextEditor.tsx";
 import { useTextWrites } from "../task/textWrites.ts";
@@ -35,7 +36,7 @@ import { placeFact, sourceFacts } from "../task/sources.ts";
 import { classes } from "../app/css.ts";
 import { readOnly, type RowActions } from "./actions.ts";
 import { tileClick, type BusyOf, type Cannot, type FolderRefusal } from "./launch.ts";
-import { formatInstant } from "./dates.ts";
+import { formatInstant } from "@ttasks/client/today";
 import { renderRow, type RowContext, type RowModel } from "./model.ts";
 import { sayMsg } from "./say.ts";
 import { KeptTitles } from "./KeptTitles.tsx";

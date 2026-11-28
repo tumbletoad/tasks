@@ -7,7 +7,7 @@ import {
   sidebarAreas,
   slotOf,
 } from "./groups.ts";
-import type { AreaRow, ProjectRow, TaskRow } from "./live.ts";
+import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
 
 let n = 0;
 function task(fields: Partial<TaskRow> & { title: string }): TaskRow {

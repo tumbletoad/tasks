@@ -7,8 +7,7 @@
 // same field the edit does.
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { Msg } from "../row/model.ts";
-import type { TaskField } from "../store/pending.ts";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskField, TaskRow } from "@ttasks/client/store";
 
 type UpdateInput = Parameters<Client["task"]["update"]>[0];
 export type UpdateSet = NonNullable<UpdateInput["set"]>;

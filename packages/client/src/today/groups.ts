@@ -8,8 +8,7 @@
 // - Then tasks with no area that are not in the Inbox.
 // - Inside a group: open first, then the other statuses, backlog last, then position.
 // Each task appears exactly once.
-import type { MessageId } from "./i18n/intl.tsx";
-import type { AreaRow, ProjectRow, TaskRow } from "./live.ts";
+import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
 
 export interface Section {
   readonly key: string;
@@ -18,7 +17,11 @@ export interface Section {
   readonly tasks: readonly TaskRow[];
 }
 
-export interface Group {
+/** The key of the one heading these groupings name: each app maps it to its own words. */
+export type GroupLabel = "group.nobody";
+
+/** A list's group. `Label` is the keys its heading may take: an app's own groups add theirs. */
+export interface Group<Label extends string = GroupLabel> {
   readonly key: string;
   /**
    * `section`: one of Today's sections, a small muted heading and no dot. `label`: the
@@ -28,8 +31,8 @@ export interface Group {
   readonly kind: "inbox" | "area" | "loose" | "section" | "label" | "flat";
   /** The area's title (inbox and loose groups take theirs from the messages). */
   readonly title?: string;
-  /** A section's heading, from the catalogue. */
-  readonly label?: MessageId;
+  /** A section's heading, by its key. */
+  readonly label?: Label;
   /** The heading's values, such as the effort a search's group holds. */
   readonly labelValues?: Readonly<Record<string, string>>;
   /** The area's colour slot, 1 to 8. */

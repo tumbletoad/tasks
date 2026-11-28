@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { Latest } from "./latest.ts";
-import type { Instance } from "./api.ts";
+import type { Instance } from "@ttasks/contracts/runs";
 import { agentFor, busyByTask, tileClick, tileState } from "./row/launch.ts";
-import type { TaskRow } from "./store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 
 describe("[A5.3.6.web.tile] the launch tile's states and clicks", () => {
   test("the tile shows what busies its agent app with the task here, as the service says, else Ready", () => {

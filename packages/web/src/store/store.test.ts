@@ -3,10 +3,14 @@
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import { FakeFrames } from "../../test/fake-frames.ts";
-import { FeedModel, ModelSubscription, SPACE, type Op } from "../../test/feed-model.ts";
-import { LiveCore } from "./core.ts";
+import { FeedModel, ModelSubscription, SPACE, type Op } from "@ttasks/client/test/feed-model";
+import {
+  LiveCore,
+  type BatchMessage,
+  type SnapshotMessage,
+  type TaskRow,
+} from "@ttasks/client/store";
 import { FrameQueue, type FrameClock } from "./frame.ts";
-import type { BatchMessage, SnapshotMessage, TaskRow } from "./rows.ts";
 import { goneOf, LiveStore } from "./store.ts";
 
 const opArb: fc.Arbitrary<Op> = fc.oneof(

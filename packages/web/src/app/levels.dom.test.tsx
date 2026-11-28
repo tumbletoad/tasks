@@ -16,7 +16,7 @@ import { editsOf } from "../edit/useEdits.ts";
 import type { Toast } from "../edit/edits.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
-import type { Scales } from "../store/rows.ts";
+import type { Scales } from "@ttasks/client/store";
 import { FakeFrames } from "../../test/fake-frames.ts";
 import { EffortLevels } from "./EffortLevels.tsx";
 

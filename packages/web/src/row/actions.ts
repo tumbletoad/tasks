@@ -1,7 +1,8 @@
 // What a row's controls do (Row.tsx), apart from the row so the expanded task's seam can take it
 // too without a cycle.
-import type { Instance, Receipt, Run } from "../api.ts";
-import type { TaskRow } from "../store/rows.ts";
+import type { Instance } from "@ttasks/contracts/runs";
+import type { Receipt, Run } from "../api.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import type { RowMove } from "./model.ts";
 
 /** The agent-only fields a click asks an agent to change (A5 3.11, U11). */

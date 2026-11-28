@@ -9,7 +9,7 @@
 // | Completed, or archived (dropped)       | Completed                                    |
 // | In the Trash                           | The Trash, with Restore                      |
 // | Purged or unknown                      | The landing view, with "no longer exists"    |
-import type { View } from "./views.ts";
+import type { View } from "@ttasks/client/today";
 
 /** What the route knows of the task: from the live row, or from `task.get` for another lifecycle. */
 export interface HostFacts {

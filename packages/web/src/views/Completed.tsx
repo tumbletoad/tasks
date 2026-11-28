@@ -10,7 +10,7 @@ import { Session } from "../context.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useClock } from "../row/useClock.ts";
 import { usePagedQuery } from "../store/hooks.ts";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import { completedGroups, completedSource } from "./completed.ts";
 import css from "./TaskList.module.css";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";

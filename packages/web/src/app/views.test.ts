@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { TaskRow } from "../live.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import { landingSpace, notOpen, type SpaceList } from "./spaces.ts";
 import {
   areaFilter,
@@ -11,7 +11,7 @@ import {
   viewCounts,
   viewFilter,
   VIEWS,
-} from "./views.ts";
+} from "@ttasks/client/today";
 
 let n = 0;
 const task = (patch: Partial<TaskRow>): TaskRow => {

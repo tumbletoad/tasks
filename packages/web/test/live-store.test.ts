@@ -7,8 +7,13 @@ import { afterEach, describe, expect, test } from "vitest";
 import { readBatch, readSnapshot } from "@ttasks/service/http";
 import { httpWorld, type HttpWorld } from "@ttasks/service/test/http-world";
 import { TASK_FIELDS } from "@ttasks/storage";
-import { LiveCore, type Outcome } from "../src/store/core.ts";
-import { parseMessage, TASK_FIELD_COLUMNS, withTaskRow } from "../src/store/rows.ts";
+import {
+  LiveCore,
+  type Outcome,
+  parseMessage,
+  TASK_FIELD_COLUMNS,
+  withTaskRow,
+} from "@ttasks/client/store";
 
 const SLOW = { timeout: 180_000 };
 const worlds: HttpWorld[] = [];
@@ -26,9 +31,7 @@ function wire(message: unknown) {
     parsed === undefined ||
     parsed.type === "hello" ||
     parsed.type === "installed" ||
-    parsed.type === "error" ||
-    parsed.type === "machine" ||
-    parsed.type === "agents"
+    parsed.type === "error"
   ) {
     throw new Error("not a feed message");
   }

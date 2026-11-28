@@ -31,7 +31,8 @@ import {
   Popover,
   Toolbar,
 } from "react-aria-components";
-import { requestId, type Instance, type LastUsed } from "../api.ts";
+import { requestId } from "../api.ts";
+import type { Instance, LastUsed } from "@ttasks/contracts/runs";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useMachine } from "../app/machine.ts";
@@ -47,7 +48,7 @@ import { sayMsg } from "../row/say.ts";
 import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
 import { runners } from "./runs.ts";
 import { agentFor, byApp, openers, tileState, type BusyOf, type Cannot } from "../row/launch.ts";
-import { questionsWaiting, type TaskRow } from "../store/rows.ts";
+import { questionsWaiting, type TaskRow } from "@ttasks/client/store";
 import { typingIn } from "../kept.ts";
 import {
   DRAFT_MAX,

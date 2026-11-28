@@ -209,12 +209,13 @@ const noOwnDay = [
   {
     selector:
       "CallExpression[callee.property.name=/^(toLocaleDateString|toLocaleTimeString|getDate|getDay|getMonth|getFullYear|getHours|getMinutes|setDate|setHours)$/]",
-    message: "A date in the browser's default zone: read it with the clock's zone (row/dates.ts).",
+    message:
+      "A date in the browser's default zone: read it with the clock's zone (client's dates.ts).",
   },
 ];
 // Formatting in the default zone shows another day than the clock: dates.ts formats with its zone.
 const FORMAT_MESSAGE =
-  "Format a date with the clock's zone: formatInstant or formatDay (row/dates.ts).";
+  "Format a date with the clock's zone: formatInstant or formatDay (client's dates.ts).";
 const noOwnFormat = [
   {
     selector: "NewExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat']",
@@ -351,9 +352,10 @@ export default defineConfig([
   },
   {
     // Words kept in a variable or built in a .ts module reach the page past the JSX rule: prose
-    // anywhere in the page's code is refused (noUiProse). The theme modules run only in the build
-    // and its tests (build.ts writes their CSS), so their checks' words never reach the page.
-    files: ["packages/web/src/**/*.{ts,tsx,js,jsx}"],
+    // anywhere in the page's code, or in the client code it shares with the phone app, is refused
+    // (noUiProse). The theme modules run only in the build and its tests (build.ts writes their
+    // CSS), so their checks' words never reach the page.
+    files: ["packages/web/src/**/*.{ts,tsx,js,jsx}", "packages/client/src/**/*.ts"],
     ignores: [
       ...TEST_FILES,
       "packages/web/src/theme/tokens.ts",
@@ -374,7 +376,7 @@ export default defineConfig([
   },
   {
     // The formatters, each with the clock's zone.
-    files: ["packages/web/src/row/dates.ts"],
+    files: ["packages/client/src/today/dates.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
