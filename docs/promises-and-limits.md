@@ -143,8 +143,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A space is upgraded only after a backup of it has passed a trial restore. A failed upgrade
   leaves the old data readable.
 - An older version of TTasks never writes a newer data format.
-- A version of TTasks from this one on offers a space's own effort sizes, also when a newer
-  version wrote the list; only a list it cannot read at all falls back to its default levels.
+- TTasks offers a space's own effort sizes, also when a newer version wrote the list; only a list
+  it cannot read at all falls back to its default levels.
   Every space holds its own list: a new space, or one without levels, has the five default
   levels stored when it opens, so each such version offers the same levels for it.
 - Agents read your effort levels, with their times and descriptions, and never change them.
@@ -521,10 +521,6 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Changes by Claude Desktop, the Codex app, T3 Code for now, or an agent a brief was pasted into
   are recorded as that app's, not as a session of the task. Two hand-made entries of one app on
   different homes cannot be told apart.
-- An agent running across the one update that brought this rule comes back as its app and names
-  its task. One whose entry names no space works in no space after the update, and after a later
-  restart of TTasks it can take the default space of that moment: restart agent apps after this
-  update.
 - When another program, such as a virus scanner, holds the file of an agent TTasks opened for more
   than a few seconds as TTasks starts, that agent is not its task's session until TTasks starts
   again: a change it repeats after a lost reply can be written twice.
@@ -554,18 +550,12 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Backups are on the same disk as the TTasks home unless you set another folder for them or copy
   an export elsewhere. A lost disk, or removing both folders or the folder above them, loses them
   with the space.
-- Until the first backup after the update that moved backups out of the TTasks home, a space's
-  backups are still all inside it.
 - A space in a synced folder or on a network drive opens read-only, because a live database there
   can be damaged. For a synced folder you confirm once that it is excluded from sync. When the folder
   could not be checked, TTasks checks it again by itself for a few minutes and opens a local one for
   changes.
 - An editor that had the configuration file open while TTasks recorded a space, and saves it
   afterwards, writes its own list of spaces back, and the next start follows that list.
-- Rolled back to an earlier version, which knows one settings file per agent home, turning Claude
-  Code's tools off takes the access away and can leave an entry that version does not know, in
-  either of the two files. That entry starts nothing that reaches TTasks while the access is off,
-  and this version, once back, takes it out when the tools are turned off.
 - Claude Code started with `~/.claude` as its home may read an older settings file of its own there
   (`.config.json`) in place of `.claude.json`. Setup does not write that file, so a program that
   starts Claude Code that way may get no tools.
