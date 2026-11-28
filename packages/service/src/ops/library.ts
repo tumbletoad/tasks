@@ -242,7 +242,7 @@ export async function ownerOf(
 }
 
 /** One page in a list. */
-const pageRow = (prefix: string, row: Row) => ({
+export const pageRow = (prefix: string, row: Row) => ({
   ref: formatTaskRef(prefix, Number(row["ref"])),
   title: text(row["title"]),
   brief: text(row["brief"]),

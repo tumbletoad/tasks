@@ -32,7 +32,8 @@ const SQL = {
   liveSource: "SELECT id FROM sources WHERE source_key = $key AND deleted_at IS NULL",
   /** The newest live task a source is the origin of. */
   originTask:
-    "SELECT t.id, t.ref, t.lifecycle, t.fp, t.created_seq FROM tasks t JOIN nodes n ON n.id = t.id " +
+    "SELECT t.id, t.ref, t.lifecycle, t.fp, t.created_seq, n.title FROM tasks t " +
+    "JOIN nodes n ON n.id = t.id " +
     "WHERE t.origin_source_id = $source AND n.deleted_at IS NULL ORDER BY n.created_seq DESC LIMIT 1",
   node: "SELECT * FROM nodes WHERE id = $id",
   sameLog:
@@ -44,8 +45,8 @@ const SQL = {
   lastPosition: "SELECT max(position) AS p FROM nodes WHERE parent_id = $parent AND kind = $kind",
   slugTaken: "SELECT 1 FROM nodes WHERE parent_id = $parent AND kind = 'project' AND slug = $slug",
   task:
-    "SELECT n.id, n.kind, n.parent_id, n.title, n.deleted_at, n.fp AS node_fp, n.created_seq AS node_seq, " +
-    "t.ref, t.lifecycle, t.wrap_state, t.outcome FROM nodes n JOIN tasks t ON t.id = n.id WHERE n.id = $id",
+    "SELECT n.id, n.kind, n.parent_id, n.title, n.brief, n.description, n.deleted_at, n.fp AS node_fp, " +
+    "n.created_seq AS node_seq, t.* FROM nodes n JOIN tasks t ON t.id = n.id WHERE n.id = $id",
   /** The live tasks below a node, at any depth, nearest first. */
   subtree:
     "WITH RECURSIVE down(id, depth) AS (SELECT id, 1 FROM nodes WHERE parent_id = $id AND kind = 'task' " +
@@ -234,7 +235,14 @@ const tasksAdd: Run = (tx, input) => {
           found.task["lifecycle"] === "active" &&
           tx.get(SQL.sameLog, { owner: id, body: log ?? "" }) === undefined;
         if (log !== undefined && follows) addNote(tx, id, id, log, "progress");
-        return { status: "exists", id, ref: refText(tx, found.task["ref"]) };
+        return {
+          status: "exists",
+          id,
+          ref: refText(tx, found.task["ref"]),
+          title: found.task["title"],
+          lifecycle: found.task["lifecycle"],
+          log_added: log !== undefined && follows,
+        };
       }
       const parent = parentFor(tx, draft["under"], at("under"));
       const id = str(draft, "id") ?? tx.newId("t");
@@ -280,7 +288,14 @@ const tasksAdd: Run = (tx, input) => {
         id,
       );
       if (log !== undefined) addNote(tx, id, id, log, "progress");
-      return { status: "created", id, ref: refText(tx, ref) };
+      return {
+        status: "created",
+        id,
+        ref: refText(tx, ref),
+        title: str(draft, "title") ?? "",
+        lifecycle: "active",
+        log_added: log !== undefined,
+      };
     }),
   };
 };
@@ -294,11 +309,14 @@ const taskUpdate: Run = (tx, input) => {
   if (set["brief"] !== undefined) node["brief"] = str(set, "brief") ?? "";
   if (set["description"] !== undefined) node["description"] = str(set, "description") ?? "";
   const fields: Record<string, SqlValue> = {};
-  if (set["status"] !== undefined)
-    fields["status"] = known(tx, "tasks.statuses", set["status"], "set.status");
+  // As today's writer: a stale save is a conflict first, whatever the space's list holds now.
+  const listed = (list: ScaleKey, field: "status" | "effort") =>
+    tx.held("tasks", id, id, [field])
+      ? (set[field] as SqlValue)
+      : known(tx, list, set[field], `set.${field}`);
+  if (set["status"] !== undefined) fields["status"] = listed("tasks.statuses", "status");
   if (set["effort"] !== undefined) {
-    fields["effort"] =
-      set["effort"] === null ? null : known(tx, "tasks.effort_scale", set["effort"], "set.effort");
+    fields["effort"] = set["effort"] === null ? null : listed("tasks.effort_scale", "effort");
   }
   if (set["inbox"] !== undefined) fields["inbox"] = set["inbox"] === true ? 1 : 0;
   if (set["priority"] !== undefined) fields["priority"] = Number(set["priority"]);
@@ -306,7 +324,13 @@ const taskUpdate: Run = (tx, input) => {
   if (set["waiting_on"] !== undefined) fields["waiting_on"] = str(set, "waiting_on") ?? null;
   if (Object.keys(node).length > 0) tx.set("nodes", id, id, node);
   if (Object.keys(fields).length > 0) tx.set("tasks", id, id, fields);
-  return { task: { id, ref: refText(tx, task["ref"]) } };
+  // The fields it changed, in the order they were given: a value it already held is no change.
+  const changed = Object.keys(set).filter((key) => {
+    const column = { reviewed_at: "reviewed_at", waiting_on: "waiting_on" }[key] ?? key;
+    const now = column in node ? node[column] : fields[column];
+    return now !== undefined && now !== task[column];
+  });
+  return { task: { id, ref: refText(tx, task["ref"]) }, fields: changed };
 };
 
 const taskMove: Run = (tx, input) => {
@@ -376,8 +400,21 @@ const taskFinish: Run = (tx, input) => {
     Array.isArray(follow) && follow.length > 0
       ? tx.call("tasks.add", { tasks: follow })
       : undefined;
+  const lifecycle = finishing ? (dropped ? "archived" : "completed") : task["lifecycle"];
+  const wrapState =
+    outcome !== undefined && !dropped
+      ? "wrapped"
+      : finishing && !dropped
+        ? "pending"
+        : (task["wrap_state"] ?? null);
   return {
-    task: { id, ref: refText(tx, task["ref"]), finished: finishing },
+    task: {
+      id,
+      ref: refText(tx, task["ref"]),
+      finished: finishing,
+      lifecycle,
+      wrap_state: wrapState,
+    },
     ...(choice === "all" ? { subtasks: open.length } : {}),
     ...(made === undefined ? {} : { follow_ups: (made as { tasks: unknown[] }).tasks }),
   };
@@ -396,7 +433,9 @@ const taskReopen: Run = (tx, input) => {
     },
     wrap: { wrap_state: null },
   });
-  return { task: { id, ref: refText(tx, task["ref"]) } };
+  return {
+    task: { id, ref: refText(tx, task["ref"]), lifecycle: "active", status: task["status"] },
+  };
 };
 
 const TRASHED = ["task", "routine"] as const;
