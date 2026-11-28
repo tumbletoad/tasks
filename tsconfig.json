@@ -9,15 +9,8 @@
     "packages/*/migrations/**/*.ts",
     "packages/web/build.ts",
     "scripts/**/*.ts",
-    "spikes/**/*.ts",
     "tests/**/*.ts",
     "vitest.config.ts"
   ],
-  "exclude": [
-    "**/node_modules/**",
-    "**/dist/**",
-    "spikes/m0/ui/src/**",
-    "packages/web/src/**",
-    "tests/e2e/**"
-  ]
+  "exclude": ["**/node_modules/**", "**/dist/**", "packages/web/src/**", "tests/e2e/**"]
 }

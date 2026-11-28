@@ -26,7 +26,6 @@ const CORE = "../../core/src/index.ts";
 const CONTRACTS = "../../contracts/src/index.ts";
 const STORAGE = "../../storage/src/index.ts";
 const TESTKIT = "../../testkit/src/index.ts";
-const SPIKE = "../../../spikes/m0/kit.ts";
 
 // A fixture tree with the package layout of A7 3.2 and two fake npm packages. Each production
 // file breaks at most one rule, so the expected violations name the rule that must fire. The
@@ -57,8 +56,6 @@ const files: Record<string, string> = {
   "packages/bridge/src/own.ts": "export const o = 1;\n",
   "packages/bridge/src/types.ts":
     'import type { Readable } from "node:stream";\nexport type R = Readable;\n',
-  "spikes/package.json": pkg("@fx/spikes", { "better-sqlite3": "1.0.0" }),
-  "spikes/m0/kit.ts": imports("node:sqlite", "better-sqlite3"),
 
   // Allowed test imports: tests are exempt from the layering of brand, contracts, core, web and
   // bridge, and test code may import testkit.
@@ -84,7 +81,6 @@ const files: Record<string, string> = {
   "packages/service/src/kit.ts": imports(TESTKIT),
   "packages/service/src/db.ts": imports("node:sqlite"),
   "packages/service/src/sqlite3.ts": imports("better-sqlite3"),
-  "packages/service/src/lab.ts": imports(SPIKE),
   "packages/service/src/a.ts": imports("./b.ts"),
   "packages/service/src/b.ts": imports("./a.ts"),
   "packages/service/src/missing.ts": imports("./nowhere.ts"),
@@ -97,7 +93,6 @@ const files: Record<string, string> = {
   // Violations that stay strict in tests.
   "packages/launch/src/index.test.ts": imports(STORAGE),
   "packages/runs/test/import.ts": imports(STORAGE),
-  "packages/service/src/lab.test.ts": imports(SPIKE),
   "packages/service/src/sqlite.test.ts": imports("node:sqlite"),
 };
 
@@ -125,8 +120,6 @@ const expected = [
   `only-storage-better-sqlite3: packages/service/src/sqlite3.ts -> ${SQLITE3}`,
   "only-storage-node-sqlite: packages/service/src/db.ts -> node:sqlite",
   "only-storage-node-sqlite: packages/service/src/sqlite.test.ts -> node:sqlite",
-  "spikes-never-imported: packages/service/src/lab.test.ts -> spikes/m0/kit.ts",
-  "spikes-never-imported: packages/service/src/lab.ts -> spikes/m0/kit.ts",
   "testkit-only-from-tests: packages/service/src/kit.ts -> packages/testkit/src/index.ts",
   "web-only-contracts: packages/web/src/index-core.ts -> packages/core/src/index.ts",
 ];
@@ -143,7 +136,7 @@ describe("[A7.3.2.dependency-rules] the dependency rules fire on violations", ()
       await writeFile(join(root, path), content);
     }
     options = await extractDepcruiseOptions(join(repoRoot, ".dependency-cruiser.cjs"));
-    const output = await cruise(["packages", "spikes", "tests"], { ...options, baseDir: root });
+    const output = await cruise(["packages", "tests"], { ...options, baseDir: root });
     result = output.output as ICruiseResult;
   });
 

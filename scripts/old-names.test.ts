@@ -107,7 +107,6 @@ describe("[A7.3.2.brand.old-names] the product's earlier names do not come back"
       "tasks has no command misspelled",
       "Run: tasks doctor",
       "tasks --version",
-      "spikes/m0/kit/tasks-build.ts",
       'mcpServers: { other: {}, tasks: { command: "x" } }',
       'command: "/opt/tasks/bin/ttasks"',
       "`tasks <command> --help`",
