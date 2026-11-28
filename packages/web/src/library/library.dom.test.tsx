@@ -149,6 +149,7 @@ async function mount(node: ReactNode, at = "/", state?: Record<string, unknown>)
   });
   feed(snapshot);
   await settle();
+  return router;
 }
 
 function feed(message: unknown) {
@@ -246,6 +247,68 @@ describe("[A5.pages.web.library] a project's Library against the contract's exam
       text: "Drafts come to me; never mail the clinic.",
       base: AS_OF,
     });
+  });
+});
+
+describe("[A5.pages.web.new-page] the person makes a page with its title alone", () => {
+  test("New page asks for a title, makes the page without a brief and opens it with the pen in its body; a row without a brief has no brief line", async () => {
+    written = () =>
+      Promise.resolve({ result: "created", target: "M-230", as_of: "1.1047.5n0w8k3q" });
+    const router = await mount(<NodeLibrary node={{ kind: "project", id: PROJECT }} />);
+    await click(part("new-page"));
+    const field = part("new-page-title") as HTMLInputElement;
+    expect(document.activeElement).toBe(field);
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+        field,
+        "Clinic contacts",
+      );
+    });
+    press(field, "Enter");
+    await settle();
+    const made = calls.find(([name]) => name === "page.write")?.[1];
+    expect(made).toMatchObject({ action: "create", on: PROJECT, title: "Clinic contacts" });
+    expect(made).not.toHaveProperty("brief");
+    expect(router.state.location.pathname).toBe(`/s/${SPACE_ID}/page/M-230`);
+    expect(router.state.location.state.pen).toBe("body");
+
+    const [row] = PAGE_FEED_EXAMPLES.snapshotPages;
+    feed(
+      batchOf(CURSOR.seq, [
+        {
+          seq: 1046,
+          request_id: "r1046",
+          actor: { kind: "human", label: "user" },
+          kind: "ops",
+          entities: [
+            {
+              type: "page",
+              id: "pg_7c1g5k9p3t7x1b5f9k3p7t1x5c",
+              row: {
+                ...row,
+                id: "pg_7c1g5k9p3t7x1b5f9k3p7t1x5c",
+                ref: "M-230",
+                title: "Clinic contacts",
+                brief: "",
+                version: 1046,
+              },
+              changed: [],
+              created: true,
+            },
+          ],
+        },
+      ]),
+    );
+    const made230 = parts("page-row").find((r) => r.textContent.includes("Clinic contacts"));
+    expect(made230?.querySelector('[class*="brief"]')).toBeNull();
+    const m180 = parts("page-row").find((r) => r.textContent.includes("Time zone rules"));
+    expect(m180?.querySelector('[class*="brief"]')?.textContent).toContain("Store UTC");
+  });
+
+  test("a page the person just made opens with its body's pen", async () => {
+    await mount(<PageScreen page={PAGE.ref} />, "/s/x/page/M-180", { pen: "body" });
+    expect(part("text-edit")).not.toBeNull();
+    expect(part("text-edit")?.tagName).toBe("TEXTAREA");
   });
 });
 

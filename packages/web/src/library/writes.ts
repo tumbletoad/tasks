@@ -7,6 +7,11 @@ import { useEdits } from "../edit/useEdits.ts";
 import type { Msg } from "../row/model.ts";
 
 export interface LibraryWrites {
+  /**
+   * A new page on the space, an area or a project, with its title alone: a person is never made to
+   * write a brief. Resolves with its reference.
+   */
+  readonly create: (on: string, title: string) => Promise<string>;
   /** A page's title, brief or body, whole. */
   readonly page: (
     ref: string,
@@ -38,6 +43,16 @@ export function useLibraryWrites(): LibraryWrites {
       base?: string,
     ) => edits.write(send, () => msg, { base, undo: true });
     return {
+      create: (on, title) =>
+        edits
+          .write(
+            (request) => calls.page.write({ action: "create", on, title, request_id: request }),
+            (value) =>
+              "target" in value
+                ? { id: "toast.pageMade", values: { ref: value.target } }
+                : undefined,
+          )
+          .then((value) => ("target" in value ? value.target : "")),
       page: (ref, set, base) =>
         write(
           (request, sent) =>

@@ -257,5 +257,7 @@ declare module "@tanstack/react-router" {
   interface HistoryState {
     q?: string;
     from?: { readonly path: string; readonly label: string };
+    /** A page the person just made: its body's pen is open. */
+    pen?: "body";
   }
 }

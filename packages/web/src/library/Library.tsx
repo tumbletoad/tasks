@@ -26,6 +26,7 @@ import { TEXT_MAX } from "../unsent.ts";
 import type { NodeView } from "./calls.ts";
 import css from "./Library.module.css";
 import { listsOf, type Level, type LibraryNode } from "./lists.ts";
+import { NewPage } from "./NewPage.tsx";
 import { PageList, Penned, useChanged, useFrom } from "./parts.tsx";
 import { useLibraryWrites } from "./writes.ts";
 
@@ -47,6 +48,9 @@ const styles = classes(css, [
   "levelName",
   "tabs",
   "tab",
+  "headed",
+  "place",
+  "path",
   "count",
   "md",
 ]);
@@ -119,9 +123,12 @@ export function LibraryLink({
 /** Tasks and Library, the two tabs of an area or a project, each with its count. */
 export function NodeTabs({
   node,
+  tab,
   tasks,
 }: {
   readonly node: Exclude<LibraryNode, { kind: "space" }>;
+  /** The tab on screen: the area in the path above leads to the same tab of the area. */
+  readonly tab: "tasks" | "library";
   /** Its open tasks, as the side menu counts them. */
   readonly tasks: number | undefined;
 }) {
@@ -172,14 +179,32 @@ export function NodeTabs({
         {count(tasks)}
       </Link>
     );
+  // Where the person is, above the tabs: the side menu is not in sight at a narrow width.
+  const areaRow = area === undefined ? undefined : state.areas.get(area);
+  const name =
+    node.kind === "area" ? (areaRow?.title ?? "") : (state.projects.get(node.id)?.title ?? "");
   return (
-    <nav className={styles.tabs} aria-label={t("library.tabs")} data-part="node-tabs">
-      {tasksTab}
-      <LibraryLink node={node} className={styles.tab}>
-        {t("library.libraryTab")}
-        {count(pages)}
-      </LibraryLink>
-    </nav>
+    <div className={styles.place}>
+      <p className={styles.path} data-part="node-path">
+        {node.kind === "project" && areaRow !== undefined ? (
+          tab === "library" ? (
+            <LibraryLink node={{ kind: "area", id: areaRow.id }}>{areaRow.title}</LibraryLink>
+          ) : (
+            <Link to="/s/$space/area/$area" params={{ space, area: areaRow.id }}>
+              {areaRow.title}
+            </Link>
+          )
+        ) : null}
+        <span dir="auto">{name}</span>
+      </p>
+      <nav className={styles.tabs} aria-label={t("library.tabs")} data-part="node-tabs">
+        {tasksTab}
+        <LibraryLink node={node} className={styles.tab}>
+          {t("library.libraryTab")}
+          {count(pages)}
+        </LibraryLink>
+      </nav>
+    </div>
   );
 }
 
@@ -442,7 +467,10 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
         />
       )}
       <section className={styles.section} data-part="own-pages">
-        <h2 className={styles.heading}>{t("library.pages")}</h2>
+        <div className={styles.headed}>
+          <h2 className={styles.heading}>{t("library.pages")}</h2>
+          {state.space?.read_only === undefined ? <NewPage on={target} from={from} /> : null}
+        </div>
         {lists.own.length === 0 ? (
           <p className={styles.quiet}>{t("library.empty")}</p>
         ) : (

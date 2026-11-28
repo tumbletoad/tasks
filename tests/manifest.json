@@ -6747,6 +6747,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.pages.web.new-page",
+      "title": "New page on a Library asks for a title alone, makes the page without a brief and opens it with the pen in its body; a page's row without a brief shows no brief line",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.pages.web.trash",
       "title": "The pages in the Trash list where each was, who moved it there and why, and restore with their own Restore",
       "source": "Step 1 design, pull request 228",

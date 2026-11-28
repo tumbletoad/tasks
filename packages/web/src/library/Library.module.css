@@ -4,12 +4,41 @@
  * 68 characters a line. Tokens only.
  */
 
-/* An area's or a project's two tabs: Tasks and Library. */
+/* Where the person is (the area, then the project), and the two tabs: Tasks and Library. */
+.place {
+  margin: 8px 0 4px;
+  padding-inline-start: 40px;
+}
+
+.path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  color: var(--k-muted);
+}
+
+.path a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.path a:hover {
+  color: var(--k-text);
+}
+
+.path a::after {
+  content: "›";
+  margin-inline-start: 6px;
+  color: var(--k-muted);
+}
+
 .tabs {
   display: flex;
   gap: 4px;
-  margin: 8px 0 4px;
-  padding-inline-start: 32px;
+  margin-inline-start: -8px;
 }
 
 .tab {
@@ -144,6 +173,57 @@
   color: var(--k-muted);
 }
 
+/* A list's heading with New page at its end. */
+.headed {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 100%;
+}
+
+.newPage {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  color: var(--k-muted);
+  cursor: pointer;
+}
+
+.newPage:hover {
+  background: var(--k-hover);
+  color: var(--k-text);
+}
+
+.newPage svg {
+  width: 14px;
+  height: 14px;
+}
+
+.newTitle {
+  box-sizing: border-box;
+  width: min(100%, 360px);
+  margin: 0 0 6px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px var(--k-control);
+  background: var(--k-sunken);
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--k-text);
+}
+
+.newTitle::placeholder {
+  color: var(--k-muted);
+}
+
 .fold {
   display: inline-flex;
   align-items: baseline;
@@ -208,6 +288,7 @@
 .row {
   display: grid;
   grid-template-columns: 4.5rem minmax(8rem, 15rem) minmax(0, 1fr) auto;
+  grid-template-areas: "ref title brief meta";
   align-items: baseline;
   gap: 12px;
   margin-inline-start: -8px;
@@ -256,6 +337,23 @@
   font-size: 0.8125rem;
   color: var(--k-muted);
   white-space: nowrap;
+}
+
+/* Placed by name, so a page without a brief keeps every other part in its column. */
+.row > .ref {
+  grid-area: ref;
+}
+
+.row > .title {
+  grid-area: title;
+}
+
+.row > .brief {
+  grid-area: brief;
+}
+
+.row > .meta {
+  grid-area: meta;
 }
 
 /* A page's own screen. */
@@ -462,6 +560,15 @@
   margin-inline-start: 22px;
 }
 
+/* A page the person just made opens with its pen: room to write in. */
+.words > [data-part="text-editor"] {
+  margin-top: 20px;
+}
+
+.words > [data-part="text-editor"] textarea {
+  min-height: calc(6 * 1.625rem);
+}
+
 .body {
   display: flex;
   align-items: flex-start;
@@ -622,8 +729,8 @@
 }
 
 @media (max-width: 599px) {
-  .tabs {
-    padding-inline-start: 8px;
+  .place {
+    padding-inline-start: 16px;
   }
 
   .library,
@@ -640,28 +747,27 @@
     margin-bottom: 12px;
   }
 
+  /* Narrow, the title and the brief are what a row is for: each the whole width, the brief two
+     lines at most. Who changed it and when follow on a quiet line of their own. */
   .row {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas:
-      "ref title title"
-      "brief brief meta";
+      "ref title"
+      "brief brief"
+      "meta meta";
     gap: 0 10px;
   }
 
-  .row > .ref {
-    grid-area: ref;
-  }
-
-  .row > .title {
-    grid-area: title;
+  .row > .meta {
+    font-size: 0.75rem;
   }
 
   .row > .brief {
-    grid-area: brief;
-  }
-
-  .row > .meta {
-    grid-area: meta;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
   }
 
   .version {

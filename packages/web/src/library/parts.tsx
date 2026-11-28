@@ -1,7 +1,7 @@
 // The pieces the Library and a page's screen share: who changed something and how long ago, a text
 // the person corrects with the pen, and a list of pages to open.
 import { Link, useRouterState } from "@tanstack/react-router";
-import { useContext, type ReactNode } from "react";
+import { useContext, useEffect, type ReactNode } from "react";
 import { useIntl, type IntlShape } from "react-intl";
 import type { Instance } from "../api.ts";
 import { classes } from "../app/css.ts";
@@ -72,6 +72,7 @@ export function Penned({
   partial,
   save,
   onDone,
+  opening = false,
   view,
 }: {
   readonly owner: string;
@@ -91,6 +92,8 @@ export function Penned({
   /** Undefined: the text is not corrected from here. */
   readonly save: ((words: string, base: string | undefined) => Promise<unknown>) | undefined;
   readonly onDone?: () => void;
+  /** The box opens as the text comes in sight: a page the person just made, to write in. */
+  readonly opening?: boolean;
   readonly view: (text: string, pen: ReactNode) => ReactNode;
 }) {
   const { live } = useContext(Session);
@@ -102,6 +105,9 @@ export function Penned({
     text,
     save !== undefined && partial === undefined,
   );
+  useEffect(() => {
+    if (opening) setEditing(true);
+  }, [opening, setEditing]);
   const [shown, saved] = useSaved(text);
   const notSaved = save === undefined ? null : <NotSaved space={space} task={owner} part={part} />;
   if (editing && save !== undefined) {
@@ -187,9 +193,11 @@ export function PageList({
             <span className={styles.title} dir="auto">
               {page.title}
             </span>
-            <span className={styles.brief} dir="auto">
-              {page.brief}
-            </span>
+            {page.brief === "" ? null : (
+              <span className={styles.brief} dir="auto">
+                {page.brief}
+              </span>
+            )}
             <span className={styles.meta}>
               {page.task === undefined
                 ? changed(page.by, page.at)

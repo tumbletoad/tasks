@@ -43,6 +43,7 @@ const styles = classes(css, [
   "quiet",
   "act",
   "notice",
+  "words",
   "actions",
   "fold",
   "quietAct",
@@ -305,6 +306,9 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
   const [shown, setShown] = useState<{ readonly version: Version; readonly text: string }>();
   const [trashed, setTrashed] = useState(false);
   const banner = useRef<HTMLParagraphElement>(null);
+  // A page the person just made opens with its body's pen, once.
+  const fresh = useRouterState({ select: (s) => s.location.state.pen === "body" });
+  const [opening, setOpening] = useState(fresh);
   const again = useCallback(() => {
     setRound((n) => n + 1);
     setHistory((n) => n + 1);
@@ -453,8 +457,13 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
           }
           onDone={again}
           view={(text, pen) => (
-            <p className={styles.brief}>
-              <span dir="auto">{text}</span>
+            <p className={styles.brief} data-part="page-brief">
+              {/* A person's page may have no brief: the pen stands where it would. */}
+              {text === "" ? (
+                <span className={styles.quiet}>{t("page.briefNone")}</span>
+              ) : (
+                <span dir="auto">{text}</span>
+              )}
               {pen}
             </p>
           )}
@@ -535,7 +544,7 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
           </button>
         </p>
       )}
-      <div ref={words}>
+      <div ref={words} className={styles.words}>
         {shown === undefined ? (
           <Penned
             owner={view.id}
@@ -550,7 +559,11 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
             save={
               editable ? (words, from) => writes.page(view.ref, { body: words }, from) : undefined
             }
-            onDone={again}
+            onDone={() => {
+              setOpening(false);
+              again();
+            }}
+            opening={opening}
             view={(text, pen) => (
               <div className={styles.body} data-part="page-body">
                 {text === "" ? (
