@@ -146,7 +146,9 @@ export class Tx {
     return takeTaskRef(this.conn);
   }
 
-  newId<P extends "t" | "p" | "n" | "pg" | "s" | "lk" | "la" | "ru" | "fo">(prefix: P): Id<P> {
+  newId<P extends "t" | "p" | "n" | "pg" | "s" | "lk" | "la" | "ru" | "fo" | "oc">(
+    prefix: P,
+  ): Id<P> {
     return newId(prefix, this.random);
   }
 

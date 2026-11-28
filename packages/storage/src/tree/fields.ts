@@ -46,6 +46,18 @@ export const FIELDS = {
   runs: { state: ["state", "reason", "detail", "result", "started_at", "ended_at"] },
   // A preference's value with the version of its shape, which `pref.set` writes as a unit.
   preferences: { value: ["value", "schema_ver"] },
+  // A routine's schedule, its open time, who does it and its words, and its pause with who last
+  // switched an agent's routine on.
+  routines: {
+    schedule: ["rule", "start", "tz"],
+    open: ["due_date", "due_at"],
+    instance: ["instance"],
+    instruction: ["instruction"],
+    role: ["role"],
+    paused: ["paused", "enabled_by"],
+  },
+  // A time done or skipped is written once; only Undo takes it back.
+  occurrences: { deleted: ["deleted_at"] },
 } as const satisfies Record<string, Record<string, readonly string[]>>;
 
 export type Entity = keyof typeof FIELDS;
@@ -104,7 +116,6 @@ export const KEYS: Record<Entity, readonly string[]> = {
   runs: [
     "id",
     "task_id",
-    "routine_id",
     "session_id",
     "instance_id",
     "machine_id",
@@ -114,6 +125,19 @@ export const KEYS: Record<Entity, readonly string[]> = {
     "spec",
     "attempt",
     "queued_at",
+  ],
+  routines: ["id"],
+  occurrences: [
+    "id",
+    "routine_id",
+    "due_date",
+    "due_at",
+    "state",
+    "actor_id",
+    "at",
+    "run_id",
+    "why",
+    "note",
   ],
 };
 

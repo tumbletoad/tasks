@@ -1,5 +1,5 @@
-// The tree's schema: a space is one tree of nodes (the space, projects, tasks), with what only a
-// task has in `tasks`, so launches and runs keep a task to point at. It stays outside the migration
+// The tree's schema: a space is one tree of nodes (the space, projects, tasks, routines), with what
+// only a task or a routine has in `tasks`, so launches and runs keep a task to point at. It stays outside the migration
 // chain until the switch: nothing in the product opens a tree space yet. Each family of commands
 // adds the tables it writes.
 import type { Connection } from "../driver.ts";
@@ -78,7 +78,7 @@ export const TREE_STATEMENTS: readonly string[] = [
   "CREATE INDEX changes_node ON changes(node_id, seq)",
   "CREATE INDEX changes_entity ON changes(entity_id, seq)",
   `CREATE TABLE nodes (
-  id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK (kind IN ('space','project','task')),
+  id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK (kind IN ('space','project','task','routine')),
   parent_id TEXT REFERENCES nodes(id), position TEXT NOT NULL,
   title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 300 AND instr(title, char(10)) = 0),
   brief TEXT NOT NULL DEFAULT '' ${ONE_LINE("brief", 400)},
@@ -89,8 +89,8 @@ export const TREE_STATEMENTS: readonly string[] = [
   ${VERSIONS},
   CHECK ((kind = 'space') = (parent_id IS NULL)),
   CHECK (kind = 'project' OR (slug IS NULL AND color IS NULL AND archived_at IS NULL)),
-  CHECK (kind = 'task' OR deleted_at IS NULL),
-  CHECK (kind <> 'task' OR for_agents = '')
+  CHECK (kind IN ('task','routine') OR deleted_at IS NULL),
+  CHECK (kind NOT IN ('task','routine') OR for_agents = '')
 ) STRICT`,
   // Every child, live or in the Trash: the end of a parent's list counts them all.
   "CREATE INDEX nodes_children ON nodes(parent_id, kind, position)",
@@ -177,9 +177,10 @@ export const TREE_STATEMENTS: readonly string[] = [
   "CREATE INDEX launches_task ON launches(task_id, created_at)",
   "CREATE INDEX launches_open ON launches(machine_id, created_at) " +
     "WHERE state IN ('prepared','dispatching','dispatched')",
-  // What Run records: as today's, a task's run or a routine's, never both.
+  // What Run records: as today's, on a task or a routine. A routine's run holds its due time in
+  // `spec`.
   `CREATE TABLE runs (
-  id TEXT PRIMARY KEY, task_id TEXT REFERENCES tasks(id), routine_id TEXT, session_id TEXT,
+  id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id), session_id TEXT,
   instance_id TEXT NOT NULL, machine_id TEXT NOT NULL REFERENCES machines(id),
   adapter TEXT NOT NULL, folder_id TEXT REFERENCES folders(id), request TEXT,
   spec TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(spec)),
@@ -187,10 +188,35 @@ export const TREE_STATEMENTS: readonly string[] = [
   detail TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(detail)),
   result TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(result)),
   queued_at INTEGER NOT NULL, started_at INTEGER, ended_at INTEGER,
-  ${VERSIONS},
-  CHECK (task_id IS NULL OR routine_id IS NULL)
+  ${VERSIONS}
 ) STRICT`,
   "CREATE INDEX runs_task ON runs(task_id, queued_at)",
+  // A routine's schedule and its open time: the time that comes next or, once it has come, the one
+  // still to do. `instance` is the agent instance that does it, null for the person.
+  `CREATE TABLE routines (
+  id TEXT PRIMARY KEY REFERENCES tasks(id),
+  rule TEXT NOT NULL, start TEXT NOT NULL, tz TEXT NOT NULL, due_date TEXT NOT NULL, due_at INTEGER,
+  instance TEXT, instruction TEXT, role TEXT CHECK (role IN ('refresh')),
+  paused INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0,1)), enabled_by TEXT REFERENCES actors(id),
+  ${VERSIONS},
+  CHECK ((instance IS NULL) = (instruction IS NULL)),
+  CHECK (instance IS NULL OR (due_at IS NOT NULL AND enabled_by IS NOT NULL)),
+  CHECK (role IS NULL OR instance IS NOT NULL)
+) STRICT`,
+  "CREATE UNIQUE INDEX routines_role ON routines(role) WHERE role IS NOT NULL",
+  // Each time of a routine done or skipped, once per due time; no due time is an extra run's.
+  `CREATE TABLE occurrences (
+  id TEXT PRIMARY KEY, routine_id TEXT NOT NULL REFERENCES routines(id),
+  due_date TEXT, due_at INTEGER, state TEXT NOT NULL CHECK (state IN ('done','skipped')),
+  actor_id TEXT NOT NULL REFERENCES actors(id), at INTEGER NOT NULL, run_id TEXT REFERENCES runs(id),
+  why TEXT CHECK (why IN ('you','run_failed')), note TEXT, deleted_at INTEGER,
+  ${VERSIONS},
+  CHECK ((state = 'skipped') = (why IS NOT NULL)),
+  CHECK (due_date IS NOT NULL OR due_at IS NULL)
+) STRICT`,
+  "CREATE UNIQUE INDEX occurrences_due ON occurrences(routine_id, due_date, coalesce(due_at, 0)) " +
+    "WHERE due_date IS NOT NULL AND deleted_at IS NULL",
+  "CREATE INDEX occurrences_routine ON occurrences(routine_id, at)",
   // Notes, log entries and learnings in one thread on a node, and a page's comments; numbered per
   // owner.
   `CREATE TABLE notes (
