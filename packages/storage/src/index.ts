@@ -227,11 +227,7 @@ export {
   type RetentionResult,
   type RetentionRules,
 } from "./backup/retention.ts";
-export {
-  BACKUP_KINDS,
-  type BackupKind,
-  type BackupSidecar,
-} from "./backup/sidecar.ts";
+export { BACKUP_KINDS, type BackupKind, type BackupSidecar } from "./backup/sidecar.ts";
 export { finishInterruptedRestore, type ResumeReport } from "./restore/folders.ts";
 export type { RecoveredSpace } from "./restore/recover.ts";
 export {
