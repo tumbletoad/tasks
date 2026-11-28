@@ -52,10 +52,6 @@
       "class": "not_found",
       "exit": 3
     },
-    "not_permitted": {
-      "class": "forbidden",
-      "exit": 5
-    },
     "op_unknown": {
       "class": "version",
       "exit": 7

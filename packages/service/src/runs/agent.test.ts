@@ -2,7 +2,7 @@
 // question apart from the person's words. Fixture text only.
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
-import { runBrief, WORK_ON_IT } from "./agent.ts";
+import { ASK_IN_LOG, runBrief, WORK_ON_IT } from "./agent.ts";
 
 describe("[A4.3.11.run.brief-as-typed] the person's request reaches the agent as typed", () => {
   test("an indented block keeps every line's indent and its line breaks; blank words ask to work on the task", () => {
@@ -10,6 +10,18 @@ describe("[A4.3.11.run.brief-as-typed] the person's request reaches the agent as
     expect(runBrief("M-1", "Fixture", request).endsWith(`\n\n${request}`)).toBe(true);
     expect(runBrief("M-1", "Fixture", " \n\t").endsWith(`\n\n${WORK_ON_IT}`)).toBe(true);
     expect(runBrief("M-1", "Fixture", null).endsWith(`\n\n${WORK_ON_IT}`)).toBe(true);
+  });
+});
+
+describe("[A4.3.11.run.brief-asks-in-log] a run is told to log a decision it leaves the person as a question", () => {
+  test("every brief says it: with the person's words, without them, and with a reply", () => {
+    for (const brief of [
+      runBrief("M-1", "Fixture", "Fixture request"),
+      runBrief("M-1", "Fixture", null),
+      runBrief("M-1", "Fixture", "Fixture reply", ["Fixture which?"]),
+    ]) {
+      expect(brief.split("\n")).toContain(ASK_IN_LOG);
+    }
   });
 });
 

@@ -1,5 +1,5 @@
 // The A1 operation kinds an entry may declare in `ops` (A1 3.6), who may emit each one and the
-// grant scopes an entry that emits it may require (A3 3.2.3, 3.4.12, A6 3.3, 3.6.3). The registry
+// grant scopes an entry that emits it may require (A3 3.2.3, A6 3.3, 3.6.3). The registry
 // check reads this table: an unknown kind fails, and an agent-allowed entry can never declare a
 // kind that R7 or A3 3.2.3 keeps for the user.
 import type { Scope } from "./define.ts";
@@ -7,12 +7,10 @@ import type { Scope } from "./define.ts";
 /**
  * Who may emit an operation kind.
  * - `agent`: agents and the user.
- * - `run`: only a run-only entry, which works on a connection bound to a run or routine
- *   (A3 3.2.3, 3.4.12).
  * - `user`: the user only (A3 3.2.3).
  * - `system`: the service itself, never through an entry (A1 3.6, A3 3.7.4).
  */
-export type OpClass = "agent" | "run" | "user" | "system";
+export type OpClass = "agent" | "user" | "system";
 
 export interface OpSpec {
   readonly class: OpClass;
@@ -107,8 +105,6 @@ export const OPERATIONS: Readonly<Record<string, OpSpec>> = {
   // admin (A6 3.6.3), so an entry for them may require admin. The handler refuses a policy key
   // without both, with `forbidden` and rule `policy` (A1 3.16, A3 3.4.11, 3.8.3).
   "pref.set": { class: "agent", scopes: ["space:write", "admin"], base: true },
-  // A4's run record, from a run or routine binding only (A3 3.2.3, 3.4.12).
-  "run.report": { class: "run", scopes: WRITE, base: false },
   // No agent tool attaches files (A3 3.4).
   "attachment.add": user(),
   "proposal.accept": user(),
