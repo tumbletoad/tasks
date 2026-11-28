@@ -2082,7 +2082,7 @@
     },
     {
       "id": "A1.5.history.undo-redo",
-      "title": "Undo and redo through the write path: a check-off and a reopen (its undo keeps the completion time and the outcome), the Trash and a restore of a whole change (its undo trashes only what it restored), a removed note, a title, a note's and a log entry's words, out of the Inbox with its status, a first filing, a filing into an area the person's change right before made, a new area and an unarchive are each undone and redone by the ordinary operation that writes back what the commit changed; a priority, an ordinary move, a wrap-up of a finished task, a mixed request and an agent's change are no step, and a step an earlier version stored of such a kind is passed over; someone else's newer work keeps the step, takes it off the stack, names who and replays on a resend; a check-off is not redone over an agent's log entry, nor a note's removal over words edited since; a named commit that is not the newest leaves the stack alone",
+      "title": "Undo and redo through the write path: a check-off and a reopen (its undo keeps the completion time and the outcome, a dropped task's too), the Trash and a restore of a whole change (its undo trashes only what it restored), a removed note, a title, a note's and a log entry's words, out of the Inbox with its status, a first filing, a filing into an area the person's change right before made, a dismissal of questions, a new area and an unarchive are each undone and redone by the ordinary operation that writes back what the commit changed; a priority, an ordinary move, a wrap-up of a finished task, a mixed request and an agent's change are no step, and a step an earlier version stored of such a kind is passed over; a field changed again since, by the person too (a filing moved on, a title changed with a priority), keeps the step, as does someone else's newer work, and a step whose task an agent moved to the Trash is kept with why and who; a kept step leaves the stack, names who, replays on a resend, and the next undo reaches the step below; a check-off is not redone over an agent's log entry, nor a note's removal over words edited since; a named commit that is not the newest leaves the stack alone",
       "source": "A1 3.5, A1 3.10, A1 3.10.1, A1 3.10.4, A1 5, A7 3.10 M3.02",
       "owner": "M3",
       "kind": "ci",
@@ -3845,7 +3845,7 @@
     },
     {
       "id": "A5.3.5.service.waiting-undo",
-      "title": "A wait an undo brings back keeps the day it began: a task waiting since Monday, taken out of waiting on Wednesday and the change undone on Thursday still shows Monday, and a task made waiting still shows its creation",
+      "title": "A wait an undo brings back keeps the day it began: a waiting task in the Inbox since Monday, moved to Open on Wednesday and the move undone on Thursday still shows Monday, and a task made waiting still shows its creation",
       "source": "A5 3.5, A5 3.6, A1 3.10",
       "owner": "M5",
       "kind": "ci",
@@ -6575,7 +6575,7 @@
     },
     {
       "id": "A5.while-away.e2e.question",
-      "title": "In Chromium and Firefox: an agent's question puts its task under Needs you with its words; Dismiss takes it out, with no Undo, and a new question puts it back; the person's note after it answers it, also after a reload; two questions on a task finished since both wait, newest first, after a reload, and one Dismiss sets them aside; the day the task is grouped under is the change's own; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
+      "title": "In Chromium and Firefox: an agent's question puts its task under Needs you with its words; Dismiss takes it out and the toast's Undo brings it back; the person's note after it answers it, also after a reload; two questions on a task finished since both wait, newest first, after a reload, and one Dismiss sets them aside; the day the task is grouped under is the change's own; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -6603,14 +6603,14 @@
     },
     {
       "id": "A5.while-away.service.question",
-      "title": "A task's row carries the newest question an agent or a routine logged on it while no note of the person's came after it and their dismissal came before it: not the person's own question, an agent's note does not answer it, the person's note does, a dismissal hides it, a later question waits again, and the feed's batch of the question carries the task's row",
+      "title": "A task's row carries the newest question an agent or a routine logged on it while no note of the person's came after it and their dismissal came before it: not the person's own question, an agent's note does not answer it, the person's note does, a dismissal hides it and its undo brings it back, a later question waits again, and the feed's batch of the question carries the task's row",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A5.while-away.service.run-question",
-      "title": "A run that ended asking the person keeps its question among the task's waiting questions, whatever runs come after: a run queued before it neither hides it while it works nor takes it along when stopped; a run queued after it answers it once it works or ran, one that never ran does not; the person's note answers it; Dismiss of the run sets it aside, on a finished task too",
+      "title": "A run that ended asking the person keeps its question among the task's waiting questions, whatever runs come after: a run queued before it neither hides it while it works nor takes it along when stopped; a run queued after it answers it once it works or ran, one that never ran does not; the person's note answers it; Dismiss of the run sets it aside and Undo brings it back, on a finished task too",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -6638,7 +6638,7 @@
     },
     {
       "id": "A4.3.11.run.reply-kept",
-      "title": "A reply answers the questions that waited when it was queued, oldest first, whatever changes before it starts: a retracted note put back, a Dismiss before it, an earlier queued reply cancelled, or a Dismiss of the questions it carries",
+      "title": "A reply answers the questions that waited when it was queued, oldest first, whatever changes before it starts: a retracted note put back, a Dismiss undone, an earlier queued reply cancelled, or a Dismiss of the questions it carries",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

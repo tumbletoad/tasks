@@ -178,11 +178,15 @@ export function taskColumns(folders: boolean): string {
     "t.created_at, t.version, t.touched, " +
     `CASE WHEN t.lifecycle <> 'active' THEN ${FINISHED_AT_SQL} END AS finished_at, ` +
     // When a waiting task's wait began (the Waiting view's age): the commit whose write its status
-    // holds (its provenance, which an undo sets back), or its creation. Not the last write (`fv`):
-    // an undo that brings a wait back would restart its age. A new person waited on is the same
-    // wait.
-    "CASE WHEN t.status = 'waiting' THEN COALESCE((SELECT c.at FROM commits c WHERE c.seq = " +
-    "json_extract(t.fp, '$.status') AND c.seq <> t.created_seq), t.created_at) END AS waiting_since, " +
+    // holds, or its creation. An undo writes the status back as a write of its own: the wait it
+    // brings back began where the status it undid had come from. A new person waited on is the
+    // same wait.
+    "CASE WHEN t.status = 'waiting' THEN COALESCE((SELECT CASE WHEN c.kind = 'undo' THEN " +
+    "(SELECT w.at FROM changes u JOIN commits w ON w.seq = u.before_prov WHERE u.seq = c.undo_of " +
+    "AND u.entity = 'tasks' AND u.entity_id = t.id AND u.field = 'status' " +
+    "AND w.seq <> t.created_seq) ELSE c.at END FROM commits c " +
+    "WHERE c.seq = json_extract(t.fp, '$.status') AND c.seq <> t.created_seq), t.created_at) " +
+    "END AS waiting_since, " +
     // What the row shows of the task's children (A5 3.6), turned into `sources`, `sources_more`
     // and `place` by `taskRows`.
     "(SELECT json_group_array(json_object('p', x.position, 'id', x.id, 'kind', x.kind, " +
