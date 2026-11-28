@@ -527,7 +527,7 @@ test.describe("[A5.trash.e2e.runs] Work on a removed task stays in sight", () =>
     const stop = listed
       .locator('[data-entry="run"]')
       .first()
-      .getByRole("button", { name: /^Stop/u });
+      .getByRole("button", { name: /^Stop .*'s run$/u });
     await stop.click({ timeout: SLOW_MS });
     const runs = listed.locator('[data-entry="run"] [data-part="run-state"]');
     await expect(runs.first()).toContainText(/^Stopped\./u, { timeout: SLOW_MS });

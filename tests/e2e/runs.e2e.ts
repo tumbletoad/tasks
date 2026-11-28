@@ -185,7 +185,7 @@ test.describe("[M6.page.run-once] A Run pressed again after a reload is the same
     const entry = runsOf(page, ref).first();
     await expect(stateOf(entry)).toContainText("is working on it", { timeout: SLOW_MS });
     await expect(runsOf(page, ref)).toHaveCount(1);
-    await entry.getByRole("button", { name: /^Stop/u }).click();
+    await entry.getByRole("button", { name: /^Stop .*'s run$/u }).click();
     await expect(stateOf(entry)).toContainText(/^Stopped\./u, { timeout: SLOW_MS });
   });
 
@@ -264,7 +264,7 @@ test.describe("[M6.page.e2e.stop] A run while it works: the row, a reload, a sec
     await openTask(other, world, ref);
     await expect(stateOf(runsOf(other, ref).first())).toContainText("is working on it");
 
-    await runsOf(page, ref).first().getByRole("button", { name: /^Stop/u }).click();
+    await runsOf(page, ref).first().getByRole("button", { name: /^Stop .*'s run$/u }).click();
     await expect(stateOf(runsOf(page, ref).first())).toContainText(/Stopping|Stopped/u, {
       timeout: 5_000,
     });
@@ -275,7 +275,7 @@ test.describe("[M6.page.e2e.stop] A run while it works: the row, a reload, a sec
       await expect(stateOf(runsOf(tab, ref).first())).toContainText(
         /Nothing it started was left\.|What it left running was ended\.|ended what it could find of it\./u,
       );
-      await expect(runsOf(tab, ref).first().getByRole("button", { name: /^Stop/u })).toHaveCount(0);
+      await expect(runsOf(tab, ref).first().getByRole("button", { name: /^Stop .*'s run$/u })).toHaveCount(0);
       await expect(markerOf(tab, ref)).not.toHaveAttribute("data-kind", "working");
     }
     await other.close();
@@ -301,7 +301,7 @@ test.describe("[M6.page.e2e.stop] A run while it works: the row, a reload, a sec
     );
     // The first run's Codex has taken its case: the next is the queued run's.
     await expect.poll(() => world.codexLeft(ref), { timeout: SLOW_MS }).toEqual(["answer"]);
-    await runsOf(page, ref).first().getByRole("button", { name: /^Stop/u }).click();
+    await runsOf(page, ref).first().getByRole("button", { name: /^Stop .*'s run$/u }).click();
     await expect(stateOf(queued)).toContainText("Done.", { timeout: SLOW_MS });
     await expect(queued.locator('[data-part="run-said"]')).toContainText(
       "Asked: Then check the results",
@@ -334,9 +334,9 @@ test.describe("[M6.page.e2e.stop] A run while it works: the row, a reload, a sec
     };
     await page.route("**/api/v1/launch/stop", hold);
     await page.route("**/api/v1/launch/runs", hold);
-    await queued.getByRole("button", { name: /^Stop/u }).click();
+    await queued.getByRole("button", { name: /^Stop .*'s run$/u }).click();
     await expect(stateOf(queued)).toHaveText("Stopping.");
-    await expect(queued.getByRole("button", { name: /^Stop/u })).toHaveCount(0);
+    await expect(queued.getByRole("button", { name: /^Stop .*'s run$/u })).toHaveCount(0);
     await runPictures(page, "run-stop-on-its-way", () => queued.scrollIntoViewIfNeeded());
     release();
     await expect(stateOf(queued)).toHaveText("Stopped before it started.", { timeout: SLOW_MS });
@@ -354,7 +354,7 @@ test.describe("[M6.page.e2e.stop] A run while it works: the row, a reload, a sec
     await expect(rowOf(page, ref).locator('[data-part="runs-failed"]')).toHaveCount(0);
     const working = runsOf(page, ref).first();
     await expect(stateOf(working)).toContainText("is working on it", { timeout: SLOW_MS });
-    await working.getByRole("button", { name: /^Stop/u }).click();
+    await working.getByRole("button", { name: /^Stop .*'s run$/u }).click();
     await expect(stateOf(working)).toContainText(/^Stopped\./u, { timeout: SLOW_MS });
   });
 });
@@ -437,7 +437,7 @@ test.describe("[M6.page.e2e.earlier-asks] An earlier run's question stays in sig
     // reply gets the next.
     await expect.poll(() => world.codexLeft(ref), { timeout: SLOW_MS }).toEqual(["answer"]);
     await openTask(page, world, ref);
-    await runsOf(page, ref).nth(1).getByRole("button", { name: /^Stop/u }).click();
+    await runsOf(page, ref).nth(1).getByRole("button", { name: /^Stop .*'s run$/u }).click();
     await expect(stateOf(runsOf(page, ref).nth(1))).toContainText("Stopped", { timeout: SLOW_MS });
     await expect(markerOf(page, ref)).toHaveAttribute("data-kind", "needs_input");
     await runPictures(page, "run-earlier-asks-row", () =>
@@ -531,7 +531,7 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
       await expect(stateOf(runsOf(page, ref).first())).toContainText("is working on it", {
         timeout: SLOW_MS,
       });
-      await runsOf(page, ref).first().getByRole("button", { name: /^Stop/u }).click();
+      await runsOf(page, ref).first().getByRole("button", { name: /^Stop .*'s run$/u }).click();
       await expect(stateOf(runsOf(page, ref).first())).toContainText(/^Stopped\./u, {
         timeout: SLOW_MS,
       });
@@ -558,7 +558,7 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
           `${CODEX_INSTANCE.label} could not be stopped: it, or something it started, may still be running. Stop tries again.`,
           { timeout: SLOW_MS },
         );
-        await expect(entry.getByRole("button", { name: /^Stop/u })).toBeVisible();
+        await expect(entry.getByRole("button", { name: /^Stop .*'s run$/u })).toBeVisible();
         const row = rowOf(page, ref);
         await row.scrollIntoViewIfNeeded();
         await picture(row, `run-unknown-${theme}-1440.png`);
@@ -668,7 +668,7 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
     // The run that works is stopped, so the world ends with no run of this test left.
     const last = await (await browser.newContext()).newPage();
     await openTask(last, world, working);
-    await runsOf(last, working).first().getByRole("button", { name: /^Stop/u }).click();
+    await runsOf(last, working).first().getByRole("button", { name: /^Stop .*'s run$/u }).click();
     await expect(stateOf(runsOf(last, working).nth(1))).toContainText("Done.", {
       timeout: SLOW_MS,
     });

@@ -172,15 +172,15 @@ export function RunBody({ run, label, onStop, onContinue }: RunBodyProps) {
           type="button"
           className={styles.again}
           data-part="run-continue"
-          aria-label={t("run.continueLabel", {
-            label,
-            stop: view.continues === "after_stop" ? "yes" : "no",
-          })}
+          aria-label={t(
+            view.continues === "now" ? "run.continueLabel" : "run.stopAndContinueLabel",
+            { label },
+          )}
           onClick={() => {
             onContinue(run);
           }}
         >
-          {t("run.continue", { stop: view.continues === "after_stop" ? "yes" : "no" })}
+          {t(view.continues === "now" ? "run.continue" : "run.stopAndContinue")}
         </button>
       )}
     </div>
