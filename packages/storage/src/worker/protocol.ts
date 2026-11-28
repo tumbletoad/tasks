@@ -42,6 +42,8 @@ import type { HolderFacts } from "../writer-lock.ts";
 /** workerData of a storage worker. */
 export interface WorkerConfig {
   driver: DriverName;
+  /** A test's clock (StartOptions.clock): only a test worker entry reads it. */
+  clock?: SharedArrayBuffer;
 }
 
 export type QueryMode = "run" | "get" | "all";

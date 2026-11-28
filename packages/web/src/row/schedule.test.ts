@@ -6,6 +6,7 @@ import { describe, expect, test } from "vitest";
 import { WEEKDAYS, at, parseRule, presets, type Rule } from "@ttasks/contracts/schedule";
 import en from "../i18n/en.json" with { type: "json" };
 import type { MessageId, Values } from "../i18n/intl.tsx";
+import { repeatWords } from "@ttasks/contracts/repeat";
 import { scheduleWords, type ScheduleWording } from "./schedule.ts";
 
 const intl = createIntl({
@@ -83,6 +84,64 @@ describe("[A5.routines.web.schedule-words] a schedule in the words a person read
         expect(said).not.toMatch(/[{}#]/);
         expect(said.length).toBeGreaterThan(5);
         if (timed) expect(said.endsWith(" at 09:05")).toBe(true);
+      }),
+    );
+  });
+});
+
+/** Every rule the stored form holds, at any interval, with or without a time of day. */
+const anyRule: fc.Arbitrary<Rule> = fc
+  .tuple(
+    fc.oneof(
+      fc.constant("FREQ=DAILY"),
+      fc.subarray([...WEEKDAYS], { minLength: 1 }).map((d) => `FREQ=WEEKLY;BYDAY=${d.join(",")}`),
+      fc
+        .integer({ min: -1, max: 31 })
+        .filter((d) => d !== 0)
+        .map((d) => `FREQ=MONTHLY;BYMONTHDAY=${String(d)}`),
+      fc
+        .tuple(fc.constantFrom("1", "2", "3", "4", "-1"), fc.constantFrom(...WEEKDAYS))
+        .map(([n, d]) => `FREQ=MONTHLY;BYDAY=${n}${d}`),
+      fc.constantFrom("1", "-1").map((p) => `FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=${p}`),
+      fc
+        .tuple(fc.integer({ min: 1, max: 12 }), fc.integer({ min: -1, max: 31 }))
+        .filter(([, d]) => d !== 0)
+        .map(([m, d]) => `FREQ=YEARLY;BYMONTH=${String(m)};BYMONTHDAY=${String(d)}`),
+      fc
+        .tuple(
+          fc.integer({ min: 1, max: 12 }),
+          fc.constantFrom("1", "2", "3", "4", "-1"),
+          fc.constantFrom(...WEEKDAYS),
+        )
+        .map(([m, n, d]) => `FREQ=YEARLY;BYMONTH=${String(m)};BYDAY=${n}${d}`),
+      fc
+        .tuple(fc.integer({ min: 1, max: 12 }), fc.constantFrom("1", "-1"))
+        .map(([m, p]) => `FREQ=YEARLY;BYMONTH=${String(m)};BYDAY=MO,TU,WE,TH,FR;BYSETPOS=${p}`),
+    ),
+    fc.integer({ min: 1, max: 99 }),
+    fc.option(
+      fc.record({ hour: fc.integer({ min: 0, max: 23 }), minute: fc.integer({ min: 0, max: 59 }) }),
+      { nil: null },
+    ),
+  )
+  .map(([base, interval, time]) => {
+    const rule = parseRule(`${base};INTERVAL=${String(interval)}`);
+    if (rule === undefined) throw new Error(`${base} is a rule`);
+    return { ...rule, time };
+  });
+
+const english = createIntl({ locale: "en-GB", messages: en });
+const englishWording: ScheduleWording = {
+  t: (id: MessageId, values?: Values) => english.formatMessage({ id }, values),
+  list: (items) => english.formatList(items, { type: "conjunction" }),
+  locale: "en-GB",
+};
+
+describe("[A5.routines.web.schedule-words-same] the page's words and an agent's say a schedule alike", () => {
+  test("for every rule, the catalogue's English is the agents' English", () => {
+    fc.assert(
+      fc.property(anyRule, (rule) => {
+        expect(scheduleWords(rule, englishWording)).toBe(repeatWords(rule));
       }),
     );
   });

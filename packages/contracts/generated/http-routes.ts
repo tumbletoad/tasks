@@ -19,6 +19,7 @@ export const httpRoutes = [
   { entry: "page.write", method: "POST", path: "/api/v1/op/page.write" },
   { entry: "prefs.manage", method: "POST", path: "/api/v1/op/prefs.manage" },
   { entry: "receipt.get", method: "POST", path: "/api/v1/op/receipt.get" },
+  { entry: "routine.manage", method: "POST", path: "/api/v1/op/routine.manage" },
   { entry: "space.status", method: "POST", path: "/api/v1/op/space.status" },
   { entry: "task.add", method: "POST", path: "/api/v1/op/task.add" },
   { entry: "task.delete", method: "POST", path: "/api/v1/op/task.delete" },

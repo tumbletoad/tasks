@@ -151,7 +151,31 @@ function skillsAfter(entryName: string, result: unknown): string {
   }
   if (entryName !== "task.get") return "";
   const read = result as TaskGet;
+  if (read.view === "routine") return "";
   return listText(read.skills ?? [], status, read.skills_unread);
+}
+
+/** A routine as an agent reads it: what it is, its open time, and its newest entries. */
+function routineText(result: Extract<TaskGet, { view: "routine" }>): string {
+  const r = result.routine;
+  const s = result.sections;
+  const thread = [...(s?.instructions ?? []), ...(s?.notes ?? []), ...(s?.log ?? [])];
+  const next = r.next.at ?? r.next.date;
+  const lines = [
+    `${r.ref} ${r.title} · routine · ${r.repeat} · by ${r.by} · ${r.state} · next ${next} · as_of ${result.as_of}`,
+    result.say,
+    ...(r.summary === undefined ? [] : [r.summary]),
+    ...(r.context === undefined ? [] : ["", r.context]),
+    ...(result.history.length === 0 ? [] : ["", "Entries, newest first:"]),
+    ...result.history.map(
+      (e) =>
+        `- ${e.due === undefined ? "extra" : (e.due.at ?? e.due.date)} ${e.state} by ${e.by} at ${e.at}${e.note === undefined ? "" : `: ${e.note}`}`,
+    ),
+    ...(s?.context === undefined ? [] : ["", s.context]),
+    ...(thread.length === 0 ? [] : ["", "Notes and log, newest first:"]),
+    ...thread.map((e) => `- ${e.ref} ${e.author} at ${e.at}: ${e.text}`),
+  ];
+  return lines.join("\n");
 }
 
 function statusParts(result: Status): Part[] {
@@ -1324,6 +1348,7 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
   }),
   "space.status": (result: Status) => ({ parts: statusParts(result), more: STATUS_MORE }),
   "task.get": (result: TaskGet, { getTask }) => {
+    if (result.view === "routine") return { parts: [fixed(routineText(result))], more: "" };
     const request = requestTokens(result.request, getTask, result.task.ref);
     if (result.view === "digest") {
       // The user's request has room of its own on top of the budget. Inside it, the user's texts

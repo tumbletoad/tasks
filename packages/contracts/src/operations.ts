@@ -99,6 +99,15 @@ export const OPERATIONS: Readonly<Record<string, OpSpec>> = {
   "node.set": agent(true),
   // The person's standing instruction for every task below: the writer refuses it from others too.
   "node.instruct": { class: "user", scopes: WRITE, base: true },
+  // A routine you do: agents set it and pause it by `repeat`; its times and its end are the
+  // person's.
+  "routine.set": agent(false),
+  "routine.pause": agent(false),
+  "routine.resume": user(),
+  "routine.done": user(),
+  "routine.skip": user(),
+  "routine.finish": user(),
+  "routine.reopen": user(),
   "label.patch": agent(true),
   "label.delete": agent(true),
   // Agents write only keys whose declaration lists them. Policy keys are human-only and need

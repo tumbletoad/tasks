@@ -3,7 +3,7 @@
 // are trees until the switch; what a later family of commands brings is refused until it comes.
 import type { Connection } from "../driver.ts";
 import { StorageError } from "../errors.ts";
-import type { Id, RandomSource } from "../ids.ts";
+import type { Id } from "../ids.ts";
 import { readReceipt, type Receipt, type ReceiptLookup } from "../write/receipts.ts";
 import type { WriteResult } from "../write/request.ts";
 import type { MachineInfo } from "../write/writer.ts";
@@ -15,12 +15,12 @@ export class TreeSpaceWriter {
   readonly #writer: TreeWriter;
   readonly #machine: MachineInfo;
 
-  constructor(conn: Connection, machine: MachineInfo, random?: RandomSource) {
+  constructor(conn: Connection, machine: MachineInfo, clock?: () => number) {
     this.#conn = conn;
     this.#machine = machine;
     this.#writer = new TreeWriter(conn, {
       machineId: machine.id,
-      ...(random === undefined ? {} : { random }),
+      ...(clock === undefined ? {} : { clock }),
     });
   }
 
@@ -37,9 +37,13 @@ export class TreeSpaceWriter {
     return this.#writer.actor(kind, label);
   }
 
-  /** Today's request, its operations run as the tree's commands (plan.ts). */
+  /**
+   * Today's request, its operations run as the tree's commands (plan.ts), or a request that names
+   * one of the tree's own commands, for what has no form in today's operations (routines).
+   */
   submit(request: unknown): WriteResult {
-    return this.#writer.submitPlan(request);
+    const own = typeof request === "object" && request !== null && "command" in request;
+    return own ? this.#writer.submitCommand(request) : this.#writer.submitPlan(request);
   }
 
   /** A request's receipt, as today's writer keeps one; undefined when none was decided. */

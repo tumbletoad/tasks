@@ -17,6 +17,7 @@ import { pageTrashed } from "./entries/page-trashed.ts";
 import { pageWrite } from "./entries/page-write.ts";
 import { prefsManage } from "./entries/prefs-manage.ts";
 import { receiptGet } from "./entries/receipt-get.ts";
+import { routineManage } from "./entries/routine-manage.ts";
 import { spaceStatus } from "./entries/space-status.ts";
 import { taskAdd } from "./entries/task-add.ts";
 import { taskDelete } from "./entries/task-delete.ts";
@@ -56,6 +57,7 @@ export const registry = [
   historyRedo,
   // After the undo's and redo's examples: its user's change would be the one they take back.
   folderManage,
+  routineManage,
   // Last: their examples leave a task of the world in the Trash, which the Trash's example reads.
   taskDelete,
   taskTrash,
