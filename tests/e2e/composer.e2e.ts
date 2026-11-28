@@ -1102,10 +1102,9 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     }
     // The other tab's words are discarded here: they go there too, and this tab's stay.
     await line(other).locator('[data-part="keep-theirs"]').click();
-    await expect(rowOf(second, ref).locator('[data-part="unsaved"]')).toHaveText(
-      new RegExp(first.replace(/[()]/gu, "\\$&"), "u"),
-      { timeout: SLOW_MS },
-    );
+    await expect(rowOf(second, ref).locator('[data-part="unsaved-value"]')).toHaveText([first], {
+      timeout: SLOW_MS,
+    });
     await line(first).locator('[data-part="apply-mine"]').click();
     await expect.poll(async () => (await read(world, ref)).task.title).toBe(first);
     await expect(lines).toHaveCount(0, { timeout: SLOW_MS });
