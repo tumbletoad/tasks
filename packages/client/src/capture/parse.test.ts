@@ -258,7 +258,7 @@ describe("[A5.3.13.web.capture] a quick capture reads its shortcuts and leaves t
 
 describe("[A5.routines.capture] a capture that says a schedule is a routine you do", () => {
   const routine = (text: string, more: Partial<Parameters<typeof parseCapture>[1]> = {}) =>
-    read(text, { repeats: true, ...more });
+    read(text, { tree: true, ...more });
 
   test("water the plants every saturday: its chip, its title and its draft", () => {
     const said = routine("water the plants every saturday");

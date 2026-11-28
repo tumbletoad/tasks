@@ -98,6 +98,7 @@ export const test = base.extend<
     monitored: World;
     t3: T3World;
     tree: World;
+    routines: World;
   },
   { worlds: FileWorlds }
 >({
@@ -145,6 +146,8 @@ export const test = base.extend<
   monitored: fileWorld("monitored", { monitor: true, runs: true }),
   // Mira's world with a space on the new storage, four levels of projects deep (tree.ts).
   tree: fileWorld("tree", { tree: true }),
+  // The tree space again, with the clock its routines are walked through the weeks by.
+  routines: fileWorld("routines", { tree: true, clock: true }),
   // A T3 Code instance whose T3 is a fake server in this worker. Its T3 runs and is not paired.
   t3: [
     async ({ ofFile }, use) => {

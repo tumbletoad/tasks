@@ -74,6 +74,11 @@ export interface World {
   readonly quiet: SpaceInfo;
   /** The four-level tree space (tree.ts), in a world asked for one (`WorldOptions.tree`). */
   readonly tree: (TreeSpace & SpaceInfo) | undefined;
+  /**
+   * In a world asked for one (`WorldOptions.clock`): moves the tree spaces' clock on to `ms` after
+   * this machine's time. It only goes forward: the writer never goes back.
+   */
+  readonly clock: (ms: number) => void;
   /** Copies of Mira's sample, one per scale of `WorldOptions.scales`, in its order. */
   readonly scaled: readonly SpaceInfo[];
   /** A task of Mira's in an area, for the launch. */
@@ -197,6 +202,11 @@ export interface WorldOptions {
   readonly agents?: readonly FakeAgent[];
   /** A space on the new storage, four levels of projects deep (tree.ts), opened as `World.tree`. */
   readonly tree?: boolean;
+  /**
+   * The service's tree spaces decide by a clock the test moves on (`World.clock`), with the page's
+   * own clock moved alike.
+   */
+  readonly clock?: boolean;
 }
 
 /** The T3 Code instance of a world with T3. */
@@ -342,6 +352,8 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
 
     const shown = join(temp.root, "folders.txt");
     writeFileSync(shown, "");
+    const clockFile = join(temp.root, "clock.txt");
+    writeFileSync(clockFile, "0");
     const monitor = join(temp.root, "monitor.txt");
     writeFileSync(monitor, "");
     writeFileSync(`${monitor}.agents`, "");
@@ -358,6 +370,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         E2E_UI: ui,
         E2E_FOLDERS: shown,
         ...(options.monitor === true ? { E2E_MONITOR: monitor } : {}),
+        ...(options.clock === true ? { E2E_CLOCK: clockFile } : {}),
         ...(options.t3 === undefined ? {} : { T3CODE_HOME: options.t3, E2E_LINKS: links }),
       });
       json = await waitReady(home, proc.pid);
@@ -455,6 +468,10 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       studio: { id: created.space.id, name: created.space.name },
       quiet: { id: quiet.space.id, name: quiet.space.name },
       tree,
+      clock: (ms) => {
+        if (options.clock !== true) throw new Error("the world has no clock to move");
+        writeFileSync(clockFile, String(ms));
+      },
       scaled: scaled.map(({ id, name }) => ({ id, name })),
       task,
       spare,

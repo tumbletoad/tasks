@@ -38,14 +38,15 @@ export interface CaptureContext {
     readonly areas: readonly CaptureArea[];
     readonly projects: readonly CaptureProject[];
   };
-  /** The space is a tree: its projects are filed as filedAs takes them there. */
+  /**
+   * The space is a tree: its projects are filed as filedAs takes them there, and a capture that
+   * says a schedule ("every saturday") is a routine you do.
+   */
   readonly tree?: boolean;
   /** The area (and project) of the view the person is in: a capture lands there by default. */
   readonly here?: { readonly area: string; readonly project?: string } | undefined;
   /** The keys of shortcuts the person turned back into text. */
   readonly kept?: ReadonlySet<string>;
-  /** The space keeps routines (a tree space): "every saturday" makes the capture one. */
-  readonly repeats?: boolean;
 }
 
 interface Span {
@@ -324,7 +325,7 @@ export function parseCapture(text: string, ctx: CaptureContext): Capture {
   for (let i = 0; i < words.length; i += 1) {
     if (taken.has(i)) continue;
     const word = words[i] as Word;
-    if (ctx.repeats === true && !seen.has("repeat") && REPEAT_LEADS.has(word.lower)) {
+    if (ctx.tree === true && !seen.has("repeat") && REPEAT_LEADS.has(word.lower)) {
       const said = repeatAt(words, i, ctx.today);
       if (said !== undefined) {
         const s = span(i, said.count);

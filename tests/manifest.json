@@ -7318,6 +7318,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.routines.e2e",
+      "title": "A routine a person does on a tree space against the real service, its clock and the page's moved on together through three weeks: made from the Routines page, checked off early, a missed week shown as one late time, Skip and its Undo, a Done, Pause and Resume from its card, Finish for good behind its dialog and its Undo; the Routines page, its card, its dialog and Today at 1,440 and 390 px in both themes, nothing sideways, no violation",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.routines.web.lists",
       "title": "A routine's row and the Routines page's lists: Due (late since a day, or today, with Skip), Coming (next on a day) and Paused with its count, each line its schedule in words, who does it and its newest entry; a finished routine in none; the round box with its loop checks off this time, and no box is a task's checkbox",
       "source": "Routines design, pull request 235",
