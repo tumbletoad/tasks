@@ -177,6 +177,12 @@ export function wordsMatch(query: Query): string | null {
   return groups.length === 0 ? null : groups.join(" AND ");
 }
 
+/** The FTS5 expression of a query's words, any group enough; null for a query without words. */
+export function anyWordsMatch(query: Query): string | null {
+  const groups = positiveGroups(query);
+  return groups.length === 0 ? null : groups.join(" OR ");
+}
+
 export function negativeMatch(query: Query): string | null {
   const terms = termsOf(query).filter((t): t is TextTerm => t.type === "text" && t.negated);
   return terms.length === 0 ? null : terms.map((t) => ftsString(t, false)).join(" OR ");

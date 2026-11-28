@@ -64,8 +64,8 @@ const SQL = {
     "$undo_of, $redo_of)",
   insertChange:
     "INSERT INTO changes (seq, n, entity, entity_id, node_id, action, field, before, after, " +
-    "before_ver, before_prov, after_prov) VALUES ($seq, $n, $entity, $entity_id, $node, $action, " +
-    "$field, $before, $after, $before_ver, $before_prov, $seq)",
+    "before_ver, before_prov, after_prov, op) VALUES ($seq, $n, $entity, $entity_id, $node, " +
+    "$action, $field, $before, $after, $before_ver, $before_prov, $seq, $op)",
   lastSeq: "UPDATE space SET last_seq = $seq WHERE one = 1",
   markStep: `UPDATE commits SET undo_status = 'done' WHERE seq = $seq AND ${STEP_SQL("$seq")}`,
   deadUndone:
@@ -389,6 +389,7 @@ export class TreeWriter {
         after: JSON.stringify(after),
         before_ver: null,
         before_prov: null,
+        op: null,
       });
     });
     this.#conn.prepare(SQL.lastSeq).run({ seq });
@@ -703,6 +704,7 @@ export class TreeWriter {
           after: c.after,
           before_ver: c.beforeVer,
           before_prov: c.beforeProv,
+          op: c.op,
         });
       });
       indexTreeChanges(this.#conn, seq, changes);
@@ -812,8 +814,13 @@ export class TreeWriter {
       run: actor.run_id ?? null,
       origin: actor.origin,
       request: tx.request.request_id,
-      kind: plan?.kind ?? "command",
-      ops: JSON.stringify([{ v: 1, command: tx.request.command, input: tx.request.input }]),
+      // Today's request keeps today's record: each operation by its kind, as a change names it.
+      kind: plan?.kind ?? (tx.request.command === PLAN ? "ops" : "command"),
+      ops: JSON.stringify(
+        tx.request.command === PLAN
+          ? (tx.request.input["ops"] as Operation[]).map((op) => ({ v: 1, op: op.kind, input: op }))
+          : [{ v: 1, command: tx.request.command, input: tx.request.input }],
+      ),
       reason: tx.request.reason ?? null,
       undo_of: plan?.kind === "undo" ? plan.target : null,
       redo_of: plan?.kind === "redo" ? plan.target : null,

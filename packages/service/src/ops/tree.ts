@@ -111,12 +111,21 @@ export function checkPlan(entry: AnyEntry, ops: readonly Operation[]): void {
 // table expressions named as today's tables; inside them `main.` names the tree's own. A task under
 // a top-level project is in that project as its area; under a project inside one, in both.
 
+/** A task's field versions or provenance: its node row's under today's names, with its task row's. */
+const FIELD_SEQS = (map: "fp" | "fv") =>
+  `json_patch(t.${map}, json_object('title', json_extract(n.${map}, '$.title'), ` +
+  `'summary', json_extract(n.${map}, '$.brief'), ` +
+  `'context', json_extract(n.${map}, '$.description'), ` +
+  `'grouping', json_extract(n.${map}, '$.place'), ` +
+  `'deleted', json_extract(n.${map}, '$.deleted')))`;
+
 const TASKS =
   "tasks AS (SELECT t.id, t.ref, n.title, n.brief AS summary, n.description AS context, " +
   "t.lifecycle, t.status, t.inbox, t.priority, t.effort, t.due_date, t.due_at, t.due_tz, " +
   "t.planned_for, NULL AS owner, t.focus_on, t.waiting_on, t.source_at, t.completed_at, t.completed_by, t.outcome, t.archived_reason, " +
   "t.wrap_state, t.reviewed_at, n.touched, max(n.version, t.version) AS version, n.deleted_at, " +
-  "n.deleted_by, n.created_at, n.created_by, t.created_seq, t.fp, n.position, " +
+  `n.deleted_by, n.created_at, n.created_by, t.created_seq, ${FIELD_SEQS("fp")} AS fp, ` +
+  `${FIELD_SEQS("fv")} AS fv, n.position, ` +
   "CASE WHEN p.kind = 'project' THEN coalesce(g.id, p.id) END AS area_id, " +
   "CASE WHEN p.kind = 'project' AND g.id IS NOT NULL THEN p.id END AS project_id " +
   "FROM main.tasks t JOIN main.nodes n ON n.id = t.id LEFT JOIN main.nodes p ON p.id = n.parent_id " +
@@ -157,13 +166,56 @@ const PROJECTS =
   `projects AS (SELECT ${GROUP_COLUMNS}, n.parent_id AS area_id FROM main.nodes n ` +
   "JOIN main.nodes a ON a.id = n.parent_id WHERE n.kind = 'project' AND a.kind = 'project')";
 
-/** A node's texts change on its node row; today's name them as the texts' own. */
+/**
+ * Today's area and project of the tree's node `$p` (an SQL expression), as JSON: a task under a
+ * project at the top is in that area; under a project inside one, in both.
+ */
+const GROUPING = (p: string) =>
+  `(SELECT json_object('area_id', CASE WHEN g.kind = 'project' THEN g.id ELSE x.id END, ` +
+  `'project_id', CASE WHEN g.kind = 'project' THEN x.id END) FROM main.nodes x ` +
+  `LEFT JOIN main.nodes g ON g.id = x.parent_id WHERE x.id = ${p} AND x.kind = 'project')`;
+
+/** A place's change as today's `grouping`: the area and project before or after it. */
+const AS_GROUPING = (side: "before" | "after") =>
+  `coalesce(${GROUPING(`json_extract(c.${side}, '$.parent_id')`)}, ` +
+  `json_object('area_id', NULL, 'project_id', NULL))`;
+
+/**
+ * The tree's changes under today's names: a task's node row and its task row are today's `tasks`,
+ * a project's node row an area's or a project's, a node's texts its `node_texts`, a note by its
+ * kind, a link a task's source. A place is today's `grouping`, an archive its lifecycle, a task's
+ * brief and description its summary and context. A task's create is one row, as today's.
+ */
 const CHANGES =
-  "changes AS (SELECT c.seq, c.n, 0 AS op, CASE WHEN c.entity = 'nodes' AND c.action = 'set' " +
-  "AND c.field IN ('description', 'for_agents') THEN 'node_texts' ELSE c.entity END AS entity, " +
+  "changes AS (SELECT c.seq, c.n, c.op, CASE " +
+  "WHEN c.entity = 'nodes' AND c.field IN ('description', 'for_agents') THEN 'node_texts' " +
+  "WHEN c.entity = 'nodes' AND nk.kind = 'space' AND c.field = 'brief' THEN 'node_texts' " +
+  "WHEN c.entity = 'nodes' AND nk.kind = 'task' THEN 'tasks' " +
+  "WHEN c.entity = 'nodes' AND nk.kind = 'project' THEN " +
+  "CASE pk.kind WHEN 'space' THEN 'areas' ELSE 'projects' END " +
+  "WHEN c.entity = 'notes' THEN CASE nt.kind WHEN 'note' THEN 'notes' " +
+  "WHEN 'learning' THEN 'learnings' ELSE 'log_entries' END " +
+  "WHEN c.entity = 'links' THEN 'task_sources' ELSE c.entity END AS entity, " +
   "c.entity_id, CASE WHEN substr(c.node_id, 1, 2) = 't_' THEN c.node_id END AS task_id, " +
-  "c.node_id, c.action, c.field, c.before, c.after, c.before_ver, c.before_prov, c.after_prov " +
-  "FROM main.changes c)";
+  "c.node_id, c.action, CASE WHEN c.entity = 'nodes' AND nk.kind IN ('task', 'project') THEN " +
+  "CASE c.field WHEN 'brief' THEN CASE nk.kind WHEN 'task' THEN 'summary' ELSE 'brief' END " +
+  "WHEN 'description' THEN CASE nk.kind WHEN 'task' THEN 'context' ELSE 'description' END " +
+  "WHEN 'place' THEN 'grouping' WHEN 'archived' THEN 'lifecycle' ELSE c.field END " +
+  "ELSE c.field END AS field, " +
+  "CASE WHEN c.entity = 'nodes' AND c.field = 'place' THEN " +
+  `${AS_GROUPING("before")} WHEN c.entity = 'nodes' AND c.field = 'archived' THEN ` +
+  "CASE WHEN json_extract(c.before, '$') IS NULL THEN '\"active\"' ELSE '\"archived\"' END " +
+  "ELSE c.before END AS before, " +
+  "CASE WHEN c.entity = 'nodes' AND c.field = 'place' THEN " +
+  `${AS_GROUPING("after")} WHEN c.entity = 'nodes' AND c.field = 'archived' THEN ` +
+  "CASE WHEN json_extract(c.after, '$') IS NULL THEN '\"active\"' ELSE '\"archived\"' END " +
+  "WHEN c.entity = 'nodes' AND c.action = 'create' AND nk.kind = 'task' THEN " +
+  `json_patch(c.after, ${AS_GROUPING("after")}) ELSE c.after END AS after, ` +
+  "c.before_ver, c.before_prov, c.after_prov FROM main.changes c " +
+  "LEFT JOIN main.nodes nk ON c.entity = 'nodes' AND nk.id = c.entity_id " +
+  "LEFT JOIN main.nodes pk ON pk.id = nk.parent_id " +
+  "LEFT JOIN main.notes nt ON c.entity = 'notes' AND nt.id = c.entity_id " +
+  "WHERE NOT (c.entity = 'tasks' AND c.action = 'create'))";
 
 /** A search document's task: the task that holds it, when a task holds it. */
 const DOCS =
@@ -213,6 +265,13 @@ const FOLDERS =
   "f.version, f.fv, f.fp FROM main.folders f JOIN main.nodes o ON o.id = f.owner_id " +
   "WHERE f.is_default = 1)";
 
+/** A commit by today's kinds: an Undo, a Redo, or operations, as the space's own system commits are. */
+const COMMITS =
+  "commits AS (SELECT c.seq, c.id, c.epoch, c.incarnation, c.at, c.actor_kind, c.principal_id, " +
+  "c.author_id, c.scope_id, c.machine_id, c.session_id, c.run_id, c.origin, c.request_id, " +
+  "CASE WHEN c.kind IN ('undo', 'redo') THEN c.kind ELSE 'ops' END AS kind, c.ops, c.affected, " +
+  "c.reason, c.undo_status, c.undone_by, c.undo_of, c.redo_of FROM main.commits c)";
+
 /** A tree space keeps no aliases: none is found. */
 const ALIASES =
   "aliases AS (SELECT NULL AS namespace, NULL AS alias, NULL AS entity_kind, NULL AS entity_id " +
@@ -225,6 +284,7 @@ const VIEWS = [
   PAGES,
   NODE_TEXTS,
   CHANGES,
+  COMMITS,
   DOCS,
   LOG_ENTRIES,
   NOTES,
@@ -259,7 +319,7 @@ export function servedReader(reader: WorkerConnection): WorkerConnection {
       switch (key) {
         case "transaction":
           return (mode: Parameters<WorkerConnection["transaction"]>[0], queries: Query[]) =>
-            target.transaction(mode, queries.map(named)).catch((e: unknown) => { for (const q of queries) console.error("SQLDEBUG", String(e), q.sql.slice(0, 3000)); throw e; });
+            target.transaction(mode, queries.map(named));
         case "get":
           return (sql: string, params?: Parameters<WorkerConnection["get"]>[1]) =>
             target.get(treeSql(sql), params);

@@ -36,7 +36,8 @@ jobs:
         with:
           cache: true
 
-      - run: pnpm install --frozen-lockfile
+      # Without the phone app (apps/phone): this job never builds, checks or tests it.
+      - run: pnpm install --frozen-lockfile --filter '!@ttasks/phone'
 
       # A violation fails the job and prints the seed, the round, the kill and the invariant,
       # and the command that replays it.
@@ -70,7 +71,8 @@ jobs:
         with:
           cache: true
 
-      - run: pnpm install --frozen-lockfile
+      # Without the phone app (apps/phone): this job never builds, checks or tests it.
+      - run: pnpm install --frozen-lockfile --filter '!@ttasks/phone'
 
       # Linux under umask 002, as check.yml runs verify and for its reason: the default of a
       # desktop with user private groups, where every file a person or a test makes is

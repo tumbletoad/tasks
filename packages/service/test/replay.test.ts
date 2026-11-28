@@ -1,21 +1,18 @@
 // The replay (piece iii): today's service requests sent through both backends, one service serving
-// a space on today's writer and a tree space, and compared step by step: the whole answer each call
-// got and what a reader then sees of every task any answer named (`task.get`). Each space numbers
-// its own IDs, references, as_of and versions, so both are compared by their relations: each value
-// becomes a token in order of first appearance, and a value that comes back gets its token again.
-// Times are left out of that, as two commits in one millisecond are chance; a retry is held to the
-// as_of its first answer gave, in each space. The calls are those `answers.test.ts` and its kin
-// send, one family at a time. A step where the backends may differ names that one field and says
-// why. Fixture text only.
+// a space on today's writer and a tree space, and compared step by step by the strict helper
+// (replay-helpers.ts): the whole answer each call got and what a reader then sees of every task any
+// answer named, and of every node a read hands out. The calls are those `answers.test.ts` and its
+// kin send, one family at a time: the readable cases beside the generated replay
+// (replay.prop.test.ts). A step where the backends may differ names those fields and says why.
+// Fixture text only.
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { AppError, findEntry, type ErrorBody } from "@ttasks/contracts";
+import { afterAll, beforeAll, describe, test } from "vitest";
 import { CheckedDriver, createSpace, loadDriver, DEFAULT_DRIVER } from "@ttasks/storage";
-import { both, type Sequence, type Side } from "../../storage/test/both-helpers.ts";
-import { readBatch, readSnapshot } from "../src/http/feed.ts";
-import { opCall, type Caller } from "../src/ops/index.ts";
+import { both, type Sequence } from "../../storage/test/both-helpers.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 import { classSession } from "./ops-helpers.ts";
+import { readBatch, readSnapshot } from "../src/http/feed.ts";
+import { backend, normal, type Session, type Side, type Step } from "./replay-helpers.ts";
 
 const LONG = 180_000;
 let w: ContractWorld & { root: string };
@@ -45,198 +42,11 @@ afterAll(async () => {
   await w.close();
 }, LONG);
 
-const AGENT: Caller = { class: "cli-script", env: {} };
-const USER: Caller = { class: "cli-interactive", env: {} };
-
-/** One call: `{name}` in its input is a task an earlier step named; `base` the latest as_of. */
-interface Step {
-  op: string;
-  input: Record<string, unknown>;
-  /** The task this call's answer names, by a name later steps use. */
-  as?: string;
-  /** The entry this call's answer names (`n2`, `l3`), by a name later steps use. */
-  entry?: string;
-  /** The page this call's answer names (its `target`), by a name later steps use. */
-  page?: string;
-  user?: true;
-  base?: true;
-  /** A stale base: the as_of after that earlier step (1 is the first). */
-  baseFrom?: number;
-  /** The request ID of an earlier step, sent again as a client whose reply was lost does. */
-  again?: number;
-}
-
-interface Session {
-  space: string;
-  names: Map<string, string>;
-  /** The entries and pages steps named. */
-  entries: Map<string, string>;
-  asOf: string | undefined;
-  ids: Map<string, string>;
-  sent: string[];
-  /** The as_of after each step. */
-  after: (string | undefined)[];
-  /** The as_of each step's own answer gave. */
-  answered: (string | undefined)[];
-  /** Every task reference an answer named, read after each step. */
-  refs: Set<string>;
-  /** This sequence's run in its space: request IDs are a space's, across sequences. */
-  run: number;
-}
-
-/** How many sequences each space has run. */
-const runs = new Map<string, number>();
-
-/** `value`'s token in this space: the same value, the same token. */
-function token(s: Session, kind: string, value: string): string {
-  const key = `${kind}:${value}`;
-  let found = s.ids.get(key);
-  if (found === undefined) {
-    found = `<${kind}${String(s.ids.size + 1)}>`;
-    s.ids.set(key, found);
-  }
-  return found;
-}
-
-/** Each space's own IDs, references, as_of and versions as tokens; its times left out. */
-function normal(value: unknown, s: Session): unknown {
-  if (typeof value === "string") {
-    return (
-      value
-        .replace(/\b\d+\.\d+\.[0-9a-z]{8,}\b/gu, (asOf) => token(s, "as_of", asOf))
-        .replace(/\b\d{4}-\d\d-\d\dT[\d:.]+Z\b/gu, "<at>")
-        // An entry's number is its space's own: the tree numbers a task's notes and log in one thread.
-        .replace(/\b(?:[a-z]{1,3}_[0-9a-z]{26}|[A-Z]{1,6}-\d+|[nl][1-9]\d{0,5})\b/gu, (id) =>
-          token(s, "", id),
-        )
-    );
-  }
-  if (Array.isArray(value)) return value.map((v) => normal(v, s));
-  if (typeof value === "object" && value !== null) {
-    // A version, a seq and when a row was touched count the space's own commits; a time in
-    // milliseconds is a time.
-    return Object.fromEntries(
-      Object.entries(value).map(([k, v]) => [
-        k,
-        (k === "version" || k === "seq" || k === "touched") && typeof v === "number"
-          ? token(s, "v", String(v))
-          : /(?:^|_)at$/u.test(k) && typeof v === "number"
-            ? "<at>"
-            : normal(v, s),
-      ]),
-    );
-  }
-  return value;
-}
-
-const filled = (value: unknown, s: Session): unknown => {
-  if (typeof value === "string") {
-    return value.replace(
-      /\{(\w+)\}/gu,
-      (_, name: string) => s.names.get(name) ?? s.entries.get(name) ?? `{${name}}`,
-    );
-  }
-  if (Array.isArray(value)) return value.map((v) => filled(v, s));
-  if (typeof value === "object" && value !== null) {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, filled(v, s)]));
-  }
-  return value;
-};
-
-type Sent =
-  { ok: Record<string, unknown>; error?: undefined } | { ok?: undefined; error: ErrorBody };
-
-async function send(
-  s: Session,
-  op: string,
-  input: Record<string, unknown>,
-  caller: Caller,
-): Promise<Sent> {
-  try {
-    const ok = (await opCall(w.service.ops, caller, { op, input, space: s.space })) as Record<
-      string,
-      unknown
-    >;
-    return { ok };
-  } catch (error) {
-    if (!(error instanceof AppError)) throw error;
-    return { error: error.toBody() };
-  }
-}
-
-/** The task references an answer names, the first first. */
-const refsIn = (answer: unknown): string[] =>
-  JSON.stringify(answer ?? {}).match(/\b[A-Z]{1,6}-\d+\b/gu) ?? [];
-
-/** One backend: the steps sent to its space, and the tasks they named read after each. */
-const backend = (space: () => string): Side<Step, Session> => ({
-  open: () =>
-    Promise.resolve({
-      space: space(),
-      names: new Map(),
-      entries: new Map(),
-      asOf: undefined,
-      ids: new Map(),
-      sent: [],
-      after: [],
-      answered: [],
-      refs: new Set(),
-      run: (() => {
-        const n = (runs.get(space()) ?? 0) + 1;
-        runs.set(space(), n);
-        return n;
-      })(),
-    }),
-  step: async (s, step) => {
-    const id =
-      step.again === undefined
-        ? `replay-${String(s.run)}-request-${String(s.sent.length + 1).padStart(6, "0")}`
-        : (s.sent[step.again - 1] ?? "");
-    s.sent.push(id);
-    const input = {
-      ...(filled(step.input, s) as Record<string, unknown>),
-      // A read takes no request ID.
-      ...(findEntry(step.op)?.kind === "read" ? {} : { request_id: id }),
-      ...(step.base === true && s.asOf !== undefined ? { base: s.asOf } : {}),
-      ...(step.baseFrom === undefined ? {} : { base: s.after[step.baseFrom - 1] }),
-    };
-    const got = await send(s, step.op, input, step.user === true ? USER : AGENT);
-    s.after.push(undefined);
-    s.answered.push(undefined);
-    if (got.ok !== undefined) {
-      const asOf = (got.ok as { as_of?: unknown }).as_of;
-      if (typeof asOf === "string") s.asOf = asOf;
-      s.after[s.after.length - 1] = s.asOf;
-      s.answered[s.answered.length - 1] = typeof asOf === "string" ? asOf : undefined;
-      // A retry is answered as its request was decided: at that commit, in this space too.
-      const first = step.again === undefined ? undefined : s.answered[step.again - 1];
-      if (first !== undefined && got.ok["replayed"] === true) {
-        expect(asOf, `a retry of step ${String(step.again)}`).toBe(first);
-      }
-      const refs = refsIn(got.ok);
-      for (const ref of refs) s.refs.add(ref);
-      if (step.as !== undefined && refs[0] !== undefined) s.names.set(step.as, refs[0]);
-      const entry = got.ok["entry"] ?? got.ok["note"];
-      if (step.entry !== undefined && typeof entry === "string") s.entries.set(step.entry, entry);
-      const target = got.ok["target"];
-      if (step.page !== undefined && typeof target === "string") s.entries.set(step.page, target);
-      return { status: "ok", said: normal(got.ok, s) };
-    }
-    return { status: "error", code: got.error.code, said: normal(got.error, s) };
-  },
-  seen: async (s) => {
-    const seen: Record<string, unknown> = {};
-    for (const ref of s.refs) {
-      const read = await send(s, "task.get", { task: ref }, USER);
-      seen[token(s, "", ref)] = normal(read.ok ?? { error: read.error.code }, s);
-    }
-    return seen;
-  },
-  close: () => undefined,
-});
-
 const replay = (steps: Sequence<Step>) =>
-  both({ today: backend(() => w.space), tree: backend(() => tree) }, steps);
+  both(
+    { today: backend(w.service.ops, () => w.space), tree: backend(w.service.ops, () => tree) },
+    steps,
+  );
 
 /** The tasks family, as `answers.test.ts` sends it. */
 const TASKS: Sequence<Step> = [
@@ -638,12 +448,13 @@ const GROUPS: Sequence<Step> = [
       input: { tasks: [{ title: "A project alone", project: "Lone" }] },
       as: "lone",
     },
-    // The one task this step adds, as its answer and its read name it.
+    // The one task this step adds, as its answer and its read name it, and its project's read.
     field: [
       "answer.said.tasks.0.project",
-      "seen.<42>.task.area",
-      "seen.<42>.task.project",
-      "seen.<42>.trail.0.kind",
+      "seen.lone.task.area",
+      "seen.lone.task.project",
+      "seen.lone.trail.0.kind",
+      "seen.read Lone.kind",
     ],
     differs:
       "a project without an area: today's is a project, the tree's a top-level project, read as an area",
@@ -785,6 +596,75 @@ describe("[S2.replay.dates] today's service requests through both backends: date
   );
 });
 
+/** What review found the tree answered otherwise in the four families. */
+const REVIEWED: Sequence<Step> = [
+  { op: "task.add", input: { tasks: [{ title: "File me" }] }, as: "f", user: true },
+  // A person files a task into a new project, a script renames it, the person's guarded Undo.
+  {
+    op: "task.update",
+    input: { task: "{f}", set: { area: "Shed", project: "Tools" } },
+    base: true,
+    user: true,
+  },
+  { op: "task.update", input: { task: "{f}", set: { title: "Renamed by a script" } }, base: true },
+  { op: "history.undo", input: { check_script: true }, user: true },
+  // A removed note is not edited: its words come back as they were when it is put back.
+  {
+    op: "entry.add",
+    input: { task: "{f}", kind: "note", text: "Original words" },
+    entry: "n",
+    user: true,
+  },
+  { op: "note.remove", input: { task: "{f}", remove: "{n}" }, base: true, user: true },
+  {
+    op: "entry.edit",
+    input: { task: "{f}", entry: "{n}", text: "Replaced" },
+    base: true,
+    user: true,
+  },
+  { op: "note.remove", input: { task: "{f}", put_back: "{n}" }, base: true, user: true },
+  // A filing from a stale read.
+  {
+    op: "task.update",
+    input: { task: "{f}", set: { area: "Shed", project: "Bench" } },
+    baseFrom: 1,
+  },
+  // Several tasks to the Trash in the order a person selected them, and its Undo.
+  { op: "task.add", input: { tasks: [{ title: "Selected second" }] }, as: "z", user: true },
+  { op: "task.add", input: { tasks: [{ title: "Selected first" }] }, as: "y", user: true },
+  { op: "task.delete", input: { tasks: ["{y}", "{z}"] }, base: true, user: true },
+  { op: "history.undo", input: {}, user: true },
+  // An area's text for agents, then its description, and the description's history.
+  {
+    op: "node.instruct",
+    input: { target: "Shed", text: "Ask before you buy tools" },
+    base: true,
+    user: true,
+  },
+  {
+    op: "page.write",
+    input: { action: "set", target: "Shed", description: "Tools and seeds." },
+    base: true,
+    user: true,
+  },
+  {
+    step: { op: "page.history", input: { target: "Shed" }, user: true },
+    field: "answer.said.versions",
+    differs:
+      "today counts the texts' row its text for agents made as a first, empty version; the tree has the description's own",
+  },
+];
+
+describe("[S2.replay.reviewed] what review found in the four families, through both backends", () => {
+  test(
+    "a guarded Undo after a script's change, a removed note's edit, an area's trail, a stale filing, a Trash's order",
+    async () => {
+      await replay(REVIEWED);
+    },
+    LONG,
+  );
+});
+
 const search = (q: string, more: Record<string, unknown> = {}): Step => ({
   op: "task.search",
   input: { q, ...more },
@@ -847,7 +727,7 @@ describe("[S2.replay.search] today's service requests through both backends: sea
 
 /** A backend whose reader then sees the feed: the snapshot, and the batch since the last step. */
 const feedBackend = (space: () => string): Side<Step, Session & { seq: number }> => {
-  const inner = backend(space);
+  const inner = backend(w.service.ops, space);
   const reader = (s: Session) => {
     const found = w.service.ops.spaces().find((x) => x.id === s.space)?.reader;
     if (found === undefined) throw new Error("The space is not served");
@@ -857,7 +737,11 @@ const feedBackend = (space: () => string): Side<Step, Session & { seq: number }>
     open: async () => ({ ...(await inner.open()), seq: 0 }),
     step: (s, step) => inner.step(s, step),
     seen: async (s) => {
-      const snapshot = await readSnapshot(reader(s), undefined, 0);
+      const read = await readSnapshot(reader(s), undefined, 0);
+      // Tasks at one position under different parents come in the order of their random IDs; a
+      // page places each under its parent, so they are compared in the order they were made.
+      const byRef = (row: { ref?: unknown }) => Number(String(row.ref).split("-")[1]);
+      const snapshot = { ...read, tasks: [...read.tasks].sort((a, b) => byRef(a) - byRef(b)) };
       const { batch } = await readBatch(reader(s), s.seq);
       const from = s.seq;
       s.seq = snapshot.cursor.seq;

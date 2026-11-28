@@ -55,11 +55,10 @@ async function refusal(promise: Promise<unknown>): Promise<ServiceExit> {
 }
 
 describe("[A2.3.3.hub.refusals] refusals before anything is written", () => {
-  test("root, an elevated Administrator and an elevation it cannot check: 64, nothing written", async () => {
+  test("root and an elevated Administrator: 64, nothing written", async () => {
     for (const [identity, reason] of [
       [{ ...PLAIN, root: true }, "root"],
       [{ ...PLAIN, elevated: true }, "elevated"],
-      [{ ...PLAIN, elevated: undefined }, "elevation_unknown"],
     ] as const) {
       const h = home("root");
       const lines: string[] = [];
@@ -72,6 +71,18 @@ describe("[A2.3.3.hub.refusals] refusals before anything is written", () => {
       // Not even the install folder: a root start must not leave root-owned files behind.
       expect(existsSync(h)).toBe(false);
     }
+  });
+
+  test("an elevation Windows gave no answer about in time: the service starts, and its log says so", async () => {
+    const h = home("unknown");
+    const service = await startService({
+      env: serviceEnv(h),
+      identity: () => ({ ...PLAIN, elevated: undefined }),
+      ...quiet,
+    });
+    running.push(service);
+    expect(readServiceJson(h)?.state).toBe("ready");
+    expect(readLog(h).map((e) => e["ev"])).toContain("service.elevation_unknown");
   });
 
   test("package identity: 64 after the log, before the lock", async () => {

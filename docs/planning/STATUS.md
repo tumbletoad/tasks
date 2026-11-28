@@ -22,41 +22,41 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 0.1 | Undo only where it helps in the page, Redo beside it, a check-off leaves at once (#218) | done |
 | 0.2 | The pen: a person corrects a summary, a context, a note or a log entry (#223) | done |
 | 0.3 | The rest of the feedback from use: card controls (#216), Open with the brief waiting (#217), search keeps an opened result (#219), edits outlast a stalled page (#222) | done |
-| 0.4 | Undo thinned in the service: only kept kinds become steps, older steps of other kinds are passed over, each kept kind undone by its opposite operation | doing (#225) |
-| 0.5 | The general inversion engine and `partial` removed from the service, the contract, the command line and the app | doing (#225) |
+| 0.4 | Undo thinned in the service: only kept kinds become steps, older steps of other kinds are passed over, each kept kind undone by its opposite operation | done (#225) |
+| 0.5 | The general inversion engine and `partial` removed from the service, the contract, the command line and the app | done (#225) |
 | 1b | The Activity log (#224) | done |
 | 1.1 | The contract for pages, the trail, `read` and `write_page` | done (#229, #231) |
 | 1.2 | Storage: the migration step for pages and the new fields, the search tables rebuilt, an older backup's index rebuilt by its own version | done (#240) |
 | 1.3 | The page edit as the first named command of the new write path | done (#240) |
 | 1.4 | Agent tools: `read`, `write_page`, the trail in `get_task` within one budget, search over pages, `complete_task` asking for pages updated | done (#251) |
 | 1.5 | The skill `keeping-the-library`, and a brief explained as "what this is" | done (#251) |
-| 1.6 | The app: the project screen with its Library, the page screen with History and Restore, page edits under Changes | todo: 1.1 |
+| 1.6 | The app: the project screen with its Library, the page screen with History and Restore, page edits under Changes | done (#255, #257) |
 | 1.7 | The trial: twenty scripted tasks with Claude Code and Codex, and the bytes of history per page edit | review: ran with real agents, the result is under [Step 1's trial](#step-1s-trial) |
-| 1.8 | The harvest of one real project, and a walk through it as a person | todo: 1.6, 1.7 |
+| 1.8 | The harvest of one real project, and a walk through it as a person | todo: 1.7 |
 | 2.1 | The short design for one tree, reviewed before code (#237) | done |
-| 2.2 | (i) The feed sends a tree, today's areas and projects as parent rows at its edge, and the page's store reads it | todo: step 1's page work |
-| 2.3 | (ii) The tree's schema and command core beside today's storage, used by nothing yet: add, read and finish in a disposable tree space, Undo's walk, the crash test | review |
-| 2.4 | (iii) The remaining commands in families (tasks, notes and pages, projects, folders, preferences, Open and Run), each tried through its real caller and through both backends; ordinary spaces stay on today's writer | todo: 2.3 |
+| 2.2 | (i) The feed sends a tree, today's areas and projects as parent rows at its edge, and the page's store reads it | done (#261, #268) |
+| 2.3 | (ii) The tree's schema and command core beside today's storage, used by nothing yet: add, read and finish in a disposable tree space, Undo's walk, the crash test | done (#244, #256, #260) |
+| 2.4 | (iii) The remaining commands in families (tasks, notes and pages, projects, folders, preferences, Open and Run), each tried through its real caller and through both backends; ordinary spaces stay on today's writer | doing: a tree space is served by the same handlers, with the tasks family, held by a replay through both backends (#266); notes, projects, pages and dates next, then the reads, folders, preferences, Open and Run |
 | 2.5 | (iv) The projector on the tree, the finishing dialog, the new tool shapes with the skills, instructions and hints, behind the tree backend | todo: 2.4, 3.1 |
 | 2.6 | (v) The switch: new spaces are trees, old formats are named before anything changes, the owner's carry-over on a trial copy first | todo: 2.5 |
 | 2.7 | (vi) Deletion: the feed's adapter, today's writer, the old migration chain, the old projector and places | todo: 2.6 |
-| 2.8 | The app: the sidebar tree, the project screen, breadcrumbs, the derived status line, the expanded task's Brief, Description, Knowledge and subtasks | todo: 2.5 |
+| 2.8 | The app: the sidebar tree, the project screen, breadcrumbs, the derived status line, the expanded task's Brief, Description, Knowledge and subtasks | doing: the side menu at any depth and one project screen with breadcrumbs and the status line, reading only; the rest todo: 2.5 |
 | 2.9 | Folders on any node in the app, Settings > Folders, a project's rename and archive | todo: 2.6 |
-| 2b.1 | The short design for routines | review (#235) |
-| 2b.4 | The schedule calculator: the stored form, the next date and due time through daylight saving, the claim after an absence, and a schedule's words | doing |
-| 2b.2 | Tasks that come back on a schedule | todo: 2b.1 |
-| 2b.3 | Agent runs on a schedule (Refresh, tidying), Refresh in the top bar, Continue interactively | todo: 2b.1 |
-| 3.1 | The projector for the tree on disk, written on the tree schema of 2.3 and switched on in 2.5 | todo: 2.3 |
+| 2b.1 | The short design for routines | done (#235) |
+| 2b.4 | The schedule calculator: the stored form, the next date and due time through daylight saving, the claim after an absence, and a schedule's words | done (#241, #253) |
+| 2b.2 | Routines: one task of a kind of its own that comes back on a schedule, its runs logged under it, a page of the active ones | doing: the node kind, its tables and commands with Undo in the tree's storage (#269); the app todo: 2.4 |
+| 2b.3 | Agent runs on a schedule (Refresh, tidying), Refresh in the top bar, Continue interactively | todo: 2.4 |
+| 3.1 | The projector for the tree on disk, written on the tree schema of 2.3 and switched on in 2.5 | doing: the files rendered from a snapshot (#276); the pass that writes them and its record in review; the service running it next |
 | 3.2 | Inherited default folders, other folders as hints, Open says when a folder is set only on another machine | todo: 2.9 |
 | 3.3 | The trial's tasks again, tools only against tools with the tree, and a rename's rebuild timed on Windows | todo: 3.1 |
-| 4.1 | Budgets that speak in a write's answer, and tidying a project's library | todo: 1.4 |
+| 4.1 | Budgets that speak in a write's answer, and tidying a project's library | ready: the budgets; tidying todo: 2b.3 |
 | 4.2 | Ingestion: a run makes tasks and sources from the person's sources by itself | todo: 2b.3 |
 | 4.3 | The library skill's later versions, from the trial | todo: 1.7 |
 | 5.1 | The phone's listener apart from the page's, in the same process: it reaches only the operations, the feed and a task's runs | done (#245) |
-| 5.2 | An endpoint for paired phones over pinned TLS, with rights per phone and space, and pairing by a QR code from Settings > Phones | review: the listener, rights and pairing done (#245); Settings > Phones in this pull request |
-| 5.3 | The phone app as a development build in the workspace, and its first proof; Today and capture shared with the page once step 1's page work has merged | todo: 5.2, 1.6 |
+| 5.2 | An endpoint for paired phones over pinned TLS, with rights per phone and space, and pairing by a QR code from Settings > Phones | done (#245, #252) |
+| 5.3 | The phone app as a development build in the workspace, and its first proof; Today and capture shared with the page once step 1's page work has merged | review: the Android app's pinned link, built in CI and tried on an emulator (#270); Today, capture and the store shared with the page (#264); the first screen next |
 | 5.4 | The stores' test tracks, the relay for use away from home, push messages | todo: 5.3 |
-| 6.1 | Differences between versions of a page and of a description | todo: 1.6 |
+| 6.1 | Differences between versions of a page and of a description | todo: 2.8 |
 
 ## Step 1's trial
 
@@ -89,7 +89,7 @@ task's log on a page, which is what `keeping-the-library` should ask next.
 | Scale on Windows and Linux, on the new model | todo: steps 2 and 3 |
 | A quality pass over the app, on the new screens | todo: steps 2 and 3 |
 | A run reports through its answer and what it logs, and logs a decision it leaves the person as a question | done |
-| A run that stopped at a permission prompt goes on with Continue, in the agent app, on the run's own conversation | todo: 2b.3 |
+| A run that stopped at a permission prompt goes on with Continue, in the agent app, on the run's own conversation | done (#247) |
 | Retiring old versions after an update | done |
 
 ## Checks on real machines

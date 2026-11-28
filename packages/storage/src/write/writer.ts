@@ -161,6 +161,7 @@ import {
   checkRequest,
   FOLDER_OPERATIONS,
   notActive,
+  NOT_NOW,
   NO_SUCH_TASK,
   OTHER_SPACE_TASK,
   formatAsOf,
@@ -4312,7 +4313,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       if (readTask(conn, target).lifecycle !== "active") {
         // complete_task leaves a task the user finished first as it is (A3 3.4.8).
         if (op.if_active === true) return;
-        problem("INVALID_TRANSITION", "Only an active task can be completed", i, "task");
+        problem("INVALID_TRANSITION", NOT_NOW.complete, i, "task");
       }
       // A1 3.11.1: with an outcome the task is wrapped at once, else it waits for its wrap-up.
       // An earlier outcome stays until a new one replaces it (A1 3.11.3).
@@ -4332,12 +4333,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
     case "task.reopen": {
       const target = staged.target as Id<"t">;
       if (readTask(conn, target).lifecycle === "active") {
-        problem(
-          "INVALID_TRANSITION",
-          "Only a completed or archived task can be reopened",
-          i,
-          "task",
-        );
+        problem("INVALID_TRANSITION", NOT_NOW.reopen, i, "task");
       }
       // A1 3.11.3: back to active, wrap_state cleared, the outcome kept as the previous result.
       // completed_at and completed_by are cleared, and their values stay in history.
@@ -4355,7 +4351,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       const target = staged.target as Id<"t">;
       if (readTask(conn, target).lifecycle !== "active") {
         if (op.if_active === true) return;
-        problem("INVALID_TRANSITION", "Only an active task can be archived", i, "task");
+        problem("INVALID_TRANSITION", NOT_NOW.archive, i, "task");
       }
       // A1 3.11.3: work that will not be done. No completion time, and no wrap-up waits for it;
       // an earlier outcome stays as the previous result.
@@ -4371,7 +4367,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
     case "task.wrap_up": {
       const target = staged.target as Id<"t">;
       if (readTask(conn, target).lifecycle === "active") {
-        problem("INVALID_TRANSITION", "Only a completed or archived task is wrapped up", i, "task");
+        problem("INVALID_TRANSITION", NOT_NOW.wrapUp, i, "task");
       }
       if (staged.skip === true) return;
       // A1 3.11.2: additive. The outcome, the mark and, when asked, the short planning scalars.

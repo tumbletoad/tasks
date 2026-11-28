@@ -233,7 +233,7 @@ function known(tx: Tx, list: ScaleKey, value: unknown, field: string): string {
  * finish names, so an archive and a backdated completion count too. One this request finished is
  * no match: a draft after it is new work.
  */
-function captured(tx: Tx, key: string): { task: Row | undefined; source: string | null } {
+export function captured(tx: Tx, key: string): { task: Row | undefined; source: string | null } {
   const source = tx.get(SQL.liveSource, { key })?.["id"];
   if (typeof source !== "string") return { task: undefined, source: null };
   const task = tx.get(SQL.originTask, { source });
@@ -252,25 +252,6 @@ function projectTitle(tx: Tx, parent: string): { project?: string } {
   return typeof row?.["title"] === "string" ? { project: row["title"] } : {};
 }
 
-/**
- * The projects the drafts' new names make, before the drafts: only those an added draft sits in,
- * or the project of one, so a name only a draft that found its task gave makes none.
- */
-function makeProjects(tx: Tx, made: Input[], under: Iterable<unknown>): void {
-  const byId = new Map(made.map((p) => [String(p["id"]), p]));
-  const needed = new Set<string>();
-  for (const id of under) {
-    let at = typeof id === "string" ? byId.get(id) : undefined;
-    while (at !== undefined && !needed.has(String(at["id"]))) {
-      needed.add(String(at["id"]));
-      at = typeof at["under"] === "string" ? byId.get(at["under"]) : undefined;
-    }
-  }
-  for (const p of made) {
-    if (needed.has(String(p["id"]))) tx.call("project.create", p);
-  }
-}
-
 const tasksAdd: Run = (tx, input) => {
   const drafts = input["tasks"] as Input[];
   const found = drafts.map((draft) => {
@@ -278,11 +259,6 @@ const tasksAdd: Run = (tx, input) => {
     const key = source === undefined ? undefined : str(source, "key");
     return key === undefined ? undefined : captured(tx, key);
   });
-  makeProjects(
-    tx,
-    (input["projects"] ?? []) as Input[],
-    drafts.filter((_, i) => found[i]?.task === undefined).map((d) => d["under"]),
-  );
   return {
     tasks: drafts.map((draft, i) => {
       const at = (field: string) => `tasks.${String(i)}.${field}`;
@@ -327,8 +303,9 @@ const tasksAdd: Run = (tx, input) => {
       );
       // The source the task is made from: the one that holds the key already, else a new one on the
       // task. A repeat capture of the key finds the task through it, wherever it moves.
+      // A source whose key the space holds already is linked to the new task, as today's is.
       let origin = match?.source ?? null;
-      if (source !== undefined && origin === null) {
+      if (source !== undefined) {
         const made = tx.call("source.add", { on: id, source }) as { source: { id: string } };
         origin = made.source.id;
       }
@@ -410,7 +387,6 @@ const taskUpdate: Run = (tx, input) => {
 const taskMove: Run = (tx, input) => {
   const task = liveTask(tx, input["task"]);
   const id = String(task["id"]);
-  makeProjects(tx, (input["projects"] ?? []) as Input[], [input["under"]]);
   const parent = parentFor(tx, input["under"], "under");
   const to = String(parent["id"]);
   if (tx.get(SQL.below, { under: to, id }) !== undefined) {
@@ -762,21 +738,9 @@ function drafts(f: Fields, key: string): Input[] {
 
 const checkTasksAdd: Check = (f) => {
   const tasks = drafts(f, "tasks");
-  const projects = f.has("projects") ? made(f, "projects") : [];
   f.done();
-  return { tasks, ...(projects.length === 0 ? {} : { projects }) };
+  return { tasks };
 };
-
-/** The projects a call's new names make: each as `project.create` takes it. */
-function made(f: Fields, key: string): Input[] {
-  const list = f.raw(key);
-  if (!Array.isArray(list) || list.length > 50) {
-    return f.fail("VALIDATION_FAILED", "Expected at most 50 projects", key);
-  }
-  return list.map((value: unknown, i) =>
-    checkProjectCreate(new Fields(value, `${key}.${String(i)}`)),
-  );
-}
 
 const checkUpdate: Check = (f) => {
   required(f, "task");
@@ -804,7 +768,6 @@ const checkMove: Check = (f) => {
   return read(f, {
     task: (k) => f.text(k, KEY),
     under: (k) => f.text(k, KEY),
-    projects: (k) => made(f, k),
   });
 };
 

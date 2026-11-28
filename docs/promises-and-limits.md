@@ -490,6 +490,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Before it sends anything, the phone checks that it reached the computer whose key the code
   carried. A device on your network that is not paired sees that a port is open and this
   computer's certificate, and is told nothing of a space.
+- The key this computer knows the phone by is made on the phone and never leaves it, not even in
+  a backup: a phone restored from a backup, or the app installed again, pairs again.
 - A paired phone reads and edits the one space it was paired for, and is told nothing of this
   computer: not its folders, its agent apps, its backups or its name, also when something fails.
   An agent's work reads on it by the agent app's name.
@@ -497,7 +499,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   and nothing it asks is kept to run later.
 - Remove ends the phone's access at once and closes its connection. When that could not be saved,
   Settings says so and offers Remove again. A removed phone is told so when it next reaches this
-  computer while it listens for a phone.
+  computer while it listens for a phone, and then forgets the pairing. A phone that only lost its
+  connection keeps it.
 - A capture the phone sends again after its answer was lost, also after you removed and paired
   the same phone again, makes one task.
 

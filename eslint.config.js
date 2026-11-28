@@ -243,6 +243,8 @@ export default defineConfig([
     "docs/agents/",
     "tests/e2e/results/",
     "tests/e2e/report/",
+    "apps/phone/android/",
+    "apps/phone/.expo/",
   ]),
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,

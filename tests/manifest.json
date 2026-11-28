@@ -183,6 +183,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.pages.trail-sections",
+      "title": "get_task with sections carries what is known above the task too: the user's texts for agents above it outside the data block, and the levels and pages below the sections, which a full page loses before any line of a section",
+      "source": "Step 1's trial",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.pages.render",
       "title": "read is sized before its cursor, so following the cursor gives a whole body in any script and every row of a node once, in order; a section read on names no stored heading; write_page's acknowledgement names the page by its reference only",
       "source": "Step 1 design, pull request 228; review of pull request 251",
@@ -2208,6 +2216,38 @@
       "profiles": ["v1"]
     },
     {
+      "id": "S3.files.pass",
+      "title": "A pass keeps a tree space's readable files equal to a fresh render: a first pass writes the render read-only and one with nothing new writes nothing; a change writes exactly the files whose bytes changed; a move removes the old files and the folders it left empty; a generated file a person changed is rescued with its bytes and mode when it must be replaced, also when found at the start with no new commit, and also when another program held it at the start, once it is let go; at a path no longer used a changed file is left where it is, and a person's own file stays; a file that went missing comes back and a folder renamed by hand is left as it is; with no record, a file holding the render's bytes is taken and other bytes are rescued; a hard link is never written through; a link where a folder goes is moved aside and nothing is written through it; a path that cannot be written is tried again without a commit, and the README says the commit only after every file was placed",
+      "source": "PLAN step 3",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S3.files.kill",
+      "title": "A kill at every act of a first build and of a pass of renames, moves, a reopening and a new task, the record's writes included, with a commit before the restart: the tree holds whole files only, each the bytes before or after; the restart recognises what the killed pass placed and rescues nothing; it settles to a fresh render with no temporary file and no pending hash",
+      "source": "PLAN step 3",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S3.files.model",
+      "title": "The pass against random sequences of commits, a person's edits, own files, deletions and renamed folders, passes, kills at any act and restarts (seed 20261128, 40 runs): every byte a person wrote still exists in the tree or a rescue folder, a rescue folder holds only a person's bytes, and after a restart the tree settles to a fresh render besides what the person made",
+      "source": "PLAN step 3",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S3.files.loop",
+      "title": "When a pass of the readable files runs, on a moved clock: the first right after the start; then once commits stood still for 500 ms, and at most 5 s after the first unshown commit while commits keep coming; a pass that could not place everything again without a commit, after pauses of 500, 1,000 and 2,000 ms; while nothing changes, a sweep that finds a missing file brings a pass",
+      "source": "PLAN step 3",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "S3.files.content",
       "title": "What a tree space's readable files hold: a task's fixed front-matter keys, title, brief, subtasks, knowledge, links and fenced notes, without its reference or project again; a project's index with its projects, open tasks, library and the person's text for agents marked as theirs; the node's own folders on this machine only; a page's Markdown as written with raw HTML and images turned to text outside code blocks, and its comments; the README's commit; the same rows give the same bytes",
       "source": "PLAN step 3",
@@ -2309,6 +2349,34 @@
     {
       "id": "S2.replay.dates",
       "title": "Today's service requests through both backends: a due date, a due phrase and one that is not a date; a star and a wait in a draft; an update of the due date, a finished status refused as the wrong tool, the star taken away, a due date and a wait cleared and cleared again, a wait set by an agent",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.replay.reviewed",
+      "title": "Today's service requests through both backends, what review found in the four families: a person's filing, a script's rename and the person's guarded Undo refused; a removed note's edit refused and its words put back; an area's trail followed to its page; a stale filing's conflict by today's names; several tasks to the Trash in the order a person selected them and its Undo; a node's history after its text for agents, marked",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.replay.generated",
+      "title": "Random ordinary sequences of the tree's families through a new space of each backend, compared by the strict replay: writes sent twice under one request ID and from a stale base, Undo and Redo with and without the script check, notes and log entries edited while removed and put back, groups made by filing, tasks trashed and restored in any order, dates, the star and a wait, pages, a node's text, a task read by its sections; every task named and every node handed out read after each step; a failure prints its seed",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.replay.search",
+      "title": "Today's service requests through both backends: search by words, OR and a negation, by status, due date, area and project, the Inbox, the star and id:, a finished task by scope; the finished list; the space's status for a person and an agent",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.replay.feed",
+      "title": "The feed of both backends after each step: the snapshot, with a tree space's nodes read from its tree, and the batch since the step before, for tasks filed in an area and a project, an update, an agent's question, a finish and the Trash",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -4383,14 +4451,6 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A1.3.16.prefs.flags",
-      "title": "Each feature flag lives under features., has a default, and reads its default unset, its value set and its default after a reset",
-      "source": "A1 3.16, A7 3.10 M3.11",
-      "owner": "M3",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A1.3.16.prefs.set",
       "title": "pref.set through the write path: a first set needs no base, a change does, null resets the key to its default with the row kept, history and undo-ready change rows are written, an agent is refused a key that does not list it with its receipt, a value outside its shape, an unknown key and a machine key are refused, and a newer build's value stays read-only",
       "source": "A1 3.16, A1 3.5, A1 3.7, A3 3.8.3, A7 3.10 M3.11",
@@ -4410,14 +4470,6 @@
       "id": "A1.3.16.prefs.machine",
       "title": "Machine preferences live in machine.toml's [preferences] with the same registry and validation: a valid value is read, a bad entry is dropped with a content-free problem, a space key there is refused, and a set or a reset splices one line, keeping every other byte",
       "source": "A1 3.16, A2 3.2.4, A7 3.10 M3.11",
-      "owner": "M3",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A1.3.16.prefs.machine.not-read",
-      "title": "A machine preference this build does not read yet (projection.dir) loads from machine.toml and changes nothing: the readable files stay in the space's view/ and nothing is made at the named folder, ttasks doctor says so and where the files are, ttasks prefs set answers that this build does not act on it, and without the key there is no note",
-      "source": "A1 3.16, A2 3.2.4",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -7218,6 +7270,20 @@
     {
       "id": "S5.link.fields",
       "title": "Against the real service: a task whose folder the page shows reads on a phone without its folder or skills; a folder on a capture and a launch reference on a read are refused by name, and a task update, a folder change and the space's status are refused",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.qr",
+      "title": "The phone reads the pairing code the service makes, and refuses text without the prefix, a URL, broken JSON, another version, no address or one without a port, a short pin, no space and no code",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.phone.pairing",
+      "title": "The phone app's pairing against the real service: a code pairs the phone by its name and the pairing reopens without the code; an answer lost after the computer saved the phone gets one more open without the code and one phone; another key at the address gets nothing sent and leaves the code unspent; a removed phone is told so when it opens the link again",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

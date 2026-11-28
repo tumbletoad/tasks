@@ -64,7 +64,8 @@ const sourceAdd: Run = (tx, input) => {
   const key = str(given, "key");
   const held = key === undefined ? undefined : tx.get(SQL.liveKey, { key });
   if (held !== undefined) {
-    if (held["owner_id"] !== owner) tx.call("link.add", { on: owner, target: held["id"] });
+    // Also a source whose task is in the Trash: the key is its, and a new capture links to it.
+    if (held["owner_id"] !== owner) linkTo(tx, owner, String(held["id"]));
     return sourceAnswer(tx, held, "exists");
   }
   const id = tx.newId("s");
@@ -143,9 +144,15 @@ function target(tx: Tx, key: unknown): Row {
 }
 
 /** A link from a node to a page or a source; one removed before comes back. */
-const linkAdd: Run = (tx, input) => {
-  const owner = String(liveNode(tx, input["on"], "on")["id"]);
-  const to = String(target(tx, input["target"])["id"]);
+const linkAdd: Run = (tx, input) =>
+  linkTo(
+    tx,
+    String(liveNode(tx, input["on"], "on")["id"]),
+    String(target(tx, input["target"])["id"]),
+  );
+
+/** The link from `owner` to `to`, made or brought back. */
+function linkTo(tx: Tx, owner: string, to: string) {
   const link = tx.get(SQL.link, { owner, target: to });
   if (link === undefined) {
     const last = tx.get(SQL.lastLink, { owner })?.["p"];
@@ -165,7 +172,7 @@ const linkAdd: Run = (tx, input) => {
   }
   if (link["removed_at"] !== null) tx.set("links", String(link["id"]), owner, { removed: null });
   return { link: { id: link["id"] } };
-};
+}
 
 const linkRemove: Run = (tx, input) => {
   const owner = String(liveNode(tx, input["on"], "on")["id"]);
