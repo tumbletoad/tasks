@@ -26,6 +26,8 @@ import {
   Edits,
   HOLD_MS,
   COLLAPSE_MS,
+  type ActionKeeper,
+  type KeptAction,
   type Toast,
   type Unsaved,
   type UnsavedKeeper,
@@ -74,7 +76,16 @@ class World {
   /** The effort levels the screen shows, as a kept size remembers them. */
   levels = "levels-a";
 
-  constructor(rows: readonly TaskRow[], keeper?: Keeper, leaving?: () => Promise<unknown>) {
+  constructor(
+    rows: readonly TaskRow[],
+    keeper?: Keeper,
+    leaving?: () => Promise<unknown>,
+    /** A page that opens with actions kept by an earlier one: its answers are ready before it sends. */
+    opens?: {
+      readonly actions: ActionKeeper;
+      readonly answers?: Readonly<Record<string, (input: Record<string, unknown>) => unknown>>;
+    },
+  ) {
     this.store = new LiveStore({
       space: SPACE.id,
       frames: this.frames,
@@ -110,9 +121,10 @@ class World {
       history: { undo: call("history.undo"), redo: call("history.redo") },
       receipt: { get: call("receipt.get") },
     } as unknown as ConstructorParameters<typeof Edits>[0]["client"];
+    for (const [name, run] of Object.entries(opens?.answers ?? {})) this.answer(name, run);
     this.edits = new Edits({
       client,
-      write: (send, overlay) => this.store.write(send, overlay),
+      write: (send, overlay, request) => this.store.write(send, overlay, request),
       asOf: () => this.store.asOf,
       failed: () => false,
       onChanges: (listener) => this.store.onChanges(listener),
@@ -122,6 +134,7 @@ class World {
       newRequest: () => `rq-${String((requests += 1))}`,
       ...(keeper === undefined ? {} : { keeper: { onGone: () => () => undefined, ...keeper } }),
       ...(leaving === undefined ? {} : { leaving }),
+      ...(opens === undefined ? {} : { actions: opens.actions }),
     });
     this.edits.onToast((t) => this.toasts.push(t));
   }
@@ -2519,5 +2532,180 @@ describe("[A7.3.12.m5-14.web-write] a write that is no field of a task: in turn,
     await flush();
     expect(await written).toEqual({ result: "updated", as_of: w.asOf(11), receipt: true });
     expect(w.lastToast()).toMatchObject({ text: { id: "toast.folderCleared" } });
+  });
+});
+
+describe("[A5.3.11.web.kept-actions] a check-off, a reopen or an undo waiting behind an edit survives the page going", () => {
+  const never = () => new Promise(() => undefined);
+  /** The browser's storage across two pages: what one page keeps, the next one reads. */
+  const browser = () => {
+    const kept = new Map<string, KeptAction>();
+    const actions: ActionKeeper = {
+      load: () => [...kept.values()],
+      keep: (action) => kept.set(action.request, action),
+      done: (request) => kept.delete(request),
+    };
+    return { kept, actions };
+  };
+  /** A page that goes when `go` is called. */
+  const leaving = () => {
+    let go: () => void = () => undefined;
+    const gone = new Promise<void>((resolve) => (go = resolve));
+    return {
+      gone: () => gone,
+      go: () => {
+        go();
+      },
+    };
+  };
+  const finished = (w: World, seq: number) => ({
+    result: "completed",
+    task: "M-1",
+    lifecycle: "completed",
+    learnings: 0,
+    follow_ups: [],
+    as_of: w.asOf(seq),
+  });
+  const commit = (seq: number) => `op_${String(seq).padStart(26, "0")}`;
+
+  test("a check-off behind an edit without its answer is kept when the page goes, and the next page sends it once, with its own request ID and base", async () => {
+    const { kept, actions } = browser();
+    const page = leaving();
+    const first = new World([task(1)], undefined, page.gone, { actions });
+    first.answer("task.update", never);
+    first.edits.edit(task(1), titleChange("Oil the gate"));
+    first.edits.checkOff(task(1));
+    await flush();
+    expect(first.calls.map((c) => c.name)).toEqual(["task.update"]);
+    expect(kept.size).toBe(0);
+    page.go();
+    await flush();
+    expect(first.calls.map((c) => c.name)).toEqual(["task.update"]);
+    const [action] = [...kept.values()];
+    expect(action).toMatchObject({ kind: "finish", task: "t_00001", base: first.asOf(10) });
+
+    // The page is back: the check-off goes out once, as the person made it.
+    const next = new World([task(1, { title: "Oil the gate", version: 2 })], undefined, undefined, {
+      actions,
+      answers: { "task.finish": () => finished(first, 12) },
+    });
+    await flush();
+    expect(next.calls).toEqual([
+      {
+        name: "task.finish",
+        input: { task: "t_00001", base: first.asOf(10), request_id: action?.request },
+      },
+    ]);
+    expect(kept.size).toBe(0);
+  });
+
+  test("a reopen and an Undo behind edits come back the same way, in the order they were made; the Undo names the edit's commit from its receipt", async () => {
+    const { kept, actions } = browser();
+    const page = leaving();
+    const done = task(2, { lifecycle: "completed", completed_at: Date.UTC(2026, 10, 2) });
+    const first = new World([task(1), done], undefined, page.gone, { actions });
+    first.answer("task.update", never);
+    first.answer("task.update", never);
+    first.edits.edit(done, statusChange("waiting"));
+    first.edits.reopen(done);
+    first.edits.edit(task(1), titleChange("Oil the gate"));
+    // Ctrl+Z: the rename is the newest step, still without its answer.
+    void first.edits.undo();
+    await flush();
+    const rename = String(first.calls[1]?.input["request_id"]);
+    page.go();
+    await flush();
+    expect(first.calls.map((c) => c.name)).toEqual(["task.update", "task.update"]);
+    const [reopen, undo] = [...kept.values()];
+    expect(reopen).toMatchObject({ kind: "reopen", task: "t_00002" });
+    expect(undo).toMatchObject({ kind: "undo", of: rename });
+
+    const next = new World([task(1), done], undefined, undefined, {
+      actions,
+      answers: {
+        "task.reopen": () => ({
+          result: "reopened",
+          task: "M-2",
+          lifecycle: "active",
+          status: "open",
+          as_of: first.asOf(13),
+        }),
+        "receipt.get": (input) => ({
+          found: true,
+          request: input["request"],
+          status: "applied",
+          decided_at: "2026-11-12T10:00:00.000Z",
+          as_of: first.asOf(11),
+          incarnation: INCARNATION,
+          commit: commit(11),
+          results: [{ i: 0, status: "updated", id: "t_00001", version: 2 }],
+          warnings: [],
+        }),
+        "history.undo": () => ({
+          result: "undone",
+          commit: commit(14),
+          tasks: ["M-1"],
+          task_count: 1,
+          as_of: first.asOf(14),
+        }),
+      },
+    });
+    await flush();
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    expect(next.calls).toEqual([
+      {
+        name: "task.reopen",
+        input: {
+          task: "t_00002",
+          base: reopen && "base" in reopen ? reopen.base : "",
+          request_id: reopen?.request,
+        },
+      },
+      { name: "receipt.get", input: { request: rename } },
+      { name: "history.undo", input: { commit: commit(11), request_id: undo?.request } },
+    ]);
+    expect(kept.size).toBe(0);
+  });
+
+  test("a kept check-off whose answer does not come stays kept for the next page; a refusal says so and lets it go", async () => {
+    const { kept, actions } = browser();
+    kept.set("rq-kept", { kind: "finish", request: "rq-kept", task: "t_00001", ref: "M-1" });
+    const away = new World([task(1)], undefined, undefined, { actions });
+    for (let i = 0; i < 40; i += 1) {
+      away.answer("task.finish", never);
+      away.answer("receipt.get", () => ({ found: false }));
+    }
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    expect(away.calls.filter((c) => c.name === "task.finish").length).toBeGreaterThan(0);
+    expect(kept.has("rq-kept")).toBe(true);
+
+    const refused = new World([task(1)], undefined, undefined, {
+      actions,
+      answers: {
+        "task.finish": () => {
+          throw appError("conflict", {
+            conflicts: [
+              {
+                task: "M-1",
+                field: "lifecycle",
+                version: 3,
+                by: "Codex",
+                at: "2026-11-12T10:00:00.000Z",
+              },
+            ],
+          });
+        },
+      },
+    });
+    await flush();
+    expect(refused.calls.map((c) => c.input["request_id"])).toEqual(["rq-kept"]);
+    expect(kept.size).toBe(0);
+    expect(refused.lastToast()).toMatchObject({
+      kind: "error",
+      text: { id: "toast.checkFailedRef", values: { ref: "M-1" } },
+    });
   });
 });

@@ -5431,7 +5431,7 @@
     },
     {
       "id": "A5.3.13.e2e.search-address",
-      "title": "In Chromium and Firefox against the real service: a capture draft switched to search, the search typed on and its expanded result leave the address free of the words, typing adds no history entry per keystroke, and a reload, Back and Forward bring the search back",
+      "title": "In Chromium and Firefox against the real service: a search's address holds its words, filters and expanded result, so the address opened in a new tab, a reload, Back and Forward show that search; typing adds no history entry per letter, and Back leaves the search in one step",
       "source": "A5 3.3, A5 3.13",
       "owner": "M5",
       "kind": "ci",
@@ -6065,6 +6065,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.12.e2e.checkoff-reload",
+      "title": "In Chromium and Firefox against the real service: with a rename's answer held, a task checked off behind it and the page reloaded before the answer, the next page sends the check-off once and the task ends up checked off",
+      "source": "A5 3.11, A5 3.12",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.12.e2e.checkoff-leaves",
       "title": "In Chromium and Firefox against the real service, in a list of a few hundred tasks: a check-off shows the row checked and takes it away while its answer is held, and a move to the Trash by its key takes it away at once; neither row shows open again once the answer and the feed come",
       "source": "A5 3.12, A5 3.15",
@@ -6124,6 +6132,14 @@
       "id": "A5.3.11.web.kept-edits",
       "title": "A field edit the service did not take is kept per space and comes back after a reload as its control made it, ready for Try again; a value no control could make, or kept under another name, never comes back and is removed; a tab removes only what it kept or read; a task gone for good takes its edits along",
       "source": "A5 3.11, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.11.web.kept-actions",
+      "title": "A check-off, a reopen, an undo or a redo still waiting behind another request when the page goes is kept in the browser with the request ID it got when the person acted; the next page sends it once in its turn, an undo of a write whose commit was not known yet naming it from that write's receipt; one without an answer stays kept, a refusal says so and lets it go; a kept value of another shape is removed",
+      "source": "A5 3.11, A5 3.12",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -6926,6 +6942,13 @@
     {
       "id": "A5.while-away.e2e.title-draft",
       "title": "In Chromium and Firefox: a title typed and not yet saved is back in its editor after a reload and is not saved by itself; Escape lets it go for good; a second tab shows it as typed in another tab and its own Escape does not erase it; on a task finished meanwhile the words show with Copy and Discard instead of an editor; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.e2e.waiting-draft",
+      "title": "In Chromium and Firefox: words typed into Waiting on and not yet saved are back in the field after a reload and are not saved by themselves; Escape puts the saved value back and lets them go for good",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

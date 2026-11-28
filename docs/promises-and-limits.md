@@ -446,6 +446,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   Try again sends it against what you saw when you made it, so a change made since is shown to you
   first. Another tab's edit, or a closed tab's, shows with Copy and Discard: to send its words,
   copy them into the field.
+- A check-off, a reopen, a move to or from the Trash, an Undo or a Redo still waiting behind your
+  previous edit when the page closed is made when the page next opens in this browser, once.
 - A button on a task's row or card (the box, the star, a move, a status, the area, Move to Trash),
   a search result's included, changes the task as that row shows it. If someone changed it since,
   also while the row stayed under your focus, nothing is overwritten: the page says who changed it.
@@ -460,6 +462,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A title you are typing and have not saved comes back in its editor after a reload or a crash of
   the tab, in that tab, and is saved only when you save it. Another tab shows it as typed there
   and does not erase it; on a task finished meanwhile it stays with Copy and Discard.
+- Who a task waits on, while you type it, comes back in its field after a reload in that tab, and
+  is saved as when you leave the field. Escape puts the saved value back and lets the words go.
 - A page left open moves on to a new day by itself: at midnight, within a minute of the computer
   waking, and when the tab is shown again, its views, a search and its dates follow the new day,
   and what you are typing, an open card and your place stay. The page counts days on the
@@ -471,10 +475,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A website you visit cannot read or change your tasks through the page.
 - Logs hold no task text, and there is no telemetry. Task text leaves TTasks only where you send it:
   what you copy, what an agent reads through its connection, and what a phone you paired reads.
-- What you type in the top field, a search included, stays out of the page's address, so a copied
-  link and the browser's history list hold the search page but not your words. A reload, Back and
-  Forward bring the search back in that tab; the search's link opened in another tab is an empty
-  search.
+- A search's words and filters are in the page's address, so a copied link, a bookmark and a
+  reload open that search. The browser's history, and anything that syncs addresses, holds them
+  too: one entry per search, not per letter. A new task's words stay out of the address.
 - A paste into the top field that is more than a title loses no word: its first line becomes the
   title, and the rest is shown under the field and goes in the new task's context, also after a
   reload. A search keeps the first 500 characters and says so.

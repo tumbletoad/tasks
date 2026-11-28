@@ -1,8 +1,9 @@
 // A check-off and a move to the Trash, against the real service in Chromium and Firefox: in a list
 // of a few hundred tasks the row shows checked and leaves while the write is still on its way, an
 // expanded card and a search result stay checked, and none shows open again, however late the
-// answer comes. The page's answer is held with a route;
-// each frame's state of the row is recorded in the page. Fixture data only.
+// answer comes; a check-off waiting behind a rename when the page reloads is made by the next
+// page. The page's answer is held with a route; each frame's state of the row is recorded in the
+// page. Fixture data only.
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
 import { showsSpace, signIn } from "./page.ts";
@@ -179,3 +180,50 @@ async function checkOffAndTrash(page: Page, world: World): Promise<void> {
   expect(await trashSeen()).toEqual(["open", "gone"]);
   await page.unrouteAll({ behavior: "ignoreErrors" });
 }
+
+test.describe("[A5.3.12.e2e.checkoff-reload] A check-off waiting behind an edit when the page reloads is still made", () => {
+  test("with a rename's answer held, the task is checked off behind it and the page reloaded: the next page checks it off, once", async ({
+    page,
+    world,
+  }) => {
+    const added = (await world.op(world.mira.id, "task.add", {
+      tasks: [{ title: "Sweep the porch", area: "home" }],
+    })) as { tasks: { ref: string }[] };
+    const ref = added.tasks[0]?.ref;
+    if (ref === undefined) throw new Error("the task was not added");
+    const lifecycleOf = async () =>
+      (
+        (await world.op(world.mira.id, "task.get", { task: ref })) as {
+          task: { lifecycle: string };
+        }
+      ).task.lifecycle;
+    // The page's own clock: the rename stays without its answer for as long as the test needs.
+    await page.clock.install();
+    await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);
+    await showsSpace(page, world.mira.name);
+    const row = rowOf(page, ref);
+    await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true", {
+      timeout: SLOW_MS,
+    });
+    let finishes = 0;
+    page.on("request", (request) => {
+      if (request.url().endsWith("/api/v1/op/task.finish")) finishes += 1;
+    });
+    const release = await hold(page, "task.update");
+    await row.locator('[data-part="title"]').focus();
+    await page.keyboard.press("F2");
+    await page.keyboard.press("End");
+    await page.keyboard.type(" today");
+    await page.keyboard.press("Enter");
+    await row.locator('[data-part="check"]').first().click();
+    await page.clock.runFor(1_000);
+    expect(finishes).toBe(0);
+
+    await page.reload();
+    await showsSpace(page, world.mira.name);
+    await expect.poll(lifecycleOf, { timeout: SLOW_MS }).toBe("completed");
+    expect(finishes).toBe(1);
+    release();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  });
+});

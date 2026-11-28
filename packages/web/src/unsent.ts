@@ -11,7 +11,7 @@
 // at this origin could have written it), so each kind is read by its shape and shown only as text.
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { changeOf, type Field, type Words } from "./edit/change.ts";
-import type { Unsaved, UnsavedKeeper } from "./edit/edits.ts";
+import type { ActionKeeper, KeptAction, Unsaved, UnsavedKeeper } from "./edit/edits.ts";
 import { browserKept, onKept, onKeptUnder, tabKept } from "./kept.ts";
 
 /** The composer's own limit: a longer draft is not kept. */
@@ -536,6 +536,78 @@ export function unsavedKeeper(space: string): UnsavedKeeper {
           listener(unsaved);
         }
       });
+    },
+  };
+}
+
+// A check-off, a reopen, a move to or from the Trash, an undo or a redo that waited behind another
+// request when a page went (edit/edits.ts): kept for the browser per space, under its request ID,
+// until the next page that opens the space has sent it and it is decided. Two pages that send one
+// are applied once: it carries the same request ID.
+
+const actionPrefix = (space: string) => `action.${space}.`;
+const COMMIT = /^op_[0-9a-z]{26}$/u;
+const LIFECYCLE: ReadonlySet<string> = new Set(["finish", "reopen", "trash", "restore"]);
+/** Orders the actions one page keeps within one millisecond. */
+let kept = 0;
+
+/** A kept action, read by its shape, with when it was kept. */
+function actionOf(
+  value: unknown,
+): { readonly action: KeptAction; readonly at: number } | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { kind, request, task, ref, base, commit, of, at } = value as Record<string, unknown>;
+  if (typeof request !== "string" || !NOTE_ID.test(request)) return undefined;
+  if (typeof at !== "number" || !Number.isFinite(at)) return undefined;
+  if (typeof kind === "string" && LIFECYCLE.has(kind)) {
+    if (typeof task !== "string" || !TASK_ID.test(task)) return undefined;
+    if (typeof ref !== "string" || !REF.test(ref)) return undefined;
+    if (base !== undefined && (typeof base !== "string" || !AS_OF.test(base))) return undefined;
+    const action = {
+      kind: kind as "finish" | "reopen" | "trash" | "restore",
+      request,
+      task,
+      ref,
+      ...(base === undefined ? {} : { base }),
+    };
+    return { action, at };
+  }
+  if (kind !== "undo" && kind !== "redo") return undefined;
+  if (typeof commit === "string" && COMMIT.test(commit) && of === undefined) {
+    return { action: { kind, request, commit }, at };
+  }
+  if (kind === "undo" && typeof of === "string" && NOTE_ID.test(of) && commit === undefined) {
+    return { action: { kind, request, of }, at };
+  }
+  return undefined;
+}
+
+/** The space's kept actions, for the edits of every page that opens it. */
+export function actionKeeper(space: string): ActionKeeper {
+  const prefix = actionPrefix(space);
+  return {
+    load() {
+      return browserKept
+        .names(prefix)
+        .flatMap((name) => {
+          const found = actionOf(browserKept.json(name));
+          if (found !== undefined && name === prefix + found.action.request) return [found];
+          // Not one of ours: it is removed, so it is never read again as anything.
+          browserKept.keep(name, undefined);
+          return [];
+        })
+        .sort((a, b) => a.at - b.at)
+        .map(({ action }) => action);
+    },
+    keep(action) {
+      kept += 1;
+      browserKept.keep(
+        prefix + action.request,
+        JSON.stringify({ ...action, at: Date.now() + kept / 1000 }),
+      );
+    },
+    done(request) {
+      browserKept.keep(prefix + request, undefined);
     },
   };
 }

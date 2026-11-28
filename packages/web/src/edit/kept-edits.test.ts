@@ -20,7 +20,14 @@ import {
   type Change,
 } from "./change.ts";
 import type { Unsaved } from "./edits.ts";
-import { forgetTask, unsavedKeeper, unsavedOf, unsentOf, unsentTasks } from "../unsent.ts";
+import {
+  actionKeeper,
+  forgetTask,
+  unsavedKeeper,
+  unsavedOf,
+  unsentOf,
+  unsentTasks,
+} from "../unsent.ts";
 
 const SPACE = "sp_0123456789abcdefghjkmnpqrs";
 const OTHER = "sp_abcdefghjkmnpqrs0123456789";
@@ -290,5 +297,39 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
         source: { kind: "title", title: "A" },
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("[A5.3.11.web.kept-actions] an action that waited when the page went is kept for the browser until it is decided", () => {
+  test("kept actions come back in the order they were kept, for their space only, and go once done; a value of another shape is removed", () => {
+    const request = () => crypto.randomUUID();
+    const finish = {
+      kind: "finish",
+      request: request(),
+      task: "tk_00001",
+      ref: "M-1",
+      base: "1.12.0a1b2c3d",
+    } as const;
+    const undo = { kind: "undo", request: request(), of: request() } as const;
+    const redo = {
+      kind: "redo",
+      request: request(),
+      commit: `op_${"7".padStart(26, "0")}`,
+    } as const;
+    const keeper = actionKeeper(SPACE);
+    keeper.keep(finish);
+    keeper.keep(undo);
+    keeper.keep(redo);
+    expect(actionKeeper(SPACE).load()).toEqual([finish, undo, redo]);
+    expect(actionKeeper(OTHER).load()).toEqual([]);
+    const hostile = `${PRODUCT_ID}.action.${SPACE}.${request()}`;
+    localStorage.setItem(
+      hostile,
+      JSON.stringify({ kind: "finish", request: "x", task: "tk_1", at: 1 }),
+    );
+    expect(actionKeeper(SPACE).load()).toEqual([finish, undo, redo]);
+    expect(localStorage.getItem(hostile)).toBeNull();
+    keeper.done(undo.request);
+    expect(actionKeeper(SPACE).load()).toEqual([finish, redo]);
   });
 });

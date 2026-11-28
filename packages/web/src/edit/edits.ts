@@ -34,7 +34,9 @@
 //
 // The queue waits for outcomes, never for ever: a request that gets no answer is asked about by
 // its own ID, and what waits behind a request whose outcome cannot be learned stays with the
-// person as not saved, never sent out of order (calls.ts).
+// person as not saved, never sent out of order (calls.ts). What still waits when the page goes is
+// kept in the browser: a field edit as not saved, a check-off, a move to or from the Trash, an undo
+// or a redo as an action that the page's next load sends with the request ID it had (`KeptAction`).
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { newerSaid, type NewerWorkEntry, type ShortList } from "@ttasks/contracts/newer-work";
 import type { Msg } from "../row/model.ts";
@@ -160,7 +162,12 @@ export interface Remote {
 
 export interface EditDeps {
   readonly client: Pick<Client, "task" | "history" | "receipt">;
-  readonly write: <T>(send: (request: string) => Promise<T>, overlay?: Overlay) => Sent<T>;
+  /** `request` fixes the request ID: a kept action sent again. */
+  readonly write: <T>(
+    send: (request: string) => Promise<T>,
+    overlay?: Overlay,
+    request?: string,
+  ) => Sent<T>;
   /** The applied cursor as an `as_of`: what the rows on screen show. */
   readonly asOf: () => string | undefined;
   /** The service refused the token or the build: the page's state says so already. */
@@ -177,8 +184,35 @@ export interface EditDeps {
   readonly alive?: () => boolean;
   readonly timers?: Timers;
   readonly keeper?: UnsavedKeeper;
+  readonly actions?: ActionKeeper;
   /** Resolves when the page goes away (`pageGone`). */
   readonly leaving?: () => Promise<unknown>;
+}
+
+/**
+ * A check-off, a reopen, a move to or from the Trash, an undo or a redo that still waited behind
+ * another request when the page went. The page's next load sends it with the request ID it got
+ * when the person acted, so the service applies it once, also when the request reached it before.
+ */
+export type KeptAction =
+  | {
+      readonly kind: "finish" | "reopen" | "trash" | "restore";
+      readonly request: string;
+      readonly task: string;
+      readonly ref: string;
+      readonly base?: string;
+    }
+  | { readonly kind: "undo" | "redo"; readonly request: string; readonly commit: string }
+  /** An undo of a write whose commit the page did not know yet: its receipt names it. */
+  | { readonly kind: "undo"; readonly request: string; readonly of: string };
+
+/** Where those actions are kept until they are decided (unsent.ts). */
+export interface ActionKeeper {
+  /** The space's kept actions, in the order the person took them. */
+  load(): KeptAction[];
+  keep(action: KeptAction): void;
+  /** The action is decided, or has nothing left to do: it goes. */
+  done(request: string): void;
 }
 
 /** An undo's commit: named, or the commit of the tab's own write, resolved in the undo's turn. */
@@ -186,6 +220,13 @@ export type Named = string | Pick<Sent<unknown>, "commit" | "request">;
 
 /** The call that carries a request once it is sent (none when it was not). */
 type Carried<T> = Promise<Pick<Call<T>, "decided"> | undefined>;
+
+/** How `#sendWith` sends: an overlay, a kept action's own request ID, and what is kept if the page goes. */
+interface SendOptions {
+  readonly overlay?: Overlay;
+  readonly request?: string;
+  readonly kept?: (request: string) => KeptAction;
+}
 
 /** A write of the tab's, with its call. */
 type Write<T> = Sent<T> & { readonly call: Carried<T> };
@@ -584,6 +625,7 @@ export class Edits {
     deps.onChanges(({ changes }) => {
       this.#heard(changes);
     });
+    for (const action of deps.actions?.load() ?? []) this.#resend(action);
   }
 
   readonly subscribe = (listener: () => void): (() => void) => {
@@ -818,14 +860,7 @@ export class Edits {
     this.#leave(task, {});
     // The store's row goes with the write, so the row never shows open again while it is on its
     // way, however late the feed confirms it.
-    const sent = this.#sendWith(
-      task.id,
-      ["lifecycle"],
-      this.seen(task, ["lifecycle"]),
-      (base, request) =>
-        this.#deps.client.task.finish({ task: task.id, base: base ?? "", request_id: request }),
-      { tasks: [{ id: task.id, remove: true }] },
-    );
+    const sent = this.#lifecycle("finish", task, this.seen(task, ["lifecycle"]));
     this.#checks.set(task.id, sent);
     this.#checkedOff.add(sent.request);
     this.#finishing(sent, { ...task, lifecycle: "completed", completed_at: Date.now() });
@@ -866,17 +901,7 @@ export class Edits {
    * finishes it again by its own commit. Its earlier outcome and learnings stay with it.
    */
   reopen(task: TaskRow): void {
-    const sent = this.#sendWith(
-      task.id,
-      ["lifecycle"],
-      this.seen(task, ["lifecycle"]),
-      (base, request) =>
-        this.#deps.client.task.reopen({
-          task: task.id,
-          base: base ?? "",
-          request_id: request,
-        }),
-    );
+    const sent = this.#lifecycle("reopen", task, this.seen(task, ["lifecycle"]));
     const reopened: Omit<Toast, "key"> = {
       kind: "undo",
       text: { id: "toast.reopened" },
@@ -913,14 +938,7 @@ export class Edits {
    * works on the task goes on: the toast says so.
    */
   trash(task: TaskRow): void {
-    const sent = this.#sendWith(
-      task.id,
-      ["deleted"],
-      this.seen(task, ["deleted"]),
-      (base, request) =>
-        this.#deps.client.task.delete({ tasks: [task.id], base: base ?? "", request_id: request }),
-      { tasks: [{ id: task.id, remove: true }] },
-    );
+    const sent = this.#trashing("trash", task, this.seen(task, ["deleted"]));
     this.#finishing(sent, { ...task, deleted_at: Date.now() });
     const moved: Omit<Toast, "key"> = {
       kind: "undo",
@@ -962,18 +980,7 @@ export class Edits {
    * commit. The toast names where it is back, once the service said.
    */
   restore(task: Pick<TaskRow, "id" | "ref" | "version">): void {
-    const sent = this.#sendWith(
-      task.id,
-      ["deleted"],
-      this.seen(task, ["deleted"]),
-      (base, request) =>
-        this.#deps.client.task.delete({
-          tasks: [task.id],
-          restore: true,
-          base: base ?? "",
-          request_id: request,
-        }),
-    );
+    const sent = this.#trashing("restore", task, this.seen(task, ["deleted"]));
     const undo = this.#stepped(sent);
     const toast = this.#toast({
       kind: "undo",
@@ -1035,17 +1042,19 @@ export class Edits {
         }),
       // A run that waits for an answer waits no more once its question is set aside.
       {
-        tasks: [
-          {
-            id: task.id,
-            set: {},
-            clear: [
-              "questions",
-              "questions_more",
-              ...(task.run?.state === "needs_you" ? (["run"] as const) : []),
-            ],
-          },
-        ],
+        overlay: {
+          tasks: [
+            {
+              id: task.id,
+              set: {},
+              clear: [
+                "questions",
+                "questions_more",
+                ...(task.run?.state === "needs_you" ? (["run"] as const) : []),
+              ],
+            },
+          ],
+        },
       },
     );
     const dismissed: Omit<Toast, "key"> = {
@@ -1291,13 +1300,23 @@ export class Edits {
   #history(
     kind: "undo" | "redo",
     take: () => Named | undefined,
-    asked: { commit?: string } = {},
+    asked: { commit?: string; readonly request?: string } = {},
   ): { answer: Promise<HistoryResult>; call: Carried<HistoryResult> } {
     const ahead = allOf(this.#ahead());
     const { turn, made, call: carried } = this.#turn<HistoryResult>(ahead);
+    // Fixed when the person acts: a kept undo sent again by the next load is applied once.
+    const request = asked.request ?? this.#deps.newRequest();
+    this.#mine.add(request);
     const run = (async (): Promise<HistoryResult> => {
       try {
-        if (!(await ahead.wait())) throw new NotSent();
+        const known = await this.#turnOf(ahead, (): KeptAction | undefined => {
+          const step = take();
+          if (typeof step === "string") return { kind, request, commit: step };
+          return step === undefined || kind === "redo"
+            ? undefined
+            : { kind, request, of: step.request };
+        });
+        if (!known) throw new NotSent();
         const step = take();
         if (step === undefined) throw new NothingLeft();
         const named = await this.#commitOf(step);
@@ -1306,8 +1325,6 @@ export class Edits {
           throw new AlreadyDone();
         }
         asked.commit = named;
-        const request = this.#deps.newRequest();
-        this.#mine.add(request);
         const input = { commit: named, request_id: request };
         const call = this.#call<HistoryResult>(
           request,
@@ -1332,6 +1349,74 @@ export class Edits {
       if (this.#gate === turn) this.#gate = undefined;
     });
     return { answer: run, call: carried };
+  }
+
+  /**
+   * Whether `ahead`'s outcome is known. The page going away first ends the wait as false, and
+   * `kept` is kept for the next load to send: sent now, the request could arrive before the one it
+   * waits for.
+   */
+  #turnOf(ahead: Turn, kept: () => KeptAction | undefined): Promise<boolean> {
+    let waiting = true;
+    const gone = (this.#deps.leaving ?? (() => pageGone))().then(() => {
+      const action = waiting ? kept() : undefined;
+      if (action !== undefined) this.#deps.actions?.keep(action);
+      return false;
+    });
+    const known = Promise.race([ahead.wait(), gone]);
+    void known.then(() => {
+      waiting = false;
+    });
+    return known;
+  }
+
+  /**
+   * An action kept when the page last went, sent again with its own request ID, in its turn. It
+   * goes once decided; a refusal says so. One whose outcome stays unknown is kept for the next load.
+   */
+  #resend(action: KeptAction): void {
+    const settle = (decision: Decision<unknown>, refused: (error: unknown) => void) => {
+      const unknown = decision.ok
+        ? false
+        : decision.error instanceof Unanswered || decision.error instanceof NotSent;
+      if (unknown) return;
+      this.#deps.actions?.done(action.request);
+      if (!decision.ok) refused(decision.error);
+    };
+    if ("task" in action) {
+      const { kind } = action;
+      const row = { id: action.task, ref: action.ref };
+      const sent =
+        kind === "finish" || kind === "reopen"
+          ? this.#lifecycle(kind, row, action.base, action.request)
+          : this.#trashing(kind, row, action.base, action.request);
+      const failed = {
+        finish: "toast.checkFailedRef",
+        reopen: "toast.reopenFailedRef",
+        trash: "toast.trashFailed",
+        restore: "toast.restoreFailed",
+      } as const;
+      void this.#outcome<unknown>(sent.answer, sent.call, (decision, say) => {
+        settle(decision, (error) => {
+          if (this.#deps.failed(error)) return;
+          say({
+            kind: "error",
+            text: readOnlyText(error) ?? { id: failed[kind], values: { ref: action.ref } },
+          });
+        });
+      });
+      return;
+    }
+    const step: Named =
+      "of" in action ? { commit: Promise.resolve(undefined), request: action.of } : action.commit;
+    const { answer, call } = this.#history(action.kind, () => step, { request: action.request });
+    void this.#outcome(answer, call, (decision, say) => {
+      settle(decision, (error) => {
+        // The write it named never landed, or the step is undone already: nothing to take back.
+        if (error instanceof UnknownCommit || error instanceof AlreadyDone) return;
+        this.#historyFailed(error, say);
+      });
+    });
   }
 
   /** What an undo or redo waits for: every task's newest write, and the undo or redo before it. */
@@ -1524,7 +1609,7 @@ export class Edits {
           ...(base === undefined ? {} : { base }),
           request_id: request,
         }),
-      { tasks: [{ id: task, set, ...(clear === undefined ? {} : { clear }) }] },
+      { overlay: { tasks: [{ id: task, set, ...(clear === undefined ? {} : { clear }) }] } },
     );
   }
 
@@ -1561,15 +1646,85 @@ export class Edits {
   }
 
   /**
+   * A check-off or a reopen: one write of the task's lifecycle, kept as an action when the page
+   * goes before its turn. `request` is a kept action's own.
+   */
+  #lifecycle(
+    kind: "finish" | "reopen",
+    task: Pick<TaskRow, "id" | "ref">,
+    seen: string | undefined,
+    request?: string,
+  ) {
+    const { client } = this.#deps;
+    type Result =
+      Awaited<ReturnType<Client["task"]["finish"]>> | Awaited<ReturnType<Client["task"]["reopen"]>>;
+    return this.#sendWith<Result>(
+      task.id,
+      ["lifecycle"],
+      seen,
+      (base, id) => {
+        const input = { task: task.id, base: base ?? "", request_id: id };
+        return kind === "finish" ? client.task.finish(input) : client.task.reopen(input);
+      },
+      this.#keptAs(kind, task, seen, request),
+    );
+  }
+
+  /** A move to the Trash or out of it, as `#lifecycle`. */
+  #trashing(
+    kind: "trash" | "restore",
+    task: Pick<TaskRow, "id" | "ref">,
+    seen: string | undefined,
+    request?: string,
+  ) {
+    return this.#sendWith(
+      task.id,
+      ["deleted"],
+      seen,
+      (base, id) =>
+        this.#deps.client.task.delete({
+          tasks: [task.id],
+          ...(kind === "restore" ? { restore: true } : {}),
+          base: base ?? "",
+          request_id: id,
+        }),
+      this.#keptAs(kind, task, seen, request),
+    );
+  }
+
+  /** How a lifecycle write is sent and kept: a check-off and a move to the Trash take the row away. */
+  #keptAs(
+    kind: "finish" | "reopen" | "trash" | "restore",
+    task: Pick<TaskRow, "id" | "ref">,
+    seen: string | undefined,
+    request: string | undefined,
+  ): SendOptions {
+    return {
+      ...(kind === "finish" || kind === "trash"
+        ? { overlay: { tasks: [{ id: task.id, remove: true }] } }
+        : {}),
+      ...(request === undefined ? {} : { request }),
+      kept: (id) => ({
+        kind,
+        request: id,
+        task: task.id,
+        ref: task.ref,
+        ...(seen === undefined ? {} : { base: seen }),
+      }),
+    };
+  }
+
+  /**
    * A write of one task through the store, in turn after the task's earlier writes. `call` gets the
-   * base (`#baseFor`, decided when it is sent) and the store's request ID.
+   * base (`#baseFor`, decided when it is sent) and the store's request ID. `kept` is the action the
+   * next load sends when the page goes before its turn.
    */
   #sendWith<T extends { as_of?: string; result?: unknown }>(
     task: string,
     fields: readonly string[],
     seen: string | undefined,
     call: (base: string | undefined, request: string) => Promise<T>,
-    overlay?: Overlay,
+    options: SendOptions = {},
   ): Write<T> {
     // Sent once the task's earlier writes and any undo or redo before it have their outcome.
     const waits = [this.#chains.get(task), this.#gate].filter((turn) => turn !== undefined);
@@ -1582,29 +1737,30 @@ export class Edits {
       // The task's writes answer in turn, so this is its newest.
       for (const field of fields) this.#own.set(keyOf(task, field), result.as_of);
     };
-    const sent = this.#deps.write(async (request) => {
-      try {
-        // The page going away ends the wait as not sent: the edit is kept as not saved and offered
-        // after the reload. Sent now, it could arrive before the edit it waits for.
-        if (waits.length > 0) {
-          const gone = (this.#deps.leaving ?? (() => pageGone))().then(() => false);
-          if (!(await Promise.race([ahead.wait(), gone]))) throw new NotSent();
+    const sent = this.#deps.write(
+      async (request) => {
+        try {
+          if (waits.length > 0 && !(await this.#turnOf(ahead, () => options.kept?.(request)))) {
+            throw new NotSent();
+          }
+          // The same base for a second send with the same request ID: one intent, sent again.
+          const base = this.#baseFor(task, fields, seen);
+          const one = this.#call(
+            request,
+            () => call(base, request),
+            (found) => writeOf(found) as Decision<T>,
+            note,
+          );
+          made(one);
+          return await one.answer;
+        } catch (error) {
+          made(undefined);
+          throw error;
         }
-        // The same base for a second send with the same request ID: one intent, sent again.
-        const base = this.#baseFor(task, fields, seen);
-        const one = this.#call(
-          request,
-          () => call(base, request),
-          (found) => writeOf(found) as Decision<T>,
-          note,
-        );
-        made(one);
-        return await one.answer;
-      } catch (error) {
-        made(undefined);
-        throw error;
-      }
-    }, overlay);
+      },
+      options.overlay,
+      options.request,
+    );
     this.#mine.add(sent.request);
     this.#chains.set(task, turn);
     this.#release(sent.answer, () => {
