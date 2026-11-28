@@ -175,7 +175,7 @@ describe("[A5.trash.web.unsent] every unsent word goes through one module", () =
     keepDraft(SPACE, TASK, "Ask about the deposit");
     expect(heard).toBe(1);
     // Another tab keeps each kind: the storage event is all this tab gets.
-    for (const kind of ["draft", "note", "title", "text", "unsaved"]) {
+    for (const kind of ["draft", "note", "title", "text", "edit"]) {
       window.dispatchEvent(
         new StorageEvent("storage", {
           key: `${PRODUCT_ID}.${kind}.${SPACE}.${TASK}`,
