@@ -11,7 +11,7 @@
 // As a program it listens on the named pipe `ttasks-test-standin-<token>-<pid>` on Windows and
 // carries `--token=<token>` in its arguments elsewhere, so the stand-in census counts it.
 import { spawn } from "node:child_process";
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import type { Readable, Writable } from "node:stream";
@@ -48,6 +48,8 @@ export interface FakeScenario {
   readonly log?: string;
   /** Program mode: the stand-in census token. */
   readonly token?: string;
+  /** Program mode: the turn does not complete while this file exists. */
+  readonly holdWhile?: string;
   /**
    * Program mode: the first command leaves an idle stand-in behind, with the token: detached, or
    * in the agent's own process group, as a command started in the background with `&` would.
@@ -60,6 +62,12 @@ export interface FakeScenario {
    * `{"tool": …, "tool_result": …}`.
    */
   readonly callTool?: { readonly calls: readonly ToolCall[]; readonly home: string };
+}
+
+/** Resolves once `file` no longer exists, looking every 50 ms. */
+export async function heldWhile(file: string | undefined): Promise<void> {
+  if (file === undefined) return;
+  while (existsSync(file)) await new Promise((resolve) => setTimeout(resolve, 50));
 }
 
 /** One call of a tool, as an agent makes it. */
@@ -318,6 +326,7 @@ export function serveCodex(input: Readable, output: Writable, scenario: FakeScen
           }
         }
       }
+      if (message["method"] === "turn/completed") await heldWhile(scenario.holdWhile);
       send(message);
       if (message["method"] === "turn/started" && isObject(params["turn"])) {
         turn = params["turn"]["id"];
