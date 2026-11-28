@@ -19,7 +19,15 @@ import { useId, useMemo, useState, type FocusEvent, type PointerEvent } from "re
 import { Button } from "react-aria-components";
 import { useIntl } from "react-intl";
 import { AddProject } from "../folder/AddProject.tsx";
-import { sidebarAreas, type ListedArea, type ListedProject } from "../groups.ts";
+import {
+  sidebarAreas,
+  type ListedArea,
+  type ListedProject,
+  groupCounts,
+  sidebarEntries,
+  VIEW_LABEL,
+  viewCounts,
+} from "@ttasks/client/today";
 import { useT } from "../i18n/intl.tsx";
 import { ChevronIcon, PlusIcon, SettingsIcon, ViewIcon } from "./Icons.tsx";
 import { useLive } from "../store/hooks.ts";
@@ -27,7 +35,6 @@ import css from "./Sidebar.module.css";
 import { SpaceSwitcher } from "./SpaceSwitcher.tsx";
 import { useMovedByOthers } from "../views/Trash.tsx";
 import { useFolds } from "./folds.ts";
-import { groupCounts, sidebarEntries, VIEW_LABEL, viewCounts } from "./views.ts";
 import { classes } from "./css.ts";
 
 const styles = classes(css, [

@@ -5,7 +5,7 @@
 // back-forward cache lets the next wait run in turn again.
 import { afterEach, describe, expect, test } from "vitest";
 import { LiveStore } from "../store/store.ts";
-import type { SnapshotMessage, TaskRow } from "../store/rows.ts";
+import type { SnapshotMessage, TaskRow } from "@ttasks/client/store";
 import { FakeFrames } from "../../test/fake-frames.ts";
 import { effortChange, priorityChange, statusChange, titleChange } from "./change.ts";
 import { Edits } from "./edits.ts";

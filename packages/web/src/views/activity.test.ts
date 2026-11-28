@@ -8,7 +8,7 @@ import { describe, expect, test, vi } from "vitest";
 import { PRODUCT_NAME, CLI_NAME } from "@ttasks/brand";
 import en from "../i18n/en.json" with { type: "json" };
 import type { MessageId, Values } from "../i18n/intl.tsx";
-import type { Clock } from "../row/dates.ts";
+import type { Clock } from "@ttasks/client/today";
 import type { Changes } from "../store/store.ts";
 import {
   ActivityLog,

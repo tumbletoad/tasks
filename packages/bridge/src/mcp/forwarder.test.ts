@@ -380,9 +380,9 @@ describe("[A2.3.7.bridge.restart] losing and finding the service", () => {
     expect(at).toEqual([500, 1_500, 3_500, 8_500, 18_500, 28_500]);
   });
 
-  test("a loss answers what was in flight, holds new requests, and binds again with mcp_init and an older service's handle", async () => {
-    const first = new FakeSession({ handle: "bh_first", space: "sp_test", state: "bound" });
-    const second = new FakeSession({ handle: "bh_second", space: "sp_test", state: "bound" });
+  test("a loss answers what was in flight, holds new requests, and binds again with mcp_init", async () => {
+    const first = new FakeSession({ space: "sp_test", state: "bound" });
+    const second = new FakeSession({ space: "sp_test", state: "bound" });
     const sessions = [first, second];
     const { line, output, contexts } = rig(() => {
       const next = sessions.shift();
@@ -419,21 +419,14 @@ describe("[A2.3.7.bridge.restart] losing and finding the service", () => {
     expect(output.lines).toHaveLength(4);
     expect(contexts[0]).toEqual({ ...BASE, env: { TTASKS_TICKET: "T" } });
     expect(contexts[1]).toMatchObject({
-      resume: { handle: "bh_first" },
       mcp_init: request(1, "initialize", { protocolVersion: "2025-06-18" }),
     });
+    expect(contexts[1]).not.toHaveProperty("resume");
   });
 
-  test("what the first bind answer named, a space or none, is sent back at every later bind and never replaced; an older service's answer without a space chosen is not none", async () => {
+  test("what the first bind answer named, a space or none, is sent back at every later bind and never replaced", async () => {
     const SPACE = "sp_00000000000000000000000001";
     const answer = (space: string | null) => ({ space, state: "unbound" });
-    // An older service (a rollback after the update) answers with a handle, and null while it
-    // has not chosen the connection's space yet.
-    const older = (space?: string | null) => ({
-      handle: "bh_fixture",
-      ...(space === undefined ? {} : { space }),
-      state: "unbound",
-    });
     for (const [answers, held] of [
       [
         [answer(null), answer(SPACE)],
@@ -444,12 +437,8 @@ describe("[A2.3.7.bridge.restart] losing and finding the service", () => {
         [SPACE, SPACE],
       ],
       [
-        [older(null), older(SPACE)],
+        [{ state: "unbound" }, answer(SPACE)],
         [undefined, SPACE],
-      ],
-      [
-        [older(), older(null)],
-        [undefined, undefined],
       ],
     ] as const) {
       const sessions = [...answers, answer(SPACE)].map((binding) => new FakeSession(binding));
@@ -538,7 +527,7 @@ describe("[A2.3.7.bridge.restart] losing and finding the service", () => {
 
   test("an initialize answered offline while a bind is on its way: the bind is redone with mcp_init", async () => {
     let connect: (session: LineSession) => void = () => undefined;
-    const late = new FakeSession({ handle: "bh_one", space: "sp_test", state: "bound" });
+    const late = new FakeSession({ space: "sp_test", state: "bound" });
     const final = new FakeSession();
     let calls = 0;
     const { line, output, contexts } = rig(() => {
@@ -563,12 +552,7 @@ describe("[A2.3.7.bridge.restart] losing and finding the service", () => {
     });
     expect(late.closed).toBe(true);
     expect(contexts[1]).not.toHaveProperty("mcp_init");
-    // An older service's closed bind was authenticated: its handle resumes it, so the older
-    // service makes no second binding.
-    expect(contexts[2]).toMatchObject({
-      mcp_init: { method: "initialize" },
-      resume: { handle: "bh_one" },
-    });
+    expect(contexts[2]).toMatchObject({ mcp_init: { method: "initialize" } });
   });
 
   test("offline, a session that began with server/discover stays in the 2026-07-28 era", async () => {

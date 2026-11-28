@@ -8,7 +8,7 @@
 // task's T3 Code thread is an agent of the task in the state T3 Code tells, with or without the
 // monitor, and that state is TTasks' own: nothing the monitor says mutes or moves it.
 import type { AgentsPicture, AgentsSession, AgentsThread } from "@ttasks/contracts/monitor";
-import { questionsWaiting, type TaskRow } from "../store/rows.ts";
+import { questionsWaiting, type TaskRow } from "@ttasks/client/store";
 
 /** What an agent of a task does, in the page's order: what asks most of the person first. */
 export const AGENT_STATES = [

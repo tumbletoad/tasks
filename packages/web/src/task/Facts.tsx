@@ -20,15 +20,14 @@ import {
 import { whoOf } from "../edit/edits.ts";
 import { Unsaved, useUnsaved } from "../edit/Unsaved.tsx";
 import { useEdits } from "../edit/useEdits.ts";
-import { areaSlots } from "../groups.ts";
+import { areaSlots, formatDay, formatInstant, type Clock } from "@ttasks/client/today";
 import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
 import { localDate } from "@ttasks/contracts/day";
 import { EFFORT_NAME_MAX } from "@ttasks/contracts/preferences";
-import { formatDay, formatInstant, type Clock } from "../row/dates.ts";
 import { contextFor, effortLevelOf, levelMsg, renderRow } from "../row/model.ts";
 import { sayMsg } from "../row/say.ts";
 import { useLive } from "../store/hooks.ts";
-import { effortOptions, type TaskRow } from "../store/rows.ts";
+import { effortOptions, type TaskRow } from "@ttasks/client/store";
 import { AreaPicker } from "./AreaPicker.tsx";
 import { DuePicker } from "./DuePicker.tsx";
 import css from "./Expanded.module.css";

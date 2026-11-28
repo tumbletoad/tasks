@@ -2,7 +2,7 @@
 // fill, inheriting the text colour. Drawn for this page from plain shapes. Every icon is
 // decorative: the control that holds it has its name from the message catalogue.
 import type { ReactNode } from "react";
-import type { View } from "./views.ts";
+import type { View } from "@ttasks/client/today";
 
 export function Icon({ children }: { readonly children: ReactNode }) {
   return (

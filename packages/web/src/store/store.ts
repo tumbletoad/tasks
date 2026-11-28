@@ -1,8 +1,8 @@
 // The live store (A5 3.15, 3.24 "a small liveStore module on useSyncExternalStore"): the one place
-// in the page that holds task data. It joins the core (core.ts: snapshot, batches, cursor), the
-// own writes (pending.ts: overlays until the feed confirms them) and per-frame batching
-// (frame.ts), and hands every view one immutable state through a small subscription interface.
-// No React here: hooks.ts puts React on top.
+// in the page that holds task data. It joins @ttasks/client/store's core (LiveCore: snapshot,
+// batches, cursor) and own writes (Pending: overlays until the feed confirms them) with per-frame
+// batching (frame.ts), and hands every view one immutable state through a small subscription
+// interface. No React here: hooks.ts puts React on top.
 //
 // What a frame does with the messages that came since the last one, in their order:
 // - applies each through the core; a snapshot supersedes what came before it;
@@ -10,11 +10,16 @@
 // - publishes one new state, so listeners hear once per frame;
 // - tells the views which tasks the frame touched (an expanded task refetches its thread) and
 //   what changed, row by row, for paged queries (queries.ts).
-import type { Instance } from "../api.ts";
-import { LiveCore, type Change, type ResnapshotReason } from "./core.ts";
-import { FrameQueue, type FrameClock } from "./frame.ts";
-import { incarnationTag, landedOf, Pending, type Overlay, type Settled } from "./pending.ts";
+import type { Instance } from "@ttasks/contracts/runs";
 import {
+  LiveCore,
+  type Change,
+  type ResnapshotReason,
+  incarnationTag,
+  landedOf,
+  Pending,
+  type Overlay,
+  type Settled,
   DEFAULT_SCALES,
   type AgentChange,
   type AreaRow,
@@ -26,7 +31,8 @@ import {
   type SnapshotMessage,
   type SpaceHead,
   type TaskRow,
-} from "./rows.ts";
+} from "@ttasks/client/store";
+import { FrameQueue, type FrameClock } from "./frame.ts";
 
 export type Phase = "starting" | "connecting" | "live" | "offline" | "signed_out" | "no_space";
 

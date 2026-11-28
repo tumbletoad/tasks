@@ -102,6 +102,11 @@ export const READS: readonly { changed: string; tests: readonly string[] }[] = [
       "packages/web/test/styles.test.ts",
     ],
   },
+  {
+    changed: "packages/client/src/**",
+    // The page's bundle holds it, and the catalogue's test finds the page's message keys in it.
+    tests: ["packages/web/test/build.test.ts", "packages/web/test/catalogue.test.ts"],
+  },
   { changed: "packages/contracts/**", tests: ["scripts/generated.test.ts"] },
   { changed: ".dependency-cruiser.cjs", tests: ["scripts/dependency-rules.test.ts"] },
   { changed: "packages/launcher-win/src/**", tests: ["packages/launcher-win/test/*.test.ts"] },

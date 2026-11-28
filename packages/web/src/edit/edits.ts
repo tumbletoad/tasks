@@ -38,9 +38,12 @@
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { newerSaid, type NewerWorkEntry, type ShortList } from "@ttasks/contracts/newer-work";
 import type { Msg } from "../row/model.ts";
-import type { Change as FeedChange } from "../store/core.ts";
-import type { Overlay } from "../store/pending.ts";
-import { questionsWaiting, type TaskRow } from "../store/rows.ts";
+import {
+  type Change as FeedChange,
+  type Overlay,
+  questionsWaiting,
+  type TaskRow,
+} from "@ttasks/client/store";
 import type { Changes, Sent } from "../store/store.ts";
 import {
   allOf,

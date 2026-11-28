@@ -67,12 +67,12 @@ describe("[A2.3.7.bridge.hygiene] arguments and the bind context", () => {
     ).toEqual({});
   });
 
-  test("the context holds the arguments, cwd, env and parent; mcp_init, resume and the held space only when known", () => {
+  test("the context holds the arguments, cwd, env and parent; mcp_init and the held space only when known", () => {
     const base = baseContext(
       { space: "sp_a", instance: null, app: "codex" },
       { env: { TTASKS_TICKET: "T", SECRET: "S" }, cwd: "/work/repo", ppid: 4802 },
     );
-    expect(bindContext(base, undefined, undefined)).toEqual({
+    expect(bindContext(base, undefined)).toEqual({
       space: "sp_a",
       instance: null,
       app: "codex",
@@ -81,12 +81,9 @@ describe("[A2.3.7.bridge.hygiene] arguments and the bind context", () => {
       parent: { pid: 4802 },
     });
     const init = { jsonrpc: "2.0", id: 0, method: "initialize", params: {} };
-    expect(bindContext(base, init, "bh_x")).toMatchObject({
-      mcp_init: init,
-      resume: { handle: "bh_x" },
-    });
-    expect(bindContext(base, init, undefined, "sp_b")).toMatchObject({ held_space: "sp_b" });
-    expect(bindContext(base, init, undefined)).not.toHaveProperty("held_space");
+    expect(bindContext(base, init)).toMatchObject({ mcp_init: init });
+    expect(bindContext(base, init, "sp_b")).toMatchObject({ held_space: "sp_b" });
+    expect(bindContext(base, init)).not.toHaveProperty("held_space");
     // A working folder the bind frame cannot carry is sent as null.
     for (const cwd of [undefined, "", "x".repeat(MAX_CWD + 1), "C:\\a\udc00b"]) {
       expect(

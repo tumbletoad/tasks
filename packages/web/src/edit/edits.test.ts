@@ -3,7 +3,7 @@
 // redo with their conflicts. The store is fed by hand, as the feed would (fake frames).
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { LiveStore } from "../store/store.ts";
-import type { BatchMessage, SnapshotMessage, TaskRow } from "../store/rows.ts";
+import type { BatchMessage, SnapshotMessage, TaskRow } from "@ttasks/client/store";
 import { FakeFrames } from "../../test/fake-frames.ts";
 import {
   dueChange,

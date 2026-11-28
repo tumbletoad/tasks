@@ -9,9 +9,8 @@
 // `[preferences]` (3.16), checked here with the preferences registry of @ttasks/contracts.
 // `[[custom_target]]`, `[override.*]` (A4) and `[remote]`,
 // `[security]` (A6) are reserved: the steps that use them check them, and until then they are
-// passed by without a problem. `[roots]` is retired: a project's folder took its place, and its
-// lines are left as they are with one `retired` warning. Any other top-level key is an
-// `unknown_key` warning.
+// passed by without a problem. Any other top-level key, like any key no reader takes, is an
+// `unknown_key` warning: it drops nothing.
 //
 // A bad entry is dropped with its problem, and the rest of its section stays. Problems in the file
 // itself and in `[[spaces]]` are fatal for the service (fatalProblems below): hosting a different
@@ -294,7 +293,6 @@ export function checkMachineConfig(
   for (const name of Object.keys(doc)) {
     if (!(SECTIONS as readonly string[]).includes(name)) problems.warn(name, "unknown_key");
   }
-  if (doc["roots"] !== undefined) problems.warn("roots", "retired");
 
   const service = tableOf(doc, "service", problems);
   const defaultText = service?.string("default_space");

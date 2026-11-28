@@ -94,7 +94,7 @@ export function unknownCommands(text: string): string[] {
     const strict = RUN_PLACE.test(before);
     const local = LOCAL_COMMANDS.find((c) => c.name === word);
     // A command that takes a subcommand is no English word after the command: its subcommand is
-    // checked wherever it stands ("add it with ttasks roots add").
+    // checked wherever it stands ("list them with ttasks run list").
     const named = local?.subcommands !== undefined && next !== undefined;
     if (!strict && !named && !NAME_PLACE.test(before)) continue;
     if (local === undefined) {

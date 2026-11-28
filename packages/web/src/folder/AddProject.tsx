@@ -12,7 +12,7 @@ import { useUnarchive } from "../app/Archived.tsx";
 import { useToast } from "../app/frame.ts";
 import setup from "../app/Setup.module.css";
 import { Session } from "../context.ts";
-import { liveGroups } from "../groups.ts";
+import { liveGroups } from "@ttasks/client/today";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
 import { sameName } from "../task/areaNames.ts";

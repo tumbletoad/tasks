@@ -27,20 +27,6 @@ import {
 } from "./problems.ts";
 
 // ---------------------------------------------------------------------------------------------
-// Roots: a named folder an older place was relative to. machine.toml's `[roots]` is no longer
-// read.
-
-/** A root ID: lower case, at most 32 characters, never changed. */
-export const ROOT_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/u;
-
-export interface Root {
-  readonly id: string;
-  readonly label: string;
-  readonly path: string;
-  readonly runs: boolean;
-}
-
-// ---------------------------------------------------------------------------------------------
 // [terminal]
 
 export const TERMINAL_APPS = [
@@ -239,12 +225,6 @@ export function servesSpace(
 }
 
 /**
- * Keys an instance no longer takes. Open leaves the prompt unsent wherever the app can, and T3 Code
- * opens on its own default profile and model, which the person changes in T3.
- */
-const RETIRED_KEYS = ["prompt", "t3_environment", "t3_provider_instance", "t3_model"] as const;
-
-/**
  * `[[instance]]`. An entry with any error is dropped (the rest stay), so a half-understood
  * instance is never launched. A second instance with an ID already taken, or of a single-instance
  * target, is dropped as well.
@@ -341,7 +321,6 @@ function readInstance(
   const viaLoginShell = r.bool("via_login_shell", false);
   const remoteAllowed = r.bool("remote_allowed", false);
   const enabled = r.bool("enabled", true);
-  for (const name of RETIRED_KEYS) r.retired(name);
   if (platform === "win32" && viaLoginShell) r.error("via_login_shell", "not_for_target");
   r.done();
   if (r.failed || id === undefined || target === undefined || label === undefined) {

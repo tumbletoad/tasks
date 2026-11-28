@@ -25,7 +25,8 @@ import {
   type ReactNode,
 } from "react";
 import { Link } from "@tanstack/react-router";
-import type { Instance, LastUsed, Receipt, Run } from "../api.ts";
+import type { Instance, LastUsed } from "@ttasks/contracts/runs";
+import type { Receipt, Run } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { useToast } from "../app/frame.ts";
@@ -49,7 +50,7 @@ import {
 } from "../row/icons.tsx";
 import { safeHref } from "../row/model.ts";
 import { useClock } from "../row/useClock.ts";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import { Composer, KeptDraft } from "./Composer.tsx";
 import type { Detail, DetailNote, SourceOutput } from "./detail.ts";
 import css from "./Expanded.module.css";

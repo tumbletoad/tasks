@@ -23,12 +23,11 @@ import type { Api } from "../api.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
-import type { SnapshotMessage } from "../store/rows.ts";
+import type { SnapshotMessage, TaskRow } from "@ttasks/client/store";
 import { TrashedPages } from "./TrashedPages.tsx";
 import { NodeLibrary } from "./Library.tsx";
 import { PageScreen } from "./PageScreen.tsx";
 import { Knowledge } from "./Knowledge.tsx";
-import type { TaskRow } from "../store/rows.ts";
 import { FakeFrames } from "../../test/fake-frames.ts";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

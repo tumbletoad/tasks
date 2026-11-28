@@ -581,3 +581,32 @@ export interface RunPatch {
   /** The final outcome, entering a final state only, once. */
   result?: RunResult;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Instances as a page or an app shows them (A5 3.6)
+
+/** An instance a page or an app draws a tile for: a key, a label, a monogram and a ring slot. */
+export interface Instance {
+  /** The instance's key in machine.toml's `[[instance]]`. */
+  readonly key: string;
+  /** The app's name, which menus group instances by: "Codex". */
+  readonly app: string;
+  /** Its name, the same everywhere: "Codex", or "Codex · work" beside another Codex. */
+  readonly label: string;
+  /** A neutral monogram, one or two characters: "Cx". */
+  readonly glyph: string;
+  /** One of the eight ring slots of A5 3.19. */
+  readonly ring: number;
+  /** How Open opens it here; absent when it cannot, and the tile is for Run. */
+  readonly route?: string;
+  /** It can work on a task in the background: Run. */
+  readonly runs?: true;
+}
+
+/** The instances a space last opened a task in and ran one with on this machine, by key. */
+export interface LastUsed {
+  readonly open?: string;
+  /** The route of that Open: a key no longer in machine.toml still says T3 Code (`t3-mcp`). */
+  readonly open_route?: string;
+  readonly run?: string;
+}

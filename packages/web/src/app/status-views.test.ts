@@ -2,13 +2,11 @@
 // the counted views are disjoint, so their counts add up and each view lists exactly its count.
 import fc from "fast-check";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { areaGroups, flatGroups, personGroups, projectGroups, type Group } from "../groups.ts";
-import { itemsOf } from "../list/items.ts";
-import type { Change } from "../store/core.ts";
-import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
-import type { Changes } from "../store/store.ts";
-import { ChangeLog } from "./changes.ts";
 import {
+  areaGroups,
+  flatGroups,
+  personGroups,
+  projectGroups,
   projectFilter,
   COUNTED,
   countedViewOf,
@@ -17,7 +15,11 @@ import {
   VIEW_LIST,
   viewCounts,
   viewFilter,
-} from "./views.ts";
+} from "@ttasks/client/today";
+import { type Group, itemsOf } from "../list/items.ts";
+import type { Change, AreaRow, ProjectRow, TaskRow } from "@ttasks/client/store";
+import type { Changes } from "../store/store.ts";
+import { ChangeLog } from "./changes.ts";
 
 let n = 0;
 const task = (patch: Partial<TaskRow> & { title: string }): TaskRow => {

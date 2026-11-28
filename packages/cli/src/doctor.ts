@@ -176,25 +176,20 @@ export function configCheck(io: Pick<Io, "env" | "platform">): Check {
   }
   const fatal = fatalProblems(loaded.problems);
   if (fatal.length > 0) return { id: "config", status: "fail", detail: configRefusal(fatal) };
-  const retired = loaded.problems.filter((p) => p.code === "retired");
+  const unknown = loaded.problems.filter((p) => p.code === "unknown_key").map((p) => p.key);
   const notRead = loaded.problems.filter((p) => p.code === "not_read");
-  const others = loaded.problems.filter((p) => p.code !== "retired" && p.code !== "not_read");
+  const others = loaded.problems.filter((p) => p.code !== "unknown_key" && p.code !== "not_read");
   if (loaded.problems.length > 0) {
     const keys = others.map((p) => (p.key === "" ? p.code : `${p.key} (${p.code})`));
     const parts = [
       ...(keys.length === 0
         ? []
         : [`machine.toml has problems that drop only their entry: ${named(keys)}.`]),
-      ...(retired.some((p) => p.key === "roots")
-        ? [
-            `machine.toml's [roots] lines do nothing now: a task opens in its own folder or its project's. ${PRODUCT_NAME} leaves them as they are, and you can remove them.`,
-          ]
-        : []),
-      ...(retired.some((p) => p.key !== "roots")
-        ? [
-            `machine.toml's ${named(retired.filter((p) => p.key !== "roots").map((p) => p.key))} do nothing now: Open leaves the brief unsent wherever the app can, and T3 Code opens on the profile and model chosen in T3 Code. ${PRODUCT_NAME} leaves them as they are, and you can remove them.`,
-          ]
-        : []),
+      ...(unknown.length === 0
+        ? []
+        : [
+            `machine.toml has keys this build does not read, which change nothing: ${named(unknown)}. ${PRODUCT_NAME} leaves them as they are, and you can remove them.`,
+          ]),
       ...notRead.map((p) => notReadNote(p.key.slice("preferences.".length))),
     ];
     return { id: "config", status: "warn", detail: parts.join(" ") };

@@ -1,8 +1,8 @@
-// The page's one clock (dates.ts): today on this browser's calendar. Everything on the page that
-// shows or asks for something that depends on the day reads it here, so all of it moves to a new
-// day at the same moment. Between those moments a day reading keeps its identity, so nothing
-// renders for it; a minute reading (for a timed due: one at 10:30 turns late at 10:31) moves
-// each minute.
+// The page's one clock, which @ttasks/client/today's formatters read: today on this browser's
+// calendar. Everything on the page that shows or asks for something that depends on the day reads
+// it here, so all of it moves to a new day at the same moment. Between those moments a day reading
+// keeps its identity, so nothing renders for it; a minute reading (for a timed due: one at 10:30
+// turns late at 10:31) moves each minute.
 //
 // A timer does not see a machine that slept past midnight, or a change of time zone, until it
 // fires, and a sleeping machine's timers may fire late. So the clock is read at every minute's
@@ -11,7 +11,7 @@
 import { useMemo, useSyncExternalStore } from "react";
 import { useIntl } from "react-intl";
 import { localDate, type DayClock } from "@ttasks/contracts/day";
-import type { Clock } from "./dates.ts";
+import type { Clock } from "@ttasks/client/today";
 
 const MINUTE_MS = 60_000;
 

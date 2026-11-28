@@ -21,7 +21,7 @@
 //
 // Rows are held in maps the core changes in place. `publish()` hands out new maps for the kinds
 // that changed since the last call, so a frame that applies many batches copies each map once.
-import type { Instance } from "../api.ts";
+import type { Instance } from "@ttasks/contracts/runs";
 import {
   DEFAULT_SCALES,
   inWorkingSet,

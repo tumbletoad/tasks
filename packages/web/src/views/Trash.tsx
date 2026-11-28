@@ -8,19 +8,19 @@
 // what the Trash promises.
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Client } from "@ttasks/contracts/generated/client.ts";
-import type { Instance } from "../api.ts";
+import type { Instance } from "@ttasks/contracts/runs";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { Session } from "../context.ts";
 import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
 import { useEdits } from "../edit/useEdits.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
-import { formatWhen, type Clock } from "../row/dates.ts";
+import { formatWhen, type Clock } from "@ttasks/client/today";
 import { sayMsg } from "../row/say.ts";
 import { useClock } from "../row/useClock.ts";
 import { useLive, usePagedQuery } from "../store/hooks.ts";
 import { affects } from "../store/queries.ts";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import { onKept } from "../kept.ts";
 import { agentName } from "./agent-name.ts";
 import { letGo, useUnsent } from "../unsent.ts";

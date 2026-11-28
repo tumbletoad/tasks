@@ -11,12 +11,12 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Button, Dialog, DialogTrigger, Popover } from "react-aria-components";
 import { classes } from "../app/css.ts";
 import { dueChange } from "../edit/change.ts";
-import { addDays, addMonths, quickPicks, readDue, weekdayOf } from "../edit/due.ts";
+import { addDays, addMonths, quickPicks, readDue, weekdayOf } from "@ttasks/client/capture";
 import { whoOf } from "../edit/edits.ts";
 import { useEdits } from "../edit/useEdits.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
-import { formatDay, type Clock } from "../row/dates.ts";
-import type { TaskRow } from "../store/rows.ts";
+import { formatDay, type Clock } from "@ttasks/client/today";
+import type { TaskRow } from "@ttasks/client/store";
 import css from "./Picker.module.css";
 
 const styles = classes(css, [

@@ -3,13 +3,13 @@
 import { Link } from "@tanstack/react-router";
 import { useContext, useEffect, type ReactNode, type RefObject } from "react";
 import { useIntl, type IntlShape } from "react-intl";
-import type { Instance } from "../api.ts";
+import type { Instance } from "@ttasks/contracts/runs";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
-import type { PageRow } from "../store/rows.ts";
+import type { PageRow } from "@ttasks/client/store";
 import { NotSaved, Pen, TextEditor, useEditing, useSaved } from "../task/TextEditor.tsx";
 import type { TextPart } from "../unsent.ts";
 import { agentName } from "../views/agent-name.ts";

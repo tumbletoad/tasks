@@ -17,11 +17,11 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { Instance } from "../api.ts";
+import type { Instance } from "@ttasks/contracts/runs";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
-import { formatWhen } from "../row/dates.ts";
+import { formatWhen } from "@ttasks/client/today";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
 import { agentName } from "./agent-name.ts";

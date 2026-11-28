@@ -1,7 +1,8 @@
 // The launch tile (A5 3.6, 3.9): which state it shows for the effective instance, and what a click
 // on it does. Pure, so every state is a unit test.
-import type { Busy, Instance, LastUsed } from "../api.ts";
-import type { TaskRow } from "../store/rows.ts";
+import type { Busy } from "../api.ts";
+import type { Instance, LastUsed } from "@ttasks/contracts/runs";
+import type { TaskRow } from "@ttasks/client/store";
 
 /**
  * What busies each agent app with one task on this machine, by instance key, as the service says

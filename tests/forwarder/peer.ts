@@ -1,17 +1,19 @@
 // A test service for the forwarder conformance suite (A2 3.7.6), run as a real child process:
 // `node tests/forwarder/peer.ts <config JSON>`. It is ttasks-local/1's own `serve` with an mcp hook
 // that plays a scripted MCP server, standing in for the service's MCP endpoint until M2.02. Like
-// the hub, it writes `<state>/service.json` with its endpoint and reads `<state>/ipc.key`. It keeps
-// the bindings it hands out in a file, so a restarted peer restores them from `resume.handle` as
-// A3's session record will, and records every bind context for the tests to read.
+// the hub, it writes `<state>/service.json` with its endpoint and reads `<state>/ipc.key`. As the
+// service does, it decides every connection from its bind alone: the space the bridge holds
+// (`held_space`) wins, else the entry's, else this process's default, a new one at every start. It
+// records every bind context for the tests to read.
 //
-// Tools: `echo` (its arguments as text), `whoami` (the binding and how the session started),
+// Tools: `echo` (its arguments as text), `whoami` (the connection, its space and how the session
+// started),
 // `slow` (echo after `ms`), `big` (a text of `bytes` characters), `flood` (`count` notifications
 // of `bytes` each before its result). Mode `echo` sends every line back unchanged instead.
 // stdin: `stop` closes the server, removes service.json and exits 0. Tests only.
 // First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
 import "../../packages/bridge/src/safe-exit.ts";
-import { appendFileSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -43,29 +45,17 @@ const offline = JSON.parse(readFileSync(config.offline, "utf8")) as {
   tools_list: { result: Json; modern_result: Json };
 };
 const key = parseKey(readFileSync(join(config.state, "ipc.key"), "utf8"));
-const bindingsFile = join(config.state, "peer-bindings.json");
 const bindsLog = join(config.state, "peer-binds.jsonl");
 const eventsLog = join(config.state, "peer-events.jsonl");
 const slowLog = join(config.state, "peer-slow.jsonl");
 const instance = randomBytes(16).toString("hex");
-
-function readBindings(): Record<string, string> {
-  try {
-    return JSON.parse(readFileSync(bindingsFile, "utf8")) as Record<string, string>;
-  } catch {
-    return {};
-  }
-}
-
-function writeBindings(bindings: Record<string, string>): void {
-  const temp = `${bindingsFile}.${String(process.pid)}.tmp`;
-  writeFileSync(temp, JSON.stringify(bindings));
-  renameSync(temp, bindingsFile);
-}
+const ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
+const defaultSpace = `sp_${Array.from(randomBytes(26), (b) => ALPHABET[b % 36]).join("")}`;
 
 interface Conn {
+  /** This connection, new at every bind. */
   readonly binding: string;
-  readonly restored: boolean;
+  readonly space: string | null;
   /** The bind carried mcp_init: the session started before this connection. */
   readonly init: boolean;
   initialized: boolean;
@@ -128,7 +118,7 @@ function answer(conn: Conn, message: Json, send: (m: Json) => void): void {
           text(
             JSON.stringify({
               binding: conn.binding,
-              restored: conn.restored,
+              space: conn.space,
               started: conn.init || conn.initialized,
               init: conn.init,
               pid: process.pid,
@@ -176,28 +166,21 @@ const server = await serve({
       bindsLog,
       `${JSON.stringify({ pid: process.pid, conn: info.id, kind: info.client.kind, client: info.client, context })}\n`,
     );
-    const resume = isObject(context["resume"]) ? context["resume"]["handle"] : undefined;
-    const bindings = readBindings();
-    let handle: string;
-    let binding: string;
-    let restored = false;
-    if (typeof resume === "string" && bindings[resume] !== undefined) {
-      handle = resume;
-      binding = bindings[resume];
-      restored = true;
-    } else {
-      handle = `bh_${randomBytes(16).toString("hex")}`;
-      binding = `b_${randomBytes(6).toString("hex")}`;
-      bindings[handle] = binding;
-      writeBindings(bindings);
-    }
+    const held = context["held_space"];
+    const named = context["space"];
+    const space =
+      held === null || typeof held === "string"
+        ? held
+        : typeof named === "string"
+          ? named
+          : defaultSpace;
     conns.set(info.id, {
-      binding,
-      restored,
+      binding: `b_${randomBytes(6).toString("hex")}`,
+      space,
       init: isObject(context["mcp_init"]),
       initialized: false,
     });
-    return { binding: { handle, space: context["space"] ?? null, state: "bound" } };
+    return { binding: { space, state: "bound" } };
   },
   mcp: (channel) => {
     const conn = conns.get(channel.connection.id);

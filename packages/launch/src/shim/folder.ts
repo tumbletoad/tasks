@@ -44,7 +44,7 @@ import type { PlanFolder } from "./records.ts";
 
 /**
  * The root ID the work folder resolves under, in a list of its own: the machine state folder.
- * No machine.toml root can have it (sections.ts ROOT_ID has no `<`).
+ * No root ID can have it: a root ID has no `<`.
  */
 export const WORK_ROOT = "<state>";
 

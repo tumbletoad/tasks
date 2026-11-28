@@ -8,7 +8,6 @@
 // does not exist.
 import { CLI_NAME } from "@ttasks/brand";
 import { CLI_SPEC, takesFolder, verbFaces, type VerbSpec } from "./args.ts";
-import { ROOTS_HELP } from "./roots.ts";
 import { SERVICE_HELP } from "./service.ts";
 import { SETUP_HELP } from "./setup.ts";
 import { SKILLS_HELP } from "./skills.ts";
@@ -147,11 +146,6 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
     name: "recover",
     summary: "Play back a space's rollback journal: the same as ttasks space recover",
     help: RECOVER_HELP,
-  },
-  {
-    name: "roots",
-    summary: "Retired: a task opens in its own folder or its project's",
-    help: ROOTS_HELP,
   },
   {
     name: "run",
