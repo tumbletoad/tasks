@@ -4742,6 +4742,20 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.activity.web",
+      "title": "The Activity screen's words and lines: several fields set by one change are one line of words with their values, an operation says what it did once whatever fields it set, a create leaves out what came with it, a kind of change the table does not know reads changed, the log reads the newest lines then older ones before its last and newer ones after its first, each once and in order, a failed first read says so and reads again, and a failed read of newer lines keeps what is shown",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.activity.e2e",
+      "title": "Against the real service in Chromium and Firefox: the Activity screen has its menu entry; an agent's changes made through its requests come in as lines without a reload, two fields in one request on one line with their values, the person's own change makes none, a text change says that it changed and never shows its words, and a line opens its task by the keyboard; a line that comes while the reader is scrolled down moves nothing on screen, one that comes at the top comes into sight, and the end of the list reads older lines; screenshots with lines, as a line comes and empty, at 1,440 and 390 px in Sumi and Washi, and axe finds nothing",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.15.web.live",
       "title": "The tab's feed client applies a batch only when it reaches past its cursor without a gap, ignores a repeat, takes a fresh snapshot after a gap (asked for again on the next socket when the old one dropped) or on a refresh, on the same session, never applies another space's batch, and a feed that resumes from its cursor (after applying what it had queued) is live again without a snapshot, with its rows kept and its backoff reset",
       "source": "A5 3.15, A1 3.7, A7 3.9 M2.13",

@@ -99,7 +99,8 @@ export async function readActivity(
   const more = (commitRows as Row[]).length > request.limit;
   if (newer) found.reverse();
   if (found.length === 0) return { lines: [], more };
-  const prefix = String((prefixRow as Row | null)?.["ref_prefix"] ?? "");
+  const prefixValue = (prefixRow as Row | null)?.["ref_prefix"];
+  const prefix = typeof prefixValue === "string" ? prefixValue : "";
   const seqs = JSON.stringify(found.map((c) => Number(c["seq"])));
   const [opRows, changeRows] = await reader.transaction("deferred", [
     { sql: OPS, mode: "all", params: { seqs } },
@@ -108,7 +109,8 @@ export async function readActivity(
 
   const opOf = new Map<string, string>();
   for (const row of opRows as Row[]) {
-    opOf.set(`${String(row["seq"])}:${String(row["i"])}`, String(row["op"] ?? ""));
+    const op = row["op"];
+    opOf.set(`${String(row["seq"])}:${String(row["i"])}`, typeof op === "string" ? op : "");
   }
   const bySeq = new Map<number, Row[]>();
   for (const change of changeRows as Row[]) {

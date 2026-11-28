@@ -6,7 +6,7 @@
 //   /                                       the default space's landing view (`?task=` a task)
 //   /s/:space                               the space's landing view (Today)
 //   /s/:space/:view                         today, inbox, open, waiting, review, backlog,
-//                                           completed, agents
+//                                           completed, agents, activity, trash
 //   /s/:space/area/:area                    an area
 //   /s/:space/area/:area/project/:project   a project of it
 //   /s/:space/project/:project              a project without an area
