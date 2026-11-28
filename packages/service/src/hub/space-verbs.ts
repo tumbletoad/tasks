@@ -559,6 +559,18 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
     return { ...folder, folders: [folder.dir, own] };
   };
 
+  /** The data file of the complete backup `name` (`<name>.db.gz`) in `folders`, if one reads. */
+  const completeCopy = (folders: readonly [string, string], name: string): string | undefined => {
+    try {
+      return listBackupsIn(folders).backups.find(
+        (b) => `${b.name}.db.gz` === name && b.state === "ok",
+      )?.file;
+    } catch {
+      // A folder that cannot be read: the restore says what is wrong with the file it takes.
+      return undefined;
+    }
+  };
+
   return {
     "space/list": () =>
       Promise.resolve({
@@ -919,16 +931,13 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
       else if (of !== undefined && /^[A-Za-z0-9._-]+$/.test(backup)) {
         const name = backup.endsWith(".db.gz") ? backup : `${backup}.db.gz`;
         // Backups made before they went to the backups folder, and an upgrade's whose set folder
-        // was away, are in the space's own: a name not in the backups folder is looked for there.
-        const [dir, own] = backupsOf(of).folders.map((folder) => join(folder, name)) as [
-          string,
-          string,
-        ];
+        // was away, are in the space's own, or on their way between the two: the listing of both
+        // names the complete copy, else the name is looked for where it is.
+        const { folders } = backupsOf(of);
+        const [dir, own] = folders.map((folder) => join(folder, name)) as [string, string];
         file = /\.zip$/i.test(backup)
           ? join(exportsFolder(manager.folderOf(of.entry)), backup)
-          : !existsSync(dir) && existsSync(own)
-            ? own
-            : dir;
+          : (completeCopy(folders, name) ?? (!existsSync(dir) && existsSync(own) ? own : dir));
       } else {
         throw invalid(
           "backup",
