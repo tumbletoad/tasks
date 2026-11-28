@@ -2287,7 +2287,7 @@
     },
     {
       "id": "S2.tree.routines",
-      "title": "Routines on the tree writer, walked through a month with one open time and exactly one entry per time after every step: a weekly chore checked off early, kept done through a pause and resume that day, late, skipped, undone and redone, its Undo kept back by a new start, held to the person's read, found as a task and taken by no task command; a weekday agent routine whose failed start is retried at the service's own request IDs because a look that queued nothing keeps no receipt, a second start replayed, an agent's done always for its run's time, a check-off by hand that cancels the queued run and whose Undo opens the time for a fresh claim, a check-off while a run works that the run's done leaves alone, a done after the next time has come, a question that holds the time for two working days, and a reply's done for its own time with the missed slots run once; a monthly routine from the 31st on each month's last day; an archived project's routine paused and left paused by Undo and unarchive; a pause over two weeks; Undo of a done and a skip; finished for good by the person only; the Trash pauses it; an agent's routine is the person's to make, change, pause and switch on; the claim never while a run is queued or working or a question waits; one claim after a week with the computer off, and a failed run's time skipped by the next slot",
+      "title": "Routines on the tree writer, walked through a month with one open time and exactly one entry per time after every step: a weekly chore checked off early, kept done through a pause and resume that day, late, skipped, undone and redone, its Undo kept back by a new start, held to the person's read, found as a task and taken by no task command; a weekday agent routine whose failed start is retried at the service's own request IDs because a look that queued nothing keeps no receipt, a second start replayed, an agent's done always for its run's time, a check-off by hand that cancels the queued run and whose Undo opens the time for a fresh claim, a check-off while a run works that the run's done leaves alone, a done after the next time has come, a question that holds the time for two working days, and a reply's done for its own time with the missed slots run once; a monthly routine from the 31st on each month's last day; an archived project's routine paused and left paused by Undo and unarchive; a pause over two weeks; Undo of a done and a skip; finished for good by the person only; the Trash pauses it; an agent's routine is the person's to make, change, pause and switch on; the claim never while a run is queued or working or a question waits; one claim after a week with the computer off, and a failed run's time skipped by the next slot; a task with no task above or below becomes a routine you do with its reference and notes; an extra time is an entry without a due time that leaves the open time",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -7248,6 +7248,54 @@
     {
       "id": "A5.routines.web.schedule-words",
       "title": "A schedule reads in the catalogue's words: every Saturday, every Monday and Thursday, every weekday at 07:00, the first working day of every month, every 3 months on the 15th, the last Friday of every month, every year on 14 December, every year on the last day of February for the 29th to the 31st; every rule of the stored form has words with nothing of the message left in them",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.routines.repeat.words",
+      "title": "A schedule in English words reads as the rule it means (every saturday, every mon, wed and fri, every other week on friday, weekdays at 07:30, every month on the 15th, the first monday of every month, the last working day of every other month, every year on 14 december, and every week or month from today); words it does not read are no schedule; and the words an agent reads back for a rule read as the same rule",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.routines.repeat.round-trip",
+      "title": "For any rule the stored form holds, at any interval and time of day, the English words an agent reads for it parse back to a rule with the same words, the same time and the same dates over four years",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.routines.web.schedule-words-same",
+      "title": "For any rule the stored form holds, the page's English words from its catalogue are the words an agent reads, so the two cannot drift",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.routines.today",
+      "title": "A routine you do is on Today by its open time: in This week before its day, on Today on the day and late there until it is checked off or skipped, one row however many times were missed; a paused, finished, trashed or agent's routine, or one due after this week, is on neither, and tasks keep their sections beside it",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.routines.store",
+      "title": "The live store holds a tree space's routines as the feed sends them: from the snapshot, moved on by each batch's routine row, gone once finished or in the Trash, and a task that became a routine leaves the tasks",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.tree.routines.service",
+      "title": "A routine a person does, through the request path on a tree space with a clock the test moves: made, checked off early, a week away and two missed Saturdays as one open time and one entry, read by an agent with its schedule in words, its next time and its entries, skipped and that Skip undone, a Done whose Undo a later change of schedule keeps back, paused and resumed at the next time after now, extra times without a due time, finished for good and back by Undo, the Trash pausing it and Restore bringing it back paused, made in a project the person names; the page's live store moved on by the feed equals one loaded from a fresh snapshot after each change; an agent makes one with repeat, turns a task into one whose task leaves the live store and whose notes get_task reads in its sections, changes and pauses it, and is refused two drafts, words that are no schedule and a check-off; repeat reads its words on the routine's own calendar when the service's day is already the next; a space on today's storage refuses a routine's calls in one plain sentence",
       "source": "Routines design, pull request 235",
       "owner": "M6",
       "kind": "ci",

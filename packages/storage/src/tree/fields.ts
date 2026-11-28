@@ -4,6 +4,8 @@
 /** Each table's logical fields and their columns. */
 export const FIELDS = {
   nodes: {
+    // A task becomes a routine by "Repeat…"; nothing else changes a kind.
+    kind: ["kind"],
     title: ["title"],
     brief: ["brief"],
     description: ["description"],
@@ -66,7 +68,7 @@ export const isEntity = (value: string): value is Entity => Object.hasOwn(FIELDS
 
 /** The columns a create may set besides the fields' own. */
 export const KEYS: Record<Entity, readonly string[]> = {
-  nodes: ["id", "kind", "slug", "created_at", "created_by"],
+  nodes: ["id", "slug", "created_at", "created_by"],
   tasks: ["id", "ref", "origin_source_id", "created_session"],
   notes: [
     "id",

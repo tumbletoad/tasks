@@ -44,6 +44,7 @@ const ON_TREE: Readonly<Record<string, readonly string[]>> = {
   "task.search": [],
   "space.status": [],
   "task.finished": [],
+  "routine.manage": [],
 };
 
 /**
@@ -97,6 +98,25 @@ export function checkOnTree(entry: AnyEntry, input: Record<string, unknown>): vo
     (entry.name === "task.get" ? listed("sections", "history") : undefined) ??
     (entry.name === "task.search" ? searchGap(input) : undefined);
   if (field !== undefined) throw notOnTreeYet(`${entry.name} with ${field}`);
+}
+
+/**
+ * Refuses on a space on today's storage what only the tree has: a routine, and a task's `repeat`.
+ * Every space a person has is on today's storage until the switch.
+ */
+export function checkOnToday(entry: AnyEntry, input: Record<string, unknown>): void {
+  const drafts = Array.isArray(input["tasks"]) ? (input["tasks"] as unknown[]) : [];
+  const repeats =
+    entry.name === "routine.manage" ||
+    (entry.name === "task.update" && input["repeat"] !== undefined) ||
+    (entry.name === "task.add" &&
+      drafts.some((d) => typeof d === "object" && d !== null && "repeat" in d));
+  if (!repeats) return;
+  throw new AppError({
+    code: "op_unknown",
+    message: "Routines work only on a space on the new storage, and this one is on today's.",
+    hint: "Add it as a task with a due date for now.",
+  });
 }
 
 /** Refuses a plan with an operation, or a field of one, that the tree does not take yet. */

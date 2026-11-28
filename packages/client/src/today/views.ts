@@ -13,7 +13,7 @@
 //
 // A view's name, a Today section's heading and a view's empty line are keys, never words: each app
 // maps them to its own.
-import type { AgentChange, TaskRow } from "../store/rows.ts";
+import type { AgentChange, RoutineRow, TaskRow } from "../store/rows.ts";
 import { isUnder, trail, type Nodes } from "../store/tree.ts";
 import { flatGroups, groupTasks, personGroups, type GroupTasks } from "./groups.ts";
 import {
@@ -224,11 +224,15 @@ export interface TodayOptions {
   readonly nextLimit?: number;
   /** Agents' changes, newest first: Changes lists the tasks no section above holds. */
   readonly changes?: readonly TaskChange[];
+  /** The routines the page holds: those you do, by their open time, in Focus and This week. */
+  readonly routines?: Iterable<RoutineRow>;
 }
 
 export interface TodaySectionRows {
   readonly key: TodaySection;
   readonly tasks: readonly TaskRow[];
+  /** Focus's and This week's routines, in the day's order, when it has any. */
+  readonly routines?: readonly RoutineRow[];
 }
 
 export interface Today {
@@ -332,15 +336,58 @@ export function todayOf(tasks: Iterable<TaskRow>, clock: Clock, options: TodayOp
     changed.push(task);
   }
 
+  const days = routinesOf(options.routines ?? [], clock);
   const sections: TodaySectionRows[] = [];
-  const add = (key: TodaySection, rows: readonly TaskRow[]) => {
-    if (rows.length > 0) sections.push({ key, tasks: rows });
+  const add = (
+    key: TodaySection,
+    rows: readonly TaskRow[],
+    routines: readonly RoutineRow[] = [],
+  ) => {
+    if (rows.length > 0 || routines.length > 0) {
+      sections.push({ key, tasks: rows, ...(routines.length === 0 ? {} : { routines }) });
+    }
   };
-  add("focus", focus);
-  add("week", week);
+  add("focus", focus, days.today);
+  add("week", week, days.week);
   add("next", next);
   add("changes", changed);
   return { sections };
+}
+
+/**
+ * The routines you do on Today, by their open time as a task's due date counts: in This week before
+ * its day, on Today on the day, and late there until it is checked off or skipped. However many
+ * times were missed, it is one row: its open time is the oldest still to do. A paused or finished
+ * routine is on neither, nor is an agent's, which reaches Today only when it needs you.
+ */
+function routinesOf(
+  routines: Iterable<RoutineRow>,
+  clock: Clock,
+): { today: RoutineRow[]; week: RoutineRow[] } {
+  const days = new Map<string, RoutineRow>();
+  const asDays = [];
+  for (const r of routines) {
+    if (r.lifecycle !== "active" || r.paused || r.by !== "you" || r.deleted_at !== undefined) {
+      continue;
+    }
+    days.set(r.id, r);
+    asDays.push({
+      id: r.id,
+      lifecycle: "active",
+      status: "open",
+      inbox: false,
+      priority: r.priority,
+      ...(r.due_at === undefined ? { due_date: r.due_date } : { due_at: r.due_at }),
+      created_at: 0,
+    });
+  }
+  const { today, week } = dayOf(asDays, clock);
+  const rows = (list: readonly { id: string }[]) =>
+    list.flatMap((d) => {
+      const row = days.get(d.id);
+      return row === undefined ? [] : [row];
+    });
+  return { today: rows(today), week: rows(week) };
 }
 
 // ---------------------------------------------------------------------------------------------

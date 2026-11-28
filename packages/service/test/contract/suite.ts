@@ -430,6 +430,11 @@ const LATER: Readonly<Record<string, Later>> = {
     why: "the next page after a task was deleted, under the example's cursor",
     now: { error: "cursor_expired" },
   },
+  "routine.manage 0": {
+    owner: "the switch of a person's spaces to the new storage",
+    why: "routines work only on a space on the new storage, and the examples' world is on today's",
+    now: { error: "op_unknown" },
+  },
   ...pagesLater(),
 };
 

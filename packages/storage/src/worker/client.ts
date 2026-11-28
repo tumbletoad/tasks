@@ -97,6 +97,11 @@ export interface StartOptions {
   driver: DriverName;
   /** The worker's entry module. A test or a bundle passes its own. */
   entry?: URL;
+  /**
+   * A test's clock, one Float64 of milliseconds since the epoch, for a test entry that serves with
+   * ServeOptions.clock. The product's entry ignores it.
+   */
+  clock?: SharedArrayBuffer;
 }
 
 interface Pending {
@@ -345,7 +350,10 @@ export class StorageWorker {
    * anything, so a build that fails the check rejects here with STORAGE_UNSUPPORTED.
    */
   static async start(options: StartOptions): Promise<StorageWorker> {
-    const config: WorkerConfig = { driver: options.driver };
+    const config: WorkerConfig = {
+      driver: options.driver,
+      ...(options.clock === undefined ? {} : { clock: options.clock }),
+    };
     const worker = new Worker(options.entry ?? DEFAULT_ENTRY, { workerData: config });
     let report: DriverReport;
     try {

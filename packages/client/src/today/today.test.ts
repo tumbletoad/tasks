@@ -4,7 +4,7 @@
 // Fixture data only.
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
-import type { TaskRow } from "../store/rows.ts";
+import type { RoutineRow, TaskRow } from "../store/rows.ts";
 import {
   dateOf,
   dayNumber,
@@ -546,5 +546,68 @@ describe("[A5.3.4.web.today-disjoint] property: no task in two sections", () => 
       ),
       { numRuns: 500 },
     );
+  });
+});
+
+describe("[A5.routines.today] a routine you do on Today, by its open time", () => {
+  const routine = (patch: Partial<RoutineRow>): RoutineRow => {
+    n += 1;
+    return {
+      id: `t_r${String(n).padStart(4, "0")}`,
+      ref: `M-${String(n)}`,
+      kind: "routine",
+      title: `Routine ${String(n)}`,
+      parent: "sp_a",
+      position: String(n).padStart(4, "0"),
+      priority: 4,
+      lifecycle: "active",
+      rule: "FREQ=WEEKLY;BYDAY=SA",
+      start: "2026-11-01",
+      tz: "Europe/Amsterdam",
+      due_date: "2026-11-14",
+      paused: false,
+      by: "you",
+      entries: 0,
+      version: 1,
+      ...patch,
+    };
+  };
+  const placed = (routines: RoutineRow[], tasks: TaskRow[] = []) =>
+    Object.fromEntries(
+      todayOf(tasks, CLOCK, { routines }).sections.map((s) => [
+        s.key,
+        (s.routines ?? []).map((r) => r.title),
+      ]),
+    );
+
+  test("in This week before its day, on Today on the day, late there until it is checked off", () => {
+    const saturday = routine({ title: "Water the plants" });
+    const today = routine({ title: "Take out the bins", due_date: "2026-11-12" });
+    const late = routine({ title: "Call the plumber", due_date: "2026-11-07" });
+    const timed = routine({ title: "Stand-up", due_at: Date.UTC(2026, 10, 12, 8, 30) });
+    expect(placed([saturday, today, late, timed])).toEqual({
+      focus: ["Call the plumber", "Stand-up", "Take out the bins"],
+      week: ["Water the plants"],
+    });
+  });
+
+  test("a paused, finished, trashed or agent's routine, or one due after this week, is on neither", () => {
+    const off = [
+      routine({ paused: true, due_date: "2026-11-12" }),
+      routine({ lifecycle: "completed", due_date: "2026-11-12" }),
+      routine({ deleted_at: 1, due_date: "2026-11-12" }),
+      routine({ by: "codex-work", due_date: "2026-11-12" }),
+      routine({ due_date: "2026-12-05" }),
+    ];
+    expect(placed(off)).toEqual({});
+    // Tasks keep their sections beside them, and no routine counts in a view.
+    const dated = task({ title: "Send the invoice", due_date: "2026-11-12" });
+    expect(placed([routine({ title: "Water the plants" })], [dated])).toEqual({
+      focus: [],
+      week: ["Water the plants"],
+    });
+    expect(todayOf([dated], CLOCK, { routines: [routine({})] }).sections[0]?.tasks).toEqual([
+      dated,
+    ]);
   });
 });

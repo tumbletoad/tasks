@@ -67,6 +67,10 @@ const SQL = {
     "AND created_seq >= $since ORDER BY attempt DESC",
   open: `SELECT 1 FROM runs r WHERE r.task_id = $id AND ${OPEN_RUN}`,
   question: `SELECT 1 FROM tasks t WHERE t.id = $id AND (${TREE_QUESTION_WAITS})`,
+  task:
+    "SELECT n.deleted_at, t.ref, t.lifecycle, p.kind AS above FROM nodes n JOIN tasks t " +
+    "ON t.id = n.id JOIN nodes p ON p.id = n.parent_id WHERE n.id = $id",
+  child: "SELECT 1 FROM nodes WHERE parent_id = $id AND kind = 'task' AND deleted_at IS NULL",
 } as const;
 
 /** A routine's time: a local date, with its instant when it has a time of day. */
@@ -243,6 +247,7 @@ const routineSet: Run = (tx, input) => {
   if (input["instance"] !== undefined || input["instruction"] !== undefined) {
     persons(tx, "instance");
   }
+  if (input["task"] !== undefined) return fromTask(tx, input);
   if (input["routine"] === undefined) return make(tx, input);
   const r = active(liveRoutine(tx, input["routine"]));
   const id = String(r["id"]);
@@ -353,6 +358,46 @@ function make(tx: Tx, input: Input) {
   return { routine: { id, ref: refText(tx, ref), due: open } };
 }
 
+/**
+ * A task that becomes a routine you do: the same node, its reference, words and notes kept, from
+ * its first time from now. Only a live, open task with no task above it and none below.
+ */
+function fromTask(tx: Tx, input: Input) {
+  const found = findNode(tx, input["task"]);
+  if (found?.["kind"] !== "task") return problem("NOT_FOUND", "The space has no such task", "task");
+  const id = String(found["id"]);
+  const task = tx.get(SQL.task, { id }) as Row;
+  if (task["deleted_at"] !== null) problem("DELETED", "The task is in the Trash", "task");
+  if (task["lifecycle"] !== "active")
+    problem("INVALID_TRANSITION", "Only an open task becomes a routine", "task");
+  if (task["above"] === "task" || tx.get(SQL.child, { id }) !== undefined) {
+    problem("VALIDATION_FAILED", "A task with subtasks, or under one, stays a task", "task");
+  }
+  const zone = String(input["tz"]);
+  const schedule: Schedule = {
+    rule: String(input["rule"]),
+    start: str(input, "start") ?? localDate(tx.at, zone),
+    zone,
+  };
+  if (readSchedule(schedule) === undefined) problem("VALIDATION_FAILED", "Not a schedule", "rule");
+  const open = openFrom(tx, id, schedule, firstFrom(schedule, false, tx.at));
+  tx.guard("nodes", id, id);
+  tx.guard("tasks", id, id);
+  tx.set("nodes", id, id, { kind: "routine" });
+  // A routine has its own times: the task's date and its place in the Inbox go.
+  tx.set("tasks", id, id, {
+    due: { due_date: null, due_at: null, due_tz: null },
+    planned_for: null,
+    inbox: 0,
+  });
+  tx.create(
+    "routines",
+    { id, rule: schedule.rule, start: schedule.start, tz: zone, ...open, paused: 0 },
+    id,
+  );
+  return { routine: { id, ref: refText(tx, task["ref"]), due: open } };
+}
+
 const routinePaused =
   (paused: boolean): Run =>
   (tx, input) => {
@@ -390,7 +435,8 @@ const routineDone: Run = (tx, input) => {
   if (agent && runId === undefined) {
     problem("VALIDATION_FAILED", "An agent's done is for the time of its run: name the run", "run");
   }
-  let due: Time | null = timeOf(r);
+  // An extra time is an entry with no due time: the open time stays.
+  let due: Time | null = input["extra"] === true ? null : timeOf(r);
   if (runId !== undefined) {
     const run = tx.get(SQL.run, { id: runId });
     if (run === undefined || run["task_id"] !== r["id"])
@@ -533,9 +579,11 @@ const INSTRUCTION = { bytes: RUN_REQUEST_MAX_BYTES } as const;
 
 const checkSet: Check = (f) => {
   const making = !f.has("routine");
-  if (making) for (const k of ["title", "rule", "tz"]) required(f, k);
+  const fromTask = f.has("task");
+  if (making) for (const k of fromTask ? ["rule", "tz"] : ["title", "rule", "tz"]) required(f, k);
   const out = read(f, {
     routine: (k) => f.text(k, KEY),
+    task: (k) => f.text(k, KEY),
     id: (k) => f.id(k, "t"),
     under: (k) => f.text(k, KEY),
     title: (k) => f.text(k, TITLE),
@@ -556,6 +604,15 @@ const checkSet: Check = (f) => {
     instance: (k) => (f.raw(k) === null ? null : f.key(k)),
     instruction: (k) => f.nullableText(k, INSTRUCTION),
   });
+  if (fromTask) {
+    const other = ["routine", "id", "under", "title", "brief", "description", "priority"].find(
+      (k) => out[k] !== undefined,
+    );
+    const agents = out["instance"] !== undefined || out["instruction"] !== undefined;
+    if (other !== undefined || agents) {
+      f.fail("VALIDATION_FAILED", "A task becomes a routine you do as it is", other ?? "instance");
+    }
+  }
   if (!making && (out["id"] !== undefined || out["under"] !== undefined)) {
     f.fail(
       "VALIDATION_FAILED",
@@ -578,9 +635,13 @@ const checkDone: Check = (f) => {
     run: (k) => f.id(k, "ru"),
     due: (k) => f.instantOrNull(k),
     note: (k) => f.text(k, { bytes: WRITE_LIMITS.outcome }),
+    extra: (k) => f.boolean(k),
   });
   if (out["due"] !== undefined && out["run"] === undefined) {
     f.fail("VALIDATION_FAILED", "A due time is a run's", "due");
+  }
+  if (out["extra"] === true && out["run"] !== undefined) {
+    f.fail("VALIDATION_FAILED", "A run's entry is for its own time", "extra");
   }
   return out;
 };

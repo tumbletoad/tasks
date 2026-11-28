@@ -19,6 +19,7 @@ import {
   checkBaseOf,
   checkEnvelope,
   checkHistoryEnvelope,
+  checkIntent,
   checkRequest,
   Fields,
   formatAsOf,
@@ -440,12 +441,7 @@ export class TreeWriter {
         });
       }
     } catch (error) {
-      if (!(error instanceof RequestProblem)) throw error;
-      const space = this.#conn.transaction("deferred", () => this.#space());
-      return written(
-        { status: "rejected", ...this.#asOf(space), error: problemOf(error.problem) },
-        space,
-      );
+      return this.#refused(error);
     }
     const { ops, intent, ...envelope } = checked;
     // An Undo or a Redo is a request of its own (request.ts): the tree's, guarded by newer work.
@@ -470,6 +466,36 @@ export class TreeWriter {
     return written(
       result,
       this.#conn.transaction("deferred", () => this.#space()),
+    );
+  }
+
+  /**
+   * Decides a request of one of the tree's own commands, for what today's operations have no form
+   * of, and answers it, and keeps its receipt, as `submitPlan` does: in today's shape, under the
+   * fingerprint of the caller's intent when it names one.
+   */
+  submitCommand(input: unknown): WriteResult {
+    let request: CheckedTreeRequest;
+    try {
+      request = checkTreeRequest(input);
+    } catch (error) {
+      return this.#refused(error);
+    }
+    const result = this.#submitted({ ...request, plan: true });
+    if (result.replayed === true && "results" in result) return result as unknown as WriteResult;
+    return written(
+      result,
+      this.#conn.transaction("deferred", () => this.#space()),
+    );
+  }
+
+  /** A request whose shape is refused, in today's shape: decided by nothing, stored nowhere. */
+  #refused(error: unknown): WriteResult {
+    if (!(error instanceof RequestProblem)) throw error;
+    const space = this.#conn.transaction("deferred", () => this.#space());
+    return written(
+      { status: "rejected", ...this.#asOf(space), error: problemOf(error.problem) },
+      space,
     );
   }
 
@@ -849,6 +875,7 @@ export function checkTreeRequest(value: unknown): CheckedTreeRequest {
     input: history ? checkHistory(input) : (named?.check(input) ?? {}),
   };
   if (f.has("entry")) request.entry = f.text("entry", { chars: 64, line: true });
+  if (f.has("intent")) request.intent = checkIntent(f.raw("intent"));
   // A preview decides preferences only, as today.
   if (envelope.dry_run === true && command !== "pref.set") {
     f.fail("VALIDATION_FAILED", "A dry run decides preferences only", "dry_run");

@@ -28,6 +28,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   agents, a move out of the Inbox or into it, a task's first area, setting questions aside, a new
   project or area, and archiving or unarchiving one. Anything else you change back by doing it again, and
   Undo passes over it, in the page and at the command line alike.
+- A routine (only on a space on the new storage, until the switch) is one task that comes back:
+  checking it off logs that time under it and shows the next, and never finishes it. Times you
+  missed leave one time still to do, never a pile. Undo takes back your own check-off or skip until
+  anything of the routine changed since. Finishing it for good is its own action, and the Trash and
+  archiving its project pause it.
 - Undo and Redo never write over a change made since: not where what your change wrote was changed
   again, by anyone, you included, not where a wrap-up was written since a finish, and never by
   taking a task or a note out of sight that someone else worked on since. What counts is what a
@@ -595,6 +600,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - An agent with a shell can edit your skill files, and every agent then follows the change.
 - TTasks cannot make an agent ignore instructions hidden in a task, a mail or another source it
   reads.
+- Turning a task into a routine has no Undo: its notes stay with the routine, and finishing the
+  routine ends it. A routine counts its days in the time zone it was made in.
 - In a tree space's readable files, an empty folder you made at a name the files later use (your
   own `_done/`) is removed when it is empty again. After a power cut a file being written may be
   left half-written: beside its place, named like `.M-214-fix.md.<hex>.<hex>.tmp`, which you may

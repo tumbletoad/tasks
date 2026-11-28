@@ -184,7 +184,8 @@ describe("[A3.pages.service] the library through the request path", () => {
           })
         )["rows"] as Json[]
       )[0]?.["ref"];
-    const papers = TaskGetResult.parse(await call("task.get", { task })).task.id;
+    const read = TaskGetResult.parse(await call("task.get", { task }));
+    const papers = read.view === "routine" ? read.routine.id : read.task.id;
     expect(await first(visaTask)).toBe(visa);
     expect(await first(papers)).toBe(page);
   });
