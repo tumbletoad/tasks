@@ -1,4 +1,4 @@
-// The install scripts of a release (A2 3.12.4, 3.12.5): install.sh (Linux) and install.ps1
+// The install scripts of a release: install.sh (Linux) and install.ps1
 // (Windows) with the version and the pinned release keys written into their text. The templates
 // beside this file are what a release ships after rendering; each script's own comments say what
 // it does and in which order.

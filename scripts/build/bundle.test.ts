@@ -1,4 +1,4 @@
-// The bundles (A2 3.12.2): the build's edits match the sources exactly once, the guard refuses a
+// The bundles: the build's edits match the sources exactly once, the guard refuses a
 // module URL a bundle could not keep, and a real bundle of this tree runs, turns on the compile
 // cache, maps every worker entry to a file it has, imports only Node built-ins, holds no path of
 // this machine and is the same bytes when built again elsewhere. In a temporary folder.
@@ -196,14 +196,14 @@ describe("[A2.3.12.2.build.bundle] the esbuild bundles of lib/", () => {
     // The CLI reaches the bridge in its own file too: the bridge is in no chunk.
     expect(chunks.map(read).join("\n")).toContain('import("../bridge.mjs")');
     expect(chunks.map(read).join("\n")).not.toContain("BRIDGE_BUILD");
-    // The bridge imports only the built-ins it is allowed (A2 3.7.1).
+    // The bridge imports only the built-ins it is allowed.
     const imports = [...read("lib/bridge.mjs").matchAll(/^import .* from "([^"]+)";$/gm)].map(
       (m) => m[1],
     );
     expect(imports.length).toBeGreaterThan(0);
     for (const specifier of imports) expect(BRIDGE_BUILTINS).toContain(specifier);
     expect(read("lib/bridge.mjs")).not.toMatch(/\bimport\(/);
-    // The shim (A4 3.6.3) is in no chunk either: the entry reaches it through its own file, it
+    // The shim is in no chunk either: the entry reaches it through its own file, it
     // imports only the built-ins it is allowed, loads nothing at run time, and carries its build.
     expect(entry).toContain('import("./shim.mjs")');
     expect(entry).not.toContain("SHIM_BUILD");
@@ -222,7 +222,7 @@ describe("[A2.3.12.2.build.bundle] the esbuild bundles of lib/", () => {
   test("THIRD_PARTY.txt names each npm package in the bundles with its licence", () => {
     expect(first.thirdParty).toMatch(/^zod \d+\.\d+\.\d+ \(MIT\)$/m);
     expect(first.thirdParty).toMatch(/^smol-toml \d+\.\d+\.\d+ \(BSD-3-Clause\)$/m);
-    // The UI listener's WebSocket server (A2 3.8.1), without its optional native add-ons.
+    // The UI listener's WebSocket server, without its optional native add-ons.
     expect(first.thirdParty).toMatch(/^ws \d+\.\d+\.\d+ \(MIT\)$/m);
     expect(first.thirdParty).not.toMatch(/bufferutil|utf-8-validate/);
     expect(first.thirdParty).not.toMatch(/esbuild/);
