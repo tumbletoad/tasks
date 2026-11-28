@@ -7315,14 +7315,14 @@
     },
     {
       "id": "S5.phone.sequences",
-      "title": "Against the real service, the phone's outbox through the sequences a review found: Undo after the computer applied a check-off whose answer was lost, Undo before the feed showed the check-off, the feed before the answer and a reopening on the computer, an answer withheld on an open link, a 503 that says it will never work, a closed space, and a refused capture across a restart",
+      "title": "Against the real service, the phone's outbox through the sequences a review found: Undo after the computer applied a check-off whose answer was lost, Undo before the feed showed the check-off, the feed before the answer and a reopening on the computer, an answer withheld on an open link, a 503 that says it will never work, a closed space, a refused capture across a restart, and a task the computer adds after a capture",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "S5.phone.interleavings",
-      "title": "Generated sequences against the real service: taps, lost and withheld answers, a dropped link, the feed held back, a restart of the app, changes on the computer and the space closed and opened; when all is quiet the phone shows what the computer holds, each capture is there once, and nothing waits",
+      "title": "Generated sequences against the real service: taps, lost and withheld answers, a dropped link, the feed held back, a restart of the app, changes on the computer and the space closed and opened; when all is quiet the phone holds the computer's open tasks and the same Today, an untouched task is as the person's last tap left it, each capture is on both once, and nothing waits",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

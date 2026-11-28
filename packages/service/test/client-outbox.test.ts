@@ -125,6 +125,16 @@ describe(
       s.live.stop();
     });
 
+    test("after a capture, a task the computer adds shows on the phone", async () => {
+      const s = await ready("After capture", "After capture");
+      s.live.add({ title: "After capture capture", inbox: true }, "After capture capture");
+      await s.quiet();
+      await w.added("After capture added");
+      await until(() => shown(s, "After capture added"));
+      expect(shown(s, "After capture capture")).toBe(true);
+      s.live.stop();
+    });
+
     test("a 503 that says it will never work is shown, and the next entry goes", async () => {
       const s = await ready("Never", "Never");
       s.faults.answer = {

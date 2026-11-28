@@ -4,9 +4,10 @@
 // app (a new session on the same kept files), and of the computer changing the same tasks (finished,
 // reopened, to the Trash) and closing and opening the space. Against the real service.
 //
-// When all is quiet and the link is up: the phone shows a task open exactly when the computer holds
-// it open; a task the computer did not touch is as the person's last tap left it (checked off, or
-// open again by Undo), with no refusal; each capture is there once; and nothing waits.
+// When all is quiet and the link is up: the phone holds the same open tasks as the computer, and its
+// Today is the one the same grouping gives for the computer's rows; a task the computer did not
+// touch is as the person's last tap left it (checked off, or open again by Undo), with no refusal;
+// each capture is on both, once; and nothing waits.
 //
 // A failure prints its seed; FC_SEED replays it, and FC_RUNS sets how many sequences run. Fixture
 // text only.
@@ -14,6 +15,9 @@ import { randomUUID } from "node:crypto";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, onTestFailed, test } from "vitest";
 import { spaceSession, type Keep, type Saved, type SpaceView } from "@ttasks/client/link";
+import type { TaskRow } from "@ttasks/client/store";
+import { todayOf, type Clock } from "@ttasks/client/today";
+import { localDate } from "@ttasks/contracts/day";
 import type { PhoneKey } from "./phone-client.ts";
 import { faulty, memory, pairedPhone, phone, phoneWorld, until } from "./phone-link.ts";
 
@@ -143,6 +147,17 @@ async function within(
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
 }
+
+const openIds = (rows: ReadonlyMap<string, TaskRow>): string[] =>
+  [...rows.values()]
+    .filter((t) => t.lifecycle === "active")
+    .map((t) => t.id)
+    .sort();
+const same = (a: readonly string[], b: readonly string[]) =>
+  a.length === b.length && a.every((x, i) => x === b[i]);
+/** Today's sections and their tasks, in order: what the phone shows. */
+const sectionsOf = (rows: ReadonlyMap<string, TaskRow>, clock: Clock) =>
+  todayOf(rows.values(), clock).sections.map((s) => [s.key, s.tasks.map((t) => t.id)]);
 
 let run = 0;
 
@@ -278,7 +293,31 @@ describe("[S5.phone.interleavings] the phone's outbox through generated sequence
           });
           const untouched = new Set(refs.filter((_, i) => !touched.has(i)).map((r) => r.title));
           expect(s.seen.view?.refused.filter((r) => untouched.has(r.words))).toEqual([]);
-          for (const title of captures) expect(await w.found(`"${title}"`), title).toBe(1);
+          // The phone's whole list and its Today, against the computer's rows.
+          const computer = await w.rows();
+          const phoneRows = () => s.seen.view?.tasks ?? new Map<string, TaskRow>();
+          await within(
+            20_000,
+            "the computer's open tasks",
+            () => s.seen.view,
+            () => same(openIds(phoneRows()), openIds(computer)),
+          );
+          const clock: Clock = {
+            now: Date.now(),
+            today: localDate(Date.now(), "UTC"),
+            timeZone: "UTC",
+            locale: "en",
+          };
+          expect(sectionsOf(phoneRows(), clock)).toEqual(sectionsOf(computer, clock));
+          for (const title of captures) {
+            expect(await w.found(`"${title}"`), title).toBe(1);
+            expect(
+              [...phoneRows().values()].filter(
+                (t) => t.title === title && t.lifecycle === "active",
+              ),
+              `${title} on the phone`,
+            ).toHaveLength(1);
+          }
           expect(s.seen.view?.refused.filter((r) => r.kind === "add")).toEqual([]);
           s.live.stop();
         }),

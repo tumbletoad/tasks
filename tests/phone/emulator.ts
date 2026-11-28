@@ -170,12 +170,21 @@ try {
     reset();
     await adb("shell", "am", "start", "-W", "-n", `${ANDROID_APP_ID}/.MainActivity`);
   };
-  const shows = (...texts: string[]) =>
-    until(async () => {
+  /** Whether the screen shows every one of `texts`; when not, what it shows is printed. */
+  const shows = async (...texts: string[]) => {
+    let xml = "";
+    const found = await until(async () => {
       await adb("shell", "uiautomator", "dump", "/sdcard/ttasks-ui.xml");
-      const xml = await adb("shell", "cat", "/sdcard/ttasks-ui.xml");
+      xml = await adb("shell", "cat", "/sdcard/ttasks-ui.xml");
       return texts.every((text) => xml.includes(`text="${text}"`));
     }, 60_000);
+    if (!found) {
+      const shown = [...xml.matchAll(/ text="([^"]+)"/gu)].map((m) => m[1]);
+      const app = / package="([^"]+)"/u.exec(xml)?.[1];
+      console.log(`the screen (${String(app)}) shows: ${JSON.stringify(shown)}`);
+    }
+    return found;
+  };
 
   await adb("install", "-r", app);
   await adb("install", "-r", test);
@@ -244,6 +253,8 @@ try {
   );
   check(captured, "and the screen says where it went: Added to Inbox");
   await pull("capture.png", "6-capture");
+  // The end of an instrumented test ends the app's process: start it as a person does.
+  await restart();
 
   const vet = await added("Call the vet");
   check(await shows("Call the vet"), "a second task shows");

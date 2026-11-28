@@ -19,7 +19,8 @@ import { parsePairing, type Pairing } from "@ttasks/contracts/link";
 import { SPACE_HEADER } from "../src/http/app.ts";
 import { certPin } from "../src/link/cert.ts";
 import { post } from "./http-client.ts";
-import { httpWorld, signIn, type HttpWorld } from "./http-world.ts";
+import { LiveCore, messageOf, type TaskRow } from "@ttasks/client/store";
+import { httpWorld, openFeed, signIn, type HttpWorld } from "./http-world.ts";
 import { phoneKey, type PhoneKey } from "./phone-client.ts";
 
 export interface Phone {
@@ -326,6 +327,23 @@ export async function phoneWorld(label: string) {
     /** How many tasks the computer finds for these words. */
     found: async (words: string) =>
       (await op("task.search", { q: words, scope: "active" })).result?.["total"],
+    /** The space's tasks as the computer holds them now: a snapshot of the page's own feed. */
+    rows: async (): Promise<ReadonlyMap<string, TaskRow>> => {
+      const feed = await openFeed(world.port(), token);
+      try {
+        await feed.next((m) => m["type"] === "hello");
+        feed.send({ type: "subscribe", space: "Mira" });
+        const snapshot = messageOf(await feed.next((m) => m["type"] === "snapshot"));
+        if (snapshot?.type !== "snapshot") throw new Error("the page's feed sent no snapshot");
+        const core = new LiveCore();
+        core.receive(snapshot);
+        const held = core.publish();
+        if (held === undefined) throw new Error("the snapshot held no rows");
+        return held.tasks;
+      } finally {
+        feed.ws.close();
+      }
+    },
     /** The space closed on the computer, and opened again. */
     close: async () => {
       await user.call("space/close", { space: folder }, { timeoutMs: 60_000 });
