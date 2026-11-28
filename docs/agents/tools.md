@@ -2995,6 +2995,7 @@ Finished tasks, newest first, a page at a time: the page's Completed view.
 | `rows[].area_id` | string | no | Area ID |
 | `rows[].project_id` | string | no | Project ID |
 | `rows[].parent_id` | string | no | Parent task ID |
+| `rows[].parent` | string | yes | The node it sits under: a task, a project or the space |
 | `rows[].position` | string | yes | Order key within its group |
 | `rows[].wrap_state` | "pending" \| "wrapped" | no | Wrap-up state |
 | `rows[].completed_at` | integer, -8640000000000000 to 8640000000000000 | no | When it was completed |
@@ -3059,6 +3060,7 @@ Result:
       "inbox": false,
       "priority": 2,
       "area_id": "ar_1b5d9f3h7k0m4p8r2t6w0y4a8c",
+      "parent": "ar_1b5d9f3h7k0m4p8r2t6w0y4a8c",
       "position": "a0",
       "wrap_state": "wrapped",
       "completed_at": 1775210400000,
@@ -3993,6 +3995,7 @@ What is in the Trash, newest change first, a page at a time.
 | `rows[].area_id` | string | no | Area ID |
 | `rows[].project_id` | string | no | Project ID |
 | `rows[].parent_id` | string | no | Parent task ID |
+| `rows[].parent` | string | yes | The node it sits under: a task, a project or the space |
 | `rows[].position` | string | yes | Order key within its group |
 | `rows[].wrap_state` | "pending" \| "wrapped" | no | Wrap-up state |
 | `rows[].completed_at` | integer, -8640000000000000 to 8640000000000000 | no | When it was completed |
@@ -4062,6 +4065,7 @@ Result:
       "lifecycle": "active",
       "status": "open",
       "inbox": false,
+      "parent": "sp_7c0hq2m4w9d8k1r6t3v5x0b2nf",
       "position": "a1",
       "deleted_at": 1778580000000,
       "created_at": 1778000000000,
