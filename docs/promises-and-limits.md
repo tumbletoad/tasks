@@ -386,8 +386,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   with what was asked and what it would act on. That permission uses Claude Code's own modes with
   your own tools and settings, so a tool you approved there stays approved. TTasks's own tools are
   allowed in every mode: the run reads its task and reports through them.
-- A Codex run answers nothing for you either: a question, or an approval Codex asks for that its
-  `run_permission` does not give, ends the run as needing you, with what was asked.
+- A Codex run answers nothing for you either: a question ends the run as needing you, with what
+  was asked. Codex is never asked for an approval: under a narrower `run_permission` its own
+  sandbox refuses what that mode does not allow, the agent goes on without it, and the run says
+  how many of its requests were refused.
 - A run is done when its work is: work the agent left running in the background holds it until
   the agent reported on it, and a server it left running holds it until you stop it.
 - No time limit ends a run unless you set one (`max_minutes`, `max_quiet_minutes` under `[runs]`
