@@ -122,6 +122,8 @@ export interface SpaceRow {
   restored?: { at: string; backup?: string };
   /** Where the space's backups are written. */
   backups_folder?: string;
+  /** Backups made into the space's own folder that stay there, and why. */
+  old_backups?: { message?: string };
 }
 
 /** Options of a space command: `--name value` or `--flag`. Values are never shown in errors. */
@@ -229,6 +231,7 @@ function printSpace(io: Io, row: SpaceRow, verb: string, isDefault = false): voi
   if (row.migrated !== undefined) io.stdout(`  ${migratedLine(row.migrated)}\n`);
   if (row.backup?.message !== undefined) io.stdout(`  ${row.backup.message}\n`);
   if (row.backups_folder !== undefined) io.stdout(`  Backups: ${row.backups_folder}\n`);
+  if (row.old_backups?.message !== undefined) io.stdout(`  ${row.old_backups.message}\n`);
   for (const line of wayOut(row)) io.stdout(`  ${line}\n`);
 }
 
