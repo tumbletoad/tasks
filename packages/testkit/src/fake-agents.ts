@@ -4,6 +4,8 @@
 // entries setup wrote (`.claude.json` in CLAUDE_CONFIG_DIR, else the user home, and
 // `$CODEX_HOME/config.toml`), and only in a scratch user home:
 // - `--version` prints a version in each tool's form.
+// - `claude auth status` and `codex login status` exit 0 while FAKE_SIGNED_IN is in the app's home,
+//   1 when it is not.
 // - `claude mcp get <name>` and `codex mcp get <name> --json` exit 0 and describe the entry when it
 //   is there, 1 when it is not (doctor's `mcp` and `codex.engines` checks, M4.05).
 // - Headless runs (doctor's `--live`): `claude -p --allowedTools mcp__<name>__<tool> …` and
@@ -46,6 +48,15 @@ const log = (tool) => {
   fs.appendFileSync(out, JSON.stringify({ tool, args, env }) + "\n");
 };
 const failModes = (process.env.FAKE_AGENT_FAIL ?? "").split(",");
+// The app's own status command: signed in while the marker file is in its home. It prints what a
+// real one may (an account name), which nothing of TTasks may show. FAKE_AGENT_FAIL=<tool>:status
+// makes it answer neither way, <tool>:hang makes it never end.
+const status = (tool, home) => {
+  if (failModes.includes(tool + ":hang")) { setInterval(() => undefined, 1000); return true; }
+  process.stdout.write("FAKE-ACCOUNT-SECRET\n");
+  if (failModes.includes(tool + ":status")) process.exit(5);
+  process.exit(fs.existsSync(path.join(home, ".fake-signed-in")) ? 0 : 1);
+};
 const readStdin = () => {
   try { return fs.readFileSync(0, "utf8"); } catch { return ""; }
 };
@@ -102,6 +113,7 @@ const CLAUDE = String.raw`${COMMON}
 log("claude");
 if (args[0] === "--version") { process.stdout.write("2.1.9 (Claude Code)\n"); process.exit(0); }
 const dir = process.env.CLAUDE_CONFIG_DIR;
+if (args[0] === "auth" && args[1] === "status" && status("claude", dir || path.join(base, ".claude"))) return;
 const file = dir ? path.join(dir, ".claude.json") : path.join(base, ".claude.json");
 if (!inside(file)) process.exit(98);
 const modes = failModes.filter((f) => f.startsWith("claude"));
@@ -132,6 +144,7 @@ const CODEX = String.raw`${COMMON}
 log("codex");
 if (args[0] === "--version") { process.stdout.write("codex-cli 0.167.2\n"); process.exit(0); }
 const home = process.env.CODEX_HOME || path.join(base, ".codex");
+if (args[0] === "login" && args[1] === "status" && status("codex", home)) return;
 const file = path.join(home, "config.toml");
 if (!inside(file)) process.exit(98);
 const modes = failModes.filter((f) => f.startsWith("codex"));
@@ -181,6 +194,9 @@ export interface FakeAgentCall {
   readonly args: readonly string[];
   readonly env: { readonly CLAUDE_CONFIG_DIR: string | null; readonly CODEX_HOME: string | null };
 }
+
+/** The file whose presence in an app's home makes the fake's status command say signed in. */
+export const FAKE_SIGNED_IN = ".fake-signed-in";
 
 export interface FakeAgents {
   /** The folder on PATH that holds the fakes. */

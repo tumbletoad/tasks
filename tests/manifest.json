@@ -3358,6 +3358,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.2.readiness",
+      "title": "An instance reads as not installed with the vendor's install page, or with its version as signed in, not signed in with the login line for its own home, or unknown with the status command, from the exit code of the app's own status command alone",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.2.instance.names",
       "title": "An instance is named the same way everywhere: its app's name alone when it is the only one of its app, else the app and its own name (its label without the app's name or a folder's name, else its account)",
       "owner": "M2",
