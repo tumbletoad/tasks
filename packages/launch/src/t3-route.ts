@@ -2,7 +2,8 @@
 // T3 server. A launch binds the task's exact folder to a T3 project (t3-binding.ts), creates an
 // idle thread with `t3_thread_launch` and no message, keyed by the launch ID as `clientRequestId`
 // under the grant recorded on the intent, checks the thread's folder, and opens the thread link
-// with the brief as an unsent draft.
+// with the brief as an unsent draft. That thread is the task's session in T3 from then on: a later
+// Open brings it forward (`thread` reads what T3 says of it) until T3 no longer has it.
 //
 // The route is the launch machine's T3 step and recovery (A4 3.9.1): `dispatch`
 // is the machine's external call after Dispatching is durable, `grant` and `replay` its recovery
@@ -99,6 +100,24 @@ const PRE_LAUNCH: Readonly<Record<string, FailReason>> = {
   runtime_mode_escalation_denied: "pairing_denied",
   capability_denied: "pairing_denied",
 };
+
+/** What a thread's agent does, as T3 tells: `waiting` asks the person, `gone` was deleted. */
+export type T3Activity = "working" | "waiting" | "idle" | "gone";
+
+/** A launch's thread as T3 tells now; `updatedAt` when T3 gave it. */
+export interface T3Thread {
+  readonly activity: T3Activity;
+  readonly updatedAt?: number;
+}
+
+/** T3's thread statuses while a turn is under way (T3's live statuses). */
+const T3_WORKING: ReadonlySet<unknown> = new Set([
+  "preparing",
+  "queued",
+  "starting",
+  "running",
+  "waiting",
+]);
 
 /** A thread link's brief may hold this many characters (A4 3.4.1: T3's limit is 8,000). */
 export const T3_PROMPT_LIMIT = 8_000;
@@ -493,6 +512,33 @@ export class T3Route {
     return same
       ? { kind: "confirmed", evidence: { folder_checked: true, thread } }
       : { kind: "failed", reason: "folder_mismatch", evidence: { thread } };
+  }
+
+  /**
+   * What T3 says of a launch's thread now: undefined when T3 cannot be asked or does not answer
+   * in a way that tells. An archived thread is `gone` with a deleted one: the person put it away.
+   */
+  async thread(thread: string): Promise<T3Thread | undefined> {
+    let found: unknown;
+    try {
+      found = (await this.#call("t3_thread_read", { threadId: thread, limit: 1 }))["thread"];
+    } catch (error) {
+      return error instanceof T3Error && error.code === "thread_not_found"
+        ? { activity: "gone" }
+        : undefined;
+    }
+    if (!isObject(found) || typeof found["status"] !== "string") return undefined;
+    if (found["archived"] === true) return { activity: "gone" };
+    const updated = typeof found["updatedAt"] === "string" ? Date.parse(found["updatedAt"]) : NaN;
+    const pending = found["pendingRequestCount"];
+    // T3's own `waiting` status also covers an agent that waits on its background work.
+    const activity: T3Activity =
+      typeof pending === "number" && pending > 0
+        ? "waiting"
+        : T3_WORKING.has(found["status"])
+          ? "working"
+          : "idle";
+    return { activity, ...(Number.isFinite(updated) ? { updatedAt: updated } : {}) };
   }
 
   /**

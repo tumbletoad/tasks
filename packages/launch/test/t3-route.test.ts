@@ -560,6 +560,33 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
   );
 
   test(
+    "a launch's thread reads as T3 tells it: working, waiting for the person, idle, and gone once deleted or archived",
+    async () => {
+      fake.addProject(folder("lumen"));
+      const { dispatched } = await launch(machine(), "lumen");
+      const id = dispatched?.evidence.thread ?? "";
+      const made = fake.threads.get(id);
+      if (made === undefined) throw new Error("no thread");
+      expect((await route.thread(id))?.activity).toBe("idle");
+      made.status = "running";
+      expect((await route.thread(id))?.activity).toBe("working");
+      // T3's `waiting` alone is an agent that waits on its own background work.
+      made.status = "waiting";
+      expect((await route.thread(id))?.activity).toBe("working");
+      made.pendingRequestCount = 1;
+      expect((await route.thread(id))?.activity).toBe("waiting");
+      made.archived = true;
+      expect(await route.thread(id)).toEqual({ activity: "gone" });
+      fake.threads.delete(id);
+      expect(await route.thread(id)).toEqual({ activity: "gone" });
+      // T3 that does not run cannot tell.
+      await fake.stop();
+      expect(await route.thread(id)).toBeUndefined();
+    },
+    SLOW,
+  );
+
+  test(
     "T3 that is not running, or not paired, makes the route unavailable before anything is dispatched",
     async () => {
       fake.addProject(folder("lumen"));
