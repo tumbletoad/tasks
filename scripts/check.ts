@@ -33,7 +33,7 @@ import {
   type Selection,
 } from "./check-plan.ts";
 import { changedSince } from "./verify-base.ts";
-import { checkIdsQuickly, E2E_CONFIG, type CollectedTest } from "./manifest.ts";
+import { checkIdsQuickly, E2E_CONFIG, type Change, type CollectedTest } from "./manifest.ts";
 import { binPath, repoRoot, runNodeCaptured, type Captured } from "./run.ts";
 import { CRUISE_ROOTS, generated, runtime, typecheck } from "./steps.ts";
 
@@ -121,9 +121,10 @@ function givenFiles(paths: readonly string[], files: readonly string[]): string[
 function findChange(
   options: Options,
   files: readonly string[],
-): { changed: string[]; label: string } {
+): { changed: string[]; label: string; since: Change } {
   if (options.paths.length > 0) {
-    return { changed: givenFiles(options.paths, files), label: "given on the command line" };
+    const changed = givenFiles(options.paths, files);
+    return { changed, label: "given on the command line", since: { base: "HEAD", paths: changed } };
   }
   const rev = options.base ?? "origin/main";
   let mergeBase: string;
@@ -140,6 +141,7 @@ function findChange(
   return {
     changed: [...new Set(changed.map((p) => p.replaceAll("\\", "/")))].sort(),
     label: `since ${rev} (merge base ${mergeBase.slice(0, 12)})`,
+    since: { base: mergeBase },
   };
 }
 
@@ -215,7 +217,7 @@ const platformName = { win32: "Windows", linux: "Linux", darwin: "macOS" }[
 ];
 
 let options: Options;
-let change: { changed: string[]; label: string };
+let change: { changed: string[]; label: string; since: Change };
 /** Every file git tracks or would track that is there. */
 let files: string[];
 try {
@@ -447,7 +449,7 @@ pending.push(
           ...(t.location ? { line: t.location.line } : {}),
         })),
       );
-      const { errors, tests } = await checkIdsQuickly(collected);
+      const { errors, tests } = await checkIdsQuickly(collected, change.since);
       for (const e of errors) console.error(e);
       console.log(`${plural(tests, "test")} checked`);
       return errors.length === 0;
@@ -481,8 +483,8 @@ notRun.push(
     : "lint of the files the change did not edit, which may use what it changed",
 );
 notRun.push(
-  "the test manifest's check that every entry has a test, and of IDs in titles built as their " +
-    "file runs, in files the check did not run (pnpm verify)",
+  "the test manifest's check that every entry the change did not touch has a test, and of IDs " +
+    "in titles built as their file runs, in files the check did not run (pnpm verify)",
 );
 if (browserSkipped !== "") notRun.push(`browser tests: ${browserSkipped}`);
 const others = e2eFiles.length - browserRan.length;

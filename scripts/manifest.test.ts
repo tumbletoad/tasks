@@ -25,6 +25,27 @@ async function writeTree(files: Record<string, string>): Promise<string> {
   return root;
 }
 
+const git = (root: string, ...args: string[]) => {
+  const result = spawnSync("git", args, { cwd: root, encoding: "utf8", windowsHide: true });
+  if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
+};
+
+/** A git tree with `base` committed and `change` applied on top, uncommitted. */
+async function writeChange(
+  base: Record<string, string>,
+  change: Record<string, string | null> = {},
+): Promise<string> {
+  const root = await writeTree(base);
+  git(root, "init", "-q");
+  git(root, "add", ".");
+  git(root, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "base");
+  for (const [path, content] of Object.entries(change)) {
+    if (content === null) await rm(join(root, path));
+    else await writeFile(join(root, path), content);
+  }
+  return root;
+}
+
 const entry = (id: string, kind = "ci") => ({
   id,
   title: "An entry",
@@ -224,7 +245,7 @@ describe("[A7.3.18.6.manifest-check] the test-manifest check", () => {
     // The state a merge of main can leave: main's test file stays, and the branch took its entry
     // out. The change does not reach the file, so pnpm check does not run it.
     const { include, exclude } = testFiles;
-    const root = await writeTree({
+    const root = await writeChange({
       "vitest.config.mjs": `export default ${JSON.stringify({ test: { include, exclude, globals: true } })};\n`,
       "tests/manifest.json": JSON.stringify({ version: 1, entries: [entry("A7.one")] }),
       "a/kept.test.ts":
@@ -235,9 +256,49 @@ describe("[A7.3.18.6.manifest-check] the test-manifest check", () => {
     });
     try {
       const ran = [{ name: "[A7.one] ran", file: "a/ran.test.ts", line: 1 }];
-      const { errors } = await checkIdsQuickly(ran, root);
+      const { errors } = await checkIdsQuickly(ran, { base: "HEAD" }, root);
       expect(errors).toEqual([
         'a/kept.test.ts:2 "[A7.gone] kept by the merge > still here" carries unknown manifest ID "A7.gone"',
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  test("the quick check names an entry whose test the change deleted or renamed, and only that", async () => {
+    const { include, exclude } = testFiles;
+    const root = await writeChange(
+      {
+        "vitest.config.mjs": `export default ${JSON.stringify({ test: { include, exclude, globals: true } })};\n`,
+        "tests/manifest.json": JSON.stringify({
+          version: 1,
+          entries: ["A7.deleted", "A7.renamed", "A7.moved", "A7.shared", "A7.untouched"].map((id) =>
+            entry(id),
+          ),
+        }),
+        "a/deleted.test.ts": 'test("[A7.deleted] goes", () => {});\n',
+        "a/renamed.test.ts": 'test("[A7.renamed] old name", () => {});\n',
+        "a/from.test.ts": 'test("[A7.moved] moves", () => {});\n',
+        // A shared suite's title, which a test file loads: the tag stays in the suite.
+        "a/suite.ts": 'export const title = "[A7.shared] shared";\n',
+        "a/shared.test.ts": 'import { title } from "./suite.ts";\ntest(title, () => {});\n',
+        // Only a title built as the file runs carries this ID, in a file the change leaves alone.
+        "a/untouched.test.ts": 'const id = "A7.untouched";\ntest(`[${id}] built`, () => {});\n',
+      },
+      {
+        "a/deleted.test.ts": null,
+        "a/renamed.test.ts": 'test("[A7.new-name] new name", () => {});\n',
+        "a/from.test.ts": null,
+        "a/to.test.ts": 'test("[A7.moved] moved", () => {});\n',
+        "a/suite.ts": 'export const title = "[A7.shared] shared, renamed";\n',
+      },
+    );
+    try {
+      const { errors } = await checkIdsQuickly([], { base: "HEAD" }, root);
+      expect(errors.sort()).toEqual([
+        'a/renamed.test.ts:1 "[A7.new-name] new name" carries unknown manifest ID "A7.new-name"',
+        'manifest entry "A7.deleted" (ci) has no test carrying its ID',
+        'manifest entry "A7.renamed" (ci) has no test carrying its ID',
       ]);
     } finally {
       await rm(root, { recursive: true, force: true });
