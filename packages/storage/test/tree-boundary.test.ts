@@ -370,6 +370,26 @@ describe("[S2.tree.boundary] the tree writer keeps today's guarantees at the req
     ok(fx.send("note.add", { on: "t-c71c0065", body: "Found by its old name" }));
     expect(count("SELECT count(*) AS n FROM notes")).toBe(1);
   });
+
+  test("a base from another copy of the space is refused; a kept Undo's answer replays on a resend", () => {
+    add("Renew the passport");
+    const now = fx.send("note.add", { on: "M-1", body: "Booked" }).as_of;
+    const elsewhere = now.replace(/^\d+\./u, "9.");
+    const copy = fx.send(
+      "task.update",
+      { task: "M-1", set: { title: "Mine" } },
+      { base: elsewhere },
+    );
+    expect(copy.error?.code).toBe("EPOCH_CHANGED");
+    ok(fx.send("task.update", { task: "M-1", set: { title: "Renew it" } }));
+    ok(fx.send("task.update", { task: "M-1", set: { title: "Renew it soon" } }, { who: fx.agent }));
+    const kept = fx.send("undo", {}, { request_id: "kept-undo-request-01" });
+    expect(kept.result).toMatchObject({ kept: { work: [{ by: { label: "agent:codex" } }] } });
+    expect(fx.send("undo", {}, { request_id: "kept-undo-request-01" })).toEqual({
+      ...kept,
+      replayed: true,
+    });
+  });
   test("the history check sees a row the history made that went missing", () => {
     add("Renew the passport");
     ok(fx.send("note.add", { on: "M-1", body: "Booked" }));
