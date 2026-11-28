@@ -80,8 +80,6 @@ It does not ask a person to approve what agents write before they may write it. 
 
 It never merges two edited copies of a space. One home writes, so there is never a conflict between copies to resolve.
 
-It does not mix spaces.
-
 ## Look, mood and character
 
 Warm ink, unbleached paper and a restrained moss accent. Sumi, the dark theme, is the default: deep warm greys with comfortable, legible text. Washi, the light theme, brings the openness of a pale page. Both should feel composed enough to leave open through a working day.

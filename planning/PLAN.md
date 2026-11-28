@@ -53,8 +53,9 @@ Today's two-level model maps onto the tree as follows: an area becomes a top-lev
 its projects nest under it; a task's summary and context become its brief and description; notes
 and log entries become one notes table; learnings become notes of the kind `learning`, and new
 lessons go to pages; a source lives on the task of its earliest link, with its other task links
-kept as links; the folders table serves any node; places, proposals, exchanges and attachments,
-which nothing writes, are dropped.
+kept as links, and a source whose last task link is gone sits on the space; the folders table
+serves any node, and places are retired with the folders work of step 2; proposals, exchanges
+and attachments, which nothing writes, are dropped.
 
 ## How knowledge reaches agents and grows
 
@@ -73,10 +74,10 @@ Client work > Bakery > Website relaunch: a new site before the spring menu.
 M-214 Fix the menu layout ...  (the task as today)
 ```
 
-- **One budget for the whole first answer,** the task and the trail together. It starts at 2,000
-  tokens and is set from what Claude Code and Codex actually receive. The person's request and
-  notes for agents come first and are never cut. The nearest levels are listed in full. A far
-  level with many items shrinks to a count and a pointer to `read`.
+- **One budget for the whole first answer,** the task and the trail together. It starts at 2,500
+  tokens, and step 1's trial sets the final number from what Claude Code and Codex receive. The
+  person's request and notes for agents come first and are never cut. The nearest levels are
+  listed in full. A far level with many items shrinks to a count and a pointer to `read`.
 - **Only a person's notes for agents and skills are instructions.** A project's notes for agents
   hold for every task below it, and only a person writes them. Pages, descriptions and sources
   are knowledge: the tools frame them as data, as they frame task text now. A poisoned mail
@@ -106,8 +107,8 @@ carries one line that says what changed and why, and that line is what Activity 
   go through `write_page` before the finish. An agent is never made to manufacture a lesson.
 - **Knowledge another task can use goes on the project.** The trail walks upward only, so a page
   on one task is invisible to its sibling. `write_page` therefore puts a new page on the nearest
-  project unless the agent names the task. A project's Library also lists the pages of its tasks,
-  open and finished.
+  project unless the agent names the task. A task with no project above it keeps its own new
+  pages. A project's Library also lists the pages of its tasks, open and finished.
 - **A shipped skill, `keeping-the-library`,** holds the judgement: fix a wrong sentence in place,
   one page per subject, cite the task or source behind a change, move a page up when a second
   project needs it.
@@ -252,9 +253,12 @@ Each step ships and is useful on its own. The order follows what each step needs
   words of any note or log entry (#223). The card's small controls (#216), Open with the brief
   waiting in the prompt box (#217), a search result that stays open while typing (#219) and edits
   that wait out a stalled page (#222).
-- **Left:** the service applies the same rule, also for `ttasks undo`: a change becomes a step on
-  the person's stack only when it is one of the kinds that keep Undo, and Undo and Redo pass over
-  an older stored step of a kind that lost it. Each kept kind is undone by an ordinary operation
+- **Left:** the service keeps Undo, also for `ttasks undo`, for exactly what the page offers it
+  for: a check-off and a reopen, a move to the Trash and out of it, a removed note, a correction
+  of words, a move out of the Inbox, a task's first filing from no area, a change of many tasks
+  at once, a new project or area, and an unarchive. A new project or area that is undone is
+  archived. Any other change is no step on the person's stack, and Undo and Redo pass over an
+  older stored step of a kind that lost Undo. Each kept kind is undone by an ordinary operation
   that is its opposite, and keeps today's check for newer work. Then the general inversion engine
   goes, with `partial` in the contract, the command line and the app, and the tests and promises
   that held it.
@@ -263,9 +267,9 @@ Each step ships and is useful on its own. The order follows what each step needs
 ### Step 1. Knowledge above the task, with its trial
 
 - **A person gets:** pages on the space, areas, projects and tasks; a brief and a description for
-  the space; a description and notes for agents on projects. Agents are handed the trail and keep
-  the pages current. A project screen with its Library, a page screen with History and Restore,
-  and page edits listed under Changes.
+  the space; a description for projects; notes for agents on the space, areas and projects. Agents
+  are handed the trail and keep the pages current. A project screen with its Library, a page
+  screen with History and Restore, and page edits listed under Changes.
 - **Storage:** one migration step beside today's tables, and no more than the trial needs. The
   page edit is the first named command of the new write path. The search tables are rebuilt for
   the new kind. Before this step indexes pages, the trial restore that guards every migration

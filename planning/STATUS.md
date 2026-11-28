@@ -22,10 +22,10 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 0.1 | Undo only where it helps in the page, Redo beside it, a check-off leaves at once (#218) | done |
 | 0.2 | The pen: a person corrects a summary, a context, a note or a log entry (#223) | done |
 | 0.3 | The rest of the feedback from use: card controls (#216), Open with the brief waiting (#217), search keeps an opened result (#219), edits outlast a stalled page (#222) | done |
-| 0.4 | Undo thinned in the service: only kept kinds become steps, older steps of other kinds are passed over, each kept kind undone by its opposite operation | ready |
-| 0.5 | The general inversion engine and `partial` removed from the service, the contract, the command line and the app | todo: 0.4 |
+| 0.4 | Undo thinned in the service: only kept kinds become steps, older steps of other kinds are passed over, each kept kind undone by its opposite operation | doing (#225) |
+| 0.5 | The general inversion engine and `partial` removed from the service, the contract, the command line and the app | doing (#225) |
 | 1b | The Activity log (#224) | review |
-| 1.1 | The contract for pages, the trail, `read` and `write_page` | ready |
+| 1.1 | The contract for pages, the trail, `read` and `write_page` | doing (#228) |
 | 1.2 | Storage: the migration step for pages and the new fields, the search tables rebuilt, an older backup's index rebuilt by its own version | todo: 1.1 |
 | 1.3 | The page edit as the first named command of the new write path | todo: 1.2 |
 | 1.4 | Agent tools: `read`, `write_page`, the trail in `get_task` within one budget, search over pages, `complete_task` asking for pages updated | todo: 1.3 |
@@ -34,15 +34,15 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 1.7 | The trial: twenty scripted tasks with Claude Code and Codex, and the bytes of history per page edit | todo: 1.4, 1.5 |
 | 1.8 | The harvest of one real project, and a walk through it as a person | todo: 1.6, 1.7 |
 | 2.1 | The short design for one tree, reviewed before code | todo: 1.7 |
-| 2.2 | Every writer moved to named commands, the old write path deleted, the crash harness on the new path | todo: 2.1 |
-| 2.3 | The tables of the tree, with the reads ported | todo: 2.1 |
+| 2.2 | Every writer moved to named commands, the old write path deleted, the crash harness on the new path | todo: 2.1 (its design sets their order, in one lane) |
+| 2.3 | The tables of the tree, with the reads ported | todo: 2.1 (its design sets their order, in one lane) |
 | 2.4 | Nested projects, subtasks and the finishing dialog, notes on projects and the space, page comments, links, sources on any node | todo: 2.3 |
 | 2.5 | The app: the sidebar tree, the derived status line, the expanded task's Brief, Description, Knowledge and subtasks | todo: 2.3 |
 | 2.6 | Folders on any node, places retired, folders after a restore, Settings > Folders, a project's rename and archive in the app | todo: 2.3 |
 | 2b.1 | The short design for routines | todo: 2.2 |
 | 2b.2 | Tasks that come back on a schedule | todo: 2b.1 |
 | 2b.3 | Agent runs on a schedule (Refresh, tidying), Refresh in the top bar, Continue interactively | todo: 2b.1 |
-| 3.1 | The projector for the tree on disk, live with step 2's migration | todo: 2.1 |
+| 3.1 | The projector for the tree on disk, built beside step 2 and live with the tree's migration | todo: 2.1 |
 | 3.2 | Inherited default folders, other folders as hints, Open says when a folder is set only on another machine | todo: 2.6 |
 | 3.3 | The trial's tasks again, tools only against tools with the tree, and a rename's rebuild timed on Windows | todo: 3.1 |
 | 4.1 | Budgets that speak in a write's answer, and tidying a project's library | todo: 1.4 |
