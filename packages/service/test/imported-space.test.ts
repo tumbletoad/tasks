@@ -20,6 +20,7 @@ import {
   tempRoot,
   waitFor,
 } from "./harness.ts";
+import { backupsBeside } from "../../storage/test/backup-helpers.ts";
 
 const FIXTURE = fileURLToPath(new URL("../../../fixtures/space-with-import", import.meta.url));
 const USER: Caller = { class: "cli-interactive", env: {} };
@@ -153,7 +154,10 @@ describe("[A1.compat.imported-space] a space with prototype imports in its histo
     "it backs up, exports and restores",
     async () => {
       const checked = await checkedDriver();
-      const backup = await provenBackup(checked, folder, { kind: "manual" });
+      const backup = await provenBackup(checked, folder, {
+        backupDir: backupsBeside(folder),
+        kind: "manual",
+      });
       const bundle = await exportBundle(checked, folder, { mode: "backup", withJsonl: true });
       expect(bundle.manifest.seq).toBe(backup.sidecar.seq);
 

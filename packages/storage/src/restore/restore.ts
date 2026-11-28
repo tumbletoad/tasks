@@ -139,8 +139,6 @@ export interface RestoredInPlace extends RestoredSpace {
   /** The live folder's new name, `<slug>.replaced-<utc>`. */
   replaced: string;
   claim: Claim;
-  /** Whether the replaced folder's backups moved into the restored space. */
-  backupsCarried: boolean;
 }
 
 function settings(options: RestoreOptions): { appVersion: string; now: number } {
@@ -487,7 +485,6 @@ export async function restoreInPlaceWith(
       ...pick({ ...unpacked, space: claim.space }),
       replaced: swapped.replaced,
       claim,
-      backupsCarried: swapped.backupsCarried,
     };
   } catch (error) {
     cleanUp(names);

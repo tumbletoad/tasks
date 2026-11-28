@@ -23,7 +23,7 @@ import { openSpace } from "../src/space.ts";
 import { StorageWorker } from "../src/worker/client.ts";
 import { SpaceWriter } from "../src/write/writer.ts";
 import { SCHEMA_STEPS } from "../migrations/index.ts";
-import { rawWriter, writeCommits } from "./backup-helpers.ts";
+import { backupsBeside, rawWriter, writeCommits } from "./backup-helpers.ts";
 import { createRequest, ownerCredential } from "./fixture-requests.ts";
 import { STEPS_0_3 } from "./revisions.ts";
 import { checkedDriver, createFixtureSpace, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
@@ -130,7 +130,7 @@ async function expectRestoresWithIndex(
   word: string,
 ): Promise<void> {
   const checked = await checkedDriver();
-  const listed = listBackups(join(folder, "backups")).backups.find((b) => b.name === backup.name);
+  const listed = listBackups(backupsBeside(folder)).backups.find((b) => b.name === backup.name);
   if (listed === undefined) throw new Error("the backup is listed");
   expect(await verifyBackup(checked, listed)).toEqual({
     state: "verified",
@@ -154,11 +154,18 @@ describe("[A1.5.restore.search-derived] a restore makes the search index again f
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make(), "mira", {}, STEPS_0_3);
     await writeCommits(folder, 4, "early", STEPS_0_3);
-    const backup = await backupSpaceWith(checked, folder, { kind: "manual" }, { steps: STEPS_0_3 });
+    const backup = await backupSpaceWith(
+      checked,
+      folder,
+      { backupDir: backupsBeside(folder), kind: "manual" },
+      { steps: STEPS_0_3 },
+    );
     expect(backup.sidecar.user_version).toBe(3);
     // The live space moves on to this build's schema; the backup stays at 0.3.
-    expect((await migrateSpace(checked, folder)).state).toBe("migrated");
-    const listed = listBackups(join(folder, "backups")).backups.find((b) => b.name === backup.name);
+    expect((await migrateSpace(checked, folder, { backupDir: backupsBeside(folder) })).state).toBe(
+      "migrated",
+    );
+    const listed = listBackups(backupsBeside(folder)).backups.find((b) => b.name === backup.name);
     if (listed === undefined) throw new Error("the backup is listed");
     expect(await verifyBackup(checked, listed)).toEqual({
       state: "verified",
@@ -175,7 +182,9 @@ describe("[A1.5.restore.search-derived] a restore makes the search index again f
       machineId: TEST_MACHINE,
     });
     expect(restored.revision).toEqual({ major: 0, minor: 3 });
-    expect((await migrateSpace(checked, folder)).state).toBe("migrated");
+    expect((await migrateSpace(checked, folder, { backupDir: backupsBeside(folder) })).state).toBe(
+      "migrated",
+    );
     const fresh = await freshSchema();
     await read(folder, (conn) => {
       expect(schemaOf(conn)).toEqual(fresh);
@@ -188,7 +197,10 @@ describe("[A1.5.restore.search-derived] a restore makes the search index again f
   test("a backup made after schema 0.4 verifies and restores with the index of its own tasks", async () => {
     const checked = await checkedDriver();
     const folder = await indexedSpace("after");
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     // Tasks written after the backup are not in what it restores.
     await writeCommits(folder, 2, "later");
     await expectRestoresWithIndex(folder, backup, "after2");
@@ -207,7 +219,10 @@ describe("[A1.5.restore.search-derived] a restore makes the search index again f
     } finally {
       conn.close();
     }
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     await expectRestoresWithIndex(folder, backup, "missing1");
   });
 
@@ -233,7 +248,10 @@ describe("[A1.5.restore.search-derived] a restore makes the search index again f
     } finally {
       conn.close();
     }
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     await expectRestoresWithIndex(folder, backup, "differs3");
     await read(folder, (conn) => {
       expect(
@@ -258,7 +276,10 @@ describe("[A1.5.search.repair] a damaged search index is made again and never co
     const checked = await checkedDriver();
     const folder = await indexedSpace("broken");
     damageIndex(folder);
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     expect(backup.searchIndexRemade).toBe(true);
     await expectRestoresWithIndex(folder, backup, "broken2");
   });
@@ -268,11 +289,17 @@ describe("[A1.5.search.repair] a damaged search index is made again and never co
     damageIndex(folder);
     const worker = await StorageWorker.start({ driver: "node:sqlite" });
     try {
-      const writer = await worker.openSpaceWriter(folder, { machine: MACHINE });
+      const writer = await worker.openSpaceWriter(folder, {
+        backupDir: backupsBeside(folder),
+        machine: MACHINE,
+      });
       expect(writer.searchIndex).toBe("remade");
       expect(await writer.repairSearchIndex()).toBe("sound");
       await writer.close();
-      const again = await worker.openSpaceWriter(folder, { machine: MACHINE });
+      const again = await worker.openSpaceWriter(folder, {
+        backupDir: backupsBeside(folder),
+        machine: MACHINE,
+      });
       expect(again.searchIndex).toBeUndefined();
       await again.close();
     } finally {
@@ -327,10 +354,16 @@ describe("[A1.5.search.repair] a damaged search index is made again and never co
     }
     const worker = await StorageWorker.start({ driver: "node:sqlite" });
     try {
-      const writer = await worker.openSpaceWriter(folder, { machine: MACHINE });
+      const writer = await worker.openSpaceWriter(folder, {
+        backupDir: backupsBeside(folder),
+        machine: MACHINE,
+      });
       expect(writer.searchIndex).toBe("remade");
       await writer.close();
-      const again = await worker.openSpaceWriter(folder, { machine: MACHINE });
+      const again = await worker.openSpaceWriter(folder, {
+        backupDir: backupsBeside(folder),
+        machine: MACHINE,
+      });
       expect(again.searchIndex).toBeUndefined();
       await again.close();
     } finally {
@@ -369,7 +402,10 @@ describe("[A1.5.search.repair] a damaged search index is made again and never co
     forgetSourceWords(folder);
     const worker = await StorageWorker.start({ driver: "node:sqlite" });
     try {
-      const elsewhere = await worker.openSpaceWriter(folder, { machine: OTHER_MACHINE });
+      const elsewhere = await worker.openSpaceWriter(folder, {
+        backupDir: backupsBeside(folder),
+        machine: OTHER_MACHINE,
+      });
       expect(elsewhere.authority.machineId).not.toBe(OTHER_MACHINE.id);
       expect(elsewhere.searchIndex).toBeUndefined();
       await elsewhere.close();
@@ -377,7 +413,10 @@ describe("[A1.5.search.repair] a damaged search index is made again and never co
         expect(matching(conn, "copyword")).toEqual([]);
       });
       // Its owner's next open brings it up to date.
-      const owner = await worker.openSpaceWriter(folder, { machine: MACHINE });
+      const owner = await worker.openSpaceWriter(folder, {
+        backupDir: backupsBeside(folder),
+        machine: MACHINE,
+      });
       expect(owner.searchIndex).toBe("remade");
       await owner.close();
     } finally {
@@ -391,13 +430,18 @@ describe("[A1.5.search.repair] a damaged search index is made again and never co
   test("a restored copy's index waits for its claim, and the claimed copy's search finds a source's key", async () => {
     const checked = await checkedDriver();
     const original = await linkedSpace();
-    const backup = await backupSpace(checked, original, { kind: "manual" });
+    const backup = await backupSpace(checked, original, {
+      backupDir: backupsBeside(original),
+      kind: "manual",
+    });
     const { folder } = await restoreBackup(checked, backup.file, join(folders.make(), "mira"));
     // As a restore by a build before source words left it.
     forgetSourceWords(folder);
     const worker = await StorageWorker.start({ driver: "node:sqlite" });
     try {
-      const refused = await rejection(worker.openSpaceWriter(folder, { machine: MACHINE }));
+      const refused = await rejection(
+        worker.openSpaceWriter(folder, { backupDir: backupsBeside(folder), machine: MACHINE }),
+      );
       expect(refused.code).toBe("SPACE_READ_ONLY_COPY");
       await read(folder, (conn) => {
         expect(matching(conn, "copyword")).toEqual([]);
@@ -405,7 +449,10 @@ describe("[A1.5.search.repair] a damaged search index is made again and never co
       await worker.claimSpace(folder, { machine: MACHINE });
       // The claim writes only its commit; the copy's first open as a writer, which follows every
       // claim, brings its index up to date.
-      const claimed = await worker.openSpaceWriter(folder, { machine: MACHINE });
+      const claimed = await worker.openSpaceWriter(folder, {
+        backupDir: backupsBeside(folder),
+        machine: MACHINE,
+      });
       expect(claimed.searchIndex).toBe("remade");
       await claimed.close();
     } finally {
