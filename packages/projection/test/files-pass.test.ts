@@ -14,6 +14,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
+import { CAN_HOLD_FILES, holdFile } from "@ttasks/testkit";
 import { tempFolders } from "../../storage/test/space-helpers.ts";
 import {
   expectConverged,
@@ -116,6 +117,29 @@ describe("[S3.files.pass] a pass writes what differs from a fresh render, and ke
     expectConverged(w);
     w.fx.close();
   });
+
+  test.skipIf(!CAN_HOLD_FILES)(
+    "an edited file held by another program at the start is rescued and written once it is let go",
+    async () => {
+      const w = await filesWorld(temp.make());
+      const t = smallTree(w);
+      const first = w.projector();
+      first.start();
+      first.pass();
+      const path = `${SITE}/${t.menu}-fix-the-menu.md`;
+      const abs = join(w.view, ...path.split("/"));
+      edit(w, path, "my own words");
+      const held = holdFile(abs);
+      const again = w.projector();
+      expect(again.start().suspect).toBe(1);
+      expect(again.pass()).toMatchObject({ failed: 1, stamped: false });
+      held.release();
+      expect(again.pass()).toMatchObject({ failed: 0, rescued: 1, stamped: true });
+      expect([...rescued(w).values()]).toEqual(["my own words"]);
+      expectConverged(w);
+      w.fx.close();
+    },
+  );
 
   test("at a path no longer used, a changed file is left where it is; a person's own file stays", async () => {
     const w = await filesWorld(temp.make());

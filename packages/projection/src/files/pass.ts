@@ -137,11 +137,13 @@ export class FilesProjector {
     return { recovered, temps, suspect: this.check() };
   }
 
-  /** Every recorded file read: one changed or missing is written at the next pass. */
+  /**
+   * Every recorded file read: one changed, missing or held by another program is written at the
+   * next pass, which tries a held one again until it can tell what the file holds.
+   */
   check(): number {
     for (const [path, entry] of this.#record.files) {
       const found = this.#disk.look(path);
-      if (found.kind === "busy") continue;
       const ok =
         found.kind === "file" &&
         found.links === 1 &&
