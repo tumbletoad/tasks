@@ -18,10 +18,6 @@ const toastAction = (page: Page) => page.locator('[data-part="toast-action"]');
 const group = (page: Page, name: string) => page.locator(`main section[aria-label="${name}"]`);
 const titles = (page: Page, name: string) => group(page, name).locator('[data-part="title"]');
 
-/** A word no other test uses, so each test's search finds only its own tasks. */
-const wordOf = (stem: string) =>
-  `${stem}${test.info().project.name}${String(test.info().workerIndex)}`.toLowerCase();
-
 interface Added {
   readonly tasks: readonly { readonly ref: string }[];
 }
@@ -83,7 +79,7 @@ test.describe("[A7.3.12.m5-10.e2e.capture] A capture shows its shortcuts before 
     await onOneDay(async (today, attempt) => {
       // Tomorrow is the page's tomorrow when Enter adds it: one day, so the step runs on one.
       // Each attempt adds a task of its own.
-      const word = `${wordOf("larkspur")}${String(attempt)}`;
+      const word = `larkspur${String(attempt)}`;
       await open(page, world, "/inbox");
       const field = adding(page);
       await expect(field).toBeEnabled();
@@ -118,7 +114,7 @@ test.describe("[A7.3.12.m5-10.e2e.capture] A capture shows its shortcuts before 
     page,
     world,
   }) => {
-    const word = wordOf("tansy");
+    const word = "tansy";
     await open(page, world, "/inbox");
     const field = adding(page);
     const title = `Close #3 by 10:30 for mail@ana.example <b>${word}</b> p10`;
@@ -146,7 +142,7 @@ test.describe("[A7.3.12.m5-10.e2e.capture] A capture shows its shortcuts before 
     page,
     world,
   }) => {
-    const word = wordOf("yarrow");
+    const word = "yarrow";
     await open(page, world, "/today");
     await page
       .getByRole("navigation")
@@ -175,7 +171,7 @@ test.describe("[A7.3.12.m5-10.e2e.search] Search results are a list like any oth
     page,
     world,
   }) => {
-    const word = wordOf("quince");
+    const word = "quince";
     const [first] = await addTasks(world, [
       { title: `Prune the ${word} tree`, area: "home", priority: 1 },
       { title: `Pick ${word} jam jars`, area: "home", priority: 2 },
@@ -222,7 +218,7 @@ test.describe("[A7.3.12.m5-10.e2e.search] Search results are a list like any oth
     page,
     world,
   }) => {
-    const word = wordOf("sorrel");
+    const word = "sorrel";
     const [done, , dropped] = await addTasks(world, [
       { title: `Sow ${word} seeds`, area: "home", summary: "In trays first." },
       { title: `Cut ${word} for soup`, area: "home" },
@@ -287,7 +283,7 @@ test.describe("[A7.3.12.e2e.effort-sort] A search sorted by effort shows quick w
     page,
     world,
   }) => {
-    const word = wordOf("bramble");
+    const word = "bramble";
     await addTasks(world, [
       { title: `Rebuild the ${word} shed`, area: "home", effort: "L" },
       { title: `Oil the ${word} gate`, area: "home", effort: "S" },
@@ -315,7 +311,7 @@ test.describe("[A7.3.12.m5-10.e2e.changes] A result that changes while the list 
     page,
     world,
   }) => {
-    const word = wordOf("medlar");
+    const word = "medlar";
     const [kept, leaving] = await addTasks(world, [
       { title: `Prune the ${word} hedge`, area: "home" },
       { title: `Net the ${word} fruit`, area: "home" },
@@ -362,7 +358,7 @@ test.describe("[A7.3.12.e2e.equals-filter] A filter written with = is read as th
     page,
     world,
   }) => {
-    const word = wordOf("quince");
+    const word = "quince";
     const [moved] = await addTasks(world, [
       { title: `Water the ${word} pots`, area: "home", priority: 3 },
       { title: `Feed the ${word} pots`, area: "home", priority: 3 },
@@ -388,7 +384,7 @@ test.describe("[A5.3.13.e2e.search-now] A search result changes the task as it s
     page,
     world,
   }) => {
-    const word = wordOf("ledger");
+    const word = "ledger";
     const [ref] = await addTasks(world, [{ title: `Close the ${word} ledger`, inbox: true }]);
     if (ref === undefined) throw new Error("the task was not added");
     await world.op(world.mira.id, "task.finish", {
@@ -484,7 +480,7 @@ test.describe("[A5.3.13.e2e.search-address] What the person types in the top fie
     page,
     world,
   }) => {
-    const word = wordOf("mulberry");
+    const word = "mulberry";
     const query = `${word} jam`;
     const [ref] = await addTasks(world, [{ title: query, area: "home" }]);
     await page.clock.install();
@@ -508,7 +504,7 @@ test.describe("[A5.3.13.e2e.search-address] What the person types in the top fie
     page,
     world,
   }) => {
-    const word = wordOf("juniper");
+    const word = "juniper";
     const [first] = await addTasks(world, [
       { title: `Bottle the ${word} cordial`, area: "home", priority: 1 },
       { title: `Sieve ${word} jelly`, area: "home", priority: 2 },
@@ -570,7 +566,7 @@ test.describe("[A5.3.13.e2e.search-address] What the person types in the top fie
     page,
     world,
   }) => {
-    const word = wordOf("bilberry");
+    const word = "bilberry";
     const [first] = await addTasks(world, [
       { title: `Poach the ${word} halves`, area: "home", priority: 1 },
     ]);
@@ -604,7 +600,7 @@ test.describe("[A5.3.13.e2e.search-day] A search left open is read again on the 
     page,
     world,
   }) => {
-    const word = wordOf("sloe");
+    const word = "sloe";
     await addTasks(world, [{ title: `Steep the ${word} gin`, area: "home", priority: 1 }]);
     const first = day(0);
     let reads = 0;
@@ -637,7 +633,7 @@ test.describe("[A7.3.12.m5-10.e2e.keyboard] Both modes by keyboard alone", () =>
     page,
     world,
   }) => {
-    const word = wordOf("loquat");
+    const word = "loquat";
     await addTasks(world, [
       { title: `Wrap the ${word} crates`, area: "home", priority: 1 },
       { title: `Label ${word} preserves`, area: "home", priority: 2 },
@@ -696,7 +692,7 @@ test.describe("[A7.3.12.m5-10.e2e.unindexed] A space without the word index says
     page,
     world,
   }) => {
-    const word = wordOf("rowan");
+    const word = "rowan";
     await addTasks(world, [{ title: `Mulch the ${word} bed`, area: "home", priority: 1 }]);
     // The service answers as it does for a space at a schema before the word index.
     await page.route("**/api/v1/op/task.search", async (route) => {
@@ -734,7 +730,7 @@ test.describe("[A7.3.12.m5-10.e2e.screens] The capture and the search in both th
     browser,
     world,
   }) => {
-    const word = wordOf("damson");
+    const word = "damson";
     await addTasks(world, [
       {
         title: `Bottle the ${word} gin`,

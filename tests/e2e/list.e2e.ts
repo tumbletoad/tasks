@@ -351,7 +351,6 @@ test.describe("[A5.3.6.e2e.row-due-effort] A row's due date fits its column at e
     world,
   }) => {
     await watchViolations(page);
-    const tag = `${test.info().project.name}${String(test.info().workerIndex)}`;
     // The widest forms: Tomorrow, a weekday and a two-digit day, a later day, the next year's day,
     // a month and year, and late in days, weeks and years.
     const dues: [string, number, string | undefined][] = [
@@ -368,7 +367,7 @@ test.describe("[A5.3.6.e2e.row-due-effort] A row's due date fits its column at e
     ];
     const refs = await world.op(world.mira.id, "task.add", {
       tasks: dues.map(([label, days, effort]) => ({
-        title: `Fit the due column, ${label} (${tag})`,
+        title: `Fit the due column, ${label}`,
         area: "home",
         due: day(days).iso,
         ...(effort === undefined ? {} : { effort }),

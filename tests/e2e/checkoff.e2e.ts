@@ -78,7 +78,7 @@ test.describe("[A5.3.12.e2e.checkoff-pending] A task checked off in its card or 
     page,
     world,
   }) => {
-    const word = `marigold${test.info().project.name}${String(test.info().workerIndex)}`;
+    const word = "marigold";
     const added = (await world.op(world.mira.id, "task.add", {
       tasks: [
         { title: `Water the ${word} bed`, area: "home" },
