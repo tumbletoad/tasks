@@ -1,14 +1,16 @@
 // Activity: what agents and routines did in the space, one line per change, newest on top
-// (activity.ts reads and words them). A line names its time, the agent by its app's name, the task
-// it touched as a link to it (in the Trash when it is there), and what it did. A change the feed
-// tells of brings its line without a reload. While the person reads (scrolled down, the pointer or
-// focus on a line) a new line goes on above without moving the line they read; at the top with
-// nothing held it comes into sight. Older lines load as the end comes near, and "Older" stays for
-// the keyboard.
+// (activity.ts reads, shapes and words them). A line names its time, the agent by its app's name,
+// and each thing the change touched as a link to it (a task in the Trash opens there) with what the
+// change did to it; several things that the same happened to are a count that opens their list. A
+// change the feed tells of brings its line without a reload. While the person reads (scrolled down,
+// the pointer or focus on a line) a new line goes on above without moving the line they read; at
+// the top with nothing held it comes into sight. Older lines load as the end comes near, and
+// "Older" stays for the keyboard.
 import { Link } from "@tanstack/react-router";
 import {
   useContext,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -16,7 +18,6 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { Instance } from "../api.ts";
-import { AGENT_KINDS } from "../app/changes.ts";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
@@ -24,11 +25,31 @@ import { formatWhen } from "../row/dates.ts";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
 import { agentName } from "./agent-name.ts";
-import { ActivityLog, wordsOf, type ActivityLine, type Say } from "./activity.ts";
+import {
+  ActivityLog,
+  follow,
+  sentenceOf,
+  shapeOf,
+  type ActivityLine,
+  type Said,
+  type Say,
+  type Target,
+} from "./activity.ts";
 import css from "./Activity.module.css";
 import listCss from "./TaskList.module.css";
 
-const styles = classes(css, ["log", "line", "time", "what", "by", "task", "sep", "empty"]);
+const styles = classes(css, [
+  "log",
+  "line",
+  "time",
+  "what",
+  "by",
+  "task",
+  "sep",
+  "empty",
+  "count",
+  "each",
+]);
 const list = classes(listCss, ["line", "more", "announce"]);
 
 /** How far below the screen the list's end starts the next read: one screen ahead. */
@@ -37,14 +58,6 @@ const AHEAD = "0px 0px 100% 0px";
 const nameOf = (line: ActivityLine, instances: readonly Instance[], t: Translate): string =>
   agentName(line.by, instances) ?? t("thread.agent");
 
-/** A line's words as one sentence, for the announcement of a line that came. */
-function sentenceOf(line: ActivityLine, say: Say, instances: readonly Instance[]): string {
-  const task = line.tasks[0];
-  return [nameOf(line, instances, say.t), task?.title, wordsOf(line, say)]
-    .filter((part) => part !== undefined)
-    .join(", ");
-}
-
 /** The separator between a line's parts: a dot to see (its style draws it), a pause to hear. */
 function Sep() {
   const t = useT();
@@ -52,6 +65,60 @@ function Sep() {
     <>
       <span className={styles.sep} aria-hidden="true" />
       <span className="visually-hidden">{t("activity.pause")}</span>
+    </>
+  );
+}
+
+/** A thing a line names, as a link to it: a task opens (in the Trash when it is there). */
+function TargetLink({ target, space }: { readonly target: Target; readonly space: string }) {
+  const t = useT();
+  if (target.name === "") return <>{t("activity.unnamed")}</>;
+  const link =
+    target.kind === "task" && target.ref !== undefined ? (
+      <Link
+        to="/s/$space/task/$task"
+        params={{ space, task: target.ref }}
+        className={styles.task}
+        dir="auto"
+      >
+        {target.name}
+      </Link>
+    ) : target.kind === "project" && target.trash !== true ? (
+      <Link
+        to="/s/$space/project/$project"
+        params={{ space, project: target.id }}
+        className={styles.task}
+        dir="auto"
+      >
+        {target.name}
+      </Link>
+    ) : target.kind === "area" && target.trash !== true ? (
+      <Link
+        to="/s/$space/area/$area"
+        params={{ space, area: target.id }}
+        className={styles.task}
+        dir="auto"
+      >
+        {target.name}
+      </Link>
+    ) : (
+      <span dir="auto">{target.name}</span>
+    );
+  return (
+    <>
+      {link}
+      {target.trash === true ? ` ${t("activity.inTrash")}` : null}
+    </>
+  );
+}
+
+/** A thing and what happened to it: its link, then its words. */
+function SaidOf({ said, space }: { readonly said: Said; readonly space: string }) {
+  return (
+    <>
+      <TargetLink target={said.target} space={space} />
+      <Sep />
+      {said.words}
     </>
   );
 }
@@ -68,7 +135,9 @@ function Line({
   readonly instances: readonly Instance[];
 }) {
   const { t, clock } = say;
-  const task = line.tasks[0];
+  const shape = shapeOf(line, say);
+  const [open, setOpen] = useState(false);
+  const id = useId();
   return (
     <li className={styles.line} data-seq={line.seq}>
       <time className={styles.time} dateTime={new Date(line.at).toISOString()}>
@@ -76,31 +145,58 @@ function Line({
       </time>
       <span className={styles.what}>
         <span className={styles.by}>{nameOf(line, instances, t)}</span>
-        {task === undefined ? null : (
-          <>
-            <Sep />
-            <Link
-              to="/s/$space/task/$task"
-              params={{ space, task: task.ref }}
-              className={styles.task}
-              dir="auto"
-            >
-              {task.title}
-            </Link>
-            {line.count > 1 ? ` ${t("activity.others", { count: line.count - 1 })}` : null}
-            {task.trash === true ? ` ${t("activity.inTrash")}` : null}
-          </>
-        )}
         <Sep />
-        {wordsOf(line, say)}
+        {shape.kind === "none" ? shape.words : null}
+        {shape.kind === "one" ? (
+          <>
+            <SaidOf said={shape.main} space={space} />
+            {shape.also.map((also) => (
+              <span key={`${also.target.kind}:${also.target.id}`}>
+                {t("activity.pause")}
+                {also.words}
+                {t("activity.colon")}
+                <TargetLink target={also.target} space={space} />
+              </span>
+            ))}
+          </>
+        ) : null}
+        {shape.kind === "many" ? (
+          <>
+            <button
+              type="button"
+              className={styles.count}
+              aria-expanded={open}
+              aria-controls={id}
+              onClick={() => {
+                setOpen((was) => !was);
+              }}
+            >
+              {t("activity.many", { count: shape.count, of: shape.of })}
+            </button>
+            <Sep />
+            {shape.words}
+          </>
+        ) : null}
       </span>
+      {shape.kind === "many" && open ? (
+        <ul className={styles.each} id={id}>
+          {shape.each.map((each) => (
+            <li key={`${each.target.kind}:${each.target.id}`}>
+              <SaidOf said={each} space={space} />
+            </li>
+          ))}
+          {shape.count > shape.each.length ? (
+            <li>{t("activity.notShown", { count: shape.count - shape.each.length })}</li>
+          ) : null}
+        </ul>
+      ) : null}
     </li>
   );
 }
 
 /** The line at the top of the screen, and where it is: the place a reader keeps. */
 function readPlace(root: HTMLElement | null): { seq: string; top: number } | undefined {
-  for (const item of root?.querySelectorAll<HTMLElement>("[data-seq]") ?? []) {
+  for (const item of root?.querySelectorAll<HTMLElement>(":scope > [data-seq]") ?? []) {
     const box = item.getBoundingClientRect();
     if (box.bottom > 0) return { seq: item.dataset["seq"] ?? "", top: box.top };
   }
@@ -119,15 +215,7 @@ export function ActivityPage() {
   useEffect(() => {
     void log.start();
   }, [log]);
-  useEffect(
-    () =>
-      live.onChanges(({ changes, reset }) => {
-        if (reset || changes.some((change) => AGENT_KINDS.has(change.actor.kind))) {
-          void log.newer();
-        }
-      }),
-    [live, log],
-  );
+  useEffect(() => follow(log, live), [live, log]);
 
   // The reader's place: before newer lines land, where the line at the top of the screen is; after,
   // the same line goes back there.
@@ -161,7 +249,7 @@ export function ActivityPage() {
     const newest = state.lines[0];
     if (state.phase !== "ready" || newest === undefined) return;
     if (announced.current !== undefined && newest.seq > announced.current) {
-      setAnnouncement(sentenceOf(newest, say, instances));
+      setAnnouncement(sentenceOf(newest, nameOf(newest, instances, say.t), say));
     }
     announced.current = newest.seq;
   }, [state.lines, state.phase, say, instances]);

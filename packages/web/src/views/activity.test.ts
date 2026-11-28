@@ -1,13 +1,24 @@
-// The Activity screen's words and its log of lines (activity.ts), against a fake `activity.list`:
-// one line's acts in words, a kind of change the table does not know as "changed", and the log
-// reading the newest lines, then older ones before the last and newer ones after the first.
+// The Activity screen's words, shapes and log of lines (activity.ts), against a fake
+// `activity.list`: each thing a change touched in its own words, several things the same happened
+// to as a count, a kind of change the table does not know as "changed" after its name, the log
+// reading the newest lines, then older ones before the last and newer ones after the first, and
+// once more when the feed is live again.
 import { createIntl } from "react-intl";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { PRODUCT_NAME, CLI_NAME } from "@ttasks/brand";
 import en from "../i18n/en.json" with { type: "json" };
 import type { MessageId, Values } from "../i18n/intl.tsx";
 import type { Clock } from "../row/dates.ts";
-import { ActivityLog, wordsOf, type ActivityLine, type ActivityRead } from "./activity.ts";
+import type { Changes } from "../store/store.ts";
+import {
+  ActivityLog,
+  follow,
+  shapeOf,
+  wordsOf,
+  type ActivityLine,
+  type ActivityRead,
+  type Target,
+} from "./activity.ts";
 
 const intl = createIntl({
   locale: "en",
@@ -26,60 +37,134 @@ const clock: Clock = {
 };
 const say = { t, clock };
 
+let n = 0;
+const task = (acts: Target["acts"], extra: Partial<Target> = {}): Target => {
+  n += 1;
+  return {
+    kind: "task",
+    id: `t_${String(n)}`,
+    ref: `M-${String(n)}`,
+    name: `Task ${String(n)}`,
+    acts,
+    ...extra,
+  };
+};
+
 const line = (
   seq: number,
-  acts: ActivityLine["acts"] = [{ op: "task.complete" }],
+  targets: Target[] = [task([{ op: "task.complete" }])],
 ): ActivityLine => ({
   seq,
   at: clock.now,
   actor: "agent",
   by: "agent:codex",
-  tasks: [{ id: "t_000000000000000000000000aa", ref: "M-1", title: "Fixture task" }],
-  count: 1,
-  acts,
+  targets,
+  count: targets.length,
+  acts: [],
 });
+
+/** A line's shape with each target by its name. */
+const read = (l: ActivityLine) => {
+  const shape = shapeOf(l, say);
+  switch (shape.kind) {
+    case "none":
+      return { none: shape.words };
+    case "many":
+      return {
+        many: t("activity.many", { count: shape.count, of: shape.of }),
+        words: shape.words,
+        each: shape.each.map((s) => [s.target.name, s.words]),
+      };
+    case "one":
+      return {
+        one: [shape.main.target.name, shape.main.words],
+        also: shape.also.map((s) => [s.words, s.target.name]),
+      };
+  }
+};
 
 describe("[A5.activity.web] the Activity screen's words and lines", () => {
   test("several fields set by one change are one line of words, each with its value", () => {
+    const words = (acts: Target["acts"]) => wordsOf(task(acts), say);
     expect(
-      wordsOf(
-        line(1, [
-          { op: "task.patch", field: "priority", from: 2, to: 1 },
-          { op: "task.patch", field: "due", from: null, to: "2026-12-03" },
-        ]),
-        say,
-      ),
+      words([
+        { op: "task.patch", field: "priority", from: 2, to: 1 },
+        { op: "task.patch", field: "due", from: null, to: "2026-12-03" },
+      ]),
     ).toBe("priority P2 to P1, due 3 Dec");
+    expect(words([{ op: "task.move", field: "grouping", from: "Home", to: "Portal" }])).toBe(
+      "moved to Portal",
+    );
+    expect(words([{ op: "task.patch", field: "summary" }])).toBe("summary changed");
+    expect(words([{ op: "task.patch", field: "waiting_on" }])).toBe("waiting details changed");
     expect(
-      wordsOf(line(2, [{ op: "task.move", field: "grouping", from: "Home", to: "Portal" }]), say),
-    ).toBe("moved to Portal");
-    expect(wordsOf(line(3, [{ op: "task.patch", field: "summary" }]), say)).toBe("summary changed");
-  });
-
-  test("an operation says what it did once, whatever fields it set; a create leaves out what came with it", () => {
-    expect(
-      wordsOf(
-        line(1, [
-          { op: "task.complete", field: "lifecycle" },
-          { op: "task.complete", field: "wrap" },
-        ]),
-        say,
-      ),
+      words([
+        { op: "task.complete", field: "lifecycle" },
+        { op: "task.complete", field: "wrap" },
+      ]),
     ).toBe("completed");
-    expect(wordsOf(line(2, [{ op: "task.create", to: "Portal" }, { op: "note.add" }]), say)).toBe(
-      "added to Portal",
-    );
-    expect(wordsOf(line(3, [{ op: "task.delete", field: "deleted" }]), say)).toBe(
-      "moved to the Trash",
-    );
   });
 
-  test("a kind of change the table does not know reads changed, and never fails", () => {
-    expect(wordsOf(line(1, [{ op: "page.publish" }]), say)).toBe("changed");
-    expect(wordsOf(line(2, [{ op: "task.patch", field: "ext.color", to: "red" }]), say)).toBe(
-      "changed",
-    );
-    expect(wordsOf(line(3, []), say)).toBe("changed");
+  test("the Inbox flag reads the right way, both ways", () => {
+    const inbox = (to: boolean) =>
+      wordsOf(task([{ op: "task.patch", field: "inbox", from: !to, to }]), say);
+    expect(inbox(true)).toBe("back in the Inbox");
+    expect(inbox(false)).toBe("out of the Inbox");
+  });
+
+  test("a finish that makes a follow-up: the task completed, and the follow-up named with it", () => {
+    const done = task([{ op: "task.complete", field: "lifecycle" }], { name: "Renew the permit" });
+    const next = task([{ op: "task.create" }, { op: "note.add" }], {
+      name: "Book the appointment",
+      created: true,
+    });
+    expect(read(line(1, [done, next]))).toEqual({
+      one: ["Renew the permit", "completed"],
+      also: [["follow-up added", "Book the appointment"]],
+    });
+  });
+
+  test("tasks added by one change are a count, each with its own place", () => {
+    const made = (name: string, to: string) =>
+      task([{ op: "task.create", to }], { name, created: true });
+    expect(read(line(1, [made("A", "Portal"), made("B", "Garden"), made("C", "Portal")]))).toEqual({
+      many: "3 tasks",
+      words: "added",
+      each: [
+        ["A", "added to Portal"],
+        ["B", "added to Garden"],
+        ["C", "added to Portal"],
+      ],
+    });
+  });
+
+  test("a change to a project names it; what the table does not know reads changed after its name", () => {
+    const project = (acts: Target["acts"]): Target => ({
+      kind: "project",
+      id: "p_1",
+      name: "Portal",
+      acts,
+    });
+    expect(read(line(1, [project([{ op: "project.patch", field: "title" }])]))).toEqual({
+      one: ["Portal", "renamed"],
+      also: [],
+    });
+    expect(read(line(2, [project([{ op: "project.archive", field: "lifecycle" }])]))).toEqual({
+      one: ["Portal", "archived"],
+      also: [],
+    });
+    expect(read(line(3, [project([{ op: "project.paint" }])]))).toEqual({
+      one: ["Portal", "changed"],
+      also: [],
+    });
+    expect(
+      read(line(4, [task([{ op: "task.patch", field: "ext.color", to: "red" }])])),
+    ).toMatchObject({
+      one: [expect.any(String), "changed"],
+    });
+    expect(read({ ...line(5, []), acts: [{ op: "pref.set" }] })).toEqual({
+      none: "a setting changed",
+    });
   });
 
   test("the log reads the newest lines, older ones before its last, newer ones after its first", async () => {
@@ -136,5 +221,62 @@ describe("[A5.activity.web] the Activity screen's words and lines", () => {
     fail = true;
     await log.newer();
     expect(log.getState()).toMatchObject({ phase: "ready", lines: [{ seq: 1 }] });
+  });
+
+  test("a line missed while the connection was down comes when the feed is live again, with one read", async () => {
+    let all = [line(1)];
+    let fail = false;
+    let reads = 0;
+    const read: ActivityRead = (input) => {
+      reads += 1;
+      if (fail) return Promise.reject(new Error("offline"));
+      const after = input.after ?? 0;
+      return Promise.resolve({ lines: all.filter((l) => l.seq > after), more: false });
+    };
+    const changes = new Set<(c: Changes) => void>();
+    const phases = new Set<() => void>();
+    let phase = "live";
+    const feed = {
+      onChanges: (listener: (c: Changes) => void) => {
+        changes.add(listener);
+        return () => changes.delete(listener);
+      },
+      subscribe: (listener: () => void) => {
+        phases.add(listener);
+        return () => phases.delete(listener);
+      },
+      getState: () => ({ phase }),
+    };
+    const setPhase = (to: string) => {
+      phase = to;
+      for (const listener of phases) listener();
+    };
+    const log = new ActivityLog(read);
+    await log.start();
+    const stop = follow(log, feed);
+
+    // The feed brings an agent's change, and the read of its line fails.
+    all = [line(2), ...all];
+    fail = true;
+    const agent = { actor: { kind: "agent", label: "agent:codex" } } as Changes["changes"][number];
+    for (const listener of changes) listener({ changes: [agent], reset: false });
+    await log.newer();
+    expect(log.getState().lines.map((l) => l.seq)).toEqual([1]);
+
+    // The connection drops and comes back with nothing new in the feed: the line comes.
+    fail = false;
+    setPhase("offline");
+    const before = reads;
+    const asked = vi.spyOn(log, "newer");
+    setPhase("live");
+    expect(asked).toHaveBeenCalledTimes(1);
+    // Waits for that read: a read of newer lines asked while one waits is the same read.
+    await log.newer();
+    expect(log.getState().lines.map((l) => l.seq)).toEqual([2, 1]);
+    expect(reads - before).toBe(1);
+    // A notice that leaves the feed live asks nothing.
+    setPhase("live");
+    expect(asked).toHaveBeenCalledTimes(2);
+    stop();
   });
 });

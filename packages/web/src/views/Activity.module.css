@@ -69,3 +69,33 @@
     margin-left: 0;
   }
 }
+
+/* Several things the same happened to: the count opens their list under the line. */
+.count {
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  font: inherit;
+  color: var(--k-text);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.count:hover {
+  text-decoration-style: solid;
+}
+
+.each {
+  grid-column: 2;
+  margin: 4px 0 0;
+  padding: 0 0 0 16px;
+  list-style: none;
+}
+
+@media (max-width: 640px) {
+  .each {
+    grid-column: 1;
+  }
+}

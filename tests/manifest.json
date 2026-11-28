@@ -4736,21 +4736,21 @@
     },
     {
       "id": "A5.activity.service",
-      "title": "The read behind the Activity screen against a real space: one line per change of an agent or a routine, newest first, none of the person's own; several fields set by one request on one line with their values before and after; several tasks made by one request on one line with their project's name; a text change says that it changed and never carries its words; a move names where from and to; a finish, a note and the Trash each name their operation and a task in the Trash says so; pages by commit number reach every line once, and the lines after a commit come in order",
+      "title": "The read behind the Activity screen against a real space: one line per change of an agent or a routine, newest first, none of the person's own; each thing a change touched (a task, a project, an area) with what the change did to it; several fields set by one request with their values before and after; several tasks made by one request each with the place it was made in; a finish that makes a follow-up names both with their own operations; free text (a summary, who a task waits on) says that it changed and never carries its words; the Inbox flag reads as a flag both ways; a project's rename names the project; a note and the Trash name their task; pages by commit number reach every line once, and the lines after a commit come in order",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A5.activity.web",
-      "title": "The Activity screen's words and lines: several fields set by one change are one line of words with their values, an operation says what it did once whatever fields it set, a create leaves out what came with it, a kind of change the table does not know reads changed, the log reads the newest lines then older ones before its last and newer ones after its first, each once and in order, a failed first read says so and reads again, and a failed read of newer lines keeps what is shown",
+      "title": "The Activity screen's words and lines: several fields set by one change are one line of words with their values, free text says only that it changed, the Inbox flag reads the right way both ways, a finish with a follow-up reads completed and names the follow-up, tasks added by one change are a count that opens to each with its own place, a change to a project names it, a kind of change the table does not know reads changed after its name, the log reads the newest lines then older ones before its last and newer ones after its first, each once and in order, a failed first read says so and reads again, a failed read of newer lines keeps what is shown, and a line missed while the connection was down comes with one read when the feed is live again",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A5.activity.e2e",
-      "title": "Against the real service in Chromium and Firefox: the Activity screen has its menu entry; an agent's changes made through its requests come in as lines without a reload, two fields in one request on one line with their values, the person's own change makes none, a text change says that it changed and never shows its words, and a line opens its task by the keyboard; a line that comes while the reader is scrolled down moves nothing on screen, one that comes at the top comes into sight, and the end of the list reads older lines; screenshots with lines, as a line comes and empty, at 1,440 and 390 px in Sumi and Washi, and axe finds nothing",
+      "title": "Against the real service in Chromium and Firefox: the Activity screen has its menu entry; an agent's changes made through its requests come in as lines without a reload, two fields in one request on one line with their values, the person's own change makes none, a text change says that it changed and never shows its words, two tasks added in one request are a count that opens to each with its own place, a finish with a follow-up reads completed and links the follow-up, and a line opens its task by the keyboard; a line that comes while the reader is scrolled down moves nothing on screen, one that comes at the top comes into sight, and the end of the list reads older lines; screenshots with lines, as a line comes and empty, at 1,440 and 390 px in Sumi and Washi, and axe finds nothing",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

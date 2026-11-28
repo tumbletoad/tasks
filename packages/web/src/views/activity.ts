@@ -1,20 +1,25 @@
-// The Activity screen's parts that are no React: the words of a line, and the log of lines the
-// screen holds, read from the service's `activity.list` a page at a time by commit number.
+// The Activity screen's parts that are no React: the words of a line, the log of lines the screen
+// holds, read from the service's `activity.list` a page at a time by commit number, and how the log
+// follows the feed.
 //
-// The words come from one table: an operation that says what it did in its own words, or a task's
-// field with its value. An operation or a field the table does not know reads "changed", so a new
-// kind of change gets a line and never breaks the screen.
+// A line holds each thing its change touched (a task, a project, an area) with what the change did
+// to it. The words come from one table: an operation that says what it did in its own words, or a
+// field with its value. An operation or a field the table does not know reads "changed", after the
+// name of what it changed, so a new kind of change gets a line and never breaks the screen.
 //
 // Lines never change once made, so the log only grows: newer lines go on top when the feed says
 // agents changed something, older ones at the end as the person reads on.
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { MessageId, Translate } from "../i18n/intl.tsx";
 import { formatDay, formatInstant, type Clock } from "../row/dates.ts";
+import { AGENT_KINDS } from "../app/changes.ts";
+import type { Changes } from "../store/store.ts";
 
 type List = Client["activity"]["list"];
 /** The service's read of activity lines. */
 export type ActivityRead = (input: Parameters<List>[0]) => ReturnType<List>;
 export type ActivityLine = Awaited<ReturnType<List>>["lines"][number];
+export type Target = ActivityLine["targets"][number];
 type Act = ActivityLine["acts"][number];
 type Value = Act["to"];
 
@@ -46,16 +51,24 @@ const STATUS_IDS: Readonly<Record<string, true>> = {
   "status.backlog": true,
 };
 
-/** What a task's field changed to, in words. */
-type FieldWords = (act: Act, say: Say) => string;
+/** What an act did, in words. */
+type Words = (act: Act, say: Say) => string;
 
 const cleared = (act: Act): boolean => act.to === null || act.to === undefined;
+const said =
+  (id: MessageId): Words =>
+  (_, { t }) =>
+    t(id);
 
-/** A task's fields, by the name the service gives them (A1's logical fields). */
-const FIELDS: Readonly<Record<string, FieldWords>> = {
-  title: (_, { t }) => t("activity.renamed"),
-  summary: (_, { t }) => t("activity.summary"),
-  context: (_, { t }) => t("activity.context"),
+/** The fields of a task, a project or an area, by the name the service gives them. */
+const FIELDS: Readonly<Record<string, Words>> = {
+  title: said("activity.renamed"),
+  summary: said("activity.summary"),
+  context: said("activity.context"),
+  brief: said("activity.brief"),
+  color: said("activity.color"),
+  owner: said("activity.owner"),
+  waiting_on: said("activity.waiting"),
   priority: (act, { t }) =>
     typeof act.from === "number" && act.from !== 4 && act.from !== act.to
       ? t("activity.priorityFrom", { from: act.from, to: text(act.to) })
@@ -71,63 +84,176 @@ const FIELDS: Readonly<Record<string, FieldWords>> = {
   inbox: (act, { t }) => t(act.to === true ? "activity.toInbox" : "activity.fromInbox"),
   effort: (act, { t }) =>
     cleared(act) ? t("activity.effortCleared") : t("activity.effort", { to: text(act.to) }),
-  owner: (act, { t }) =>
-    cleared(act) ? t("activity.ownerCleared") : t("activity.owner", { to: text(act.to) }),
-  waiting_on: (act, { t }) =>
-    cleared(act) ? t("activity.waitingCleared") : t("activity.waiting", { to: text(act.to) }),
-  reviewed_at: (_, { t }) => t("activity.reviewed"),
+  reviewed_at: said("activity.reviewed"),
   grouping: (act, { t }) =>
     typeof act.to === "string" ? t("activity.moved", { to: act.to }) : t("activity.ungrouped"),
 };
 
+const added: Words = (act, { t }) =>
+  typeof act.to === "string" ? t("activity.addedTo", { to: act.to }) : t("activity.added");
+
 /** The operations that say what they did in their own words, whatever fields they set. */
-const OPS: Readonly<Record<string, (act: Act, say: Say) => string>> = {
-  "task.create": (act, { t }) =>
-    typeof act.to === "string" ? t("activity.addedTo", { to: act.to }) : t("activity.added"),
-  "task.complete": (_, { t }) => t("activity.completed"),
-  "task.wrap_up": (_, { t }) => t("activity.wrapped"),
-  "task.reopen": (_, { t }) => t("activity.reopened"),
-  "task.archive": (_, { t }) => t("activity.dropped"),
-  "task.delete": (_, { t }) => t("activity.trashed"),
-  "task.restore": (_, { t }) => t("activity.restored"),
-  "task.context_append": (_, { t }) => t("activity.contextAdded"),
-  "task.label": (_, { t }) => t("activity.labelled"),
-  "note.add": (_, { t }) => t("activity.note"),
-  "log.add": (_, { t }) => t("activity.logged"),
-  "log.delete": (_, { t }) => t("activity.logRemoved"),
-  "source.add": (_, { t }) => t("activity.source"),
-  "source.relink": (_, { t }) => t("activity.source"),
-  "source.unlink": (_, { t }) => t("activity.sourceUnlinked"),
-  "place.set": (_, { t }) => t("activity.folder"),
-  "task.folder_set": (_, { t }) => t("activity.folder"),
-  "project.folder_set": (_, { t }) => t("activity.folder"),
-  "place.clear": (_, { t }) => t("activity.folderCleared"),
-  "task.folder_clear": (_, { t }) => t("activity.folderCleared"),
-  "project.folder_clear": (_, { t }) => t("activity.folderCleared"),
-  "area.create": (act, { t }) => t("activity.areaAdded", { to: text(act.to) }),
-  "project.create": (act, { t }) => t("activity.projectAdded", { to: text(act.to) }),
-  "run.report": (_, { t }) => t("activity.reported"),
-  "pref.set": (_, { t }) => t("activity.setting"),
+const OPS: Readonly<Record<string, Words>> = {
+  "task.create": added,
+  "project.create": added,
+  "area.create": added,
+  "task.complete": said("activity.completed"),
+  "task.wrap_up": said("activity.wrapped"),
+  "task.reopen": said("activity.reopened"),
+  "task.archive": said("activity.dropped"),
+  "task.delete": said("activity.trashed"),
+  "task.restore": said("activity.restored"),
+  "project.archive": said("activity.archived"),
+  "area.archive": said("activity.archived"),
+  "project.unarchive": said("activity.unarchived"),
+  "area.unarchive": said("activity.unarchived"),
+  "project.delete": said("activity.removed"),
+  "area.delete": said("activity.removed"),
+  "project.restore": said("activity.restored"),
+  "area.restore": said("activity.restored"),
+  "task.context_append": said("activity.contextAdded"),
+  "task.label": said("activity.labelled"),
+  "note.add": said("activity.note"),
+  "log.add": said("activity.logged"),
+  "log.delete": said("activity.logRemoved"),
+  "source.add": said("activity.source"),
+  "source.relink": said("activity.source"),
+  "source.unlink": said("activity.sourceUnlinked"),
+  "place.set": said("activity.folder"),
+  "task.folder_set": said("activity.folder"),
+  "project.folder_set": said("activity.folder"),
+  "place.clear": said("activity.folderCleared"),
+  "task.folder_clear": said("activity.folderCleared"),
+  "project.folder_clear": said("activity.folderCleared"),
+  "run.report": said("activity.reported"),
+  "pref.set": said("activity.setting"),
 };
 
-/** The operations whose acts are a task's fields, each in its own words. */
-const BY_FIELD: ReadonlySet<string> = new Set(["task.patch", "task.move"]);
+/** The operations whose acts are fields of their target, each in its own words. */
+const BY_FIELD: ReadonlySet<string> = new Set([
+  "task.patch",
+  "task.move",
+  "project.patch",
+  "project.move",
+  "area.patch",
+  "area.move",
+]);
 
-/**
- * What a line did, in words: "priority P2 to P1, due 3 Dec". A change that made tasks says that,
- * and not what came with them (their notes and sources).
- */
-export function wordsOf(line: ActivityLine, say: Say): string {
-  const created = line.acts.find((act) => act.op === "task.create");
-  const acts = created === undefined ? line.acts : [created];
+/** The operations that finish a task: a task made with one is its follow-up. */
+const FINISHES: ReadonlySet<string> = new Set(["task.complete", "task.archive", "task.wrap_up"]);
+
+function wordsOfActs(acts: readonly Act[], say: Say): string {
   const words: string[] = [];
   for (const act of acts) {
     const own = OPS[act.op];
     const field = BY_FIELD.has(act.op) && act.field !== undefined ? FIELDS[act.field] : undefined;
-    const said = own?.(act, say) ?? field?.(act, say) ?? say.t("activity.changed");
-    if (!words.includes(said)) words.push(said);
+    const one = own?.(act, say) ?? field?.(act, say) ?? say.t("activity.changed");
+    if (!words.includes(one)) words.push(one);
   }
   return words.length === 0 ? say.t("activity.changed") : words.join(", ");
+}
+
+/**
+ * What a change did to one target, in words: "priority P2 to P1, due 3 Dec". A thing the change
+ * made says that, and not what came with it (its notes and sources). `place: false` leaves out
+ * where it was made.
+ */
+export function wordsOf(target: Target, say: Say, place = true): string {
+  const create =
+    target.created === true ? target.acts.find((act) => act.op.endsWith(".create")) : undefined;
+  if (create === undefined) return wordsOfActs(target.acts, say);
+  return wordsOfActs([place ? create : { op: create.op }], say);
+}
+
+/** A target with what the change did to it. */
+export interface Said {
+  readonly target: Target;
+  readonly words: string;
+}
+
+/**
+ * How a line reads:
+ * - `one`: a thing and what happened to it, then what else the change made or touched, each with
+ *   its own words ("completed, follow-up added: …");
+ * - `many`: several things that the same happened to, counted ("3 tasks added"), each with its own
+ *   words when the person opens the count;
+ * - `none`: what the change did that touched no task, project or area.
+ */
+export type Shape =
+  | { readonly kind: "one"; readonly main: Said; readonly also: readonly Said[] }
+  | {
+      readonly kind: "many";
+      readonly count: number;
+      readonly of: Target["kind"];
+      readonly words: string;
+      readonly each: readonly Said[];
+    }
+  | { readonly kind: "none"; readonly words: string };
+
+export function shapeOf(line: ActivityLine, say: Say): Shape {
+  const targets = line.targets;
+  const first = targets[0];
+  if (first === undefined) return { kind: "none", words: wordsOfActs(line.acts, say) };
+  const each = targets.map((target) => ({ target, words: wordsOf(target, say) }));
+  const short = targets.map((target) => wordsOf(target, say, false));
+  if (targets.length > 1 && short.every((words) => words === short[0])) {
+    return { kind: "many", count: line.count, of: first.kind, words: short[0] ?? "", each };
+  }
+  const main = each.find((s) => s.target.created !== true) ??
+    each[0] ?? { target: first, words: "" };
+  const finished = main.target.acts.some((act) => FINISHES.has(act.op));
+  const also = each
+    .filter((s) => s !== main)
+    .map((s) =>
+      finished && s.target.created === true && s.target.kind === "task"
+        ? { ...s, words: say.t("activity.followUp") }
+        : s,
+    );
+  return { kind: "one", main, also };
+}
+
+/** A line as one sentence, for the announcement of a line that came. */
+export function sentenceOf(line: ActivityLine, who: string, say: Say): string {
+  const shape = shapeOf(line, say);
+  switch (shape.kind) {
+    case "none":
+      return `${who}, ${shape.words}`;
+    case "many":
+      return `${who}, ${say.t("activity.many", { count: shape.count, of: shape.of })} ${shape.words}`;
+    case "one":
+      return [
+        `${who}, ${shape.main.target.name}, ${shape.main.words}`,
+        ...shape.also.map((s) => `${s.words}: ${s.target.name}`),
+      ].join(", ");
+  }
+}
+
+/** The live session as the log follows it: its frames, and whether its feed is live. */
+export interface Feed {
+  onChanges(listener: (changes: Changes) => void): () => void;
+  subscribe(listener: () => void): () => void;
+  getState(): { readonly phase: string };
+}
+
+/**
+ * Reads newer lines when the feed brings an agent's change, and once when the feed is live again
+ * after it was not: a read that failed while the connection was down is not lost in a quiet space.
+ * Returns the way to stop.
+ */
+export function follow(log: ActivityLog, feed: Feed): () => void {
+  const stopChanges = feed.onChanges(({ changes, reset }) => {
+    if (reset || changes.some((change) => AGENT_KINDS.has(change.actor.kind))) void log.newer();
+  });
+  let live = feed.getState().phase === "live";
+  const stopPhase = feed.subscribe(() => {
+    const now = feed.getState().phase === "live";
+    if (now && !live) void log.newer();
+    live = now;
+  });
+  return () => {
+    stopChanges();
+    stopPhase();
+  };
 }
 
 /** What the screen holds: the lines, newest first, and how its reads went. */

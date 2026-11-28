@@ -86,8 +86,51 @@ test.describe("[A5.activity.e2e] the Activity screen", () => {
     await expect(lines(page).nth(1)).toContainText("priority P2 to P1");
     await expect(page.locator("main")).not.toContainText("Fixture words of a summary");
 
+    // Two tasks added by one request into two places: a count that opens to each, with its place.
+    const pair = [`Fixture pair one (${project})`, `Fixture pair two (${project})`] as const;
+    await world.op(
+      world.mira.id,
+      "task.add",
+      {
+        tasks: [
+          { title: pair[0], project: "garden" },
+          { title: pair[1], project: "lumen-portal" },
+        ],
+      },
+      "agent",
+    );
+    const count = first.getByRole("button", { name: "2 tasks" });
+    await expect(count).toHaveAttribute("aria-expanded", "false", { timeout: SLOW_MS });
+    await count.click();
+    await expect(count).toHaveAttribute("aria-expanded", "true");
+    await expect(first.getByRole("link", { name: pair[0] })).toBeVisible();
+    await expect(first.getByRole("listitem").filter({ hasText: pair[0] })).toContainText(
+      "added to Garden",
+    );
+    await expect(first.getByRole("listitem").filter({ hasText: pair[1] })).toContainText(
+      "added to Lumen portal",
+    );
+
+    // Finished with a follow-up: both named, each with what happened to it.
+    const follow = `Fixture follow-up (${project})`;
+    await world.op(
+      world.mira.id,
+      "task.finish",
+      {
+        task: ref,
+        outcome: "Fixture outcome",
+        follow_ups: [{ title: follow }],
+        base: await asOf(world, ref),
+      },
+      "agent",
+    );
+    await expect(first).toContainText(`completed, follow-up added: ${follow}`, {
+      timeout: SLOW_MS,
+    });
+    await expect(first.getByRole("link", { name: follow })).toBeVisible();
+
     // The line is a way to its task, by the keyboard too.
-    await first.getByRole("link").focus();
+    await first.getByRole("link").first().focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(new RegExp(`[?&]task=${ref}`, "u"), { timeout: SLOW_MS });
     expect(await violations(page)).toEqual([]);
@@ -172,11 +215,28 @@ test.describe("[A5.activity.e2e] the Activity screen", () => {
     await world.op(
       space,
       "task.finish",
-      { task: permit, outcome: "Fixture outcome", base: await asOf(world, permit) },
+      {
+        task: permit,
+        outcome: "Fixture outcome",
+        follow_ups: [{ title: `Pick up the new permit (${project})` }],
+        base: await asOf(world, permit),
+      },
       "agent",
     );
     const twin = await add(world, `Plan the offsite, again (${project})`);
     await world.op(space, "task.delete", { tasks: [twin], base: await asOf(world, twin) }, "agent");
+    await world.op(
+      space,
+      "task.add",
+      {
+        tasks: [
+          { title: `Water the tomatoes (${project})`, project: "garden" },
+          { title: `Answer the clinic (${project})`, project: "clinic-sync" },
+          { title: `Prune the hedge (${project})`, project: "garden" },
+        ],
+      },
+      "agent",
+    );
     for (const theme of themes()) {
       await world.machine("ui.theme", theme);
       for (const width of [1440, 390]) {
@@ -189,6 +249,7 @@ test.describe("[A5.activity.e2e] the Activity screen", () => {
           const page = await context.newPage();
           await open(page, world);
           if (width !== 1440) await page.setViewportSize({ width, height: 844 });
+          await page.getByRole("button", { name: "3 tasks" }).first().click();
           await picture(page, `activity-${theme}-${String(width)}.png`);
           expect(await axeFound(page, ["main"])).toEqual([]);
 
