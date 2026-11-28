@@ -1,7 +1,8 @@
 // Undo and redo (A1 3.10.1). A person's commit is a step on their undo stack when every row it
 // changed is of the few kinds Undo is for: a check-off or a reopen, the Trash and out of it, a
 // removed note, words, out of the Inbox or into it, a first filing or one into a group just made,
-// a dismissal of questions, a new group, or a group archived or unarchived (stepSql).
+// a dismissal of questions, a new group, or a group archived or unarchived, a page's words and its
+// Trash, and the words of a node's texts (stepSql).
 // Undo takes a step back with the ordinary operations that write what its change rows held
 // before (oppositeOf), and Redo does the same to the undo's own commit, so both change only what
 // the commit they answer changed. Neither writes over a change made since (newerOn): only where
@@ -15,7 +16,7 @@ import { isId, type Id } from "../ids.ts";
 import { formatTaskRef } from "../refs.ts";
 import { invalidValue, RowReader } from "../rows.ts";
 import { CHILD_FIELDS, columnsValue, fieldJson, TASK_FIELDS } from "./fields.ts";
-import type { NewerWork, Operation } from "./request.ts";
+import type { NewerWork, NodeSet, Operation, PageSet, TextNode } from "./request.ts";
 
 /** A change row of commit `c` whose task `c` also changed `field`. */
 const sameTask = (field: string): string =>
@@ -46,6 +47,9 @@ const KEPT_ROW =
   `AND ${sameTask("deleted")}) ` +
   "OR (c.entity = 'notes' AND c.field IN ('deleted', 'body')) " +
   "OR (c.entity = 'log_entries' AND c.field = 'body') " +
+  // A page's words, and its move to the Trash and out of it; a node's texts, the words alone.
+  "OR (c.entity = 'pages' AND c.field IN ('title', 'brief', 'body', 'deleted')) " +
+  "OR (c.entity = 'node_texts') " +
   "OR (c.entity IN ('areas', 'projects') " +
   "AND (c.action = 'create' OR (c.field = 'lifecycle' " +
   "AND '\"archived\"' IN (c.before, c.after)))) " +
@@ -167,6 +171,15 @@ function hides(c: StoredChange): boolean {
 
 const ENTRY = "SELECT task_id, ordinal FROM %s WHERE id = $id";
 
+/** The node a texts row is of, as an operation names it. */
+function nodeOf(conn: Connection, id: string): TextNode {
+  const row = conn.prepare("SELECT owner_kind FROM node_texts WHERE owner_id = $id").get({ id });
+  if (row === undefined) throw invalidValue("changes", "entity_id");
+  const kind = new RowReader("node_texts", row).oneOf("owner_kind", ["space", "area", "project"]);
+  if (kind === "space") return { kind };
+  return kind === "area" ? { kind, area: id } : { kind, project: id };
+}
+
 function entryOf(conn: Connection, table: "notes" | "log_entries", id: string) {
   const row = conn.prepare(ENTRY.replace("%s", table)).get({ id });
   if (row === undefined) throw invalidValue("changes", "entity_id");
@@ -260,6 +273,40 @@ export function oppositeOf(conn: Connection, changes: readonly StoredChange[]): 
         }
         continue;
       }
+      case "pages": {
+        const deleted = of("deleted");
+        if (deleted !== undefined) {
+          const kind = tombstoned(deleted.before) ? "page.trash" : "page.restore";
+          ops.push({ kind, page: id });
+          continue;
+        }
+        const set: PageSet = { kind: "page.set", page: id };
+        for (const c of group) {
+          if (c.field === "title" || c.field === "brief" || c.field === "body") {
+            set[c.field] = String(parsed(c.before));
+          }
+        }
+        ops.push(set);
+        continue;
+      }
+      case "node_texts": {
+        // A create made the row with its first words: their opposite is the empty text.
+        const before = (field: string): string | undefined => {
+          if (first.action === "create") return columns(first.after)[field] === "" ? undefined : "";
+          const c = of(field);
+          return c === undefined ? undefined : String(parsed(c.before));
+        };
+        const node = nodeOf(conn, id);
+        const set: NodeSet = { kind: "node.set", node };
+        const brief = before("brief");
+        const description = before("description");
+        if (brief !== undefined) set.brief = brief;
+        if (description !== undefined) set.description = description;
+        if (brief !== undefined || description !== undefined) ops.push(set);
+        const forAgents = before("for_agents");
+        if (forAgents !== undefined) ops.push({ kind: "node.instruct", node, text: forAgents });
+        continue;
+      }
       case "areas":
       case "projects": {
         const area = first.entity === "areas";
@@ -318,6 +365,8 @@ const SQL = {
     log_entries: "SELECT * FROM log_entries WHERE id = $id",
     areas: "SELECT * FROM areas WHERE id = $id",
     projects: "SELECT * FROM projects WHERE id = $id",
+    pages: "SELECT * FROM pages WHERE id = $id",
+    node_texts: "SELECT * FROM node_texts WHERE owner_id = $id",
   },
 } as const;
 
@@ -349,6 +398,7 @@ function valueNow(conn: Connection, c: StoredChange): string | undefined {
   if (!isRowed(c.entity)) return undefined;
   const row = conn.prepare(SQL.row[c.entity]).get({ id: c.entityId });
   if (row === undefined) return undefined;
+  if (c.entity === "node_texts" && c.action === "create") return textsOf(row);
   // A new group's create is undone by its archive: what it wrote there is its lifecycle.
   const field = c.action === "create" ? "lifecycle" : (c.field ?? "");
   const fields: Readonly<Record<string, readonly string[]>> =
@@ -356,9 +406,17 @@ function valueNow(conn: Connection, c: StoredChange): string | undefined {
   return fieldJson(columnsValue(row, fields[field] ?? []));
 }
 
+/** A node's texts together: what its row's create wrote, and what an undo of it would empty. */
+const textsOf = (row: Readonly<Record<string, unknown>>): string =>
+  fieldJson(["brief", "description", "for_agents"].map((field) => row[field] ?? null));
+
 /** What `c` wrote, as valueNow gives it. */
 const wrote = (c: StoredChange): string =>
-  c.action === "create" ? fieldJson(columns(c.after)["lifecycle"] ?? null) : c.after;
+  c.action !== "create"
+    ? c.after
+    : c.entity === "node_texts"
+      ? textsOf(columns(c.after))
+      : fieldJson(columns(c.after)["lifecycle"] ?? null);
 
 /**
  * The state a value of `c`'s field stands for, as a person sees it: in the Trash or not; open,
