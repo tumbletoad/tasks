@@ -99,8 +99,10 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A backup stays consistent while people and agents change tasks.
 - A space's backups go to its own folder beside the TTasks home (`~/.ttasks-backups`), so removing
   the home folder leaves them. `ttasks space list` and `ttasks doctor` say where they are.
-- Backups made before they went there stay in the space's `backups` folder: listed with their
-  folder, restorable by name and as latest, and never moved or cleaned up.
+- Backups made before they went there, in the space's `backups` folder, move there when the space
+  next opens for changes on this machine. Each is moved whole or stays where it was, and nothing
+  there is overwritten. One that does not pass its check, or whose name is taken there by another
+  file, stays, and `ttasks space list` and `ttasks doctor` say so.
 - A backup that is called verified has passed a trial restore. So has every backup you make with
   `ttasks space backup`.
 - While a space is open for changes, TTasks backs it up once a day. It keeps the backups of seven
