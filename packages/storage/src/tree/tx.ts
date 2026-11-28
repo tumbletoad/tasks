@@ -379,6 +379,8 @@ const head = (row: Written) => ({ entity: row.entity, entityId: row.id, node: ro
 export interface Command {
   check: (input: Fields) => Record<string, unknown>;
   run: (tx: Tx, input: Record<string, unknown>) => unknown;
+  /** A look that is asked again: an answer that wrote nothing keeps no receipt. */
+  poll?: true;
 }
 
 /** What Undo and Redo ask the core for: the commit they answer, and what to run. */
