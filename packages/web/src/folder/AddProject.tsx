@@ -115,7 +115,9 @@ export function AddProject({
   const shelved =
     shown !== NEW_AREA || typed === "" || areas.some((a) => sameName(a.title, typed))
       ? undefined
-      : topLevel(state.nodes).find((a) => a.state === "archived" && sameName(a.title, typed));
+      : topLevel(state.nodes).find(
+          (a) => a.state === "archived" && !projectWithoutArea(a.id) && sameName(a.title, typed),
+        );
 
   const open = (project: string, areaOf: string | undefined) => {
     onClose();

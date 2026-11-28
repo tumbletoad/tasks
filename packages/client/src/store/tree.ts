@@ -61,16 +61,17 @@ export function topLevel(nodes: Nodes): NodeRow[] {
 
 /**
  * The node a read names by its area's and its project's names (`task.get`, a search): the project
- * of that name under the area, else the area, else a project at the top of the project's name;
- * else the space.
+ * of that name under the area, else the area, else a project made without an area of the
+ * project's name; else the space. An area and such a project may share a name: the read says
+ * which it is.
  */
 export function nodeNamed(nodes: Nodes, area?: string, project?: string): string {
   const tops = topLevel(nodes);
-  const top = tops.find((a) => a.title === area);
+  const top = tops.find((a) => a.title === area && !projectWithoutArea(a.id));
   const named =
     top === undefined
       ? area === undefined
-        ? tops.find((p) => p.title === project)
+        ? tops.find((p) => p.title === project && projectWithoutArea(p.id))
         : undefined
       : (childrenOf(nodes, top.id).find((p) => p.title === project) ?? top);
   return named?.id ?? [...nodes.values()].find((n) => n.kind === "space")?.id ?? "";

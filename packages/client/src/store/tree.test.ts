@@ -39,6 +39,10 @@ describe("[A5.tree.client.tree] the space's tree in the store", () => {
     expect(nodeNamed(nodes, "Lumen", "Gone")).toBe("a_lumen");
     expect(nodeNamed(nodes, undefined, "Shed")).toBe("p_shed");
     expect(nodeNamed(nodes, "Gone")).toBe(TEST_SPACE);
+    // An area and a project made without an area of one name: the read says which.
+    const twins = treeOf(lumen, areaNode({ id: "p_lumen", title: "Lumen", position: "~a0" }));
+    expect(nodeNamed(twins, undefined, "Lumen")).toBe("p_lumen");
+    expect(nodeNamed(twins, "Lumen")).toBe("a_lumen");
     expect(nodeNamed(nodes)).toBe(TEST_SPACE);
   });
 });
