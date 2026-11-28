@@ -746,22 +746,16 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       // The same process again holds Mira; a new one takes Life.
       const again = await connect({ instance: "home-life", held_space: w.space });
       expect(again.binding).toEqual({ space: w.space, state: "unbound" });
-      // An older bridge reconnects with its handle and holds nothing: which space it worked in is
-      // not known, so it gets none rather than the default of now, and is told to restart.
-      const older = await connect({
-        instance: "home-life",
-        resume: { handle: "bh_0123456789abcdefghijkl" },
-      });
+      // A process that was told it has no space keeps none rather than the default of now, and is
+      // told to restart.
+      const older = await connect({ instance: "home-life", held_space: null });
       expect(older.binding).toEqual({ space: null, state: "unbound" });
       const restart = await older.refusal("space.status");
       expect([restart.code, restart.reason]).toEqual(["space_unavailable", "no_space"]);
       expect(restart.text).toContain(`It may use the space Life: ask the user to name it`);
       await older.close();
       // A hand-made one with a default: the restart alone settles it.
-      const olderManual = await connect({
-        instance: null,
-        resume: { handle: "bh_0123456789abcdefghijkl" },
-      });
+      const olderManual = await connect({ instance: null, held_space: null });
       const manualRestart = await olderManual.refusal("space.status");
       expect(manualRestart.reason).toBe("no_space");
       expect(manualRestart.text).toContain(

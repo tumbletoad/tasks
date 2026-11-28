@@ -103,11 +103,7 @@ export class Bridges {
   /** The space of a connection that is none. */
   #spaceOf(context: JsonObject, held: string | null | undefined): string | undefined {
     if (held !== undefined) return held ?? undefined;
-    const named = word(context["space"]);
-    const resume = context["resume"];
-    const older = isObject(resume) && typeof resume["handle"] === "string";
-    if (older && named === null) return undefined;
-    return this.#settle(named);
+    return this.#settle(word(context["space"]));
   }
 
   /** The space of a connection that is none and holds none: its entry's, the default, the only. */

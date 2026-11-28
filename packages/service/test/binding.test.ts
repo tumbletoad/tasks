@@ -748,21 +748,15 @@ describe("[A3.3.7.binding.space] one bridge process works in one space", () => {
 
 describe("[A3.3.7.binding.wire] the same over real ttasks-local/1 mcp mode connections", () => {
   test(
-    "the bind result is the space and the state, with no handle; an old bridge's handle is ignored",
+    "the bind result is the space and the state, with no handle",
     { timeout: LONG },
     async () => {
       const first = await connect({ instance: "wire-agent" });
-      const old = await connect({
-        instance: "wire-agent",
-        resume: { handle: "bh_0123456789abcdefghijkl" },
-      });
       try {
         expect(first.binding).toEqual({ space: w.space, state: "unbound" });
-        expect(old.binding).toEqual({ space: w.space, state: "unbound" });
-        expect(await old.call("space.status")).toContain("Session: not bound");
+        expect(await first.call("space.status")).toContain("Session: not bound");
       } finally {
         await first.close();
-        await old.close();
       }
     },
   );

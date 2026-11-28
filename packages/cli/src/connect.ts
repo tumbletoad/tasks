@@ -182,12 +182,7 @@ export async function connectService(io: Io, options: ConnectOptions = {}): Prom
         build: CLI_BUILD.build,
         pid: io.pid,
         package: pkg === undefined || pkg === "" ? null : pkg,
-        // `stderr` only when it alone is a terminal, the one case where it changes the class: a
-        // service that predates the field refuses the bind, so every other command still binds to it.
-        tty:
-          io.tty.stderr && !io.tty.stdin && !io.tty.stdout
-            ? { stdin: false, stdout: false, stderr: true }
-            : { stdin: io.tty.stdin, stdout: io.tty.stdout },
+        tty: { stdin: io.tty.stdin, stdout: io.tty.stdout, stderr: io.tty.stderr },
       },
       context: { env: rpcContextEnv(io.env) },
       connectTimeoutMs: CONNECT_MS,
