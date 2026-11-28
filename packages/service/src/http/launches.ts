@@ -573,9 +573,8 @@ export class UiLaunches {
     // open launches as recorded.
     const runs = (launch: string): boolean => port?.running?.(launch, space.copy) ?? false;
     const restored = space.restored !== undefined;
-    const threads = restored
-      ? new Map<string, T3Activity>()
-      : await (port?.t3Activity?.(space.id ?? "", task) ?? Promise.resolve(new Map()));
+    const none: ReadonlyMap<string, T3Activity> = new Map();
+    const threads = restored ? none : ((await port?.t3Activity?.(space.id ?? "", task)) ?? none);
     const thread = (launch: string): T3Activity | undefined => threads.get(launch);
     return rows.flatMap((r) => receiptOf(r, runs, restored, thread) ?? []).reverse();
   }

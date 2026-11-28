@@ -481,7 +481,7 @@
   "receipt.asked": "Asked {label} to open",
   "receipt.opened": "Opened in {where}",
   "receipt.running": "{opened} · running",
-  "receipt.thread": "{opened} · {activity, select, working {working} waiting {needs you} other {idle}}",
+  "receipt.thread": "{opened} · {status, select, working {working} waiting {needs you} other {idle}}",
   "receipt.ended": "{opened} · ended",
   "receipt.endedAfter": "{opened} · ended after {ran}",
   "receipt.seconds": "{count} s",

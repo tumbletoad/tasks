@@ -15,7 +15,6 @@ import { basename, isAbsolute, join, win32 } from "node:path";
 import { PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError } from "@ttasks/contracts";
-import type { AgentsThread } from "@ttasks/contracts/monitor";
 import {
   agentSetup,
   appName,
@@ -322,6 +321,22 @@ export interface LaunchServiceOptions extends LaunchOptions {
 
 /** How long an idle T3 thread T3 has not changed still shows on the Agents page. */
 const T3_HELD_MS = 24 * 60 * 60_000;
+
+/**
+ * A task's T3 thread for the Agents page, as T3 tells what its agent does: the monitor's
+ * AgentsThread, which this module may not import (monitor data stays with the page).
+ */
+export interface T3Agent {
+  readonly task: {
+    readonly space: string;
+    readonly spaceName: string;
+    readonly id: string;
+    readonly ref: string;
+    readonly started: "t3";
+    readonly of: string;
+  };
+  readonly activity: "working" | "waiting" | "idle";
+}
 
 /** At most this many T3 briefs whose thread did not come up are kept for a second try. */
 const UNSENT_MAX = 64;
@@ -1136,17 +1151,17 @@ export class LaunchService {
    * what the Agents page shows with their tasks. A thread T3 has not changed for a day is left out,
    * as an ended terminal agent is.
    */
-  async t3Agents(): Promise<AgentsThread[]> {
+  async t3Agents(): Promise<T3Agent[]> {
     const t3 = this.#options.t3;
     if (t3 === undefined || !(await t3.running())) return [];
     const now = (this.#options.now ?? Date.now)();
     const spaces = this.#options.spaces().filter(isOpen);
     const found = await Promise.all(
-      spaces.map(async (served): Promise<AgentsThread[]> => {
+      spaces.map(async (served): Promise<T3Agent[]> => {
         const id = served.id ?? "";
         const rows = await this.#t3Threads(id, served.copy).catch(() => []);
         const read = await Promise.all(
-          rows.map(async (row): Promise<AgentsThread | undefined> => {
+          rows.map(async (row): Promise<T3Agent | undefined> => {
             const state = await t3.thread(row.thread);
             if (state === undefined || state.activity === "gone") return undefined;
             const quiet = state.updatedAt === undefined ? 0 : now - state.updatedAt;

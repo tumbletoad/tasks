@@ -118,7 +118,7 @@ export function receiptText(receipt: Receipt, label: string, t: Translate): stri
       return t(receipt.route === "clipboard" ? "receipt.copied" : "receipt.asked", { label });
     case "confirmed":
       if (receipt.session === "running" && receipt.activity !== undefined) {
-        return t("receipt.thread", { opened, activity: receipt.activity });
+        return t("receipt.thread", { opened, status: receipt.activity });
       }
       if (receipt.session === "running") return t("receipt.running", { opened });
       if (receipt.session === "restored") return t("receipt.restored", { opened });

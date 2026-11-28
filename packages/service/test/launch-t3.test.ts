@@ -270,17 +270,10 @@ describe("[A4.3.4.1.t3.open] Open in T3 Code through the service, against a fake
       thread.status = "running";
       expect(await activity()).toEqual(new Map([[first.launch.id, "working"]]));
       thread.pendingRequestCount = 1;
-      expect(await launches.t3Agents()).toEqual([
-        {
-          task: expect.objectContaining({
-            id: task.id,
-            ref: task.ref,
-            started: "t3",
-            of: first.launch.id,
-          }),
-          activity: "waiting",
-        },
-      ]);
+      const agents = await launches.t3Agents();
+      expect(
+        agents.map((a) => [a.task.id, a.task.ref, a.task.started, a.task.of, a.activity]),
+      ).toEqual([[task.id, task.ref, "t3", first.launch.id, "waiting"]]);
 
       // T3 does not answer whether the thread is there: nothing new is made on a guess.
       r.fake.errorNext("t3_thread_read", -32603, "before");

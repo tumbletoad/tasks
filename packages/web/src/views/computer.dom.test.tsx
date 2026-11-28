@@ -113,6 +113,7 @@ const picture = (
   settling: more.settling ?? false,
   sessions,
   unseen: more.unseen ?? [],
+  threads: [],
   accounts,
 });
 
