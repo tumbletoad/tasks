@@ -56,13 +56,16 @@ import { isTimeZone, localDate } from "@ttasks/contracts/day";
 import { parseRepeat } from "@ttasks/contracts/repeat";
 import { formatRule, parseRule } from "@ttasks/contracts/schedule";
 import {
+  byFolder,
   folderKey,
   freeSlug,
+  insideKept,
   intentFingerprint,
   isId,
   newId,
   normaliseSourceKey,
   normaliseStored,
+  NO_TOP_FOLDER,
   type InsideFolder,
   type Id,
   type EffortMove,
@@ -1786,9 +1789,6 @@ async function markersAfter(
   }
 }
 
-/** At most this many folders that moved along or stayed are named in an answer. */
-const FOLLOWERS_SHOWN = 20;
-
 /**
  * Why the service leaves the folders inside the old one where they are, when it does: what it
  * found on disk, which goes with the request's record (`submit`'s `answer`).
@@ -1808,15 +1808,20 @@ type Names = ReadonlyMap<string, string>;
 function movedOf(result: WriteResult, names: Names | undefined): Record<string, unknown> {
   const inside = result.results.find((op) => op.inside !== undefined)?.inside;
   if (result.status !== "applied" || inside === undefined) return {};
+  // Those the receipt keeps, so a request sent again names the same folders. In their order, with
+  // the projects that share a folder by their names, which a space does not number.
+  const name = (f: InsideFolder): string => names?.get(f.owner) ?? "";
   const named = (list: readonly InsideFolder[]) =>
-    list.slice(0, FOLLOWERS_SHOWN).map((f) => {
-      const name = names?.get(f.owner);
-      return {
-        kind: f.kind,
-        ...(f.kind === "task" ? { ref: f.ref } : name === undefined ? {} : { name }),
-        folder: f.to,
-      };
-    });
+    insideKept(list)
+      .sort(byFolder((a, b) => name(a).localeCompare(name(b))))
+      .map((f) => {
+        const known = names?.get(f.owner);
+        return {
+          kind: f.kind,
+          ...(f.kind === "task" ? { ref: f.ref } : known === undefined ? {} : { name: known }),
+          folder: f.to,
+        };
+      });
   const because = result.answer?.["stayed_because"] ?? "unchecked";
   return {
     ...(inside.moved === 0 ? {} : { moved: inside.moved, followed: named(inside.along) }),
@@ -4429,6 +4434,28 @@ function projectNamed(names: GroupNames, given: string): { id: string; name: str
   return { id, name: names.projects.find((p) => p.id === id)?.title ?? name };
 }
 
+/**
+ * The project a folder is set on or cleared from. A tree space's project at the top reads as an
+ * area, which takes no folder: it is refused in the plan's own words, not as a name no project has.
+ */
+function folderProject(call: Call, names: GroupNames, given: string): string {
+  try {
+    return projectNamed(names, given).id;
+  } catch (error) {
+    if (isTree(call.space) && areaNamed(names, given)) throw invalid("project", NO_TOP_FOLDER);
+    throw error;
+  }
+}
+
+/** Whether `given` names an area, by name, slug or ID. */
+function areaNamed(names: GroupNames, given: string): boolean {
+  try {
+    return resolveGroup(names, "area", given.trim(), "project", { lookup: true }) !== undefined;
+  } catch {
+    return false;
+  }
+}
+
 async function folderWrite(
   call: Call,
   action: string,
@@ -4501,7 +4528,7 @@ async function folderWrite(
   // set or clear, on a project or a task. The writer resolves a task's reference.
   const owner: { kind: "project" | "task"; id: string } =
     typeof input["project"] === "string"
-      ? { kind: "project", id: projectNamed(names, input["project"]).id }
+      ? { kind: "project", id: folderProject(call, names, input["project"]) }
       : { kind: "task", id: String(input["task"]) };
   let move = NO_MOVE;
   let also: readonly ProjectFolderRow[] = [];

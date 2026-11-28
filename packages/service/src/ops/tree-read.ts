@@ -133,6 +133,15 @@ const TREE: Record<string, Statement> = {
       "AND f.deleted_at IS NULL ORDER BY f.created_seq DESC, f.id",
     mode: "all",
   },
+  /** The folders of the project the task sits in, which it opens in when it has none. */
+  projectFolders: {
+    sql:
+      "SELECT f.*, 'project' AS owner_kind, m.name AS machine_name FROM folders f " +
+      "JOIN machines m ON m.id = f.machine_id JOIN nodes n ON n.id = " +
+      `${MATCH} JOIN nodes p ON p.id = n.parent_id AND p.kind = 'project' ` +
+      "WHERE f.owner_id = p.id AND f.deleted_at IS NULL ORDER BY f.created_seq DESC, f.id",
+    mode: "all",
+  },
 };
 
 /**
@@ -167,23 +176,35 @@ export async function readTreeTask(
     llimit: options.log.limit,
     removed: options.removed === true ? REMOVED_NOTES : 0,
   };
-  const [space, row, instructions, notes, counts, log, learnings, sources, folders, removed] =
-    await snapshot(
-      reader,
-      [
-        TREE["space"],
-        TREE["task"],
-        TREE["instructions"],
-        TREE["notes"],
-        TREE["counts"],
-        TREE["log"],
-        TREE["learnings"],
-        TREE["sources"],
-        TREE["folders"],
-        TREE["removed"],
-      ].map((s) => s as Statement),
-      params,
-    );
+  const [
+    space,
+    row,
+    instructions,
+    notes,
+    counts,
+    log,
+    learnings,
+    sources,
+    folders,
+    removed,
+    projectFolders,
+  ] = await snapshot(
+    reader,
+    [
+      TREE["space"],
+      TREE["task"],
+      TREE["instructions"],
+      TREE["notes"],
+      TREE["counts"],
+      TREE["log"],
+      TREE["learnings"],
+      TREE["sources"],
+      TREE["folders"],
+      TREE["removed"],
+      TREE["projectFolders"],
+    ].map((s) => s as Statement),
+    params,
+  );
   const facts = spaceFacts(space);
   if (key.prefix !== null && key.prefix !== facts.refPrefix) throw notFound();
   const task = row as Row | null;
@@ -201,7 +222,7 @@ export async function readTreeTask(
     sources: sourceRows,
     removedSources: [],
     removedNotes: removed as Row[],
-    folder: taskFolderOf(folders as Row[], [], options.machine),
+    folder: taskFolderOf(folders as Row[], projectFolders as Row[], options.machine),
     history: [],
     learnings: (learnings as Row[]).flatMap((learning, k) =>
       learning["deleted_at"] === null ? [{ key: k + 1, text: text(learning["body"]) }] : [],

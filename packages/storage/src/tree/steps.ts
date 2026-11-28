@@ -60,8 +60,12 @@ const KINDS: KindRows = {
     "AND json_extract(c.before, '$.parent_id') = (SELECT space_id FROM space)) " +
     `OR (c.entity = 'nodes' AND c.field = 'place' AND ${IS_TASK} AND ${INTO_NEW_PROJECT})`,
   // An archive pauses the routines in its project, and an unarchive leaves them paused.
+  // A project made for a folder is one step, its folder coming along, as today's is.
   group:
     `(c.entity = 'nodes' AND ${IS_PROJECT} AND (c.action = 'create' OR c.field = 'archived')) ` +
+    "OR (c.entity = 'folders' AND c.action = 'create' AND EXISTS (SELECT 1 FROM changes p " +
+    "WHERE p.seq = c.seq AND p.entity = 'nodes' AND p.action = 'create' AND EXISTS " +
+    "(SELECT 1 FROM nodes n WHERE n.id = p.entity_id AND n.kind = 'project'))) " +
     "OR (c.entity = 'routines' AND c.field = 'paused' AND EXISTS (SELECT 1 FROM changes d " +
     "WHERE d.seq = c.seq AND d.entity = 'nodes' AND d.field = 'archived'))",
   dismissal: "c.entity = 'tasks' AND c.field = 'reviewed_at'",
@@ -267,6 +271,8 @@ function oppositeOf(conn: Connection, changes: readonly Stored[]): Call[] {
     }
     // A routine's open time goes back with its entry; its pause and a cancelled run stay.
     if (first.entity === "routines" || first.entity === "runs") continue;
+    // A folder made with its project stays with it, archived or not, as today's does.
+    if (first.entity === "folders") continue;
     if (first.entity === "pages") {
       const deleted = of("deleted");
       if (deleted !== undefined) {
@@ -310,7 +316,7 @@ function written(changes: readonly Stored[]): Stored[] {
   );
   const finished = new Set(changes.filter((c) => c.field === "lifecycle").map((c) => c.id));
   return changes.filter((c) => {
-    if (!isEntity(c.entity)) return false;
+    if (!isEntity(c.entity) || c.entity === "folders") return false;
     if (c.entity === "nodes" && deleted.has(c.id)) return c.field === "deleted";
     if (c.entity === "tasks" && finished.has(c.id))
       return c.field === "lifecycle" || c.field === "wrap";

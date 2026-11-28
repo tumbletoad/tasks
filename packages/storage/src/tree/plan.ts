@@ -18,6 +18,8 @@ import {
   NOT_NOW,
   OTHER_SPACE_TASK,
   WRITE_LIMITS,
+  type FolderSet,
+  type InsideFolder,
   type Operation,
   type OpResult,
   type PageOwner,
@@ -28,6 +30,7 @@ import {
 import { captured, problem, refText } from "./commands.ts";
 import { TreeProblem } from "./fields.ts";
 import type { TreeConflict, Tx } from "./tx.ts";
+import { carriedTo, FOLDER_HELD, machineOs } from "../write/folders.ts";
 import { TASK_FIELDS as TODAY_TASK_FIELDS } from "../write/fields.ts";
 
 const SQL = {
@@ -49,6 +52,16 @@ const SQL = {
   origin: "SELECT origin_source_id FROM tasks WHERE id = $id",
   source: "SELECT version FROM sources WHERE id = $id",
   page: "SELECT id, ref, owner_id, version FROM pages WHERE id = $id",
+  /** An owner's folder on a machine: its default one. */
+  folder:
+    "SELECT * FROM folders WHERE owner_id = $owner AND machine_id = $machine AND is_default = 1 " +
+    "AND deleted_at IS NULL",
+  /** Every live default folder on a machine, with what its owner is. */
+  foldersOn:
+    "SELECT f.*, o.kind AS owner_kind, t.ref AS task_ref FROM folders f " +
+    "JOIN nodes o ON o.id = f.owner_id LEFT JOIN tasks t ON t.id = o.id " +
+    "WHERE f.machine_id = $machine AND f.is_default = 1 AND f.deleted_at IS NULL",
+  folderVersion: "SELECT version FROM folders WHERE id = $id",
   /** Where a task is: its parent's kind and title, and its grandparent's. */
   place:
     "SELECT p.id AS parent, p.kind AS kind, p.title AS title, g.id AS grand, g.kind AS above, " +
@@ -88,6 +101,10 @@ const OPS: ReadonlySet<Operation["kind"]> = new Set([
   "page.restore",
   "undo",
   "redo",
+  "task.folder_set",
+  "project.folder_set",
+  "task.folder_clear",
+  "project.folder_clear",
 ]);
 
 /** A task's fields the tree keeps, by today's name, and the tree's node or task column. */
@@ -208,7 +225,7 @@ type Done = Omit<OpResult, "i" | "status" | "version"> & {
   readonly after?: () => Partial<OpResult>;
   /** The row whose version the result gives. */
   readonly row: {
-    readonly entity: "task" | "note" | "source" | "page" | "node";
+    readonly entity: "task" | "note" | "source" | "page" | "node" | "folder";
     readonly id: string;
   };
 };
@@ -400,6 +417,8 @@ function versionOf(tx: Tx, row: Done["row"], status: string): number {
       return Number(tx.get(SQL.note, { id: row.id })?.["version"] ?? 0);
     case "source":
       return Number(tx.get(SQL.source, { id: row.id })?.["version"] ?? 0);
+    case "folder":
+      return Number(tx.get(SQL.folderVersion, { id: row.id })?.["version"] ?? 0);
   }
 }
 
@@ -521,9 +540,9 @@ function nodeKey(plan: Plan, node: PageOwner | TextNode, field = "node"): string
     case "space":
       return "space";
     case "area":
-      return groupNode(plan, node.area, "area", "area");
+      return madeGroup(plan, node.area, "area");
     case "project":
-      return groupNode(plan, node.project, "project", "project");
+      return madeGroup(plan, node.project, "project");
     case "task": {
       const task = taskRow(plan, node.task, `${field}.id`);
       if (task["deleted_at"] !== null) problem("DELETED", "The task is deleted", `${field}.id`);
@@ -712,8 +731,9 @@ function runOne(plan: Plan, i: number): Done {
         made: false,
       };
       plan.groups.set(key, group);
+      // Named by the ID the request gave it, as today's result names an area by its own.
       return {
-        id: tree,
+        id: key,
         row: { entity: "node", id: tree },
         after: () => ({ status: group.made ? "created" : "unchanged" }),
       };
@@ -734,6 +754,31 @@ function runOne(plan: Plan, i: number): Done {
       );
       const id = node === "space" ? tx.space.spaceId : node;
       return { id, row: { entity: "node", id } };
+    }
+    case "task.folder_set":
+    case "project.folder_set":
+      return folderSet(plan, op);
+    case "task.folder_clear":
+    case "project.folder_clear": {
+      const owner = folderOwner(plan, op);
+      const machine = tx.request.actor.machine_id;
+      const held = tx.get(SQL.folder, { owner: owner.id, machine });
+      call(tx, "folder.clear", { node: owner.id });
+      // The cleared folder, or the owner when nothing was there on this machine to clear.
+      return held === undefined
+        ? {
+            id: owner.id,
+            ...owner.task,
+            row:
+              owner.task === undefined
+                ? { entity: "node", id: owner.id }
+                : { entity: "task", id: owner.id },
+          }
+        : {
+            id: String(held["id"]),
+            ...owner.task,
+            row: { entity: "folder", id: String(held["id"]) },
+          };
     }
     case "page.create": {
       const said = call(tx, "page.create", {
@@ -766,6 +811,95 @@ function runOne(plan: Plan, i: number): Done {
     default:
       throw new TreeProblem("VALIDATION_FAILED", "The tree does not take this operation yet");
   }
+}
+
+/** Whose folder an operation changes: a task, or a project by today's key. */
+function folderOwner(
+  plan: Plan,
+  op: { kind: string; task?: string; project?: string },
+): { id: string; task?: { task: Id<"t">; ref: string } } {
+  if (op.kind.startsWith("task.")) {
+    const task = taskRow(plan, op.task ?? "");
+    const id = String(task["id"]);
+    return { id, task: { task: id as Id<"t">, ref: refText(plan.tx, task["ref"]) } };
+  }
+  const id = madeGroup(plan, op.project ?? "", "project");
+  const above = plan.tx.get(SQL.node, { id: String(plan.tx.get(SQL.node, { id })?.["parent_id"]) });
+  if (above?.["kind"] !== "project") problem("VALIDATION_FAILED", NO_TOP_FOLDER, "project");
+  return { id };
+}
+
+/**
+ * Under today's names a project at the top of the tree reads as an area, which has no folder: it
+ * takes one with the tree's own names. The service refuses a folder for one it finds by name with
+ * the same sentence.
+ */
+export const NO_TOP_FOLDER = "On this space a folder goes on a project inside an area";
+
+/** A group an operation names: one the request makes is made now, as that operation uses it. */
+function madeGroup(plan: Plan, key: string, kind: "area" | "project"): string {
+  make(plan, groupInputs(plan, key));
+  return groupNode(plan, key, kind, kind);
+}
+
+/**
+ * Today's folder change: the owner's folder on this machine, and the folders inside the old one
+ * that move along (`carry`), the rest of each path as it is. The others inside it stay, and the
+ * result says which did which, as today's writer says it.
+ */
+function folderSet(plan: Plan, op: FolderSet): Done {
+  const { tx } = plan;
+  const owner = folderOwner(plan, op);
+  const machine = tx.request.actor.machine_id;
+  const old = tx.get(SQL.folder, { owner: owner.id, machine });
+  const carried = new Set(op.carry ?? []);
+  const os = machineOs(tx.conn, machine);
+  const others =
+    old === undefined || os === undefined
+      ? []
+      : tx.all(SQL.foldersOn, { machine }).flatMap((row) => {
+          if (row["id"] === old["id"]) return [];
+          const to = carriedTo(String(row["path"]), String(old["path"]), op.path, os);
+          return to === undefined || to === row["path"] ? [] : [{ row, to }];
+        });
+  // The base covers every folder that moves along, so one set since is not moved unseen.
+  for (const { row } of others) {
+    if (carried.has(String(row["owner_id"]))) {
+      tx.held("folders", String(row["id"]), String(row["owner_id"]), [...FOLDER_HELD]);
+    }
+  }
+  const said = call(tx, "folder.set", { node: owner.id, path: op.path }) as {
+    folder: { id: string } | null;
+  };
+  const was = old?.["id"];
+  const id = said.folder?.id ?? (typeof was === "string" ? was : owner.id);
+  const along: InsideFolder[] = [];
+  const left: InsideFolder[] = [];
+  if (old !== undefined && old["path"] !== op.path && tx.conflicts.length === 0) {
+    for (const { row, to } of others) {
+      const task = row["owner_kind"] === "task";
+      const named = {
+        kind: task ? ("task" as const) : ("project" as const),
+        owner: String(row["owner_id"]),
+        ...(task ? { ref: refText(tx, row["task_ref"]) } : {}),
+        from: String(row["path"]),
+      };
+      if (!carried.has(named.owner)) {
+        left.push({ ...named, to: named.from });
+        continue;
+      }
+      tx.set("folders", String(row["id"]), named.owner, { path: to }, false);
+      along.push({ ...named, to });
+    }
+  }
+  return {
+    id,
+    ...owner.task,
+    ...(along.length > 0 || left.length > 0
+      ? { inside: { moved: along.length, along, stayed: left.length, left } }
+      : {}),
+    row: { entity: "folder", id },
+  };
 }
 
 /** A note's or a log entry's result, by today's kind of entry. */

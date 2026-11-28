@@ -289,10 +289,13 @@ export const WrapState = z.enum(["pending", "wrapped"]).describe("Wrap-up state"
 export const Replayed = z
   .boolean()
   .describe("True on a retry: what the write did, with names and lists as of now");
-/** A project's area now: a project in an archived area is out of sight with it. */
+/**
+ * A project's area now: a project in an archived area is out of sight with it. In a tree space an
+ * area is a project at the top, with a project's ID.
+ */
 export const ProjectArea = z
   .strictObject({
-    id: z.string().regex(idPattern("a")).describe("Area ID"),
+    id: z.string().regex(idPattern("[ap]")).describe("Area ID"),
     name: z.string().describe("Its name"),
     archived: z.literal(true).describe("Archived, and the project with it").optional(),
   })
