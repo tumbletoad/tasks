@@ -30,7 +30,6 @@ import {
   EFFORT_NAME_MAX,
   checkEffortMoves,
   effortNamesFit,
-  mayWrite,
   PREFERENCES,
   preferenceSpec,
   samePrefValue,
@@ -39,6 +38,7 @@ import {
 } from "@ttasks/contracts/preferences";
 import type { Connection, Row, SqlValue } from "../driver.ts";
 import { misuse, StorageError } from "../errors.ts";
+import { agentLabel, notTheAuthority, spaceHuman } from "./actors.ts";
 import { isId, newId, osRandom, type Id, type RandomSource } from "../ids.ts";
 import {
   formatEntryRef,
@@ -55,7 +55,13 @@ import {
   RowReader,
   type SpaceRow,
 } from "../rows.ts";
-import { isScaleKey, listPreference, readSpacePreference, scaleKeys } from "../preferences.ts";
+import {
+  isScaleKey,
+  listPreference,
+  prefSetRule,
+  readSpacePreference,
+  scaleKeys,
+} from "../preferences.ts";
 import { REPLIED_SQL } from "../questions.ts";
 import type { SchemaStep } from "../schema.ts";
 import { indexChanges } from "../search/documents.ts";
@@ -76,13 +82,25 @@ import {
 import {
   carriedTo,
   decodeFolder,
+  FOLDER_HELD,
   FOLDER_SQL,
   folderProblem,
   machineOs,
   type FolderOs,
 } from "./folders.ts";
 import { brokenIn, groupBreaks, type GroupTouch } from "./groups.ts";
-import { appended, excerptOf, findPage, finishedBody, occurrences, PAGE_SQL } from "./pages.ts";
+import {
+  appended,
+  excerptOf,
+  findPage,
+  finishedBody,
+  nodeTexts,
+  occurrences,
+  PAGE_SQL,
+  alreadyThere,
+  pageSetTexts,
+  textWrite,
+} from "./pages.ts";
 import {
   newerOn,
   oppositeOf,
@@ -99,8 +117,12 @@ import {
   detailText,
   LAUNCH_SQL,
   newLaunchRef,
+  NO_MACHINE,
+  NO_REQUEST_NOTE,
   readLaunch,
   readOpenLaunches,
+  requestOrdinal,
+  whereProblem,
   type LaunchRecord,
 } from "./launches.ts";
 import { canonicalJson } from "./canonical.ts";
@@ -1183,21 +1205,14 @@ export class SpaceWriter {
     const conn = this.#usable();
     if (kind === "human") {
       const found = conn.transaction("deferred", () => conn.prepare(SQL.firstHuman).get());
-      const id = found?.["id"];
-      if (!isId(id, "ac")) throw new StorageError("SPACE_INVALID", "The space has no human actor");
-      return id;
+      return spaceHuman(found?.["id"]);
     }
-    const name = normaliseStored(label);
-    if (!isSpaceName(name) || name !== label) {
-      throw misuse("An actor label is one line of 1 to 100 characters");
-    }
+    const name = agentLabel(label);
     return conn.transaction("immediate", () => {
       const found = conn.prepare(SQL.actorByLabel).get({ kind, label: name })?.["id"];
       if (isId(found, "ac")) return found;
       const space = decodeSpaceRow(conn.prepare(SQL.space).get());
-      if (space.authority.machineId !== this.#machine.id) {
-        throw new StorageError("STORAGE_READ_ONLY", "Another machine is this space's authority");
-      }
+      if (space.authority.machineId !== this.#machine.id) throw notTheAuthority();
       const id = newId("ac", this.#random);
       const { at } = writeSystemCommit(conn, {
         kind: "ops",
@@ -1550,7 +1565,11 @@ export class SpaceWriter {
         return fields.map((field): Touch => ({ entity, id, field, task: null }));
       };
       /** An existing folder row the operation writes, whose start state the base covers. */
-      const folderTouches = (row: Row, fields: string[], task: Id<"t"> | null): Touch[] => {
+      const folderTouches = (
+        row: Row,
+        fields: readonly string[],
+        task: Id<"t"> | null,
+      ): Touch[] => {
         const id = new RowReader("folders", row).id("id", "fo");
         const key = rowKey("folders", id);
         if (!starts.has(key)) starts.set(key, rowState("folders", row, CHILD_FIELDS.folders));
@@ -1561,12 +1580,7 @@ export class SpaceWriter {
         const machine = request.actor.machine_id;
         const os = machineOs(conn, machine);
         if (os === undefined) {
-          return problem(
-            "VALIDATION_FAILED",
-            "The request's machine has no record in this space",
-            i,
-            "actor.machine_id",
-          );
+          return problem(NO_MACHINE.code, NO_MACHINE.message, i, NO_MACHINE.field);
         }
         if (path !== undefined) {
           const wrong = folderProblem(path, os);
@@ -1658,12 +1672,7 @@ export class SpaceWriter {
       const placeMachine = (): string => {
         const machine = request.actor.machine_id;
         if (conn.prepare(SQL.machine).get({ id: machine }) === undefined) {
-          problem(
-            "VALIDATION_FAILED",
-            "The request's machine has no record in this space",
-            i,
-            "actor.machine_id",
-          );
+          problem(NO_MACHINE.code, NO_MACHINE.message, i, NO_MACHINE.field);
         }
         return machine;
       };
@@ -2160,7 +2169,7 @@ export class SpaceWriter {
           }
           const record = { task: parent, source: op.source };
           const live = links.get(id) ?? link["removed_at"] === null;
-          if (op.kind === "source.unlink" ? !live : live) {
+          if (alreadyThere(!live, op.kind === "source.relink")) {
             return { i, op, target: op.source, task: parent, touches: [], record, skip: true };
           }
           const start = linkState(link);
@@ -2303,36 +2312,22 @@ export class SpaceWriter {
           const parent = task(op.task, "task");
           const machine = request.actor.machine_id;
           if (conn.prepare(SQL.machine).get({ id: machine }) === undefined) {
-            problem(
-              "VALIDATION_FAILED",
-              "The request's machine has no record in this space",
-              i,
-              "actor.machine_id",
-            );
+            problem(NO_MACHINE.code, NO_MACHINE.message, i, NO_MACHINE.field);
           }
           if (op.place !== null) {
             const place = conn.prepare(LAUNCH_SQL.place).get({ id: op.place });
-            if (place === undefined) problem("NOT_FOUND", "No place has this ID", i, "place");
-            if (place["deleted_at"] !== null)
-              problem("DELETED", "The place is removed", i, "place");
-            if (place["machine_id"] !== machine) {
-              problem("VALIDATION_FAILED", "The place is on another machine", i, "place");
-            }
+            const wrong = whereProblem(place, machine, "place");
+            if (wrong !== undefined) problem(wrong.code, wrong.message, i, wrong.field);
           }
           const asked = op.evidence?.["request"];
           if (asked !== undefined) {
-            const ordinal = /^n([1-9][0-9]{0,5})$/u.exec(String(asked))?.[1];
+            const ordinal = requestOrdinal(String(asked));
             const found =
               ordinal === undefined
                 ? undefined
-                : conn.prepare(LAUNCH_SQL.request).get({ task: parent, ordinal: Number(ordinal) });
+                : conn.prepare(LAUNCH_SQL.request).get({ task: parent, ordinal });
             if (found === undefined) {
-              problem(
-                "NOT_FOUND",
-                "The task has no note with this reference",
-                i,
-                "evidence.request",
-              );
+              problem(NO_REQUEST_NOTE.code, NO_REQUEST_NOTE.message, i, NO_REQUEST_NOTE.field);
             }
           }
           const record = { task: parent, ...inputOf(op, "task") };
@@ -2410,22 +2405,12 @@ export class SpaceWriter {
           const parent = op.task === undefined ? null : task(op.task, "task");
           const machine = request.actor.machine_id;
           if (conn.prepare(SQL.machine).get({ id: machine }) === undefined) {
-            problem(
-              "VALIDATION_FAILED",
-              "The request's machine has no record in this space",
-              i,
-              "actor.machine_id",
-            );
+            problem(NO_MACHINE.code, NO_MACHINE.message, i, NO_MACHINE.field);
           }
           if (op.place !== null) {
             const place = conn.prepare(RUN_SQL.place).get({ id: op.place });
-            if (place === undefined) problem("NOT_FOUND", "No place has this ID", i, "place");
-            if (place["deleted_at"] !== null) {
-              problem("DELETED", "The place is removed", i, "place");
-            }
-            if (place["machine_id"] !== machine) {
-              problem("VALIDATION_FAILED", "The place is on another machine", i, "place");
-            }
+            const wrong = whereProblem(place, machine, "place");
+            if (wrong !== undefined) problem(wrong.code, wrong.message, i, wrong.field);
           }
           const id = newId("ru", random);
           draftRuns.add(id);
@@ -2464,42 +2449,20 @@ export class SpaceWriter {
           // step 4). The admin scope a policy key also needs is the caller's check (A6 3.6.3).
           const spec = must(preferenceSpec(op.key), "A checked pref.set names a declared key");
           const row = conn.prepare(SQL.preferenceRow).get({ id: op.key });
-          // The space's own act (storeDefaults): a value every space holds, where it holds none.
-          const fills =
-            request.actor.actor_kind === "system" &&
-            spec.stored === true &&
-            (row === undefined || row["value"] === "null") &&
-            samePrefValue(op.value, spec.default) &&
-            op.moves === undefined;
-          if (!fills && !mayWrite(spec, request.actor.actor_kind)) {
-            problem("PREFERENCE_FORBIDDEN", "Only the user changes this preference", i, "key");
+          const rule = prefSetRule(
+            spec,
+            row,
+            op,
+            request.actor.actor_kind,
+            request.base !== undefined,
+          );
+          if (rule.refused !== undefined) {
+            problem(rule.refused.code, rule.refused.message, i, rule.refused.field);
           }
-          // A newer build's value is kept unchanged: read-only here (A1 3.16). Said before any
-          // other reason, so nobody changes tasks for a change this build cannot make.
-          if (
-            row !== undefined &&
-            new RowReader("preferences", row).int("schema_ver", "count") > spec.schemaVer
-          ) {
-            problem(
-              "VALIDATION_FAILED",
-              "A newer build wrote this preference: it is read-only here",
-              i,
-              "key",
-            );
-          }
+          const { fills } = rule;
           const start =
             row === undefined ? undefined : rowState("preferences", row, CHILD_FIELDS.preferences);
           const levels = op.key === "tasks.effort_scale" && !fills;
-          // The levels a change replaces are the ones its person read, also on a space that never
-          // stored them: a first setter racing another meets the other's row as a conflict.
-          if (levels && row === undefined && request.base === undefined) {
-            problem(
-              "BASE_REQUIRED",
-              "This change needs the as_of of a read as its base",
-              i,
-              "base",
-            );
-          }
           // A base older than the list's last change is a conflict (preconditions), whatever the
           // change says of a list its person never saw.
           const stale =
@@ -2614,8 +2577,7 @@ export class SpaceWriter {
           const row = pageOf(op.page, restoring);
           const id = new RowReader("pages", row).id("id", "pg");
           const record = { ...inputOf(op, "page"), page: id };
-          // Already where it asks for: nothing to write.
-          const done = (row["deleted_at"] !== null) !== restoring;
+          const done = alreadyThere(row["deleted_at"] !== null, restoring);
           return {
             i,
             op,
@@ -2659,18 +2621,18 @@ export class SpaceWriter {
             }
             body = version;
           }
-          const given: [string, string][] = [];
-          if (op.title !== undefined) given.push(["title", op.title]);
-          if (op.brief !== undefined) given.push(["brief", op.brief]);
-          if (body !== undefined) given.push(["body", body]);
-          const set = Object.fromEntries(given.filter(([field, value]) => row[field] !== value));
+          const { held, set } = textWrite(
+            pageSetTexts(op, op.from_seq === undefined ? undefined : body),
+            (field) => String(row[field]),
+            true,
+          );
           starts.set(rowKey("pages", id), rowState("pages", row, CHILD_FIELDS.pages));
           return {
             i,
             op,
             target: id,
             task: null,
-            touches: given.map(([field]): Touch => ({ entity: "pages", id, field, task: null })),
+            touches: held.map((field): Touch => ({ entity: "pages", id, field, task: null })),
             record: { ...inputOf(op, "page"), page: id },
             page: { set },
             ...(Object.keys(set).length === 0 ? { skip: true } : {}),
@@ -2683,26 +2645,24 @@ export class SpaceWriter {
           }
           const node = holderOf(op.node, "node") as { kind: TextNode["kind"]; id: string };
           const row = conn.prepare(PAGE_SQL.text).get({ id: node.id });
-          const given: [string, string][] = [];
-          if (op.kind === "node.instruct") given.push(["for_agents", op.text]);
-          else {
-            if (op.brief !== undefined) given.push(["brief", op.brief]);
-            if (op.description !== undefined) given.push(["description", op.description]);
-          }
-          const set = Object.fromEntries(
-            given.filter(([field, value]) => (row?.[field] ?? "") !== value),
+          const { held, set } = textWrite(
+            nodeTexts(op),
+            (field) => {
+              const value = row?.[field];
+              return typeof value === "string" ? value : "";
+            },
+            row !== undefined,
           );
-          let touches: Touch[] = [];
           if (row !== undefined) {
             const key = rowKey("node_texts", node.id);
             starts.set(key, rowState("node_texts", row, CHILD_FIELDS.node_texts));
-            touches = given.map(([field]): Touch => ({
-              entity: "node_texts",
-              id: node.id,
-              field,
-              task: null,
-            }));
           }
+          const touches = held.map((field): Touch => ({
+            entity: "node_texts",
+            id: node.id,
+            field,
+            task: null,
+          }));
           return {
             i,
             op,
@@ -2838,7 +2798,7 @@ export class SpaceWriter {
             // says whether the caller saw it.
             const found = decodeFolder(row);
             target = found.id;
-            touches.push(...folderTouches(row, ["path", "deleted"], parent));
+            touches.push(...folderTouches(row, FOLDER_HELD, parent));
             if (op.carry !== undefined && op.carry.length > 0) {
               const carried = new Set(op.carry);
               for (const inside of conn
@@ -2848,7 +2808,7 @@ export class SpaceWriter {
                 if (moved.id === found.id || !carried.has(moved.ownerId)) continue;
                 if (carriedTo(moved.path, found.path, op.path, folder.os) === undefined) continue;
                 const owned = moved.ownerKind === "task" ? task(moved.ownerId, "task", true) : null;
-                touches.push(...folderTouches(inside, ["path", "deleted"], owned));
+                touches.push(...folderTouches(inside, FOLDER_HELD, owned));
               }
             }
           } else {
@@ -2903,7 +2863,7 @@ export class SpaceWriter {
             op,
             target: decodeFolder(row).id,
             task: parent,
-            touches: folderTouches(row, ["path", "deleted"], parent),
+            touches: folderTouches(row, FOLDER_HELD, parent),
             record,
             owner: { ...owner, bound: true },
             folder,

@@ -20,6 +20,8 @@ export interface TreeFixture {
   spaceId: Id<"sp">;
   human: TreeActor;
   agent: TreeActor;
+  /** The space's as_of now, wire form. */
+  asOf(): string;
   /** Sends one command as `who` (the person by default) with a fresh request ID. */
   send(command: string, input: Record<string, unknown>, more?: Partial<Send>): TreeResult;
   close(): void;
@@ -88,6 +90,7 @@ export function openTree(
     spaceId,
     human,
     agent,
+    asOf,
     send: (command, input, more = {}) =>
       writer.submit({
         space_id: spaceId,

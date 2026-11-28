@@ -28,8 +28,8 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 1.1 | The contract for pages, the trail, `read` and `write_page` | done (#229, #231) |
 | 1.2 | Storage: the migration step for pages and the new fields, the search tables rebuilt, an older backup's index rebuilt by its own version | done (#240) |
 | 1.3 | The page edit as the first named command of the new write path | done (#240) |
-| 1.4 | Agent tools: `read`, `write_page`, the trail in `get_task` within one budget, search over pages, `complete_task` asking for pages updated | todo: 1.3 |
-| 1.5 | The skill `keeping-the-library`, and a brief explained as "what this is" | todo: 1.1 |
+| 1.4 | Agent tools: `read`, `write_page`, the trail in `get_task` within one budget, search over pages, `complete_task` asking for pages updated | done (#251) |
+| 1.5 | The skill `keeping-the-library`, and a brief explained as "what this is" | done (#251) |
 | 1.6 | The app: the project screen with its Library, the page screen with History and Restore, page edits under Changes | todo: 1.1 |
 | 1.7 | The trial: twenty scripted tasks with Claude Code and Codex, and the bytes of history per page edit | todo: 1.4, 1.5 |
 | 1.8 | The harvest of one real project, and a walk through it as a person | todo: 1.6, 1.7 |
@@ -52,9 +52,9 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 4.1 | Budgets that speak in a write's answer, and tidying a project's library | todo: 1.4 |
 | 4.2 | Ingestion: a run makes tasks and sources from the person's sources by itself | todo: 2b.3 |
 | 4.3 | The library skill's later versions, from the trial | todo: 1.7 |
-| 5.1 | The space service apart from the device service | todo: step 1 |
-| 5.2 | An endpoint for paired devices, with rights per phone, and pairing by a QR code | todo: 5.1 |
-| 5.3 | The phone app as a development build, and its first proof | todo: 5.2 |
+| 5.1 | The phone's listener apart from the page's, in the same process: it reaches only the operations, the feed and a task's runs | review: the listener in this pull request |
+| 5.2 | An endpoint for paired phones over pinned TLS, with rights per phone and space, and pairing by a QR code from Settings > Phones | review: the listener, rights and pairing in this pull request; Settings > Phones in the next |
+| 5.3 | The phone app as a development build in the workspace, and its first proof; Today and capture shared with the page once step 1's page work has merged | todo: 5.2, 1.6 |
 | 5.4 | The stores' test tracks, the relay for use away from home, push messages | todo: 5.3 |
 | 6.1 | Differences between versions of a page and of a description | todo: 1.6 |
 
@@ -66,7 +66,7 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | A quality pass over the app, on the new screens | todo: steps 2 and 3 |
 | A run reports through its answer and what it logs, and logs a decision it leaves the person as a question | done |
 | A run that stopped at a permission prompt goes on with Continue, in the agent app, on the run's own conversation | todo: 2b.3 |
-| Retiring old versions after an update | ready |
+| Retiring old versions after an update | done |
 
 ## Checks on real machines
 

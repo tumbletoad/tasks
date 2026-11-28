@@ -36,5 +36,6 @@ export {
   type GitAsk,
 } from "./managed.ts";
 export * from "./print.ts";
+export { homesReadiness } from "./readiness.ts";
 export * from "./run.ts";
 export * from "./state.ts";

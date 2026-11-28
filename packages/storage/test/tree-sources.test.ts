@@ -38,6 +38,19 @@ describe("[S2.tree.sources] sources, links and the capture by source on the tree
     (ok(fx.send("project.create", { title })) as { project: { id: string } }).project.id;
   const count = (sql: string) => Number(fx.conn.prepare(sql).get()?.["n"]);
 
+  test("a source's move takes no base; a removal or a putting back already there changes nothing", () => {
+    const home = task();
+    ok(fx.send("source.add", { on: home, source: { kind: "email", title: "Council reply" } }));
+    const ref = String(fx.conn.prepare("SELECT ref FROM sources").get()?.["ref"]);
+    const source = `M-${ref}`;
+    ok(fx.send("source.move", { source, on: project("Lumen") }, { base: null }));
+    expect(fx.send("source.remove", { source }, { base: null }).error?.code).toBe("BASE_REQUIRED");
+    ok(fx.send("source.remove", { source }));
+    expect(fx.send("source.remove", { source }).status).toBe("unchanged");
+    ok(fx.send("source.put_back", { source }));
+    expect(fx.send("source.put_back", { source }).status).toBe("unchanged");
+  });
+
   test("a repeat capture finds its task through the source it came from, wherever the source moved", () => {
     const source = { kind: "ticket", title: "LUM-212", key: "jira:LUM-212" };
     const capture = (title: string, log?: string) =>
@@ -96,7 +109,9 @@ describe("[S2.tree.sources] sources, links and the capture by source on the tree
     expect(links()).toEqual([{ removed_at: null }]);
     ok(fx.send("source.remove", { source: sourceRef }));
     ok(fx.send("source.add", { on: ref, source: { ...reply, title: "Council reply, again" } }));
-    expect(fx.send("source.put_back", { source: sourceRef }).error?.code).toBe("KEY_HELD");
+    expect(fx.send("source.put_back", { source: sourceRef }).error?.code).toBe(
+      "INVALID_TRANSITION",
+    );
     const page = (
       ok(fx.send("page.create", { on: home, title: "Council" })) as { page: { ref: string } }
     ).page;

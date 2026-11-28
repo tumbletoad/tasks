@@ -97,7 +97,7 @@ const UPSERT_GRANT =
   "INSERT INTO grants (grant_id, kind, principal, spaces, scopes, token_hash, attrs, created_at, " +
   "last_used_at, expires_at, revoked_at) VALUES ($grant_id, $kind, $principal, $spaces, $scopes, " +
   "$token_hash, $attrs, $created_at, $last_used_at, $expires_at, $revoked_at) " +
-  "ON CONFLICT (grant_id) DO UPDATE SET last_used_at = excluded.last_used_at, " +
+  "ON CONFLICT (grant_id) DO UPDATE SET scopes = excluded.scopes, last_used_at = excluded.last_used_at, " +
   "expires_at = excluded.expires_at, revoked_at = excluded.revoked_at";
 
 const asText = (value: unknown): string | null => (typeof value === "string" ? value : null);

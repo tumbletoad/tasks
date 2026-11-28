@@ -105,7 +105,7 @@ describe("[S2.tree.boundary] the tree writer keeps today's guarantees at the req
       ),
     );
     const kept = fx.send("undo", {}, { base: null });
-    expect(kept.status).toBe("applied");
+    expect(kept.status).toBe("unchanged");
     const work = (kept.result as { kept: { work: { by: { label: string } }[] } }).kept.work;
     expect(work.map((w) => w.by.label)).toEqual(["agent:codex"]);
     expect(count("SELECT count(*) AS n FROM nodes WHERE deleted_at IS NOT NULL")).toBe(0);

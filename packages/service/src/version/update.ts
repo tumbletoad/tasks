@@ -42,9 +42,9 @@
 //      the service that runs the current version for its spaces, up to SETTLE_MS until each has
 //      opened or failed to: the result names each that is not usable now, in the service's words
 //      (checkSpaces). Then the lock is let go.
-// It never removes a version folder and never touches a person's data: spaces, `<config>` and
-// `<state>` beyond its own files (update.lock, update.json, install.json, and the self-test's
-// folders in `<state>/tmp/`). A migration, if the new version needs one, runs later, when the new
+// Then old version folders go (retire.ts), which never removes the way back. It never touches a
+// person's data: spaces, `<config>` and `<state>` beyond its own files (update.lock, update.json,
+// install.json, and the self-test's folders in `<state>/tmp/`). A migration, if the new version needs one, runs later, when the new
 // version opens a space, behind its verified backup.
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -90,6 +90,7 @@ import {
   type LauncherChange,
   type UpdateJournal,
 } from "./journal.ts";
+import { retireLocked } from "./retire.ts";
 import { hostPlatform, ReleaseError, verifyRelease, type VerifiedRelease } from "./release.ts";
 import {
   repairLocked,
@@ -1279,8 +1280,15 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
   removeJournal(state);
   await at(options, "done");
   cleanLaunchers(root);
+  await retireOld(install, options);
   const spaces = await checkSpaces(install, options, to, restarted ? note : undefined, restarted);
   return { outcome: "updated", from, to, ...(spaces === undefined ? {} : { spaces }) };
+}
+
+/** Old versions go once the install is complete; one that cannot go yet waits for a later pass. */
+async function retireOld(install: Install, options: UpdateOptions): Promise<void> {
+  const { removed } = await retireLocked(install);
+  if (removed.length > 0) say(options, `Removed old versions: ${removed.join(", ")}.`);
 }
 
 /** A step of the switch that failed, with the reason install.json records. */
@@ -1570,7 +1578,10 @@ export async function repairUpdate(options: UpdateOptions): Promise<UpdateResult
     if (repair.kind === "stuck") sayRepair(options, repair);
     const current = currentVersion(install.root, install.platform);
     if (current === undefined) throw new InstallError("current names no installed version.", 1);
-    if (repair.kind === "nothing") cleanLaunchers(install.root);
+    if (repair.kind === "nothing") {
+      cleanLaunchers(install.root);
+      await retireOld(install, options);
+    }
     const spaces = await checkSpaces(install, options, current, undefined, seen);
     return {
       outcome: "repaired",
