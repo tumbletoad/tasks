@@ -1,8 +1,8 @@
 // Runs one sequence of ordinary steps through today's writer and the tree's, and compares what
 // each answered and what a reader then saw, step by step. A part of the tree says each step in
 // both writers' words once (a `Side`); a sequence is then a list of steps. Where the writers may
-// differ, the step names the one field that may (`answer.said.title`) and says why in one line;
-// everything else of that step is compared. Fixture text only.
+// differ, the step names the field that may (`answer.said.title`), or the fields one difference
+// shows in, and says why in one line; everything else of that step is compared. Fixture text only.
 import { expect } from "vitest";
 import type { Id } from "../src/ids.ts";
 import type { Operation, WriteResult } from "../src/write/request.ts";
@@ -21,7 +21,7 @@ export interface Answer {
 export type Base = "now" | "none" | "marked";
 export type Who = "person" | "agent";
 
-/** A step, or a step with the one field where the writers may differ, and why. */
+/** A step, or a step with the fields of the one way the writers may differ there, and why. */
 export type Sequence<Step> = readonly (Step | Marked<Step>)[];
 
 /** One writer, or one backend of the service: each step said in its words, and its reader's view. */
@@ -34,11 +34,11 @@ export interface Side<Step, S> {
 
 /**
  * `field` is a path into what the step compares, `{answer, seen}`, its parts joined by dots:
- * `answer.said.title`, or `seen.passport.task.title`.
+ * `answer.said.title`, or `seen.passport.task.title`; several when one difference shows in each.
  */
 export interface Marked<Step> {
   readonly step: Step;
-  readonly field: string;
+  readonly field: string | readonly string[];
   readonly differs: string;
 }
 
@@ -84,9 +84,12 @@ export async function both<Step, T, R>(
   const tree = await run(sides.tree);
   sequence.forEach((s, i) => {
     const at = `step ${String(i + 1)}: ${JSON.stringify(stepOf(s)).slice(0, 200)}`;
-    const path = isMarked(s) ? s.field.split(".") : [];
+    const fields = isMarked(s) ? (typeof s.field === "string" ? [s.field] : s.field) : [];
     const compared = (side: { answer: Answer; seen: unknown } | undefined) =>
-      without({ answer: side?.answer, seen: side?.seen }, path) as Record<string, unknown>;
+      fields.reduce<unknown>((v, f) => without(v, f.split(".")), {
+        answer: side?.answer,
+        seen: side?.seen,
+      }) as Record<string, unknown>;
     const mine = compared(tree[i]);
     const theirs = compared(today[i]);
     expect(mine["answer"], `${at}, the answer`).toEqual(theirs["answer"]);

@@ -1,20 +1,17 @@
 // The replay (piece iii): today's service requests sent through both backends, one service serving
-// a space on today's writer and a tree space, and compared step by step: the whole answer each call
-// got and what a reader then sees of every task any answer named (`task.get`). Each space numbers
-// its own IDs, references, as_of and versions, so both are compared by their relations: each value
-// becomes a token in order of first appearance, and a value that comes back gets its token again.
-// Times are left out of that, as two commits in one millisecond are chance; a retry is held to the
-// as_of its first answer gave, in each space. The calls are those `answers.test.ts` and its kin
-// send, one family at a time. A step where the backends may differ names that one field and says
-// why. Fixture text only.
+// a space on today's writer and a tree space, and compared step by step by the strict helper
+// (replay-helpers.ts): the whole answer each call got and what a reader then sees of every task any
+// answer named, and of every node a read hands out. The calls are those `answers.test.ts` and its
+// kin send, one family at a time: the readable cases beside the generated replay
+// (replay.prop.test.ts). A step where the backends may differ names those fields and says why.
+// Fixture text only.
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { AppError, type ErrorBody } from "@ttasks/contracts";
+import { afterAll, beforeAll, describe, test } from "vitest";
 import { CheckedDriver, createSpace, loadDriver, DEFAULT_DRIVER } from "@ttasks/storage";
-import { both, type Sequence, type Side } from "../../storage/test/both-helpers.ts";
-import { opCall, type Caller } from "../src/ops/index.ts";
+import { both, type Sequence } from "../../storage/test/both-helpers.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 import { classSession } from "./ops-helpers.ts";
+import { backend, type Step } from "./replay-helpers.ts";
 
 const LONG = 180_000;
 let w: ContractWorld & { root: string };
@@ -43,177 +40,11 @@ afterAll(async () => {
   await w.close();
 }, LONG);
 
-const AGENT: Caller = { class: "cli-script", env: {} };
-const USER: Caller = { class: "cli-interactive", env: {} };
-
-/** One call: `{name}` in its input is a task an earlier step named; `base` the latest as_of. */
-interface Step {
-  op: string;
-  input: Record<string, unknown>;
-  /** The task this call's answer names, by a name later steps use. */
-  as?: string;
-  user?: true;
-  base?: true;
-  /** A stale base: the as_of after that earlier step (1 is the first). */
-  baseFrom?: number;
-  /** The request ID of an earlier step, sent again as a client whose reply was lost does. */
-  again?: number;
-}
-
-interface Session {
-  space: string;
-  names: Map<string, string>;
-  asOf: string | undefined;
-  ids: Map<string, string>;
-  sent: string[];
-  /** The as_of after each step. */
-  after: (string | undefined)[];
-  /** The as_of each step's own answer gave. */
-  answered: (string | undefined)[];
-  /** Every task reference an answer named, read after each step. */
-  refs: Set<string>;
-  /** This sequence's run in its space: request IDs are a space's, across sequences. */
-  run: number;
-}
-
-/** How many sequences each space has run. */
-const runs = new Map<string, number>();
-
-/** `value`'s token in this space: the same value, the same token. */
-function token(s: Session, kind: string, value: string): string {
-  const key = `${kind}:${value}`;
-  let found = s.ids.get(key);
-  if (found === undefined) {
-    found = `<${kind}${String(s.ids.size + 1)}>`;
-    s.ids.set(key, found);
-  }
-  return found;
-}
-
-/** Each space's own IDs, references, as_of and versions as tokens; its times left out. */
-function normal(value: unknown, s: Session): unknown {
-  if (typeof value === "string") {
-    return value
-      .replace(/\b\d+\.\d+\.[0-9a-z]{8,}\b/gu, (asOf) => token(s, "as_of", asOf))
-      .replace(/\b\d{4}-\d\d-\d\dT[\d:.]+Z\b/gu, "<at>")
-      .replace(/\b(?:[a-z]{1,3}_[0-9a-z]{26}|[A-Z]{1,6}-\d+)\b/gu, (id) => token(s, "", id));
-  }
-  if (Array.isArray(value)) return value.map((v) => normal(v, s));
-  if (typeof value === "object" && value !== null) {
-    // A version and a seq count the space's own commits; a time in milliseconds is a time.
-    return Object.fromEntries(
-      Object.entries(value).map(([k, v]) => [
-        k,
-        (k === "version" || k === "seq") && typeof v === "number"
-          ? token(s, "v", String(v))
-          : /(?:^|_)at$/u.test(k) && typeof v === "number"
-            ? "<at>"
-            : normal(v, s),
-      ]),
-    );
-  }
-  return value;
-}
-
-const filled = (value: unknown, s: Session): unknown => {
-  if (typeof value === "string") {
-    return value.replace(/\{(\w+)\}/gu, (_, name: string) => s.names.get(name) ?? `{${name}}`);
-  }
-  if (Array.isArray(value)) return value.map((v) => filled(v, s));
-  if (typeof value === "object" && value !== null) {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, filled(v, s)]));
-  }
-  return value;
-};
-
-type Sent =
-  { ok: Record<string, unknown>; error?: undefined } | { ok?: undefined; error: ErrorBody };
-
-async function send(
-  s: Session,
-  op: string,
-  input: Record<string, unknown>,
-  caller: Caller,
-): Promise<Sent> {
-  try {
-    const ok = (await opCall(w.service.ops, caller, { op, input, space: s.space })) as Record<
-      string,
-      unknown
-    >;
-    return { ok };
-  } catch (error) {
-    if (!(error instanceof AppError)) throw error;
-    return { error: error.toBody() };
-  }
-}
-
-/** The task references an answer names, the first first. */
-const refsIn = (answer: unknown): string[] =>
-  JSON.stringify(answer ?? {}).match(/\b[A-Z]{1,6}-\d+\b/gu) ?? [];
-
-/** One backend: the steps sent to its space, and the tasks they named read after each. */
-const backend = (space: () => string): Side<Step, Session> => ({
-  open: () =>
-    Promise.resolve({
-      space: space(),
-      names: new Map(),
-      asOf: undefined,
-      ids: new Map(),
-      sent: [],
-      after: [],
-      answered: [],
-      refs: new Set(),
-      run: (() => {
-        const n = (runs.get(space()) ?? 0) + 1;
-        runs.set(space(), n);
-        return n;
-      })(),
-    }),
-  step: async (s, step) => {
-    const id =
-      step.again === undefined
-        ? `replay-${String(s.run)}-request-${String(s.sent.length + 1).padStart(6, "0")}`
-        : (s.sent[step.again - 1] ?? "");
-    s.sent.push(id);
-    const input = {
-      ...(filled(step.input, s) as Record<string, unknown>),
-      ...(step.op === "task.get" ? {} : { request_id: id }),
-      ...(step.base === true && s.asOf !== undefined ? { base: s.asOf } : {}),
-      ...(step.baseFrom === undefined ? {} : { base: s.after[step.baseFrom - 1] }),
-    };
-    const got = await send(s, step.op, input, step.user === true ? USER : AGENT);
-    s.after.push(undefined);
-    s.answered.push(undefined);
-    if (got.ok !== undefined) {
-      const asOf = (got.ok as { as_of?: unknown }).as_of;
-      if (typeof asOf === "string") s.asOf = asOf;
-      s.after[s.after.length - 1] = s.asOf;
-      s.answered[s.answered.length - 1] = typeof asOf === "string" ? asOf : undefined;
-      // A retry is answered as its request was decided: at that commit, in this space too.
-      const first = step.again === undefined ? undefined : s.answered[step.again - 1];
-      if (first !== undefined && got.ok["replayed"] === true) {
-        expect(asOf, `a retry of step ${String(step.again)}`).toBe(first);
-      }
-      const refs = refsIn(got.ok);
-      for (const ref of refs) s.refs.add(ref);
-      if (step.as !== undefined && refs[0] !== undefined) s.names.set(step.as, refs[0]);
-      return { status: "ok", said: normal(got.ok, s) };
-    }
-    return { status: "error", code: got.error.code, said: normal(got.error, s) };
-  },
-  seen: async (s) => {
-    const seen: Record<string, unknown> = {};
-    for (const ref of s.refs) {
-      const read = await send(s, "task.get", { task: ref }, USER);
-      seen[token(s, "", ref)] = normal(read.ok ?? { error: read.error.code }, s);
-    }
-    return seen;
-  },
-  close: () => undefined,
-});
-
 const replay = (steps: Sequence<Step>) =>
-  both({ today: backend(() => w.space), tree: backend(() => tree) }, steps);
+  both(
+    { today: backend(w.service.ops, () => w.space), tree: backend(w.service.ops, () => tree) },
+    steps,
+  );
 
 /** The tasks family, as `answers.test.ts` sends it. */
 const TASKS: Sequence<Step> = [
@@ -383,6 +214,450 @@ describe("[S2.replay.tasks] today's service requests through both backends: the 
     "a finish dropped and done, a finished task's edit, a future finish, the Trash's arguments, a refused batch, a reused ID, an edit before a retry",
     async () => {
       await replay(HELD);
+    },
+    LONG,
+  );
+});
+
+/** Notes, log entries and the person's texts, as the entry tests send them. */
+const NOTES: Sequence<Step> = [
+  { op: "task.add", input: { tasks: [{ title: "Renew the passport" }] }, as: "t" },
+  {
+    op: "entry.add",
+    input: { task: "{t}", kind: "note", text: "Bring the old one", for_agents: true },
+    entry: "note",
+    user: true,
+  },
+  {
+    op: "entry.add",
+    input: { task: "{t}", kind: "progress", text: "Called the office" },
+    entry: "log",
+  },
+  {
+    op: "entry.add",
+    input: {
+      task: "{t}",
+      kind: "decision",
+      text: "Go in person",
+      links: [{ title: "Opening hours", url: "https://example.org/hours" }],
+    },
+  },
+  {
+    op: "entry.add",
+    input: { task: "{t}", kind: "note", text: "Dated", at: "2026-11-01" },
+    user: true,
+  },
+  {
+    op: "entry.add",
+    input: { task: "{t}", kind: "progress", text: "For agents", for_agents: true },
+  },
+  {
+    op: "entry.edit",
+    input: { task: "{t}", entry: "{note}", text: "Bring the old one and a photo" },
+    base: true,
+    user: true,
+  },
+  {
+    op: "entry.edit",
+    input: { task: "{t}", entry: "{note}", text: "Bring the old one and a photo" },
+    base: true,
+    user: true,
+  },
+  { op: "note.remove", input: { task: "{t}", remove: "{note}" }, base: true, user: true },
+  { op: "note.remove", input: { task: "{t}", remove: "{note}" }, base: true, user: true },
+  { op: "note.remove", input: { task: "{t}", put_back: "{note}" }, base: true, user: true },
+  { op: "note.remove", input: { task: "{t}" }, base: true, user: true },
+  {
+    op: "node.instruct",
+    input: { target: "space", text: "Ask before you book anything" },
+    base: true,
+    user: true,
+  },
+  {
+    op: "node.instruct",
+    input: { target: "space", text: "Ask before you book anything" },
+    base: true,
+    user: true,
+  },
+];
+
+/** A task read by its sections, a page at a time. */
+const SECTIONS: Sequence<Step> = [
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "Read in sections", context: "Why it matters" }] },
+    as: "s",
+  },
+  { op: "entry.add", input: { task: "{s}", kind: "note", text: "First note" }, user: true },
+  { op: "entry.add", input: { task: "{s}", kind: "progress", text: "First step" } },
+  {
+    op: "task.get",
+    input: {
+      task: "{s}",
+      sections: ["instructions", "context", "notes", "log", "sources", "outcome"],
+    },
+  },
+  { op: "task.get", input: { task: "{s}", sections: ["log"], log_limit: 1 } },
+];
+
+/** Undo and Redo of the person's steps, and a step kept by an agent's work since. */
+const HISTORY: Sequence<Step> = [
+  { op: "task.add", input: { tasks: [{ title: "Fixture task the person changes" }] }, as: "mine" },
+  {
+    op: "task.update",
+    input: { task: "{mine}", set: { summary: "Fixture summary to undo" } },
+    base: true,
+    user: true,
+  },
+  { op: "history.undo", input: {}, user: true },
+  { op: "history.undo", input: {}, again: 3, user: true },
+  { op: "history.redo", input: {}, user: true },
+  {
+    op: "task.update",
+    input: { task: "{mine}", set: { summary: "An agent's change since" } },
+    base: true,
+  },
+  { op: "history.undo", input: {}, user: true },
+  { op: "task.finish", input: { task: "{mine}", outcome: "Done" }, base: true, user: true },
+  { op: "history.undo", input: {}, user: true },
+  { op: "history.redo", input: {}, user: true },
+  { op: "history.redo", input: {}, user: true },
+];
+
+/** Several tasks to the Trash in one call, as a person selects rows, and its Undo. */
+const TRASH: Sequence<Step> = [
+  { op: "task.add", input: { tasks: [{ title: "Old invoice" }] }, as: "a" },
+  { op: "task.add", input: { tasks: [{ title: "Old receipt" }] }, as: "b" },
+  { op: "task.delete", input: { tasks: ["{a}", "{b}"] }, base: true, user: true },
+  { op: "task.delete", input: { tasks: ["{a}", "{b}"] }, base: true, user: true },
+  { op: "history.undo", input: {}, user: true },
+  { op: "task.delete", input: { tasks: ["{a}", "X-999"] }, base: true, user: true },
+  { op: "task.delete", input: { tasks: ["{b}"] }, base: true, user: true },
+  { op: "task.delete", input: { tasks: ["{a}", "{b}"] }, base: true, user: true },
+];
+
+describe("[S2.replay.notes] today's service requests through both backends: notes, texts, Undo", () => {
+  test(
+    "a note for agents, log entries with links, the refused forms, an edit, a removal and its put back, the space's text",
+    async () => {
+      await replay(NOTES);
+    },
+    LONG,
+  );
+
+  test(
+    "several tasks to the Trash in one call, again, its Undo, one the space lacks, and one already there",
+    async () => {
+      await replay(TRASH);
+    },
+    LONG,
+  );
+
+  test(
+    "a task read by its sections",
+    async () => {
+      await replay(SECTIONS);
+    },
+    LONG,
+  );
+
+  test(
+    "Undo, a lost reply to it, Redo, and a step kept by an agent's work since",
+    async () => {
+      await replay(HISTORY);
+    },
+    LONG,
+  );
+});
+
+/** Areas and projects named in drafts, as `answers.test.ts` and the group rules send them. */
+const GROUPS: Sequence<Step> = [
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "Keyed work", sources: [ticket("fixture:groups-1")] }] },
+  },
+  {
+    op: "task.add",
+    input: {
+      tasks: [
+        {
+          title: "Keyed work again",
+          area: "Unused area",
+          project: "Unused project",
+          sources: [ticket("fixture:groups-1")],
+        },
+      ],
+    },
+  },
+  {
+    op: "task.add",
+    input: {
+      tasks: [
+        { title: "New in the shared project", area: "Shared area", project: "Shared project" },
+      ],
+    },
+    as: "shared",
+  },
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "Another in the area", area: "Shared area" }] },
+    as: "inarea",
+  },
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "By its slugs", area: "shared-area", project: "shared-project" }] },
+    as: "byslug",
+  },
+  { op: "task.add", input: { tasks: [{ title: "A typo", area: "Shared aera" }] } },
+  {
+    op: "task.add",
+    input: {
+      tasks: [
+        { title: "First of two", area: "Farm", project: "Barn" },
+        { title: "Second of two", area: "Farm", project: "Barn" },
+      ],
+    },
+    as: "barn",
+    user: true,
+  },
+  { op: "task.add", input: { tasks: [{ title: "To be filed" }] }, as: "filed" },
+  {
+    op: "task.update",
+    input: { task: "{filed}", set: { area: "Shared area", project: "Shared project" } },
+    base: true,
+    user: true,
+  },
+  {
+    op: "task.update",
+    input: { task: "{filed}", set: { area: "Shared area", project: "Shared project" } },
+    base: true,
+    user: true,
+  },
+  {
+    op: "task.update",
+    input: { task: "{filed}", set: { area: "Workshop", project: "Bench" } },
+    base: true,
+    user: true,
+  },
+  { op: "history.undo", input: {}, user: true },
+  {
+    step: {
+      op: "task.add",
+      input: { tasks: [{ title: "A project alone", project: "Lone" }] },
+      as: "lone",
+    },
+    // The one task this step adds, as its answer and its read name it, and its project's read.
+    field: [
+      "answer.said.tasks.0.project",
+      "seen.lone.task.area",
+      "seen.lone.task.project",
+      "seen.lone.trail.0.kind",
+      "seen.read Lone.kind",
+    ],
+    differs:
+      "a project without an area: today's is a project, the tree's a top-level project, read as an area",
+  },
+];
+
+describe("[S2.replay.projects] today's service requests through both backends: areas and projects", () => {
+  test(
+    "names a found task's draft gives make nothing; new names make their groups once; slugs, a typo",
+    async () => {
+      await replay(GROUPS);
+    },
+    LONG,
+  );
+});
+
+const BODY = "## Steps\n\nBring a photo.\n\n## Fees\n\nPay at the desk.";
+
+/** Pages through the request path, as `library.test.ts` sends them. */
+const PAGES: Sequence<Step> = [
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "Renew the passport", area: "Home", project: "Papers" }] },
+    as: "t",
+    user: true,
+  },
+  { op: "page.write", input: { action: "create", task: "{t}", title: "Passport", why: "x" } },
+  {
+    op: "page.write",
+    input: {
+      action: "create",
+      task: "{t}",
+      title: "Passport",
+      brief: "What to bring",
+      body: BODY,
+      why: "what the renewal needs",
+    },
+    page: "page",
+  },
+  { op: "page.read", input: { target: "{page}", section: "Fees" } },
+  { op: "page.read", input: { target: "Home/Papers" } },
+  {
+    op: "page.write",
+    input: { action: "edit", target: "{page}", old: "Bring a pen.", new: "Bring two.", why: "fix" },
+  },
+  {
+    op: "page.write",
+    input: {
+      action: "edit",
+      target: "{page}",
+      old: "Bring a photo.",
+      new: "Bring two photos.",
+      why: "the office asks for two",
+    },
+  },
+  {
+    op: "page.write",
+    input: { action: "append", target: "{page}", text: "Take a pen.", why: "pen" },
+  },
+  {
+    op: "page.write",
+    input: { action: "set", target: "{page}", title: "Passport renewal" },
+    base: true,
+    user: true,
+  },
+  { op: "page.history", input: { target: "{page}" }, user: true },
+  {
+    op: "task.finish",
+    input: { task: "{t}", outcome: "Renewed.", library: ["X-999"] },
+    base: true,
+  },
+  {
+    op: "task.finish",
+    input: { task: "{t}", outcome: "Renewed.", library: ["{page}"] },
+    base: true,
+  },
+  { op: "page.write", input: { action: "move", target: "{page}", to: "space", why: "for all" } },
+  { op: "page.write", input: { action: "trash", target: "{page}", why: "the trip is off" } },
+  { op: "page.read", input: { target: "{page}" } },
+  { op: "page.trashed", input: {}, user: true },
+  { op: "page.write", input: { action: "restore", target: "{page}", why: "back" } },
+  {
+    op: "page.write",
+    input: { action: "set", target: "Home/Papers", description: "Papers to keep at home." },
+    base: true,
+    user: true,
+  },
+  { op: "page.history", input: { target: "Home/Papers" }, user: true },
+  { op: "page.read", input: { target: "space" } },
+];
+
+describe("[S2.replay.pages] today's service requests through both backends: pages", () => {
+  test(
+    "a page made on its task's project, read by heading and by node, edited, appended, set, its history, a finish's library, moved, the Trash and back",
+    async () => {
+      await replay(PAGES);
+    },
+    LONG,
+  );
+});
+
+/** Dates, a star and a wait in drafts and updates, and a finished status refused. */
+const DATES: Sequence<Step> = [
+  {
+    op: "task.add",
+    input: {
+      tasks: [{ title: "Pay the invoice", due: "2026-12-01", focus: true, waiting_on: "The bank" }],
+    },
+    as: "pay",
+    user: true,
+  },
+  { op: "task.add", input: { tasks: [{ title: "Call the office", due: "tomorrow" }] }, as: "call" },
+  { op: "task.add", input: { tasks: [{ title: "Undated", due: "someday soon" }] } },
+  { op: "task.update", input: { task: "{pay}", set: { due: "+3d" } }, base: true, user: true },
+  { op: "task.update", input: { task: "{pay}", set: { status: "done" } }, base: true, user: true },
+  { op: "task.update", input: { task: "{pay}", set: { focus: false } }, base: true, user: true },
+  {
+    op: "task.update",
+    input: { task: "{pay}", clear: ["due", "waiting_on"] },
+    base: true,
+    user: true,
+  },
+  {
+    op: "task.update",
+    input: { task: "{pay}", clear: ["due", "waiting_on"] },
+    base: true,
+    user: true,
+  },
+  { op: "task.update", input: { task: "{call}", set: { waiting_on: "A reply" } }, base: true },
+];
+
+describe("[S2.replay.dates] today's service requests through both backends: dates", () => {
+  test(
+    "a due date, a phrase and one refused; a star and a wait; a finished status refused; cleared twice",
+    async () => {
+      await replay(DATES);
+    },
+    LONG,
+  );
+});
+
+/** What review found the tree answered otherwise in the four families. */
+const REVIEWED: Sequence<Step> = [
+  { op: "task.add", input: { tasks: [{ title: "File me" }] }, as: "f", user: true },
+  // A person files a task into a new project, a script renames it, the person's guarded Undo.
+  {
+    op: "task.update",
+    input: { task: "{f}", set: { area: "Shed", project: "Tools" } },
+    base: true,
+    user: true,
+  },
+  { op: "task.update", input: { task: "{f}", set: { title: "Renamed by a script" } }, base: true },
+  { op: "history.undo", input: { check_script: true }, user: true },
+  // A removed note is not edited: its words come back as they were when it is put back.
+  {
+    op: "entry.add",
+    input: { task: "{f}", kind: "note", text: "Original words" },
+    entry: "n",
+    user: true,
+  },
+  { op: "note.remove", input: { task: "{f}", remove: "{n}" }, base: true, user: true },
+  {
+    op: "entry.edit",
+    input: { task: "{f}", entry: "{n}", text: "Replaced" },
+    base: true,
+    user: true,
+  },
+  { op: "note.remove", input: { task: "{f}", put_back: "{n}" }, base: true, user: true },
+  // A filing from a stale read.
+  {
+    op: "task.update",
+    input: { task: "{f}", set: { area: "Shed", project: "Bench" } },
+    baseFrom: 1,
+  },
+  // Several tasks to the Trash in the order a person selected them, and its Undo.
+  { op: "task.add", input: { tasks: [{ title: "Selected second" }] }, as: "z", user: true },
+  { op: "task.add", input: { tasks: [{ title: "Selected first" }] }, as: "y", user: true },
+  { op: "task.delete", input: { tasks: ["{y}", "{z}"] }, base: true, user: true },
+  { op: "history.undo", input: {}, user: true },
+  // An area's text for agents, then its description, and the description's history.
+  {
+    op: "node.instruct",
+    input: { target: "Shed", text: "Ask before you buy tools" },
+    base: true,
+    user: true,
+  },
+  {
+    op: "page.write",
+    input: { action: "set", target: "Shed", description: "Tools and seeds." },
+    base: true,
+    user: true,
+  },
+  {
+    step: { op: "page.history", input: { target: "Shed" }, user: true },
+    field: "answer.said.versions",
+    differs:
+      "today counts the texts' row its text for agents made as a first, empty version; the tree has the description's own",
+  },
+];
+
+describe("[S2.replay.reviewed] what review found in the four families, through both backends", () => {
+  test(
+    "a guarded Undo after a script's change, a removed note's edit, an area's trail, a stale filing, a Trash's order",
+    async () => {
+      await replay(REVIEWED);
     },
     LONG,
   );

@@ -79,6 +79,8 @@ export const TREE_STATEMENTS: readonly string[] = [
   before TEXT CHECK (before IS NULL OR json_valid(before)),
   after TEXT CHECK (after IS NULL OR json_valid(after)),
   before_ver INTEGER, before_prov INTEGER, after_prov INTEGER,
+  -- The operation of today's request that wrote it first (tree/plan.ts), as today's rows say it.
+  op INTEGER,
   PRIMARY KEY (seq, n)
 ) STRICT`,
   "CREATE INDEX changes_node ON changes(node_id, seq)",

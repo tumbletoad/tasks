@@ -111,8 +111,17 @@ export function targetOf(
     return { page: whole };
   }
   if (whole.toLowerCase() === "space") return { node: { kind: "space", id: "" } };
-  if (/^a_/u.test(whole)) return { node: { kind: "area", id: whole } };
-  if (/^p_/u.test(whole)) return { node: { kind: "project", id: whole } };
+  // A group by its ID is what the space holds under it: a tree space's area has a project's ID.
+  if (/^[ap]_/u.test(whole)) {
+    const kind = names.areas.some((a) => a.id === whole)
+      ? "area"
+      : names.projects.some((p) => p.id === whole)
+        ? "project"
+        : whole.startsWith("a_")
+          ? "area"
+          : "project";
+    return { node: { kind, id: whole } };
+  }
   const [areaName = "", projectName, ...more] = whole.split("/").map((part) => part.trim());
   if (areaName === "" || more.length > 0 || projectName === "")
     throw notFound(field, "page or node");
