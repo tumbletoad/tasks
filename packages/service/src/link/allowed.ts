@@ -300,7 +300,6 @@ const WORDS: Partial<Record<ErrorCode, string>> = {
   conflict: "This changed on the computer meanwhile. Look again, then try once more.",
   applied_earlier: "This changed on the computer meanwhile. Look again, then try once more.",
   forbidden: "The computer refused this.",
-  not_permitted: "The computer refused this.",
   too_large: "This is too long.",
   read_only: "This space takes no change on the computer now.",
   space_unavailable: "This space is not open on the computer now.",

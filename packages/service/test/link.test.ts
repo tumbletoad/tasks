@@ -506,7 +506,6 @@ describe("[S5.link.told] everything a phone is told, answers, errors and the fee
       const p = await page("link-told");
       const { link, hello } = await paired(p);
       const ops = p.world.service.ops;
-      if (ops === undefined) throw new Error("no ops");
       const added = await link.call("/api/v1/op/task.add", {
         tasks: [{ title: "Fixture task the agent works on" }],
         request_id: "fixture-request-told-01",

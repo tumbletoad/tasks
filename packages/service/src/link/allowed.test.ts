@@ -179,7 +179,7 @@ describe("[S5.link.saved] Remove and the Run switch answer once they are saved",
 
   test("Run on counts only once it is saved, never while its save is out", async () => {
     const { link, phone, holding } = await linked();
-    let release = () => undefined as void;
+    let release: () => void = () => undefined;
     holding(
       new Promise<void>((resolve) => {
         release = resolve;
