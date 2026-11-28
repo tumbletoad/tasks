@@ -20,7 +20,8 @@ const config: ExpoConfig = {
     // which the Keystore never puts in a backup.
     allowBackup: false,
   },
-  plugins: ["./plugins/android.ts"],
+  // The camera only scans the pairing code: no microphone.
+  plugins: ["./plugins/android.ts", ["expo-camera", { recordAudioAndroid: false }]],
 };
 
 export default config;

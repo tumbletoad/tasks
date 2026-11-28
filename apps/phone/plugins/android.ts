@@ -2,6 +2,7 @@
 // - Android 10 (API 29) at least, because the link speaks only TLS 1.3;
 // - no R8 in the release build: the installed-app test runs inside it and calls its classes, which
 //   R8 renames and drops, and a sideloaded app gains little from a smaller APK;
+// - expo-camera without its document scanner, which the app never uses;
 // - the installed-app test in android-test/, built against the release build.
 import { withAppBuildGradle, withGradleProperties, type ConfigPlugin } from "expo/config-plugins";
 
@@ -9,6 +10,7 @@ import { withAppBuildGradle, withGradleProperties, type ConfigPlugin } from "exp
 const PROPERTIES: Record<string, string> = {
   "android.minSdkVersion": "29",
   "android.enableMinifyInReleaseBuilds": "false",
+  "expo.camera.document-scanner-enabled": "false",
 };
 
 const APP_GRADLE = `
@@ -25,6 +27,7 @@ android {
 dependencies {
     androidTestImplementation "androidx.test:runner:1.6.2"
     androidTestImplementation "androidx.test.ext:junit:1.2.1"
+    androidTestImplementation "androidx.test.uiautomator:uiautomator:2.3.0"
 }
 `;
 

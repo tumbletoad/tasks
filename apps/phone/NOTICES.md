@@ -2,11 +2,18 @@
 
 ## T3 Code
 
-The link module's interface to JavaScript (`modules/ttasks-link`: connections by number, the
-events `open`, `message`, `error` and `close`, each ending reported once, and 1006 for an ending
-without a close frame) follows T3 Code's WebSocket module (`apps/mobile/modules/t3-web-socket`),
-and the Android build (an Expo prebuild, then Gradle) follows its mobile app. The code here is
-written for this app: no file is copied. T3 Code is under this licence:
+Two parts of this app follow T3 Code's mobile app (`apps/mobile`):
+
+- The link module's interface to JavaScript (`modules/ttasks-link`) follows T3 Code's WebSocket
+  module (`modules/t3-web-socket`): connections by number, the events `open`, `message`, `error`
+  and `close`, each ending reported once, and 1006 for an ending without a close frame.
+- The scanner (`src/App.tsx`, `Scanner`) follows its screen for adding a connection
+  (`src/features/connection/ConnectionsNewRouteScreen.tsx`). It asks for the camera when the scan
+  opens, offers the system settings once the camera was refused for good, takes the first code it
+  can read, and keeps the camera open with a note after a code it cannot read.
+
+The Android build (an Expo prebuild, then Gradle) follows it too. The code here is written for this
+app: no file is copied. T3 Code is under this licence:
 
 ```
 MIT License
