@@ -1,15 +1,15 @@
-// The Mira sample space (A7 3.2, 3.3): fixture text only, for the invented Mira Okafor and her
-// space "Mira" with reference prefix M (A1). Deterministic from a seed: the same seed and size give
+// The Mira sample space: fixture text only, for the invented Mira Okafor and her
+// space "Mira" with reference prefix M. Deterministic from a seed: the same seed and size give
 // the same rows, IDs and instants on every machine.
 //
 // The space comes from storage's createSpace, and its writer registers the machine on the first
 // open (machine.register). Tasks, their notes, log entries and sources, the place and, from schema
 // 0.2 on, a wrap-up with learnings are written through the write path as requests to the space's
-// writer (A1 3.7), each with its receipt. The
+// writer, each with its receipt. The
 // record kinds whose operations arrive in later steps still go in through StandIn below, which
 // writes the commits, change rows, outbox rows and receipts those operations will write: areas and
 // projects (area.*, project.*). Each step that adds one of those operations moves its rows to the
-// writer. Preferences stay here although `pref.set` exists (M3.11): the frozen 0.1 sample
+// writer. Preferences stay here although `pref.set` exists: the frozen 0.1 sample
 // (FIXED_SAMPLE_0_1) pins these rows and the IDs drawn after them, and its rows are what the
 // writer would write.
 import { join } from "node:path";
@@ -63,7 +63,7 @@ export interface MiraOptions {
   /**
    * The chain of schema steps to build with: this build's by default. A released revision's chain
    * (@ttasks/storage/revisions: STEPS_0_1) builds the space as that release built it, through the
-   * same write path, so the sample is the fixture of that revision (A1 5's migration tests).
+   * same write path, so the sample is the fixture of that revision for the migration tests.
    */
   steps?: readonly SchemaStep[];
   /** The space's authority machine. Default: one drawn from the seed. */
@@ -160,11 +160,11 @@ const LOG_KINDS = ["progress", "evidence", "decision", "question"] as const;
 
 // ---------------------------------------------------------------------------------------------
 
-/** Columns a create change leaves out of its row: each follows from the change's seq (A1 3.4). */
+/** Columns a create change leaves out of its row: each follows from the change's seq. */
 const DERIVED = new Set(["created_seq", "version", "touched", "fv", "fp"]);
 
 /**
- * The `changes.entity_id` of a row (A1 3.4): its ID, `task_id|source_id` for a link row, and the
+ * The `changes.entity_id` of a row: its ID, `task_id|source_id` for a link row, and the
  * key for a preference, which has no ID.
  */
 function entityId(table: string, row: Record<string, SqlValue>): string {
@@ -259,7 +259,7 @@ class StandIn {
       );
       body();
       this.#run("UPDATE space SET last_seq = $seq WHERE one = 1", { seq: this.#seq });
-      // The receipt the writer writes for an applied request (A1 3.8).
+      // The receipt the writer writes for an applied request.
       const asOf = {
         epoch: this.#space.epoch,
         incarnation: this.#space.incarnation,
@@ -305,7 +305,7 @@ class StandIn {
     );
   }
 
-  /** The row as stored, with its defaults: a create change holds every column (A1 3.4). */
+  /** The row as stored, with its defaults: a create change holds every column. */
   #readBack(table: string, row: Record<string, SqlValue>): Record<string, unknown> {
     const where =
       table === "task_sources"
@@ -456,7 +456,7 @@ export async function seedMira(
       conn.prepare(RELEASED_STEP).run({ seq: result.seq });
     };
     generate(conn, writer, rng, clock, created.space, created.actors, start, taskCount, released);
-    // Schema 0.2's learnings (A1 3.11.2): a 0.1 build had no wrap-up operation, so the sample at
+    // Schema 0.2's learnings: a 0.1 build had no wrap-up operation, so the sample at
     // that revision has none, and every row before them is the one the 0.1 builds made.
     if (opened.revision.major > 0 || opened.revision.minor >= 2) {
       released(wrapUp(conn, writer, rng, created.space, created.actors.human));
@@ -489,7 +489,7 @@ const LEARNINGS = [
 
 /**
  * Mira wraps up her first task, which the sample always checks off, with what she learned: an
- * outcome when it has none yet, and two learnings (A1 3.11.2), through the writer.
+ * outcome when it has none yet, and two learnings, through the writer.
  */
 function wrapUp(
   conn: Connection,
@@ -614,7 +614,7 @@ function generate(
     origin: kind === "human" ? "cli" : "mcp",
   });
   const human = credential(actors.human, "human", "cli:mira");
-  // Actors are bookkeeping rows without history (A1 3.4). A2 and A3 add them as agents connect.
+  // Actors are bookkeeping rows without history, added as agents connect.
   const agents = [
     { label: "Codex · work", instance: "codex-work" },
     { label: "Claude Code · work", instance: "claude-work" },
@@ -749,7 +749,7 @@ function generate(
     const withSource = i === 0 || rng.chance(0.4);
     const withNote = i === 0 || rng.chance(0.3);
     // A task has at most one source, so a number from the task's index makes every source key
-    // unique by construction (sources_key is unique among live sources, A1 3.4).
+    // unique by construction (sources_key is unique among live sources).
     const n = SOURCE_NUMBER_BASE + i;
     const kind = rng.pick(["email", "ticket", "pr"] as const);
     const source = {
@@ -829,7 +829,7 @@ function generate(
     }
   });
 
-  // Launches (A4 3.9), as the execution store writes them: one request per click and per
+  // Launches, as the execution store writes them: one request per click and per
   // transition, from the page, never undoable. Mira opens an open task in Codex · work's terminal,
   // whose shim claims and settles, and the same task through Claude Code's link, which the service
   // loses track of in a restart.
@@ -882,7 +882,7 @@ function generate(
   step(link, "prepared", "dispatching");
   step(link, "dispatching", "unknown", { reason: "lost" });
 
-  // Aliases are bookkeeping rows: imported legacy IDs (A7 3.15) and an old project slug.
+  // Aliases are bookkeeping rows: imported legacy IDs and an old project slug.
   const at = h.at;
   const alias = conn.prepare(
     "INSERT INTO aliases (namespace, alias, entity_kind, entity_id, created_at) " +
@@ -896,7 +896,7 @@ function generate(
     });
   });
 
-  // Runs (A4 3.11), as the execution store writes them, only once the schema has their table
+  // Runs, as the execution store writes them, only once the schema has their table
   // (0.3), so a sample built by an older chain draws exactly what it drew before. Mira runs the
   // opened task in Codex · work in its place, which succeeds, and queues a Refresh that she
   // removes from the queue.

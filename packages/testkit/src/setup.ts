@@ -2,7 +2,7 @@
 // `systemd-run` (packages/testkit/stand-ins/) first on PATH, which every process a test starts
 // inherits, so no service a test starts reaches the person's user manager through the real one:
 // the service probes for scopes when it launches a terminal and when `ttasks doctor` asks
-// (`doctor/launch`, A4 3.7). A test that wants to see those calls puts its own stand-in before this
+// (`doctor/launch`). A test that wants to see those calls puts its own stand-in before this
 // one, or passes a fake through the launch service's seams (`FAKE_SYSTEMD_RUN`).
 //
 // It also names an Agent Monitor that does not exist, so no service a test starts in its own

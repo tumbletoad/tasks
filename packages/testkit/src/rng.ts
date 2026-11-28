@@ -1,6 +1,6 @@
 // A seeded random source for fixture generators. The same seed gives the same sequence on every
 // machine and Node version: sfc32 over 32-bit integers, seeded from SHA-256 of the seed text.
-// Fixture use only. Real IDs come from the OS source (A1 3.3).
+// Fixture use only. Real IDs come from the OS source.
 import { createHash } from "node:crypto";
 
 export class Rng {
