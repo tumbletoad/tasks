@@ -58,6 +58,7 @@
 import { existsSync, lstatSync, renameSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { SCHEMA_STEPS } from "../migrations/index.ts";
+import { seedTreeRoot, TREE_STEP, TREE_USER_VERSION } from "./tree/schema.ts";
 import type { Connection, Row } from "./driver.ts";
 import { misuse, StorageError } from "./errors.ts";
 import {
@@ -153,6 +154,8 @@ export interface CreateSpaceOptions {
   now?: () => number;
   /** The source of every ID the space starts with. Default: the OS. */
   random?: RandomSource;
+  /** A tree space (tree/schema.ts), which only tests and trial spaces are until the switch. */
+  tree?: boolean;
 }
 
 /** The actors every space starts with. Other actors join as they first act. */
@@ -303,7 +306,7 @@ export function createSpaceWith(
   const random = options.random ?? osRandom;
   // The steps the space is built with: this build's, or a test's chain (an older revision's, to
   // build the fixture of a released revision, or one with stand-in steps).
-  const steps = seams.steps ?? SCHEMA_STEPS;
+  const steps = options.tree === true ? [TREE_STEP] : (seams.steps ?? SCHEMA_STEPS);
   const last = steps.at(-1);
   if (last === undefined) throw misuse("No schema step is registered");
 
@@ -377,6 +380,20 @@ export function createSpaceWith(
       );
       actor.run({ id: ids.human, kind: "human", label: ownerLabel, now });
       actor.run({ id: ids.system, kind: "system", label: SYSTEM_LABEL, now });
+      if (options.tree === true) {
+        seedTreeRoot(
+          db,
+          {
+            spaceId: ids.space,
+            name,
+            system: ids.system,
+            incarnation: ids.incarnation,
+            machineId,
+            at: now,
+          },
+          random,
+        );
+      }
     });
     if (db.pragma("application_id") !== APP_ID || db.pragma("auto_vacuum") !== 2) {
       throw new StorageError("STORAGE_UNSUPPORTED", "The new database did not keep its format");
@@ -429,7 +446,11 @@ function inspectDatabase(conn: Connection, steps: readonly SchemaStep[]): Databa
     }
     // A revision a registered step produced, newer than every step, or one this build never had.
     // An older known revision opens for a reader, and for the migration runner's writer.
-    const position = stepPosition(steps, userVersion);
+    // A tree space's database is built by the tree's step, outside the chain until the switch.
+    const position = stepPosition(
+      userVersion === TREE_USER_VERSION ? [TREE_STEP] : steps,
+      userVersion,
+    );
     if (position.state === "unknown") {
       throw new StorageError("SPACE_VERSION_UNKNOWN", "The schema revision is unknown");
     }
