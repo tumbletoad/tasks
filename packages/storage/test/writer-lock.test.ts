@@ -139,7 +139,11 @@ async function holder(mode: "writer" | "lock", target: string): Promise<Holder> 
 async function spaceWithBackup(): Promise<{ folder: string; backup: BackupRecord }> {
   const { folder } = await createFixtureSpace(folders.make());
   await writeCommits(folder, 2, "a");
-  const backup = await backupSpace(await checkedDriver(), folder, { kind: "manual" });
+  // Outside the space: a restore in place moves the space's folder aside.
+  const backup = await backupSpace(await checkedDriver(), folder, {
+    kind: "manual",
+    backupDir: folders.make(),
+  });
   return { folder, backup };
 }
 
