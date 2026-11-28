@@ -314,8 +314,8 @@ describe("[A1.5.writer.cross-process] a restore's swap and its writer.lock", () 
         );
         if (process.platform === "win32" && !releaseBeforeSwap) {
           // Windows refuses to rename a folder with an open file, writer.lock included: the
-          // reason the lock ends before the swap there. Nothing moves.
-          expect((await rejection(restoring)).code).not.toBe("SPACE_CHANGED");
+          // reason the lock ends before the swap there. The rename is refused, and nothing moves.
+          expect((await rejection(restoring)).code).toBe("STORAGE_CANT_OPEN");
           expect(readdirSync(dirname(folder)).sort()).toEqual(listed);
           continue;
         }
