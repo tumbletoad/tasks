@@ -161,6 +161,7 @@ export const FEED_TASK: Spec = {
     "area_id",
     "project_id",
     "parent_id",
+    "parent",
     "position",
     "wrap_state",
     "completed_at",
@@ -189,6 +190,18 @@ export const FEED_GROUP: Spec = keep(
   "lifecycle",
   "deleted_at",
   "version",
+);
+
+/** A node of the space's tree in a phone's feed: the space or a project, as the page gets it. */
+export const FEED_NODE: Spec = keep(
+  "id",
+  "kind",
+  "parent",
+  "title",
+  "position",
+  "color",
+  "state",
+  "deleted_at",
 );
 
 /** Which of a phone's rights a call needs. */
