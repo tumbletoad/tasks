@@ -62,7 +62,8 @@ fun openLink(url: String, pin: String, listener: (PinTrust) -> WebSocketListener
     .hostnameVerifier { _, _ -> true }
     .connectionSpecs(listOf(TLS_1_3))
     .connectTimeout(5, TimeUnit.SECONDS)
-    .readTimeout(0, TimeUnit.MILLISECONDS)
+    // Bounds the handshake and the upgrade only: OkHttp clears it once the WebSocket is open.
+    .readTimeout(10, TimeUnit.SECONDS)
     // A socket that died while the phone slept is found within two pings.
     .pingInterval(20, TimeUnit.SECONDS)
     .build()
