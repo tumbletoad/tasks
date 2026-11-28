@@ -3,7 +3,7 @@
 // An entry moves into the registry in the pull request that brings its handler.
 import type { ErrorBody } from "../errors.ts";
 import type { z } from "zod";
-import type { CompactPage, PageAgentChange } from "../pages.ts";
+import type { CompactPage } from "../pages.ts";
 import { AS_OF_NEXT } from "./fixture.ts";
 import { nodeInstruct } from "./node-instruct.ts";
 import { pageHistory } from "./page-history.ts";
@@ -88,13 +88,6 @@ export const PAGE_FEED_EXAMPLES = {
       { type: "node_text", id: LUMEN.project, row: null, changed: ["for_agents"], created: false },
     ],
   },
-  /** Today's Changes: a page an agent changed, beside the tasks agents changed. */
-  agentChange: {
-    page: M180.id,
-    actor: "Codex",
-    at: 1_778_425_320_000,
-    why: "store the zone ID, not the offset: M-3's reports drifted",
-  } satisfies z.input<typeof PageAgentChange>,
 };
 
 /**
