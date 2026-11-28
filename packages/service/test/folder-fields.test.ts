@@ -390,7 +390,6 @@ describe("[A3.3.4.folders.agent] organize's folders and the refusals", () => {
     const listed = GroupListResult.parse(await call(agent, "group.manage", { action: "list" }));
     expect(JSON.stringify(listed)).not.toContain("Nowhere");
   });
-
 });
 
 describe("[A3.3.4.folders.agent] search by folder", () => {

@@ -176,6 +176,4 @@ describe("[A3.3.4.folders.cli] folders at the command line", () => {
     });
     expect(existsSync(inside)).toBe(false);
   });
-
-});
 });

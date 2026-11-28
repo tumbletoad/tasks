@@ -42,7 +42,7 @@ export function invalid(path: string, message: string, hint?: string): AppError 
   return new AppError({
     code: "invalid_input",
     message: `${message}.`,
-    ...(help === undefined ? {} : { hint: help }),
+    ...(hint === undefined ? {} : { hint }),
     data: { issues: [{ path, message }] },
   });
 }
@@ -315,7 +315,7 @@ export function resultFailure(
             ...(problem.at === undefined ? {} : { at: problem.at }),
             ...(problem.reason === undefined ? {} : { reason: problem.reason }),
           }),
-          ...(help === undefined ? {} : { hint: help }),
+          ...(hint === undefined ? {} : { hint }),
         };
   if (path !== undefined && problem !== undefined) {
     base = { ...base, data: { ...base.data, issues: [{ path, message: problem.message }] } };
