@@ -162,6 +162,7 @@ import {
   FOLDER_OPERATIONS,
   notActive,
   NOT_NOW,
+  NO_SUCH_ENTRY,
   NO_SUCH_TASK,
   OTHER_SPACE_TASK,
   formatAsOf,
@@ -2095,7 +2096,7 @@ export class SpaceWriter {
             ? undefined
             : conn.prepare(SQL.noteOf).get({ task: parent, ordinal: op.ordinal });
           if (row === undefined) {
-            return problem("NOT_FOUND", "The task has no note with this number", i, "ordinal");
+            return problem("NOT_FOUND", NO_SUCH_ENTRY.note, i, "ordinal");
           }
           const id = new RowReader("notes", row).id("id", "n");
           const record = { task: parent, ordinal: op.ordinal };
@@ -2120,14 +2121,14 @@ export class SpaceWriter {
                 .prepare(op.kind === "note.patch" ? SQL.noteOf : SQL.logOf)
                 .get({ task: parent, ordinal: op.ordinal });
           if (row === undefined) {
-            return problem("NOT_FOUND", "The task has no entry with this number", i, "ordinal");
+            return problem("NOT_FOUND", NO_SUCH_ENTRY.entry, i, "ordinal");
           }
           const id = new RowReader(entity, row).id("id", op.kind === "note.patch" ? "n" : "l");
           // A removed entry, as the request's earlier operations leave it, is not found.
           const live =
             (entity === "notes" ? notes.get(id) : undefined) ?? row["deleted_at"] === null;
           if (!live) {
-            return problem("NOT_FOUND", "The task has no entry with this number", i, "ordinal");
+            return problem("NOT_FOUND", NO_SUCH_ENTRY.entry, i, "ordinal");
           }
           const record = { task: parent, ...inputOf(op, "task") };
           if (row["body"] === op.body) {

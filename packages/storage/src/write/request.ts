@@ -158,6 +158,12 @@ export const NOT_NOW = {
   wrapUp: "Only a completed or archived task is wrapped up",
 } as const;
 
+/** Both writers' refusal of an entry the task does not hold: a note to remove or put back, or any to edit. */
+export const NO_SUCH_ENTRY = {
+  note: "The task has no note with this number",
+  entry: "The task has no entry with this number",
+} as const;
+
 /** Both writers' refusal of a task reference the space does not hold, and of another space's. */
 export const NO_SUCH_TASK = "No task has this reference";
 export const OTHER_SPACE_TASK = "The reference has another space's prefix";

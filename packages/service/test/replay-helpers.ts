@@ -142,7 +142,7 @@ export function normal(value: unknown, s: Session, task = ""): unknown {
           (batch && (k === "from" || k === "through"))) &&
         typeof v === "number"
           ? token(s, "v", String(v))
-          : /(?:^|_)at$/u.test(k) && typeof v === "number"
+          : /(?:^|_)(?:at|since)$/u.test(k) && typeof v === "number"
             ? "<at>"
             : normal(v, s, scope),
       ]),

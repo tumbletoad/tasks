@@ -35,6 +35,10 @@ afterAll(async () => {
  * tree does not keep, so a conflict on every field of a task names it only today.
  */
 function known(answer: Answer): Answer {
+  // When a step is refused, only that it is refused is compared, with what a reader sees after
+  // it: which refusal is named when several apply is each writer's own order, and the written
+  // sequences hold the ones a person meets.
+  if (answer.status === "error") return { status: "error" };
   const said = answer.said as { data?: { conflicts?: { field?: string }[] } } | undefined;
   const conflicts = said?.data?.conflicts;
   if (said?.data === undefined || conflicts === undefined) return answer;
