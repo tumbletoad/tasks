@@ -5,12 +5,12 @@ import { createIntl } from "react-intl";
 import { describe, expect, test } from "vitest";
 import { PRODUCT_NAME, CLI_NAME } from "@ttasks/brand";
 import { EFFORT_LEVELS, type EffortLevel } from "@ttasks/contracts/preferences";
-import type { Instance } from "../api.ts";
+import type { Instance } from "@ttasks/contracts/runs";
 import en from "../i18n/en.json" with { type: "json" };
 import type { MessageId, Values } from "../i18n/intl.tsx";
 import { sayMsg } from "./say.ts";
-import type { TaskRow } from "../store/rows.ts";
-import type { Clock } from "./dates.ts";
+import type { TaskRow } from "@ttasks/client/store";
+import type { Clock, Grouping } from "@ttasks/client/today";
 import { tileClick } from "./launch.ts";
 import {
   contextFor,
@@ -19,7 +19,6 @@ import {
   type RowInput,
   type RowModel,
   type RowView,
-  type Grouping,
 } from "./model.ts";
 
 const intl = createIntl({
@@ -69,6 +68,7 @@ function task(fields: Partial<TaskRow> & { title: string }): TaskRow {
     ref: `M-${String(next)}`,
     status: "open",
     inbox: false,
+    parent: "sp_0123456789abcdefghjkmnpqrs",
     lifecycle: "active",
     position: "a0",
     created_at: daysAgo(1),

@@ -19,6 +19,7 @@ import {
   backupSpaceWith,
   BACKUP_TEMP_PREFIX,
   BackupsFolderAway,
+  makeDurableFolder,
   type BackupPoint,
   type BackupRecord,
 } from "../src/backup/backup.ts";
@@ -30,7 +31,14 @@ import { NODE_IO, type FileIo } from "../src/files.ts";
 import { restoreBackup, restoreBackupWith } from "../src/restore/restore.ts";
 import { encodeRevision } from "../src/schema.ts";
 import { LATEST_REVISION, openSpace } from "../src/space.ts";
-import { copyTree, rawWriter, readFacts, treeDigest, writeCommits } from "./backup-helpers.ts";
+import {
+  backupsBeside,
+  copyTree,
+  rawWriter,
+  readFacts,
+  treeDigest,
+  writeCommits,
+} from "./backup-helpers.ts";
 import type { ConcurrentWriterData } from "./concurrent-writer.ts";
 import { checkedDriver, createFixtureSpace, tempFolders } from "./space-helpers.ts";
 
@@ -163,7 +171,10 @@ describe("[A1.5.backup.under-writers] a backup taken under 10 writers", () => {
     try {
       await writers.running();
       before = writers.committed();
-      backup = await backupSpace(checked, folder, { kind: "manual" });
+      backup = await backupSpace(checked, folder, {
+        backupDir: backupsBeside(folder),
+        kind: "manual",
+      });
       after = writers.committed();
     } finally {
       await writers.stop();
@@ -212,7 +223,11 @@ describe("[A1.5.backup.verified] the backup and its sidecar", () => {
     const { folder, space } = await createFixtureSpace(folders.make());
     await writeCommits(folder, 3);
     const at = Date.UTC(2026, 10, 13, 3, 15, 0, 123);
-    const backup = await backupSpace(checked, folder, { kind: "daily", now: () => at });
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "daily",
+      now: () => at,
+    });
     expect(backup.name).toBe("daily-20261113T031500.123Z-e1-s3");
     expect(parseBackupName(backup.name)).toEqual({
       kind: "daily",
@@ -220,7 +235,7 @@ describe("[A1.5.backup.verified] the backup and its sidecar", () => {
       epoch: 1,
       seq: 3,
     });
-    expect(readdirSync(join(folder, "backups")).sort()).toEqual([
+    expect(readdirSync(backupsBeside(folder)).sort()).toEqual([
       `${backup.name}.db.gz`,
       `${backup.name}.json`,
     ]);
@@ -244,10 +259,10 @@ describe("[A1.5.backup.verified] the backup and its sidecar", () => {
       const { statSync } = await import("node:fs");
       for (const f of [backup.file, backup.sidecarFile])
         expect(statSync(f).mode & 0o777).toBe(0o600);
-      expect(statSync(join(folder, "backups")).mode & 0o777).toBe(0o700);
+      expect(statSync(backupsBeside(folder)).mode & 0o777).toBe(0o700);
     }
     // The listing shows it complete.
-    const listing = listBackups(join(folder, "backups"));
+    const listing = listBackups(backupsBeside(folder));
     expect(listing.backups.map((b) => [b.name, b.state])).toEqual([[backup.name, "ok"]]);
     expect(listing.leftovers).toEqual([]);
   });
@@ -306,32 +321,19 @@ describe("[A1.5.backup.verified] the backup and its sidecar", () => {
   });
 
   test.skipIf(process.platform === "win32")(
-    "the space's own backups folder, made by its first backup, is synced into the space's folder",
-    async () => {
-      const checked = await checkedDriver();
-      const { folder } = await createFixtureSpace(folders.make());
-      const backupDir = join(folder, "backups");
-      expect(existsSync(backupDir)).toBe(false);
+    "a backups folder made with its parents is synced into each parent, deepest first",
+    () => {
+      const root = folders.make();
+      const backupDir = join(root, "home-backups", "sp_fixture");
       const synced: string[] = [];
-      await backupSpaceWith(
-        checked,
-        folder,
-        { kind: "manual" },
-        {
-          io: {
-            ...NODE_IO,
-            openSync: (path, flags, mode) => {
-              if (flags === "r") synced.push(path);
-              return NODE_IO.openSync(path, flags, mode);
-            },
-          },
+      makeDurableFolder(backupDir, {
+        ...NODE_IO,
+        openSync: (path, flags, mode) => {
+          if (flags === "r") synced.push(path);
+          return NODE_IO.openSync(path, flags, mode);
         },
-      );
-      // A new folder's entry lives in its parent: the space's folder is synced, then the backups
-      // folder itself once a file landed in it.
-      for (const dir of [folder, backupDir]) expect(synced, dir).toContain(dir);
-      const at = (dir: string): number => synced.indexOf(dir);
-      expect(at(folder)).toBeLessThan(at(backupDir));
+      });
+      expect(synced).toEqual([join(root, "home-backups"), root]);
     },
   );
 
@@ -357,15 +359,16 @@ describe("[A1.5.backup.verified] the backup and its sidecar", () => {
     const checked = await checkedDriver();
     const parent = folders.make();
     const error = await expectCode(
-      () => backupSpace(checked, join(parent, "gone"), { kind: "manual" }),
+      () => backupSpace(checked, join(parent, "gone"), { kind: "manual", backupDir: parent }),
       "SPACE_NOT_FOUND",
     );
     expect(JSON.stringify(error)).not.toContain(parent);
     const { folder } = await createFixtureSpace(parent);
     // A file where the backups folder should be.
-    writeFileSync(join(folder, "backups"), "not a folder");
+    const file = join(parent, "not-a-folder");
+    writeFileSync(file, "not a folder");
     const failed = await expectCode(
-      () => backupSpace(checked, folder, { kind: "manual" }),
+      () => backupSpace(checked, folder, { kind: "manual", backupDir: file }),
       "BACKUP_FAILED",
     );
     expect(failed.message).not.toContain(parent);
@@ -389,19 +392,20 @@ describe("[A1.5.backup.crash-windows] a crash or a failure at each point of a ba
     await backupSpaceWith(
       checked,
       folder,
-      { kind: "manual" },
+      { backupDir: backupsBeside(folder), kind: "manual" },
       {
         at: (point) => {
-          // What a crash at this point leaves on disk: a copy of the space folder as it is now.
+          // What a crash at this point leaves on disk: the space and its backups as they are now.
           const copy = join(folders.make(), "mira");
           copyTree(folder, copy);
+          copyTree(backupsBeside(folder), `${copy}.backups`);
           crashes.set(point, copy);
         },
       },
     );
     expect([...crashes.keys()]).toEqual(POINTS);
     for (const [point, copy] of crashes) {
-      const listing = listBackups(join(copy, "backups"));
+      const listing = listBackups(backupsBeside(copy));
       const complete = listing.backups.filter((b) => b.state === "ok");
       if (point === "sidecar-published") {
         expect(complete, point).toHaveLength(1);
@@ -431,7 +435,7 @@ describe("[A1.5.backup.crash-windows] a crash or a failure at each point of a ba
       opened.conn.close();
       // The temporary files go; a backup's data stays, with or without its sidecar.
       removeBackupLeftovers(listing, AFTER_RESTART);
-      const left = readdirSync(join(copy, "backups"));
+      const left = readdirSync(backupsBeside(copy));
       const kept = { "sidecar-published": 2, "data-published": 1 } as Record<string, number>;
       expect(left.length, point).toBe(kept[point] ?? 0);
     }
@@ -441,14 +445,14 @@ describe("[A1.5.backup.crash-windows] a crash or a failure at each point of a ba
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
     const before = treeDigest(folder);
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     for (const point of POINTS) {
       await expectCode(
         () =>
           backupSpaceWith(
             checked,
             folder,
-            { kind: "manual" },
+            { backupDir: backupsBeside(folder), kind: "manual" },
             {
               at: (p) => {
                 if (p === point) throw new Error("a stand-in fault");
@@ -480,13 +484,13 @@ describe("[A1.5.backup.crash-windows] a crash or a failure at each point of a ba
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
     await writeCommits(folder, 2);
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const longAgo = new Date(Date.now() - 2 * HOUR);
     let removed: string[] = [];
     const record = await backupSpaceWith(
       checked,
       folder,
-      { kind: "manual" },
+      { backupDir: backupsBeside(folder), kind: "manual" },
       {
         at: (point) => {
           // Every stage before the rename took over an hour: the backup's files all look old.
@@ -510,13 +514,13 @@ describe("[A1.5.backup.crash-windows] a crash or a failure at each point of a ba
   test("a backup whose data went away before its sidecar landed fails, and leaves no sidecar", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const error = await expectCode(
       () =>
         backupSpaceWith(
           checked,
           folder,
-          { kind: "manual" },
+          { backupDir: backupsBeside(folder), kind: "manual" },
           {
             at: (point) => {
               // Another process's cleanup removed it (a backup stopped for over an hour).
@@ -537,14 +541,14 @@ describe("[A1.5.backup.crash-windows] a crash or a failure at each point of a ba
   test("a backup that lost its files to a replacement fails, and removes none of the replacement's", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const theirs = new Map<string, string>();
     await expectCode(
       () =>
         backupSpaceWith(
           checked,
           folder,
-          { kind: "manual" },
+          { backupDir: backupsBeside(folder), kind: "manual" },
           {
             at: (point) => {
               if (point !== "sidecar-published") return;
@@ -595,7 +599,7 @@ describe("[A1.5.backup.no-replace] a backup publishes its pair without replacing
         const label = `${way}, ${point}, ${which.join("+")}`;
         const { folder } = await createFixtureSpace(folders.make());
         await writeCommits(folder, 2);
-        const dir = join(folder, "backups");
+        const dir = backupsBeside(folder);
         const name = backupName({ kind: "manual", createdAt: at, epoch: 1, seq: 2 });
         const planted = new Map<string, string>();
         for (const part of which) {
@@ -607,7 +611,7 @@ describe("[A1.5.backup.no-replace] a backup publishes its pair without replacing
             backupSpaceWith(
               checked,
               folder,
-              { kind: "manual", now: () => at },
+              { backupDir: backupsBeside(folder), kind: "manual", now: () => at },
               {
                 io,
                 at: (p) => {
@@ -632,7 +636,7 @@ describe("[A1.5.backup.no-replace] a backup publishes its pair without replacing
     for (const [way, base] of WAYS) {
       const { folder } = await createFixtureSpace(folders.make());
       await writeCommits(folder, 2);
-      const dir = join(folder, "backups");
+      const dir = backupsBeside(folder);
       // The folder sync is POSIX's (files.ts fsyncFolder): run it on every OS from the data's
       // publication on, and fail it once the sidecar has its name.
       const FOLDER_FD = -4242;
@@ -662,7 +666,7 @@ describe("[A1.5.backup.no-replace] a backup publishes its pair without replacing
             backupSpaceWith(
               checked,
               folder,
-              { kind: "manual" },
+              { backupDir: backupsBeside(folder), kind: "manual" },
               {
                 io,
                 at: (p) => {
@@ -697,7 +701,7 @@ describe("[A1.5.backup.no-replace] a backup publishes its pair without replacing
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
     await writeCommits(folder, 2);
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     // The sidecar under its own name (not the temporary file), its descriptor, and the faults: its
     // flush fails, and so does its removal.
     const isSidecar = (path: string): boolean =>
@@ -727,7 +731,13 @@ describe("[A1.5.backup.no-replace] a backup publishes its pair without replacing
       },
     };
     await expectCode(
-      () => backupSpaceWith(checked, folder, { kind: "manual" }, { io }),
+      () =>
+        backupSpaceWith(
+          checked,
+          folder,
+          { backupDir: backupsBeside(folder), kind: "manual" },
+          { io },
+        ),
       "BACKUP_FAILED",
     );
     expect(faults).toBe(2);
@@ -739,8 +749,13 @@ describe("[A1.5.backup.no-replace] a backup publishes its pair without replacing
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
     await writeCommits(folder, 3);
-    const record = await backupSpaceWith(checked, folder, { kind: "manual" }, { io: noLinks });
-    const listing = listBackups(join(folder, "backups"));
+    const record = await backupSpaceWith(
+      checked,
+      folder,
+      { backupDir: backupsBeside(folder), kind: "manual" },
+      { io: noLinks },
+    );
+    const listing = listBackups(backupsBeside(folder));
     expect(listing.backups.map((b) => [b.name, b.state])).toEqual([[record.name, "ok"]]);
     expect(listing.leftovers).toEqual([]);
     const restored = await restoreBackup(checked, record.file, join(folders.make(), "mira"));
@@ -752,24 +767,29 @@ describe("[A1.5.backup.list] listing a space's backups", () => {
   test("complete backups newest first, damaged ones by state, temporary leftovers, unknown files untouched", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const a = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => Date.UTC(2026, 10, 1),
     });
     const b = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "manual",
       now: () => Date.UTC(2026, 10, 2),
     });
     const c = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => Date.UTC(2026, 10, 3),
     });
     const d = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => Date.UTC(2026, 10, 4),
     });
     const e = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
       kind: "daily",
       now: () => Date.UTC(2026, 10, 5),
     });
@@ -804,8 +824,11 @@ describe("[A1.5.backup.list] listing a space's backups", () => {
   test("only files a backup writes are leftovers: another program's files and folders stay", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
-    const kept = await backupSpace(checked, folder, { kind: "manual" });
+    const dir = backupsBeside(folder);
+    const kept = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     const tag = "0123456789abcdef";
     const ours = [
       `${BACKUP_TEMP_PREFIX}${tag}.db`,
@@ -839,8 +862,11 @@ describe("[A1.5.backup.list] listing a space's backups", () => {
   test("a data file lacks its sidecar only when none is there under any case the disk matches, and stays", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const dir = backupsBeside(folder);
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     const upper = `${backup.sidecarFile.slice(0, -".json".length)}.JSON`;
     renameSync(backup.sidecarFile, upper);
     // On a file system that ignores case (Windows, macOS), the sidecar is still found by its name,
@@ -865,8 +891,11 @@ describe("[A1.5.backup.list] listing a space's backups", () => {
   test("a leftover younger than an hour stays: it may be a backup's in progress", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const dir = backupsBeside(folder);
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     // What another process's backup into this folder has written so far: its copy, and its data
     // renamed into place a moment before its sidecar.
     const copy = `${BACKUP_TEMP_PREFIX}0123456789abcdef.db`;
@@ -922,7 +951,10 @@ describe("[A1.5.backup.bundle-limits] the shared BundlePolicy on .db.gz files", 
         .run({ actor: system });
     });
     conn.close();
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     const ratio = backup.sidecar.size / backup.sidecar.compressed_size;
     // A text-heavy database compresses far beyond a "bomb" ratio, and that is normal: the ratio
     // is no rule (A1 3.18). This corpus measured about 180:1 with zlib's default level.
@@ -937,13 +969,22 @@ describe("[A1.5.backup.bundle-limits] the shared BundlePolicy on .db.gz files", 
     const small = tiny({ maxDatabaseBytes: 64 * 1024 });
     await pad(folder, 200);
     const refused = await expectCode(
-      () => backupSpaceWith(checked, folder, { kind: "manual" }, { policy: small }),
+      () =>
+        backupSpaceWith(
+          checked,
+          folder,
+          { backupDir: backupsBeside(folder), kind: "manual" },
+          { policy: small },
+        ),
       "BUNDLE_LIMIT_EXCEEDED",
     );
     expect(refused.message).toContain("space.db");
-    expect(readdirSync(join(folder, "backups"))).toEqual([]);
+    expect(readdirSync(backupsBeside(folder))).toEqual([]);
 
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     const parent = folders.make();
     await expectCode(
       () => restoreBackupWith(checked, backup.file, join(parent, "mira"), {}, { policy: small }),
@@ -971,7 +1012,10 @@ describe("[A1.5.backup.bundle-limits] the shared BundlePolicy on .db.gz files", 
   test("a backup that expands beyond its sidecar, or does not decompress, is invalid", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     const sidecar = JSON.parse(readFileSync(backup.sidecarFile, "utf8")) as Record<string, unknown>;
     const parent = folders.make();
     // The sidecar promises less than the archive holds.

@@ -1,6 +1,6 @@
-// Every recording of lab run N parses to the outcome its recording states (M6.05). The index
+// Every recording of lab run N parses to the outcome its recording states. The index
 // states how each process ended (exit code, signal, cancel); the table below states what the
-// stream says, from fixtures/streams/README.md and A4 3.11.3.
+// stream says, from fixtures/streams/README.md.
 // Assertions are on shapes, counts and reasons only, never on message text.
 import { describe, expect, test } from "vitest";
 import {
@@ -35,7 +35,7 @@ const noResult = (result: boolean): Expected => ({
 const EXPECTED: Record<string, Expected> = {
   "claude-print/windows-success-tool-call.jsonl": ok,
   "claude-print/windows-resume.jsonl": ok,
-  // subtype success with is_error true: judged by is_error (A4 3.11.3).
+  // subtype success with is_error true: judged by is_error.
   "claude-print/windows-error-model.jsonl": {
     reason: "agent_error",
     nativeId: true,
@@ -49,7 +49,7 @@ const EXPECTED: Record<string, Expected> = {
     result: false,
     usage: true,
   },
-  // Ctrl+C: exit 0, but the result says the turn was aborted (A4 3.11.3).
+  // Ctrl+C: exit 0, but the result says the turn was aborted.
   "claude-print/windows-cancel-ctrl-c.jsonl": {
     reason: "interrupted",
     nativeId: true,
@@ -62,7 +62,7 @@ const EXPECTED: Record<string, Expected> = {
     result: false,
     usage: true,
   },
-  // Ctrl+Break: exit 0 with no result event (A4 3.11.3).
+  // Ctrl+Break: exit 0 with no result event.
   "claude-print/windows-cancel-ctrl-break.jsonl": noResult(false),
   "claude-print/windows-cancel-terminate.jsonl": noResult(false),
   "claude-print/windows-cancel-taskkill-tree.jsonl": noResult(false),

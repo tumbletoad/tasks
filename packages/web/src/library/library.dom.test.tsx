@@ -9,6 +9,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
+import { areaNode, nodesOf, projectNode } from "@ttasks/client/test/nodes";
 import {
   PAGE_CONFLICT_EXAMPLE,
   PAGE_FEED_EXAMPLES,
@@ -23,10 +24,11 @@ import type { Api } from "../api.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
-import type { SnapshotMessage } from "../store/rows.ts";
+import type { SnapshotMessage, TaskRow } from "@ttasks/client/store";
 import { TrashedPages } from "./TrashedPages.tsx";
 import { NodeLibrary } from "./Library.tsx";
 import { PageScreen } from "./PageScreen.tsx";
+import { Knowledge } from "./Knowledge.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -48,6 +50,8 @@ const AREA = nodeExample.above[0]?.id ?? "";
 const SPACE_ID = nodeExample.above[1]?.id ?? "";
 /** The page as the screen reads it: whole, not one section. */
 const PAGE = { ...pageExample, section: undefined };
+/** A project with no pages yet. */
+const BILLING = "p_3w7a1e5j9n3s7w1b5f9k3p7t1x";
 const CURSOR = { epoch: 1, incarnation: "ai_0123456789abcdefghjkmnpq", seq: 1045 };
 const AS_OF = "1.1046.5n0w8k3q";
 
@@ -56,8 +60,12 @@ const snapshot = {
   space: { id: SPACE_ID, name: "Mira", ref_prefix: "M" },
   cursor: CURSOR,
   tasks: [],
-  areas: [{ id: AREA, title: "Client work", position: "a" }],
-  projects: [{ id: PROJECT, area_id: AREA, title: "Lumen Health", position: "a" }],
+  nodes: nodesOf(
+    SPACE_ID,
+    areaNode({ id: AREA, title: "Client work", position: "a" }, SPACE_ID),
+    projectNode(AREA, { id: PROJECT, title: "Lumen Health", position: "a" }),
+    projectNode(AREA, { id: BILLING, title: "Billing", position: "b" }),
+  ),
   pages: PAGE_FEED_EXAMPLES.snapshotPages,
   instances: [
     { key: "codex-work", app: "Codex", label: "Codex", glyph: "C", ring: 1, route: "terminal" },
@@ -71,6 +79,8 @@ let live: Live;
 let api: Api;
 /** Every library call, by name, with its input. */
 let calls: [string, Record<string, unknown>][];
+/** Answers entry.add: the note for agents. */
+let noted: () => Promise<unknown>;
 /** Answers page.read of a node. */
 let nodeRead: (input: Record<string, unknown>) => unknown;
 /** Answers page.write: the next write's answer, or its refusal. */
@@ -79,6 +89,14 @@ let written: () => Promise<unknown>;
 beforeEach(() => {
   calls = [];
   nodeRead = () => nodeExample;
+  noted = () =>
+    Promise.resolve({
+      result: "logged",
+      task: "M-231",
+      entry: "n1",
+      kind: "note",
+      as_of: "1.1048.5n0w8k3q",
+    });
   localStorage.clear();
   written = () => Promise.resolve({ result: "set", target: PAGE.ref, as_of: "1.1047.5n0w8k3q" });
   const record =
@@ -90,6 +108,18 @@ beforeEach(() => {
   api = {
     client: {
       receipt: { get: () => new Promise(() => undefined) },
+      task: {
+        add: record("task.add", () =>
+          Promise.resolve({
+            as_of: "1.1047.5n0w8k3q",
+            tasks: [{ result: "created", id: "t_8p2t6x0c4g8k2p6t0x4c8g2k6p", ref: "M-231" }],
+            warnings: [],
+          }),
+        ),
+      },
+      entry: {
+        add: record("entry.add", () => noted()),
+      },
       page: {
         read: record("page.read", (input) =>
           Promise.resolve(input["target"] === PAGE.ref ? PAGE : nodeRead(input)),
@@ -469,5 +499,91 @@ describe("[A5.pages.web.trash] the pages in the Trash", () => {
       target: "M-180",
     });
     expect(parts("trashed-page")).toHaveLength(0);
+  });
+});
+
+describe("[A5.pages.web.card] a task's card shows its Knowledge", () => {
+  test("its own pages, a new page on the task, and what is known above it folded; each page opens with the way back to this list", async () => {
+    const [onProject, onTask] = PAGE_FEED_EXAMPLES.snapshotPages;
+    const task = {
+      id: onTask?.owner_id,
+      ref: "M-14",
+      title: "Fix appointment time zones",
+      status: "open",
+      inbox: false,
+      lifecycle: "active",
+      position: "a",
+      created_at: 0,
+      version: 1,
+      parent: PROJECT,
+    } as unknown as TaskRow;
+    await mount(<Knowledge task={task} />, `/s/${SPACE_ID}/open?task=M-14`);
+    const own = parts("knowledge-page");
+    expect(own.map((a) => a.getAttribute("href"))).toEqual([`/s/${SPACE_ID}/page/M-221`]);
+    const above = part("knowledge-above");
+    expect(above?.textContent).toBe("From above (1)");
+    expect(above?.getAttribute("aria-expanded")).toBe("false");
+    await click(above);
+    expect(parts("knowledge-page").map((a) => a.getAttribute("href"))).toContain(
+      `/s/${SPACE_ID}/page/${String(onProject?.ref)}`,
+    );
+
+    written = () =>
+      Promise.resolve({ result: "created", target: "M-232", as_of: "1.1047.5n0w8k3q" });
+    await click(part("new-page"));
+    const field = part("new-page-title") as HTMLInputElement;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+        field,
+        "Clinic offsets",
+      );
+    });
+    press(field, "Enter");
+    await settle();
+    expect(calls.find(([name]) => name === "page.write")?.[1]).toMatchObject({
+      action: "create",
+      on: "M-14",
+      title: "Clinic offsets",
+    });
+  });
+});
+
+describe("[A5.pages.web.build] Build this project's library", () => {
+  test("on a project with no pages: a task there with the person's note for agents, then the task expanded in the project's list", async () => {
+    const router = await mount(<NodeLibrary node={{ kind: "project", id: BILLING }} />);
+    await click(part("build-library"));
+    expect(calls.find(([name]) => name === "task.add")?.[1]).toMatchObject({
+      tasks: [{ title: "Build this project's library", area: "Client work", project: "Billing" }],
+    });
+    const note = calls.find(([name]) => name === "entry.add")?.[1];
+    expect(note).toMatchObject({ task: "M-231", kind: "note", for_agents: true });
+    expect(String(note?.["text"])).toContain("keeping-the-library");
+    expect(router.state.location.pathname).toBe(`/s/${SPACE_ID}/area/${AREA}/project/${BILLING}`);
+    expect(router.state.location.search).toEqual({ task: "M-231" });
+  });
+
+  test("a note that fails after the task was made is tried again on that task, never with a second task", async () => {
+    let first = true;
+    const answer = noted;
+    noted = () => {
+      if (!first) return answer();
+      first = false;
+      return Promise.reject(Object.assign(new Error("Not now."), { code: "internal" }));
+    };
+    const router = await mount(<NodeLibrary node={{ kind: "project", id: BILLING }} />);
+    await click(part("build-library"));
+    expect(part("build-library")?.textContent).toBe("Add the note for agents to M-231");
+    expect(router.state.location.pathname).not.toContain(BILLING);
+    await click(part("build-library"));
+    expect(calls.filter(([name]) => name === "task.add")).toHaveLength(1);
+    expect(
+      calls.filter(([name]) => name === "entry.add").map(([, input]) => input["task"]),
+    ).toEqual(["M-231", "M-231"]);
+    expect(router.state.location.search).toEqual({ task: "M-231" });
+  });
+
+  test("a project with pages has no such button", async () => {
+    await mount(<NodeLibrary node={{ kind: "project", id: PROJECT }} />);
+    expect(part("build-library")).toBeNull();
   });
 });

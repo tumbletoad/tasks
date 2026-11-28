@@ -4,12 +4,12 @@
 export const FIXED_SAMPLE = {
   seed: "fixed",
   tasks: 3,
-  digest: "1e11cd8aade3a9b33afd2a1ec07c6adbd11a3832ac22cd388f266f68158d102e",
+  digest: "45013d086b6f2051f5acbb7bdbd8b33b925c4e303bc81f85478946ded6dc305c",
 } as const;
 
 /**
- * The known sample built as a released 0.1 build built it (`steps: STEPS_0_1`, M3.01): the digest
- * the 0.1 builds gave the known sample, unchanged since M2.05. It must never change. A change means
+ * The known sample built as a released 0.1 build built it (`steps: STEPS_0_1`): the digest
+ * the 0.1 builds gave the known sample. It must never change. A change means
  * the 0.1 fixture builder no longer produces what the 0.1 release produced, so the migration tests
  * that start from it would no longer start from a real 0.1 space: make the builder produce it again
  * (for example by freezing a generator change behind the chain), never update this value. The

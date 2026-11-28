@@ -1,4 +1,4 @@
-// Install layouts for the launcher tests (A2 3.12.2), in fresh temporary folders. A version folder
+// Install layouts for the launcher tests, in fresh temporary folders. A version folder
 // gets the launchers under test, the Node that runs the tests as its runtime (hard-linked from one
 // copy per test file), the stub entry test/stub/ttasks.mjs and a manifest. Nothing is downloaded
 // and nothing outside the temporary folders is touched.

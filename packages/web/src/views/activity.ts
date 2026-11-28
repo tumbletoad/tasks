@@ -2,7 +2,7 @@
 // holds, read from the service's `activity.list` a page at a time by commit number, and how the log
 // follows the feed.
 //
-// A line holds each thing its change touched (a task, a project, an area) with what the change did
+// A line holds each thing its change touched (a task, a project, an area, a page) with what it did
 // to it. The words come from one table: an operation that says what it did in its own words, or a
 // field with its value. An operation or a field the table does not know reads "changed", after the
 // name of what it changed, so a new kind of change gets a line and never breaks the screen.
@@ -11,7 +11,7 @@
 // agents changed something, older ones at the end as the person reads on.
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { MessageId, Translate } from "../i18n/intl.tsx";
-import { formatDay, formatInstant, type Clock } from "../row/dates.ts";
+import { formatDay, formatInstant, type Clock } from "@ttasks/client/today";
 import { AGENT_KINDS } from "../app/changes.ts";
 import type { Changes } from "../store/store.ts";
 
@@ -85,6 +85,7 @@ const FIELDS: Readonly<Record<string, Words>> = {
   effort: (act, { t }) =>
     cleared(act) ? t("activity.effortCleared") : t("activity.effort", { to: text(act.to) }),
   reviewed_at: said("activity.reviewed"),
+  body: said("activity.pageText"),
   grouping: (act, { t }) =>
     typeof act.to === "string" ? t("activity.moved", { to: act.to }) : t("activity.ungrouped"),
 };
@@ -126,6 +127,14 @@ const OPS: Readonly<Record<string, Words>> = {
   "task.folder_clear": said("activity.folderCleared"),
   "project.folder_clear": said("activity.folderCleared"),
   "pref.set": said("activity.setting"),
+  "page.create": added,
+  "page.edit": said("activity.pageText"),
+  "page.append": said("activity.pageAppended"),
+  "page.move": (act, { t }) =>
+    typeof act.to === "string" ? t("activity.moved", { to: act.to }) : t("activity.changed"),
+  "page.trash": said("activity.trashed"),
+  "page.restore": said("activity.restored"),
+  "node.set": said("activity.description"),
 };
 
 /** The operations whose acts are fields of their target, each in its own words. */
@@ -136,6 +145,7 @@ const BY_FIELD: ReadonlySet<string> = new Set([
   "project.move",
   "area.patch",
   "area.move",
+  "page.set",
 ]);
 
 /** The operations that finish a task: a task made with one is its follow-up. */

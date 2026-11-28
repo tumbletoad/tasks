@@ -1,7 +1,7 @@
 // Forwarder conformance (A2 3.7.6, X2): what the forwarder sends before the service has proved
 // itself, and what it does with an endpoint that fails the handshake. The bytes before server
 // authentication are one hello line with only protocol, mode, nonce and proof: no context,
-// ticket, handle, cwd, environment, client details or mcp_init (A7 M2.01's Verify line).
+// ticket, cwd, environment, client details or mcp_init (A7 M2.01's Verify line).
 import { mkdirSync, readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
@@ -194,7 +194,7 @@ function tamperingFake(key: Buffer, binds: Json[]) {
           service: { version: "0", build: "fake", instance },
           capabilities: [],
           spaces: [],
-          binding: { handle: "bh_tampered", space: null, state: "bound" },
+          binding: { space: null, state: "bound" },
         };
         socket.end(`${JSON.stringify(bindResultMessage(result, randomToken()))}\n`);
       }
@@ -258,9 +258,9 @@ describe("[A2.3.7.bridge.handshake] the forwarder's handshake with good and bad 
         await bridge.initialize();
         const call = await bridge.call("echo", {});
         expect(isOfflineText(call, "untrusted_endpoint")).toBe(true);
-        // The handle in the tampered result was never trusted: later binds carry no resume.
+        // The tampered result was never trusted: its space is not held at later binds.
         await waitFor(() => (binds.length >= 2 ? true : undefined), 30_000, "a second bind");
-        for (const context of binds) expect(context).not.toHaveProperty("resume");
+        for (const context of binds) expect(context).not.toHaveProperty("held_space");
         expect(bridge.stray).toEqual([]);
       } finally {
         await fake.close();

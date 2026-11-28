@@ -168,7 +168,7 @@ export async function startWorld(
           if (install === undefined) service.send("stop");
           else {
             // The built `ttasks serve` has no test entry to read a stop line: the graceful stop on
-            // every OS is service/shutdown (A2 3.3.5), which a script's connection may send.
+            // every OS is service/shutdown, which a script's connection may send.
             const session = await openSession(home, path).catch(() => undefined);
             await session
               ?.call("service/shutdown", {}, { timeoutMs: 10_000 })

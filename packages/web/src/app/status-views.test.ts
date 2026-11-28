@@ -2,14 +2,12 @@
 // the counted views are disjoint, so their counts add up and each view lists exactly its count.
 import fc from "fast-check";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { areaGroups, flatGroups, personGroups, projectGroups, type Group } from "../groups.ts";
-import { itemsOf } from "../list/items.ts";
-import type { Change } from "../store/core.ts";
-import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
-import type { Changes } from "../store/store.ts";
-import { ChangeLog } from "./changes.ts";
 import {
-  projectFilter,
+  areaGroups,
+  flatGroups,
+  personGroups,
+  projectGroups,
+  underFilter,
   COUNTED,
   countedViewOf,
   recentOf,
@@ -17,7 +15,12 @@ import {
   VIEW_LIST,
   viewCounts,
   viewFilter,
-} from "./views.ts";
+} from "@ttasks/client/today";
+import { type Group, itemsOf } from "../list/items.ts";
+import type { Change, TaskRow } from "@ttasks/client/store";
+import { areaNode, projectNode, TEST_SPACE, treeOf } from "@ttasks/client/test/nodes";
+import type { Changes } from "../store/store.ts";
+import { ChangeLog } from "./changes.ts";
 
 let n = 0;
 const task = (patch: Partial<TaskRow> & { title: string }): TaskRow => {
@@ -31,24 +34,16 @@ const task = (patch: Partial<TaskRow> & { title: string }): TaskRow => {
     position: `a${String(n).padStart(4, "0")}`,
     created_at: n,
     version: 1,
+    parent: TEST_SPACE,
     ...patch,
   };
 };
 
-const lumen: AreaRow = { id: "ar_lumen", title: "Lumen Health", position: "a1" };
-const home: AreaRow = { id: "ar_home", title: "Home", position: "a0" };
-const portal: ProjectRow = {
-  id: "pj_portal",
-  area_id: "ar_lumen",
-  title: "Portal",
-  position: "b1",
-};
-const sync: ProjectRow = {
-  id: "pj_sync",
-  area_id: "ar_lumen",
-  title: "Clinic sync",
-  position: "b0",
-};
+const lumen = areaNode({ id: "ar_lumen", title: "Lumen Health", position: "a1" });
+const home = areaNode({ id: "ar_home", title: "Home", position: "a0" });
+const portal = projectNode("ar_lumen", { id: "pj_portal", title: "Portal", position: "b1" });
+const sync = projectNode("ar_lumen", { id: "pj_sync", title: "Clinic sync", position: "b0" });
+const NODES = treeOf(lumen, home, portal, sync);
 
 /** Each group as [kind, title or label, [[section title, row titles]]]. */
 const shape = (groups: readonly Group[]) =>
@@ -63,18 +58,18 @@ describe("[A5.3.5.web.view-groups] each view's grouping", () => {
     const tasks = [
       task({ title: "Captured first", inbox: true }),
       task({ title: "Captured second", inbox: true }),
-      task({ title: "Captured third", inbox: true, area_id: "ar_home" }),
+      task({ title: "Captured third", inbox: true, parent: "ar_home" }),
     ];
-    const groups = flatGroups(tasks, [home], []);
+    const groups = flatGroups(tasks, NODES);
     expect(shape(groups)).toEqual([
       ["flat", undefined, [[undefined, ["Captured third", "Captured second", "Captured first"]]]],
     ]);
     // A flat list has rows only: no heading names the view (U3).
-    const items = itemsOf(groups, new Map(), new Map(), new Map());
+    const items = itemsOf(groups, new Map(), new Map());
     expect(items.items.map((i) => i.kind)).toEqual(["row", "row", "row"]);
     expect(VIEW_LIST.inbox.group).toBe(flatGroups);
     expect(VIEW_LIST.review.group).toBe(flatGroups);
-    expect(flatGroups([], [], [])).toEqual([]);
+    expect(flatGroups([], NODES)).toEqual([]);
   });
 
   test("Waiting: one group per person, by name, the follow-up day first; then no one named", () => {
@@ -96,7 +91,7 @@ describe("[A5.3.5.web.view-groups] each view's grouping", () => {
       task({ title: "Somebody", status: "waiting" }),
       task({ title: "Blank", status: "waiting", waiting_on: "  " }),
     ];
-    expect(shape(personGroups(tasks, [], []))).toEqual([
+    expect(shape(personGroups(tasks, NODES))).toEqual([
       ["label", "Ana Reyes", [[undefined, ["Contract"]]]],
       // One person whatever the case and spaces; their first spelling names the group.
       ["label", "Tom Haas", [[undefined, ["Invoice", "Photos", "Keys"]]]],
@@ -112,13 +107,13 @@ describe("[A5.3.5.web.view-groups] each view's grouping", () => {
 
   test("the area view: by project, no area heading, backlog last; a project's view: no label", () => {
     const tasks = [
-      task({ title: "Later", area_id: "ar_lumen", status: "backlog" }),
-      task({ title: "Admin", area_id: "ar_lumen", status: "waiting", waiting_on: "Ana" }),
-      task({ title: "Fix zones", area_id: "ar_lumen", project_id: "pj_portal" }),
-      task({ title: "Someday", area_id: "ar_lumen", project_id: "pj_portal", status: "backlog" }),
-      task({ title: "Delays", area_id: "ar_lumen", project_id: "pj_sync", status: "review" }),
+      task({ title: "Later", parent: "ar_lumen", status: "backlog" }),
+      task({ title: "Admin", parent: "ar_lumen", status: "waiting", waiting_on: "Ana" }),
+      task({ title: "Fix zones", parent: "pj_portal" }),
+      task({ title: "Someday", parent: "pj_portal", status: "backlog" }),
+      task({ title: "Delays", parent: "pj_sync", status: "review" }),
     ];
-    const groups = areaGroups(tasks, [lumen], [portal, sync]);
+    const groups = areaGroups(tasks, NODES);
     expect(shape(groups)).toEqual([
       [
         "flat",
@@ -131,17 +126,13 @@ describe("[A5.3.5.web.view-groups] each view's grouping", () => {
       ],
     ]);
     // No area heading item; the project labels stay.
-    const items = itemsOf(groups, new Map(), new Map(), new Map());
+    const items = itemsOf(groups, new Map(), new Map());
     expect(items.items.filter((i) => i.kind === "group")).toEqual([]);
     expect(items.items.filter((i) => i.kind === "section").map((i) => i.key)).toEqual([
       "s:pj_sync",
       "s:pj_portal",
     ]);
-    const project = projectGroups(
-      tasks.filter(projectFilter("pj_portal")),
-      [lumen],
-      [portal, sync],
-    );
+    const project = projectGroups(tasks.filter(underFilter(NODES, "pj_portal")), NODES);
     expect(shape(project)).toEqual([["flat", undefined, [[undefined, ["Fix zones", "Someday"]]]]]);
   });
 
@@ -196,8 +187,7 @@ const arbTask = fc.record({
   inbox: fc.boolean(),
   status: fc.constantFrom("open", "waiting", "review", "backlog", "someday"),
   waiting_on: fc.option(fc.constantFrom("Tom", "tom", "Ana", " "), { nil: undefined }),
-  area_id: fc.option(fc.constantFrom("ar_lumen", "ar_home", "ar_gone"), { nil: undefined }),
-  project_id: fc.option(fc.constantFrom("pj_portal", "pj_sync", "pj_gone"), { nil: undefined }),
+  parent: fc.constantFrom(TEST_SPACE, "ar_lumen", "ar_home", "ar_gone", "pj_portal", "pj_sync"),
   created_at: fc.nat(1000),
 });
 
@@ -331,7 +321,7 @@ describe("[A5.3.5.web.counts-add-up] property: the counts add up across disjoint
         for (const view of COUNTED) {
           const filter = viewFilter(view);
           if (filter === undefined) throw new Error(`${view} has no filter`);
-          const groups = VIEW_LIST[view].group(tasks.filter(filter), [lumen, home], [portal, sync]);
+          const groups = VIEW_LIST[view].group(tasks.filter(filter), NODES);
           const rows = groups.flatMap((g) => g.sections.flatMap((s) => s.tasks));
           // A view lists its count, each task once.
           expect(rows.length, view).toBe(counts[view]);

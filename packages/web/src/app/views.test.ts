@@ -1,17 +1,17 @@
 import { describe, expect, test } from "vitest";
-import type { TaskRow } from "../live.ts";
+import type { TaskRow } from "@ttasks/client/store";
+import { areaNode, projectNode, TEST_SPACE, treeOf } from "@ttasks/client/test/nodes";
 import { landingSpace, notOpen, type SpaceList } from "./spaces.ts";
 import {
-  areaFilter,
-  projectFilter,
   COUNTED,
   countedViewOf,
   groupCounts,
   sidebarEntries,
+  underFilter,
   viewCounts,
   viewFilter,
   VIEWS,
-} from "./views.ts";
+} from "@ttasks/client/today";
 
 let n = 0;
 const task = (patch: Partial<TaskRow>): TaskRow => {
@@ -26,18 +26,24 @@ const task = (patch: Partial<TaskRow>): TaskRow => {
     position: String(n),
     created_at: n,
     version: 1,
+    parent: TEST_SPACE,
     ...patch,
   };
 };
 
+const NODES = treeOf(
+  areaNode({ id: "ar_a", title: "Lumen", position: "a" }),
+  areaNode({ id: "ar_b", title: "Home", position: "b" }),
+  projectNode("ar_a", { id: "pj_1", title: "Portal", position: "a" }),
+);
 const TASKS: TaskRow[] = [
   task({ inbox: true }),
   task({ inbox: true, status: "waiting" }),
-  task({ status: "open", area_id: "ar_a" }),
-  task({ status: "open", area_id: "ar_a", project_id: "pj_1" }),
-  task({ status: "waiting", area_id: "ar_b" }),
+  task({ status: "open", parent: "ar_a" }),
+  task({ status: "open", parent: "pj_1" }),
+  task({ status: "waiting", parent: "ar_b" }),
   task({ status: "review" }),
-  task({ status: "backlog", area_id: "ar_a", project_id: "pj_1" }),
+  task({ status: "backlog", parent: "pj_1" }),
   task({ status: "someday" }),
 ];
 
@@ -80,18 +86,21 @@ describe("[A5.3.3.web.views] the sidebar's views and counts", () => {
   });
 
   test("an area view holds every status of its area, a project view its project", () => {
-    expect(TASKS.filter(areaFilter("ar_a")).map((t) => t.status)).toEqual([
+    expect(TASKS.filter(underFilter(NODES, "ar_a")).map((t) => t.status)).toEqual([
       "open",
       "open",
       "backlog",
     ]);
-    expect(TASKS.filter(projectFilter("pj_1")).map((t) => t.status)).toEqual(["open", "backlog"]);
+    expect(TASKS.filter(underFilter(NODES, "pj_1")).map((t) => t.status)).toEqual([
+      "open",
+      "backlog",
+    ]);
   });
 
   test("an area counts what its view lists, its projects' tasks included; a project its own", () => {
-    const counts = groupCounts(TASKS);
-    expect(counts.get("ar_a")).toBe(TASKS.filter(areaFilter("ar_a")).length);
-    expect(counts.get("pj_1")).toBe(TASKS.filter(projectFilter("pj_1")).length);
+    const counts = groupCounts(TASKS, NODES);
+    expect(counts.get("ar_a")).toBe(TASKS.filter(underFilter(NODES, "ar_a")).length);
+    expect(counts.get("pj_1")).toBe(TASKS.filter(underFilter(NODES, "pj_1")).length);
     expect(counts.get("ar_b")).toBe(1);
     expect(counts.get("ar_none")).toBeUndefined();
   });

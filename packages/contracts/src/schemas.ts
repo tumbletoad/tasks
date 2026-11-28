@@ -446,9 +446,7 @@ export const CompactTaskRow = z.strictObject({
   focus_on: z.string().describe("Day starred for").optional(),
   owner: z.string().describe("Owner").optional(),
   waiting_on: z.string().describe("Who or what it waits on").optional(),
-  area_id: z.string().describe("Area ID").optional(),
-  project_id: z.string().describe("Project ID").optional(),
-  parent_id: z.string().describe("Parent task ID").optional(),
+  parent: z.string().describe("The node it sits under: a task, a project or the space"),
   position: z.string().describe("Order key within its group"),
   wrap_state: WrapState.optional(),
   completed_at: Millis.describe("When it was completed").optional(),
@@ -499,10 +497,6 @@ export const CompactTaskRow = z.strictObject({
   last: z
     .strictObject({
       open: z.string().describe("The instance of its newest Open that was not refused").optional(),
-      open_route: z
-        .string()
-        .describe("How that Open opened: t3-mcp names T3 Code also when its instance is gone")
-        .optional(),
       run: z.string().describe("The instance of its newest run").optional(),
     })
     .describe("The agent instances it was last opened in and last ran with")
@@ -522,6 +516,22 @@ export const CompactTaskRow = z.strictObject({
     .optional(),
   questions_more: Count.describe("How many more questions wait").optional(),
 });
+
+/**
+ * A node of the space's tree as the feed carries it: the space, or a project. An area is a
+ * top-level project, its projects its children.
+ */
+export const CompactNode = z.strictObject({
+  id: z.string().max(40).describe("Its ID"),
+  kind: z.enum(["space", "project"]).describe("What it is"),
+  parent: z.string().max(40).describe("The node it sits under; none for the space").optional(),
+  title: z.string().describe("Its name"),
+  position: z.string().describe("Order key among its siblings; none for the space").optional(),
+  color: z.string().describe("Its colour").optional(),
+  state: z.enum(["active", "archived"]).describe("Archived: kept, out of the places work is filed"),
+  deleted_at: Millis.describe("When it was deleted").optional(),
+});
+export type CompactNode = z.infer<typeof CompactNode>;
 
 /** The most tasks a read names as holding a source's key. */
 export const CAPTURES_TO_MAX = 5;

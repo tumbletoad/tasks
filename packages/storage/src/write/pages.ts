@@ -102,3 +102,59 @@ export function finishedBody(body: string): string | undefined {
 /** What `page.append` leaves: the text after a blank line, or the text alone on an empty body. */
 export const appended = (body: string, text: string): string =>
   body === "" ? text : `${body.replace(/\n+$/u, "")}\n\n${text}`;
+
+/** Whole texts a request gives, field by field, in the order they are written. */
+export type GivenTexts = readonly (readonly [field: string, value: string])[];
+
+/** A page's set: its title, brief and body as given, the body a version left in place of one sent. */
+export function pageSetTexts(
+  op: { title?: string; brief?: string; body?: string },
+  version: string | undefined,
+): GivenTexts {
+  const body = version ?? op.body;
+  return [
+    ...(op.title === undefined ? [] : [["title", op.title] as const]),
+    ...(op.brief === undefined ? [] : [["brief", op.brief] as const]),
+    ...(body === undefined ? [] : [["body", body] as const]),
+  ];
+}
+
+/** A node's texts as `node.set` or `node.instruct` gives them. */
+export function nodeTexts(
+  op:
+    | { kind: "node.set"; brief?: string; description?: string }
+    | { kind: "node.instruct"; text: string },
+): GivenTexts {
+  if (op.kind === "node.instruct") return [["for_agents", op.text]];
+  return [
+    ...(op.brief === undefined ? [] : [["brief", op.brief] as const]),
+    ...(op.description === undefined ? [] : [["description", op.description] as const]),
+  ];
+}
+
+/**
+ * What whole texts write where they are held now: the fields the caller's base holds the request
+ * to, and the ones that change. Every given field is held to the base, the same words included, so a
+ * save made on a stale read is a conflict also where it matches what is there. Texts never written
+ * before hold nothing: a first description races nothing its person read. A page's texts were
+ * written by its create, so they are always held.
+ */
+export function textWrite(
+  given: GivenTexts,
+  now: (field: string) => string,
+  written: boolean,
+): { held: string[]; set: Record<string, string> } {
+  return {
+    held: written ? given.map(([field]) => field) : [],
+    set: Object.fromEntries(given.filter(([field, value]) => now(field) !== value)),
+  };
+}
+
+/**
+ * Whether a removal, or a putting back, finds what it names there already: a page in the Trash or
+ * out of it, a source's link removed or back. Nothing is written, and the answer is unchanged. A
+ * page's move to the Trash, out of it or to another holder is held to no base: each says where the
+ * page goes, whatever else changed.
+ */
+export const alreadyThere = (removed: boolean, puttingBack: boolean): boolean =>
+  removed !== puttingBack;

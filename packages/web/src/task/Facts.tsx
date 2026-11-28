@@ -20,15 +20,14 @@ import {
 import { whoOf } from "../edit/edits.ts";
 import { Unsaved, useUnsaved } from "../edit/Unsaved.tsx";
 import { useEdits } from "../edit/useEdits.ts";
-import { areaSlots } from "../groups.ts";
+import { areaSlots, formatDay, formatInstant, type Clock } from "@ttasks/client/today";
 import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
 import { localDate } from "@ttasks/contracts/day";
 import { EFFORT_NAME_MAX } from "@ttasks/contracts/preferences";
-import { formatDay, formatInstant, type Clock } from "../row/dates.ts";
 import { contextFor, effortLevelOf, levelMsg, renderRow } from "../row/model.ts";
 import { sayMsg } from "../row/say.ts";
 import { useLive } from "../store/hooks.ts";
-import { effortOptions, type TaskRow } from "../store/rows.ts";
+import { effortOptions, trail, type TaskRow } from "@ttasks/client/store";
 import { AreaPicker } from "./AreaPicker.tsx";
 import { DuePicker } from "./DuePicker.tsx";
 import css from "./Expanded.module.css";
@@ -371,9 +370,8 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
   const waitingKept = useUnsaved(task.id, "waiting_on").length > 0;
   // Who it waits on stays shown while the person is in it, even when the status moves on.
   const [waitingOpen, setWaitingOpen] = useState(false);
-  const area = task.area_id === undefined ? undefined : state.areas.get(task.area_id);
-  const project = task.project_id === undefined ? undefined : state.projects.get(task.project_id);
-  const slot = area === undefined ? undefined : areaSlots(state.areas.values()).get(area.id);
+  const [area, project] = trail(state.nodes, task.parent);
+  const slot = area === undefined ? undefined : areaSlots(state.nodes).get(area.id);
   const due = dueOf(task, clock, t);
   const level = task.priority;
   const priority = level === 1 || level === 2 || level === 3 ? String(level) : undefined;

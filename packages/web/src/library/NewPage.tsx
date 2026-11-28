@@ -1,6 +1,6 @@
 // New page, beside a Library's pages: a title is all it asks. Enter makes the page and opens it
 // with the pen in its body; Escape lets go. No dialog: the field stands where the button was.
-import { useNavigate } from "@tanstack/react-router";
+import { useRouter } from "@tanstack/react-router";
 import { useContext, useState } from "react";
 import { PlusIcon } from "../app/Icons.tsx";
 import { classes } from "../app/css.ts";
@@ -9,6 +9,7 @@ import { Session } from "../context.ts";
 import { refusalText } from "../folder/FolderDialog.tsx";
 import { useT } from "../i18n/intl.tsx";
 import css from "./Library.module.css";
+import { fromHere } from "./parts.tsx";
 import { useLibraryWrites } from "./writes.ts";
 
 const styles = classes(css, ["newPage", "newTitle"]);
@@ -17,15 +18,19 @@ const TITLE_MAX = 300;
 export function NewPage({
   on,
   from,
+  label,
 }: {
+  /** The button's words, when not "New page". */
+  readonly label?: string;
   /** Where the page goes: a project's or an area's ID, or "space". */
   readonly on: string;
-  /** Where the person is: the new page's way back. */
-  readonly from: { readonly path: string; readonly label: string };
+  /** The name of where the person is: the new page's way back. */
+  readonly from: string;
 }) {
   const t = useT();
   const say = useToast();
-  const navigate = useNavigate();
+  // A card can stand where no router is (a list's tests): then the page is made and not opened.
+  const router = useRouter({ warn: false }) as ReturnType<typeof useRouter> | null;
   const { live } = useContext(Session);
   const writes = useLibraryWrites();
   const [open, setOpen] = useState(false);
@@ -41,7 +46,7 @@ export function NewPage({
         }}
       >
         <PlusIcon />
-        {t("library.newPage")}
+        {label ?? t("library.newPage")}
       </button>
     );
   }
@@ -70,15 +75,16 @@ export function NewPage({
         const title = event.currentTarget.value.trim();
         if (title === "" || sending) return;
         setSending(true);
+        const back = fromHere(from);
         writes.create(on, title).then(
           (ref) => {
             setSending(false);
             setOpen(false);
             if (ref === "") return;
-            void navigate({
+            void router?.navigate({
               to: "/s/$space/page/$ref",
               params: { space: live.spaceId ?? "", ref },
-              state: { from, pen: "body" },
+              state: { from: back, pen: "body" },
             });
           },
           (error: unknown) => {

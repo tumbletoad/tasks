@@ -1,8 +1,8 @@
-// Finding the service (A2 3.6.1, 3.10.4, 3.3.6): `<state>/service.json` names the endpoint, the
+// Finding the service: `<state>/service.json` names the endpoint, the
 // key is `<state>/ipc.key`, read for every connection. One attempt with a 2 s connect timeout,
 // except while service.json says `starting` for a live PID: then the CLI waits up to 10 s. The CLI
-// never starts the service here: only `ttasks service start` and `ttasks open` do (A2 S6). Every
-// failure is A3's `service_unavailable` with its reason.
+// never starts the service here: only `ttasks service start` and `ttasks open` do. Every
+// failure is `service_unavailable` with its reason.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
@@ -25,10 +25,10 @@ import {
 import type { Io } from "./io.ts";
 import { RESTART_HINT } from "./output.ts";
 
-/** This CLI's version and build. M1.13's release build stamps its own. */
+/** This CLI's version and build. The release build stamps its own. */
 export const CLI_BUILD = { version: "0.0.0", build: "source" } as const;
 
-/** A2 3.10.4: connect timeout 2 s, and up to 10 s for a service that is starting. */
+/** Connect timeout 2 s, and up to 10 s for a service that is starting. */
 export const CONNECT_MS = 2_000;
 export const STARTING_WAIT_MS = 10_000;
 
@@ -43,7 +43,7 @@ export interface ServiceRecord {
   readonly endpoint?: { readonly kind?: unknown; readonly path?: unknown } | null;
 }
 
-/** The state folder of this install (A2 3.2.2), from the account's home or TTASKS_HOME. */
+/** The state folder of this install, from the account's home or TTASKS_HOME. */
 export function stateDir(io: Pick<Io, "env" | "platform">): string {
   try {
     return resolveLayout(hostFacts(io.env, io.platform)).state;
@@ -110,7 +110,7 @@ const TEXT: Record<TransportReason | "starting", { message: string; hint?: strin
   },
 };
 
-/** A transport failure as A3's body (A3 3.5's transport table). */
+/** A transport failure as the TTasks error body. */
 export function transportError(
   reason: TransportReason | "starting",
   retryable: boolean,
@@ -182,12 +182,7 @@ export async function connectService(io: Io, options: ConnectOptions = {}): Prom
         build: CLI_BUILD.build,
         pid: io.pid,
         package: pkg === undefined || pkg === "" ? null : pkg,
-        // `stderr` only when it alone is a terminal, the one case where it changes the class: a
-        // service that predates the field refuses the bind, so every other command still binds to it.
-        tty:
-          io.tty.stderr && !io.tty.stdin && !io.tty.stdout
-            ? { stdin: false, stdout: false, stderr: true }
-            : { stdin: io.tty.stdin, stdout: io.tty.stdout },
+        tty: { stdin: io.tty.stdin, stdout: io.tty.stdout, stderr: io.tty.stderr },
       },
       context: { env: rpcContextEnv(io.env) },
       connectTimeoutMs: CONNECT_MS,

@@ -1,11 +1,12 @@
 // Query-level invalidation (A5 3.13, 3.15 "Paged queries"; the second sentence of M5.02's Verify
 // line): a task that starts to match an open Completed view appears in it, and one that starts to
 // match an open search offers "Results changed · Refresh", which then shows it. The paged reads are
-// fakes over the feed model (test/feed-model.ts); the changes come through the real store.
+// fakes over the feed model (@ttasks/client/test/feed-model); the changes come through the real
+// store.
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
-import { FeedModel, ModelSubscription, SPACE, type Op } from "../../test/feed-model.ts";
-import type { Change } from "./core.ts";
+import { FeedModel, ModelSubscription, SPACE, type Op } from "@ttasks/client/test/feed-model";
+import type { Change } from "@ttasks/client/store";
 import type { FrameClock } from "./frame.ts";
 import { affects, PagedQuery, type PageSource } from "./queries.ts";
 import { LiveStore } from "./store.ts";
@@ -184,6 +185,30 @@ describe("[A5.3.15.web.store.queries] query-level invalidation", () => {
       found.apply({ changes: [], reset: true });
       expect(found.getState().changed).toBe(true);
     });
+  });
+
+  test("a search filtered by an area or a project is changed when a group is renamed; another search is not", async () => {
+    const renamed: Change = {
+      type: "node",
+      id: "p_indigo",
+      changed: ["title"],
+      created: false,
+      kind: "ops",
+      actor: { kind: "human", label: "user" },
+      request_id: "",
+    };
+    expect(affects({ kind: "search", fields: ["project", "grouping"] }, renamed)).toBe(true);
+    expect(affects({ kind: "search", fields: ["area", "grouping"] }, renamed)).toBe(true);
+    expect(affects({ kind: "search", fields: ["priority"] }, renamed)).toBe(false);
+    expect(
+      affects({ kind: "search", fields: ["project"] }, { ...renamed, changed: ["color"] }),
+    ).toBe(false);
+    const filtered = new PagedQuery({ kind: "search", fields: ["project", "grouping"] }, () =>
+      Promise.resolve({ rows: [] as Row[] }),
+    );
+    await filtered.refresh();
+    filtered.apply({ changes: [renamed], reset: false });
+    expect(filtered.getState().changed).toBe(true);
   });
 
   test("changes name the service's logical fields, and a cleared field clears all its columns", async () => {

@@ -1,4 +1,4 @@
-// pnpm seed (A7 3.3): builds the Mira sample space, fixture data only.
+// pnpm seed: builds the Mira sample space, fixture data only.
 //
 //   pnpm seed --out <folder> [--seed <text>] [--tasks <n>]
 //

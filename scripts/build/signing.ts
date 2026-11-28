@@ -1,4 +1,4 @@
-// SHA256SUMS and its two signatures (A2 3.12.4, 3.12.5): `SHA256SUMS.sig`, the raw 64-byte Ed25519
+// SHA256SUMS and its two signatures: `SHA256SUMS.sig`, the raw 64-byte Ed25519
 // signature over the file's exact bytes (for `openssl pkeyutl -verify -rawin` and node:crypto), and
 // `SHA256SUMS.sshsig`, the same key's signature in OpenSSH's format (PROTOCOL.sshsig, namespace
 // `ttasks-release`, for `ssh-keygen -Y verify`). Both come from one Ed25519 key in node:crypto, so
@@ -34,7 +34,7 @@ import { ARCHIVE_NAME } from "./platforms.ts";
 // of an installed version reads what this module writes (packages/service/src/version/release.ts).
 export { parseOpensshPublicKey, RAW_SIGNATURE, SSH_SIGNATURE, SUMS_FILE, verifyRawSignature };
 
-/** The SSHSIG namespace and the allowed_signers identity of release signatures (A2 3.12.4). */
+/** The SSHSIG namespace and the allowed_signers identity of release signatures. */
 export const NAMESPACE = `${PRODUCT_ID}-release`;
 /**
  * The public half of a throwaway test key, beside a test-signed SHA256SUMS. Its presence marks
@@ -124,7 +124,7 @@ function signedBlob(message: Buffer, namespace: string): Buffer {
   ]);
 }
 
-/** The raw Ed25519 signature over `message`: 64 bytes (A2 3.12.4's SHA256SUMS.sig). */
+/** The raw Ed25519 signature over `message`: 64 bytes (SHA256SUMS.sig). */
 export function rawSignature(message: Buffer, key: KeyObject): Buffer {
   return sign(null, message, key);
 }
@@ -257,7 +257,7 @@ export function signSums(dist: string, key: KeyObject, work: string): Signed {
 }
 
 /**
- * Test-signs `<dist>/SHA256SUMS` (CI and tests, A7 3.8 M1.13): a throwaway Ed25519 key made in
+ * Test-signs `<dist>/SHA256SUMS` (CI and tests): a throwaway Ed25519 key made in
  * memory for this call, never written to disk, gone when the call returns. Its public half goes
  * to SHA256SUMS.test-key.pub so the run can verify what it signed, and so nobody mistakes the
  * folder for a release.

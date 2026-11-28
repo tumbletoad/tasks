@@ -64,7 +64,6 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { listBackups, verifyBackup } from "../../packages/storage/src/backup/list.ts";
-import { BACKUPS_FOLDER } from "../../packages/storage/src/backup/sidecar.ts";
 import type { Connection } from "../../packages/storage/src/driver.ts";
 import { StorageError } from "../../packages/storage/src/errors.ts";
 import { DATABASE_FILE, MANIFEST_FILE } from "../../packages/storage/src/manifest.ts";
@@ -80,7 +79,14 @@ import {
 } from "../../packages/storage/src/write/fields.ts";
 import { formatAsOf, type WriteResult } from "../../packages/storage/src/write/request.ts";
 import type { Ledger, Violation } from "./ledger.ts";
-import { differingParts, reduce, sameResult, type Acked, type PlannedRequest } from "./protocol.ts";
+import {
+  backupsBeside,
+  differingParts,
+  reduce,
+  sameResult,
+  type Acked,
+  type PlannedRequest,
+} from "./protocol.ts";
 import {
   HARNESS_STEPS,
   REVISION_0_1,
@@ -1363,40 +1369,32 @@ async function checkBackups(
   verified: Set<string>,
   found: Found,
 ): Promise<void> {
-  const folders = [
-    join(ledger.folder, BACKUPS_FOLDER),
-    ...[...replacedFolders(ledger.parent, ledger.slug).values()].map((f) =>
-      join(f, BACKUPS_FOLDER),
-    ),
-  ];
   const present = new Set<string>();
-  for (const folder of folders) {
-    try {
-      for (const backup of listBackups(folder).backups) {
-        // A kill between the publication of the data and of its sidecar leaves this.
-        if (backup.state === "missing_sidecar") continue;
-        if (backup.state !== "ok" || backup.sidecar === undefined) {
-          found.add("backup-complete-or-absent", `a backup is ${backup.state}`);
-          continue;
-        }
-        present.add(backup.name);
-        // Verified once per content: the key holds both files' SHA-256 (cheap at the harness's
-        // sizes), so a backup whose bytes changed after its check, by any means, is checked again.
-        const id = [backup.name, fileHash(backup.file), fileHash(backup.sidecarFile)].join(" ");
-        if (verified.has(id)) continue;
-        const verdict = await verifyBackup(checked, backup, { steps: HARNESS_STEPS });
-        if (verdict.state === "failed") {
-          found.add("backup-complete-or-absent", "a complete backup does not verify");
-        } else if (verdict.state === "unchecked") {
-          found.add(
-            "backup-complete-or-absent",
-            `a complete backup could not be trial restored (${verdict.code ?? "a bug"})`,
-          );
-        } else verified.add(id);
+  try {
+    for (const backup of listBackups(backupsBeside(ledger.folder)).backups) {
+      // A kill between the publication of the data and of its sidecar leaves this.
+      if (backup.state === "missing_sidecar") continue;
+      if (backup.state !== "ok" || backup.sidecar === undefined) {
+        found.add("backup-complete-or-absent", `a backup is ${backup.state}`);
+        continue;
       }
-    } catch (error) {
-      found.add("backup-complete-or-absent", `reading the backups failed (${codeOf(error)})`);
+      present.add(backup.name);
+      // Verified once per content: the key holds both files' SHA-256 (cheap at the harness's
+      // sizes), so a backup whose bytes changed after its check, by any means, is checked again.
+      const id = [backup.name, fileHash(backup.file), fileHash(backup.sidecarFile)].join(" ");
+      if (verified.has(id)) continue;
+      const verdict = await verifyBackup(checked, backup, { steps: HARNESS_STEPS });
+      if (verdict.state === "failed") {
+        found.add("backup-complete-or-absent", "a complete backup does not verify");
+      } else if (verdict.state === "unchecked") {
+        found.add(
+          "backup-complete-or-absent",
+          `a complete backup could not be trial restored (${verdict.code ?? "a bug"})`,
+        );
+      } else verified.add(id);
     }
+  } catch (error) {
+    found.add("backup-complete-or-absent", `reading the backups failed (${codeOf(error)})`);
   }
   for (const name of ledger.backups.keys()) {
     if (!present.has(name))

@@ -1,8 +1,8 @@
-// Terminal command lines (A4 3.6.2, 3.7). Every line runs the
+// Terminal command lines. Every line runs the
 // shim and nothing else: the terminal's own fixed flags, then `<abs tasks> shim <ticket>`. No
 // title, folder, brief or task text ever goes into a terminal's argv or a shell string:
 // - the folder reaches the shim in the claim's reply, and the shim enters it itself before its
-//   check (A4 3.3's check, unchanged), so no terminal's working-directory flag, quoting
+//   check, unchanged, so no terminal's working-directory flag, quoting
 //   rule or start-folder setting decides where the agent starts;
 // - the title reaches the shim in the claim's reply too, and the shim sets it (OSC 0, sanitised),
 //   so no terminal's title flag is used and none suppresses the shim's title.
@@ -13,9 +13,9 @@
 // PowerShell with a fixed script, its values in variables. Windows Terminal is the one terminal
 // that re-reads its own argv as text: it splits on `;` even inside an argument, so an element with
 // `;` (the product's path, in a test install) cannot be passed and the adapter refuses before
-// anything starts. The ticket is 24 symbols of A1's alphabet.
+// anything starts. The ticket is 24 symbols of the ID alphabet.
 //
-// Kinds (A4 3.6.2 "Acceptance per terminal"):
+// Kinds:
 // - `handoff`: the client hands the request to a running terminal server and exits, whatever its
 //   code means; Dispatched once spawned.
 // - `direct`: the process owns the window. Dispatched when the shim claimed, the process still
@@ -167,7 +167,7 @@ export const ADAPTER_KIND: Readonly<Record<AdapterApp, TerminalKind>> = {
 
 /**
  * The terminals x-terminal-emulator may resolve to that run `-e`'s command in a process of their
- * own that owns the window. Every other one, and any unknown one, is a handoff (A4 3.6.2).
+ * own that owns the window. Every other one, and any unknown one, is a handoff.
  */
 const DIRECT_LINKS = /^(ghostty|kitty|xterm|uxterm|lxterm|koi8rxterm|alacritty|foot|st|u?rxvt.*)$/;
 
@@ -179,7 +179,7 @@ export function linkKindOf(target: string): TerminalKind {
 
 type Built = TerminalCommand | { readonly refused: CommandRefusal };
 
-/** A4 3.6.2's command line for one terminal, or why there is none. */
+/** The command line for one terminal, or why there is none. */
 export function terminalCommand(input: CommandInput): Built {
   const { app, program, shim, platform } = input;
   if (!ON[app].includes(platform)) return { refused: "not_on_this_os" };
@@ -215,7 +215,7 @@ export function terminalCommand(input: CommandInput): Built {
       return made("handoff", [program, "-w", window, "new-tab", "--", ...shim], false);
     }
     case "ghostty":
-      // `-e` comes last and forces a new Ghostty process (A4 3.6.2).
+      // `-e` comes last and forces a new Ghostty process.
       return made("direct", [program, "-e", ...shim]);
     case "gnome-terminal":
       return made("handoff", [program, "--", ...shim]);
@@ -267,9 +267,9 @@ const isAbsoluteOn = (path: string, platform: NodeJS.Platform): boolean =>
     : path.startsWith("/");
 
 // ---------------------------------------------------------------------------------------------
-// Process scopes (A4 3.7)
+// Process scopes
 
-/** The systemd slice launched terminals go into (A4 3.7). */
+/** The systemd slice launched terminals go into. */
 export const SCOPE_SLICE = "app.slice";
 
 /**
@@ -291,7 +291,7 @@ export const SCOPE_UNIT =
 
 /**
  * Linux: the terminal's argv inside a transient scope of the user manager, outside the service's
- * unit, so a restart or stop of the service never ends it (A4 3.7). `--scope` runs the command as
+ * unit, so a restart or stop of the service never ends it. `--scope` runs the command as
  * the caller's child and passes its exit status through, so the acceptance rule still applies.
  * No `--setenv`: a value would show in argv and in the unit's properties.
  */
@@ -313,7 +313,7 @@ export function scopeCommand(
   ];
 }
 
-/** The probe doctor and the first launch after a start run (A4 3.6.2): a scope around `true`. */
+/** The probe doctor and the first launch after a start run: a scope around `true`. */
 export function scopeProbe(systemdRun: string, trueProgram: string): readonly string[] {
   return [systemdRun, "--user", "--scope", "--collect", "--quiet", "--", trueProgram];
 }

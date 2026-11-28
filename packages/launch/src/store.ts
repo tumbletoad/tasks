@@ -1,14 +1,14 @@
-// The execution store (A4 3.16.1, X7): the one interface through which launch intents and runs are
+// The execution store: the one interface through which launch intents and runs are
 // written. Launch and run code never write a record any other way. v1's backend is the space
-// database, where each call is one A1 operation in one transaction (space-store.ts). From L1 a
-// machine without authority writes the same interface to a machine-local journal (A6). One contract
+// database, where each call is one operation in one transaction (space-store.ts). From L1 a
+// machine without authority writes the same interface to a machine-local journal. One contract
 // suite per part runs against every backend (test/execution-store-contract.ts,
 // test/run-store-contract.ts).
 //
-// The interface has a launch part (M2.05) and a run part (M6.01), and `openWork` returns runs beside
+// The interface has a launch part and a run part, and `openWork` returns runs beside
 // intents. Each state machine takes only its part: LaunchMachine a LaunchStore, the run machine
-// (@ttasks/runs) a RunStore. Sessions (`upsertSession`, with the session move of A4 3.10) and
-// occurrences (`decideOccurrence`, M9) join it with the steps that write those records.
+// (@ttasks/runs) a RunStore. Sessions (`upsertSession`, with the session move) and
+// occurrences (`decideOccurrence`) join it with the steps that write those records.
 import {
   ANSWER_CAP_BYTES,
   cutRunAnswer,
@@ -57,7 +57,7 @@ import {
   type Route,
 } from "./intents.ts";
 
-/** What a click records (A4 3.9.1 Prepared). IDs and codes only. */
+/** What a click records (Prepared). IDs and codes only. */
 export interface NewIntent {
   /** The task (`t_` ID). */
   task: string;
@@ -66,7 +66,7 @@ export interface NewIntent {
   /** The instance's key in this machine's `machine.toml`. */
   instance: string;
   route: Route;
-  /** The place the folder resolved from (`pl_` ID), or null for the TTasks work folder (A4 3.3). */
+  /** The place the folder resolved from (`pl_` ID), or null for the TTasks work folder. */
   place: string | null;
   /** The task's version when the person clicked. */
   taskVersion: number;
@@ -98,7 +98,7 @@ export interface LaunchIntent {
   /** Why it is Failed or Unknown. Null in every other state. */
   reason: Reason | null;
   evidence: Evidence;
-  /** When it entered each state it has been in (A4 3.16: "a timestamp per state"). */
+  /** When it entered each state it has been in. */
   at: Partial<Record<IntentState, number>>;
   createdAt: number;
   updatedAt: number;
@@ -113,7 +113,7 @@ export interface Outcome {
 }
 
 /**
- * What a transition expects of the record: its state (A4 3.16.1's compare-and-set), or its state
+ * What a transition expects of the record: its state (a compare-and-set), or its state
  * at one version, the record the caller read and decided on. With a version, any change since,
  * evidence on a self edge included, makes the call `stale`. The state machine always gives one.
  */
@@ -138,7 +138,7 @@ export interface LaunchStore {
   /**
    * One atomic compare-and-set transition: the state must be `expect` (and the version, when
    * `expect` names one), or the call is refused with `stale` and the current record, and moves
-   * nothing. `expect → next` must be an edge of A4's machine. Evidence only grows: a key with
+   * nothing. `expect → next` must be an edge of the launch machine. Evidence only grows: a key with
    * another value than the record holds is refused. Returns the record as it is after the call:
    * the one it wrote, or a later one when another path moved it at once.
    */
@@ -156,7 +156,7 @@ export interface LaunchStore {
 
 /**
  * What a run transition expects of the record: its state at one version, the record the caller
- * read and decided on (A4 3.16.1). Any change since makes the call `stale`.
+ * read and decided on. Any change since makes the call `stale`.
  */
 export interface RunExpected {
   state: RunState;
@@ -169,10 +169,10 @@ export const seenRun = (run: RunRecord): RunExpected => ({
   version: run.version,
 });
 
-/** The run part of the execution store (A4 3.16.1): what the run machine needs. */
+/** The run part of the execution store: what the run machine needs. */
 export interface RunStore {
   /**
-   * Records a run in `queued` before anything spawns (A4 3.11.2): the record, its history and the
+   * Records a run in `queued` before anything spawns: the record, its history and the
    * request's receipt in one atomic step. The same request ID with the same input returns the same
    * run; with another input it is refused (`request_id_reused`).
    */
@@ -186,7 +186,7 @@ export interface RunStore {
   /**
    * One atomic compare-and-set transition: the record must be at `expect`, or the call is refused
    * with `stale` and the current record, and moves nothing. `expect.state → next` must be an edge
-   * of A4's machine. Evidence only grows, and a result goes in once, entering a final state.
+   * of the run machine. Evidence only grows, and a result goes in once, entering a final state.
    * Returns the record as it is after the call.
    */
   transitionRun(
@@ -204,7 +204,7 @@ export interface RunStore {
   openWork(machine: string): Promise<{ runs: RunRecord[] }>;
 }
 
-/** A4 3.16.1's execution store: both parts, and `openWork` with intents and runs. */
+/** The execution store: both parts, and `openWork` with intents and runs. */
 export interface ExecutionStore extends LaunchStore, RunStore {
   openWork(machine: string): Promise<{ intents: LaunchIntent[]; runs: RunRecord[] }>;
 }
@@ -218,14 +218,14 @@ export type RefusalCode =
   | "stale"
   /** The change would rewrite evidence the record holds. */
   | "evidence"
-  /** The request ID was used for another click (A1 3.8). */
+  /** The request ID was used for another click. */
   | "request_id_reused"
   /** The store takes no write here: a read-only space, another space, an unknown actor. */
   | "unavailable";
 
 /**
  * A call the store refused: nothing changed. A refusal is a decision, unlike a storage failure,
- * which leaves the outcome open (A1 3.8) and reaches the caller as the backend's own error.
+ * which leaves the outcome open and reaches the caller as the backend's own error.
  */
 export class ExecutionRefused extends Error {
   override readonly name = "ExecutionRefused";
@@ -261,14 +261,13 @@ export class RunRefused extends Error {
 const ID = (prefix: string): RegExp => new RegExp(`^${prefix}_[0-7][0-9a-hjkmnp-tv-z]{25}$`);
 export const TASK_ID = ID("t");
 export const RUN_ID = ID("ru");
-export const ROUTINE_ID = ID("ro");
 export const MACHINE_ID = ID("m");
 export const PLACE_ID = ID("pl");
 export const SESSION_ID = ID("se");
 export const LAUNCH_ID = ID("la");
-/** A session ID TTasks presets (A4 3.4.2): a UUID in its canonical lower-case form. */
+/** A session ID TTasks presets: a UUID in its canonical lower-case form. */
 export const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-/** An instance's key in machine.toml (A4 3.2): a short key of plain characters. */
+/** An instance's key in machine.toml: a short key of plain characters. */
 export const INSTANCE_KEY = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const SEQ_MAX = 999_999_999_999_999;
@@ -346,7 +345,7 @@ const EMPTY_INTENT: Record<keyof NewIntent, null> = {
 };
 
 /**
- * Checks a transition before any backend reads the record: a launch ID, an edge of A4's machine,
+ * Checks a transition before any backend reads the record: a launch ID, an edge of the launch machine,
  * a reason exactly when it enters Failed or Unknown, and valid evidence. The compare-and-set on
  * `expect` and the evidence's growth are the backend's, inside its atomic step: a pure check of
  * `expect → next` here is equivalent to one there, because the step moves nothing unless the
@@ -417,7 +416,7 @@ export interface CheckedTransition {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Runs (A4 3.11.2, 3.16.1)
+// Runs
 
 function refuseRun(field: string, message: string): never {
   throw new RunRefused("invalid", message, field === "" ? undefined : field);
@@ -465,18 +464,16 @@ function checkLimits(value: unknown): RunLimits {
 }
 
 /**
- * Checks a run's input, as every backend does before it writes: IDs by their pattern, exactly one
- * of task and routine, the adapter, the permission (never `inherit`, A4 3.11.6), the limits and the
+ * Checks a run's input, as every backend does before it writes: IDs by their pattern, the adapter, the permission (never `inherit`), the limits and the
  * request text's size. Returns it without undefined values or unknown keys.
  */
 export function checkNewRun(value: unknown): NewRun {
   if (typeof value !== "object" || value === null) return refuseRun("", "Expected a run");
   const input = value as Record<string, unknown>;
-  const { task, routine, machine, instance, adapter, place, session, request, briefHash } = input;
+  const { task, machine, instance, adapter, place, session, request, briefHash } = input;
   const { permission, limits, ...more } = input;
   const known = new Set([
     "task",
-    "routine",
     "machine",
     "instance",
     "adapter",
@@ -488,13 +485,7 @@ export function checkNewRun(value: unknown): NewRun {
   if (Object.entries(more).some(([key, v]) => !known.has(key) && v !== undefined)) {
     return refuseRun("", "The run has a field it does not take");
   }
-  if (task !== null && !matches(TASK_ID, task)) return refuseRun("task", "Expected a task ID");
-  if (routine !== null && !matches(ROUTINE_ID, routine)) {
-    return refuseRun("routine", "Expected a routine ID");
-  }
-  if ((task === null) === (routine === null)) {
-    return refuseRun("task", "A run belongs to a task or a routine, exactly one");
-  }
+  if (!matches(TASK_ID, task)) return refuseRun("task", "Expected a task ID");
   if (!matches(MACHINE_ID, machine)) return refuseRun("machine", "Expected a machine ID");
   if (!matches(INSTANCE_KEY, instance)) return refuseRun("instance", "Expected an instance key");
   if (!(RUN_ADAPTERS as readonly unknown[]).includes(adapter)) {
@@ -506,13 +497,13 @@ export function checkNewRun(value: unknown): NewRun {
   if (session !== undefined && !matches(SESSION_ID, session)) {
     return refuseRun("session", "Expected a session ID");
   }
-  // A task's run needs the person's instruction (A4 3.11.7); a routine's takes its template. The
-  // instruction is judged as the space stores it, so every backend keeps and refuses the same text.
+  // The instruction is judged as the space stores it, so every backend keeps and refuses the same
+  // text.
   const stored = typeof request === "string" ? normaliseRunText(request) : request;
-  if (routine !== null ? stored !== null : typeof stored !== "string" || stored.trim() === "") {
-    return refuseRun("request", "A task's run takes an instruction, a routine's none");
+  if (typeof stored !== "string" || stored.trim() === "") {
+    return refuseRun("request", "A run takes an instruction");
   }
-  if (typeof stored === "string" && utf8(stored) > RUN_REQUEST_MAX_BYTES) {
+  if (utf8(stored) > RUN_REQUEST_MAX_BYTES) {
     return refuseRun("request", "The instruction is larger than its limit");
   }
   if (!matches(SHA256, briefHash)) {
@@ -523,13 +514,12 @@ export function checkNewRun(value: unknown): NewRun {
   }
   return {
     task,
-    routine,
     machine,
     instance,
     adapter: adapter as NewRun["adapter"],
     place,
     ...(session === undefined ? {} : { session }),
-    request: stored as string | null,
+    request: stored,
     briefHash,
     permission: permission as NewRun["permission"],
     limits: checkLimits(limits),
@@ -671,7 +661,7 @@ const isRunState = (value: unknown): value is RunState =>
 
 /**
  * Checks a run transition before any backend reads the record: a run ID, an expectation with a
- * version, an edge of A4's machine, a reason exactly when entering a state that takes one, valid
+ * version, an edge of the run machine, a reason exactly when entering a state that takes one, valid
  * evidence, and a result only entering a final state. The compare-and-set, the evidence's growth
  * and the result's once-only rule are the backend's, inside its atomic step.
  */
@@ -718,7 +708,7 @@ export function checkRunTransition(
     if (!entering || !final)
       return refuseRun("patch.result", "A result goes in entering a final state");
     // The agent's texts are cut, never refused, in the form the space stores them: what an agent
-    // wrote must not keep its run from settling, and normalising can lengthen a text (A4 3.11.5).
+    // wrote must not keep its run from settling, and normalising can lengthen a text.
     kept = cutResultTexts(result);
     const resultProblem = runResultProblem(kept);
     if (resultProblem !== undefined) return refuseRun(resultProblem, "Not a run result");

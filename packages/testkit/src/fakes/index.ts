@@ -1,5 +1,5 @@
 // Fake terminals, a fake systemd-run, a fake login shell and a fake interactive agent for the
-// launch tests (A7 3.9 M2.09). Each is a small Node program; a test's spawner (FakeSpawner) stands
+// launch tests. Each is a small Node program; a test's spawner (FakeSpawner) stands
 // in for the service's, records exactly what the service asked to start, and runs the fakes in
 // place of the real programs. Nothing here starts a real terminal, agent or systemd-run, and every
 // process it starts is recorded by PID with the start time first seen, so a test stops only its

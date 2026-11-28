@@ -949,20 +949,19 @@ export interface LaunchTransition {
 
 /**
  * `run.create` (A4 3.11.2 `queued`): a run, written before anything spawns. The machine is the
- * request's. Exactly one of `task` and `routine`. The writer gives it its `ru_` ID. `request` is
- * the person's instruction, the one text a run takes when it is queued.
+ * request's. The writer gives it its `ru_` ID. `request` is the person's instruction, the one text
+ * a run takes when it is queued.
  */
 export interface RunCreate {
   kind: "run.create";
-  task?: Id<"t">;
-  routine?: Id<"ro">;
+  task: Id<"t">;
   /** The instance's key in the machine's `machine.toml`. */
   instance: string;
   adapter: string;
   /** The place the folder resolved from, or null for a TTasks work folder. */
   place: Id<"pl"> | null;
   session?: Id<"se">;
-  request?: string;
+  request: string;
   /** SHA-256 of the brief, lower-case hex. */
   brief_hash: string;
   permission: string;
@@ -1564,10 +1563,10 @@ export class Fields {
     return value;
   }
 
-  id<P extends "t" | "ac" | "m" | "se" | "ru" | "ro" | "sp" | "la" | "op" | "s" | "p" | "n" | "pg">(
-    key: string,
-    prefix: P,
-  ): Id<P> {
+  id<
+    P extends
+      "t" | "ac" | "m" | "se" | "ru" | "ro" | "sp" | "la" | "op" | "s" | "p" | "n" | "pg" | "fo",
+  >(key: string, prefix: P): Id<P> {
     const value = this.raw(key);
     if (!isId(value, prefix)) return this.fail("VALIDATION_FAILED", "Expected an ID", key);
     return value;
@@ -1949,113 +1948,18 @@ function checkOperation(value: unknown, i: number): Operation {
       op = clear;
       break;
     }
-    case "launch.create": {
-      const instance = f.raw("instance");
-      if (typeof instance !== "string" || !INSTANCE_KEY.test(instance)) {
-        f.fail("VALIDATION_FAILED", "Expected an instance key", "instance");
-      }
-      const place = f.raw("place");
-      if (place !== null && !isId(place, "pl")) {
-        f.fail("VALIDATION_FAILED", "Expected a place ID or null", "place");
-      }
-      const hash = f.raw("brief_hash");
-      if (typeof hash !== "string" || !SHA256_HEX.test(hash)) {
-        f.fail("VALIDATION_FAILED", "Expected a SHA-256 in lower-case hex", "brief_hash");
-      }
-      const create: LaunchCreate = {
-        kind,
-        task: f.id("task", "t"),
-        instance: instance as string,
-        route: f.oneOf("route", OPEN_SETS["launches.route"]),
-        place: place as Id<"pl"> | null,
-        task_version: f.int("task_version", RANGES.seq.min, RANGES.seq.max),
-        brief_hash: hash as string,
-      };
-      if (f.has("session")) create.session = f.id("session", "se");
-      if (f.has("evidence")) create.evidence = launchEvidence(f, "evidence");
-      op = create;
+    case "launch.create":
+      op = { kind, ...launchCreateFields(f, placeOf) };
       break;
-    }
-    case "launch.transition": {
-      const transition: LaunchTransition = {
-        kind,
-        launch: f.id("launch", "la"),
-        expect: f.oneOf("expect", LAUNCH_STATES),
-        next: f.oneOf("next", LAUNCH_STATES),
-      };
-      if (f.has("expect_version")) {
-        transition.expect_version = f.int("expect_version", RANGES.seq.min, RANGES.seq.max);
-      }
-      if (f.has("reason")) {
-        const reason = f.raw("reason");
-        if (typeof reason !== "string" || !CODE.test(reason)) {
-          f.fail("VALIDATION_FAILED", "Expected a reason code", "reason");
-        }
-        transition.reason = reason as string;
-      }
-      if (f.has("evidence")) transition.evidence = launchEvidence(f, "evidence");
-      op = transition;
+    case "launch.transition":
+      op = { kind, ...launchTransitionFields(f) };
       break;
-    }
-    case "run.create": {
-      const instance = f.raw("instance");
-      if (typeof instance !== "string" || !INSTANCE_KEY.test(instance)) {
-        f.fail("VALIDATION_FAILED", "Expected an instance key", "instance");
-      }
-      const place = f.raw("place");
-      if (place !== null && !isId(place, "pl")) {
-        f.fail("VALIDATION_FAILED", "Expected a place ID or null", "place");
-      }
-      const hash = f.raw("brief_hash");
-      if (typeof hash !== "string" || !SHA256_HEX.test(hash)) {
-        f.fail("VALIDATION_FAILED", "Expected a SHA-256 in lower-case hex", "brief_hash");
-      }
-      if (f.has("task") === f.has("routine")) {
-        f.fail("VALIDATION_FAILED", "A run belongs to a task or a routine, exactly one", "task");
-      }
-      const create: RunCreate = {
-        kind,
-        instance: instance as string,
-        adapter: f.oneOf("adapter", OPEN_SETS["runs.adapter"]),
-        place: place as Id<"pl"> | null,
-        brief_hash: hash as string,
-        permission: f.oneOf("permission", RUN_PERMISSIONS),
-        limits: runLimits(f.sub("limits")),
-      };
-      if (f.has("task")) create.task = f.id("task", "t");
-      if (f.has("routine")) create.routine = f.id("routine", "ro");
-      if (f.has("session")) create.session = f.id("session", "se");
-      // A task's run takes the person's instruction (A4 3.11.7); a routine's takes its template.
-      if (create.task !== undefined) {
-        create.request = f.text("request", { bytes: RUN_REQUEST_MAX_BYTES });
-      } else if (f.has("request")) {
-        f.fail("VALIDATION_FAILED", "A routine's run takes no instruction", "request");
-      }
-      op = create;
+    case "run.create":
+      op = { kind, ...runCreateFields(f, placeOf) };
       break;
-    }
-    case "run.transition": {
-      // The version is required: a claim moves a run's version and keeps its state, so a decision
-      // made on the state alone could cancel a run whose shim may already start its agent.
-      const transition: RunTransition = {
-        kind,
-        run: f.id("run", "ru"),
-        expect: f.oneOf("expect", RUN_STATES),
-        expect_version: f.int("expect_version", RANGES.seq.min, RANGES.seq.max),
-        next: f.oneOf("next", RUN_STATES),
-      };
-      if (f.has("reason")) {
-        const reason = f.raw("reason");
-        if (typeof reason !== "string" || !CODE.test(reason)) {
-          f.fail("VALIDATION_FAILED", "Expected a reason code", "reason");
-        }
-        transition.reason = reason as string;
-      }
-      if (f.has("evidence")) transition.evidence = runEvidence(f, "evidence");
-      if (f.has("result")) transition.result = runResult(f.sub("result"));
-      op = transition;
+    case "run.transition":
+      op = { kind, ...runTransitionFields(f) };
       break;
-    }
     case "pref.set":
       op = prefSet(f, i);
       break;
@@ -2105,44 +2009,18 @@ function checkOperation(value: unknown, i: number): Operation {
       }
       break;
     }
-    case "page.create": {
-      op = {
-        kind,
-        owner: pageOwner(f, "owner"),
-        title: f.text("title", { chars: WRITE_LIMITS.title, line: true }),
-        brief: f.has("brief") ? f.text("brief", BRIEF) : "",
-        body: f.has("body") ? f.text("body", BODY) : "",
-      };
+    case "page.create":
+      op = { kind, ...pageCreateFields(f, (g) => pageOwner(g, "owner")) };
       break;
-    }
-    case "page.edit": {
-      op = {
-        kind,
-        page: f.reference("page"),
-        old: f.text("old", { bytes: WRITE_LIMITS.note }),
-        new: f.text("new", { ...BODY, empty: true }),
-      };
+    case "page.edit":
+      op = { kind, ...pageEditFields(f, pageRef) };
       break;
-    }
-    case "page.append": {
-      op = { kind, page: f.reference("page"), text: f.text("text", { bytes: WRITE_LIMITS.note }) };
+    case "page.append":
+      op = { kind, ...pageAppendFields(f, pageRef) };
       break;
-    }
-    case "page.set": {
-      const set: PageSet = { kind, page: f.reference("page") };
-      if (f.has("title")) set.title = f.text("title", { chars: WRITE_LIMITS.title, line: true });
-      if (f.has("brief")) set.brief = f.text("brief", BRIEF);
-      if (f.has("body")) set.body = f.text("body", BODY);
-      if (f.has("from_seq")) set.from_seq = f.int("from_seq", RANGES.seq.min, RANGES.seq.max);
-      if (set.body !== undefined && set.from_seq !== undefined) {
-        f.fail("VALIDATION_FAILED", "Give the body or the version it comes from, not both", "body");
-      }
-      if (Object.keys(set).length === 2) {
-        f.fail("VALIDATION_FAILED", "A set gives a title, a brief, a body or a version", "body");
-      }
-      op = set;
+    case "page.set":
+      op = { kind, ...pageSetFields(f, pageRef) };
       break;
-    }
     case "page.move": {
       op = { kind, page: f.reference("page"), owner: pageOwner(f, "owner") };
       break;
@@ -2152,23 +2030,19 @@ function checkOperation(value: unknown, i: number): Operation {
       op = { kind, page: f.reference("page") };
       break;
     }
-    case "node.set": {
-      const set: NodeSet = { kind, node: textNode(f, "node") };
-      if (f.has("brief")) set.brief = f.text("brief", BRIEF);
-      if (f.has("description")) set.description = f.text("description", BODY);
-      if (set.brief === undefined && set.description === undefined) {
-        f.fail("VALIDATION_FAILED", "A set gives a brief or a description", "description");
-      }
-      if (set.brief !== undefined && set.node.kind !== "space") {
-        f.fail("VALIDATION_FAILED", "An area's and a project's brief are their own", "brief");
-      }
-      op = set;
+    case "node.set":
+      op = {
+        kind,
+        ...nodeSetFields(
+          f,
+          (g) => textNode(g, "node"),
+          (node) => node.kind === "space",
+        ),
+      };
       break;
-    }
-    case "node.instruct": {
-      op = { kind, node: textNode(f, "node"), text: f.text("text", BODY) };
+    case "node.instruct":
+      op = { kind, ...nodeInstructFields(f, (g) => textNode(g, "node")) };
       break;
-    }
     case "area.patch":
     case "project.patch": {
       const owner = kind === "area.patch" ? "area" : "project";
@@ -2416,7 +2290,7 @@ function normaliseJson(value: unknown): unknown {
  * `pref.set`'s fields (A1 3.16): a key this build declares for the space, and a value of its
  * declared shape, or null to reset it. The problem never quotes the key or the value.
  */
-function prefSet(f: Fields, i: number): PrefSet {
+export function prefSet(f: Fields, i: number): PrefSet {
   const set = prefValue(f);
   if (!f.has("moves")) return set;
   if (set.key !== EFFORT_SCALE) {
@@ -2544,7 +2418,7 @@ function learningChanges(value: unknown, i: number): NonNullable<TaskWrapUp["lea
 }
 
 /** A source's fields (A1 3.4, 3.6, 3.7). */
-function sourceFields(f: Fields): SourceFields {
+export function sourceFields(f: Fields): SourceFields {
   const line = { chars: WRITE_LIMITS.line, line: true };
   const source: SourceFields = {
     kind: f.oneOf("kind", SOURCE_KINDS),
@@ -2888,4 +2762,194 @@ export function checkBaseOf(base: Base, asOf: AsOf): void {
     );
   }
   if (base.seq > asOf.seq) fail("BASE_FROM_FUTURE", "The base is newer than the space", "base");
+}
+
+/** A launch's or a run's place: a place ID, or null for the space's TTasks work folder. */
+function placeOf(f: Fields): Id<"pl"> | null {
+  const place = f.raw("place");
+  if (place !== null && !isId(place, "pl")) {
+    f.fail("VALIDATION_FAILED", "Expected a place ID or null", "place");
+  }
+  return place;
+}
+
+const instanceOf = (f: Fields): string => {
+  const instance = f.raw("instance");
+  if (typeof instance !== "string" || !INSTANCE_KEY.test(instance)) {
+    f.fail("VALIDATION_FAILED", "Expected an instance key", "instance");
+  }
+  return instance;
+};
+
+const briefHashOf = (f: Fields): string => {
+  const hash = f.raw("brief_hash");
+  if (typeof hash !== "string" || !SHA256_HEX.test(hash)) {
+    f.fail("VALIDATION_FAILED", "Expected a SHA-256 in lower-case hex", "brief_hash");
+  }
+  return hash;
+};
+
+const reasonOf = (f: Fields): string => {
+  const reason = f.raw("reason");
+  if (typeof reason !== "string" || !CODE.test(reason)) {
+    f.fail("VALIDATION_FAILED", "Expected a reason code", "reason");
+  }
+  return reason;
+};
+
+/** What a launch or a run is created in, as `place`: each schema reads its own (`placeOf`). */
+type In<T, P> = Omit<T, "kind" | "place"> & { place: P };
+
+/**
+ * A launch as today's writer and the tree's read one (A4 3.9), with the place it opens in read by
+ * `where`. The keys keep their order: a commit stores the operation as read. The caller refuses
+ * keys left unread.
+ */
+export function launchCreateFields<P>(f: Fields, where: (f: Fields) => P): In<LaunchCreate, P> {
+  const instance = instanceOf(f);
+  const place = where(f);
+  const hash = briefHashOf(f);
+  const create: In<LaunchCreate, P> = {
+    task: f.id("task", "t"),
+    instance,
+    route: f.oneOf("route", OPEN_SETS["launches.route"]),
+    place,
+    task_version: f.int("task_version", RANGES.seq.min, RANGES.seq.max),
+    brief_hash: hash,
+  };
+  if (f.has("session")) create.session = f.id("session", "se");
+  if (f.has("evidence")) create.evidence = launchEvidence(f, "evidence");
+  return create;
+}
+
+/** One compare-and-set step of a launch, as both writers read it (A4 3.9.1, 3.16.1). */
+export function launchTransitionFields(f: Fields): Omit<LaunchTransition, "kind"> {
+  const transition: Omit<LaunchTransition, "kind"> = {
+    launch: f.id("launch", "la"),
+    expect: f.oneOf("expect", LAUNCH_STATES),
+    next: f.oneOf("next", LAUNCH_STATES),
+  };
+  if (f.has("expect_version")) {
+    transition.expect_version = f.int("expect_version", RANGES.seq.min, RANGES.seq.max);
+  }
+  if (f.has("reason")) transition.reason = reasonOf(f);
+  if (f.has("evidence")) transition.evidence = launchEvidence(f, "evidence");
+  return transition;
+}
+
+/** A run as both writers read one (A4 3.11.2), with the place it runs in read by `where`. */
+export function runCreateFields<P>(f: Fields, where: (f: Fields) => P): In<RunCreate, P> {
+  const instance = instanceOf(f);
+  const place = where(f);
+  const hash = briefHashOf(f);
+  const create: In<RunCreate, P> = {
+    task: f.id("task", "t"),
+    instance,
+    adapter: f.oneOf("adapter", OPEN_SETS["runs.adapter"]),
+    place,
+    brief_hash: hash,
+    permission: f.oneOf("permission", RUN_PERMISSIONS),
+    limits: runLimits(f.sub("limits")),
+    request: f.text("request", { bytes: RUN_REQUEST_MAX_BYTES }),
+  };
+  if (f.has("session")) create.session = f.id("session", "se");
+  return create;
+}
+
+/**
+ * One compare-and-set step of a run, as both writers read it. The version is required: a claim
+ * moves a run's version and keeps its state, so a decision made on the state alone could cancel a
+ * run whose shim may already start its agent.
+ */
+export function runTransitionFields(f: Fields): Omit<RunTransition, "kind"> {
+  const transition: Omit<RunTransition, "kind"> = {
+    run: f.id("run", "ru"),
+    expect: f.oneOf("expect", RUN_STATES),
+    expect_version: f.int("expect_version", RANGES.seq.min, RANGES.seq.max),
+    next: f.oneOf("next", RUN_STATES),
+  };
+  if (f.has("reason")) transition.reason = reasonOf(f);
+  if (f.has("evidence")) transition.evidence = runEvidence(f, "evidence");
+  if (f.has("result")) transition.result = runResult(f.sub("result"));
+  return transition;
+}
+
+const pageRef = (f: Fields): string => f.reference("page");
+
+/**
+ * The page operations' and the node texts' fields, as both writers read them; the page, the holder
+ * and the node are each schema's own, read by the function given. The keys keep their order: a
+ * commit stores the operation as read.
+ */
+export function pageCreateFields<O>(
+  f: Fields,
+  owner: (f: Fields) => O,
+): Omit<PageCreate, "kind" | "owner"> & { owner: O } {
+  return {
+    owner: owner(f),
+    title: f.text("title", { chars: WRITE_LIMITS.title, line: true }),
+    brief: f.has("brief") ? f.text("brief", BRIEF) : "",
+    body: f.has("body") ? f.text("body", BODY) : "",
+  };
+}
+
+export function pageEditFields<K>(
+  f: Fields,
+  page: (f: Fields) => K,
+): Omit<PageEdit, "kind" | "page"> & { page: K } {
+  return {
+    page: page(f),
+    old: f.text("old", { bytes: WRITE_LIMITS.note }),
+    new: f.text("new", { ...BODY, empty: true }),
+  };
+}
+
+export function pageAppendFields<K>(
+  f: Fields,
+  page: (f: Fields) => K,
+): Omit<PageAppend, "kind" | "page"> & { page: K } {
+  return { page: page(f), text: f.text("text", { bytes: WRITE_LIMITS.note }) };
+}
+
+export function pageSetFields<K>(
+  f: Fields,
+  page: (f: Fields) => K,
+): Omit<PageSet, "kind" | "page"> & { page: K } {
+  const set: Omit<PageSet, "kind" | "page"> & { page: K } = { page: page(f) };
+  if (f.has("title")) set.title = f.text("title", { chars: WRITE_LIMITS.title, line: true });
+  if (f.has("brief")) set.brief = f.text("brief", BRIEF);
+  if (f.has("body")) set.body = f.text("body", BODY);
+  if (f.has("from_seq")) set.from_seq = f.int("from_seq", RANGES.seq.min, RANGES.seq.max);
+  if (set.body !== undefined && set.from_seq !== undefined) {
+    f.fail("VALIDATION_FAILED", "Give the body or the version it comes from, not both", "body");
+  }
+  if (Object.keys(set).length === 1) {
+    f.fail("VALIDATION_FAILED", "A set gives a title, a brief, a body or a version", "body");
+  }
+  return set;
+}
+
+/** A node's brief or description; `briefOn` says whether the node holds a brief of this kind. */
+export function nodeSetFields<N>(
+  f: Fields,
+  node: (f: Fields) => N,
+  briefOn: (node: N) => boolean,
+): Omit<NodeSet, "kind" | "node"> & { node: N } {
+  const set: Omit<NodeSet, "kind" | "node"> & { node: N } = { node: node(f) };
+  if (f.has("brief")) set.brief = f.text("brief", BRIEF);
+  if (f.has("description")) set.description = f.text("description", BODY);
+  if (set.brief === undefined && set.description === undefined) {
+    f.fail("VALIDATION_FAILED", "A set gives a brief or a description", "description");
+  }
+  if (set.brief !== undefined && !briefOn(set.node)) {
+    f.fail("VALIDATION_FAILED", "An area's and a project's brief are their own", "brief");
+  }
+  return set;
+}
+
+export function nodeInstructFields<N>(
+  f: Fields,
+  node: (f: Fields) => N,
+): Omit<NodeInstruct, "kind" | "node"> & { node: N } {
+  return { node: node(f), text: f.text("text", BODY) };
 }

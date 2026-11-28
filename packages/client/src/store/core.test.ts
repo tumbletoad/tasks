@@ -30,6 +30,7 @@ const STRANGER = {
   position: "a",
   created_at: 0,
   version: 1,
+  parent: OTHER_SPACE,
 };
 
 type Action =
@@ -101,8 +102,7 @@ function held(core: LiveCore) {
   if (state === undefined) return undefined;
   return {
     tasks: new Map(state.tasks),
-    areas: new Map(state.areas),
-    projects: new Map(state.projects),
+    nodes: new Map(state.nodes),
   };
 }
 
@@ -323,6 +323,7 @@ describe("[A5.while-away.web.asking] the page holds every finished task a questi
       position: "a",
       created_at: 0,
       version: 1,
+      parent: SPACE,
       ...patch,
     });
     const questions = [{ ref: "l1", by: "Codex", text: "Fixture which?", at: 1 }];
@@ -338,8 +339,7 @@ describe("[A5.while-away.web.asking] the page holds every finished task a questi
       cursor: { epoch: 1, incarnation: "i", seq: 10 },
       tasks: [task(c, { lifecycle: "active", questions })],
       asking: [task(a, { questions })],
-      areas: [],
-      projects: [],
+      nodes: [],
       instances: [],
     } as unknown as SnapshotMessage);
     const asking = () => [...(core.publish()?.asking.keys() ?? [])].sort();

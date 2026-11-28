@@ -424,7 +424,7 @@
     },
     {
       "id": "A1.5.backup.retention",
-      "title": "Daily backups are due after 03:00 local time or at start after 24 hours, a future-dated one aside; retention of one space's backups keeps 7 daily, 4 weekly, every backup that is not a daily one (manual, pre-migration, pre-import), the newest complete backup, and never the newest that passes every check a restore makes; it removes only the regular files it listed",
+      "title": "Daily backups are due after 03:00 local time or at start after 24 hours, a future-dated one aside; retention of one space's backups keeps 7 daily, 4 weekly, every backup that is not a daily one (manual, pre-migration), the newest complete backup, and never the newest that passes every check a restore makes; it removes only the regular files it listed",
       "source": "A1 3.18",
       "owner": "M1",
       "kind": "ci",
@@ -575,16 +575,8 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A1.5.backup.old-move",
-      "title": "A space's backups made into its own folder move to its backups folder in two starts: copied without replacing a file, the original removed only at a later start once the copy reads back; listed once and restorable at every step and after a crash at any of them; a copy that does not read back, another file at the name, too little room, an incomplete or another space's backup stays; a backups folder that is the old one or inside the space moves nothing; old daily backups are kept by retention unless pruning is on, then from the run after their move",
-      "source": "A1 3.18",
-      "owner": "M3",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A1.5.backup.outside-home",
-      "title": "A space's backups go to a folder per space beside the TTasks home, never inside it; backups made before in the space's own folder stay there untouched, listed with their folder, and restore by name and as latest, also before the first backup beside the home",
+      "title": "A space's backups go to a folder per space beside the TTasks home, never inside it, and are listed and restored from there only; files in the space's own backups folder are neither read nor removed; a folder there that cannot be made takes no backup elsewhere",
       "source": "A1 3.18",
       "owner": "M3",
       "kind": "ci",
@@ -592,7 +584,7 @@
     },
     {
       "id": "A1.5.backup.folder-away",
-      "title": "Through the service, a backups folder set for the space that is not there is said as not there, with its path, by the backup list, restore latest, a backup now and the upkeep, and no backup makes a folder in its place: an upgrade goes on behind a backup in the space's own backups folder, which the space list names and a restore by name finds; restore latest from a folder with no backup of the space says there is none",
+      "title": "Through the service, a backups folder set for the space that is not there is said as not there, with its path, by the backup list, restore latest, a backup now and the upkeep, and no backup makes a folder in its place: an upgrade waits, read-only at its revision with no backup anywhere and nothing recorded, and migrates at the next open once the folder is back; restore latest from a folder with no backup of the space says there is none",
       "source": "A1 3.18",
       "owner": "M3",
       "kind": "ci",
@@ -832,7 +824,7 @@
     },
     {
       "id": "A3.3.4.folders.cli",
-      "title": "Folders at the command line: ttasks add and ttasks set give a task its folder with --folder, a folder relative to the working one, folder= and --here, and --clear folder takes it away; --here beside --folder is a usage error; ttasks area create --folder --create makes a folder that is not there and binds it, one undo takes the project, its new area and its folder back and leaves the folder on disk; --folder . --create binds an existing folder; a refused call removes the folder --create made; ttasks area list and ttasks show print the folders; the old --place and place= name --folder",
+      "title": "Folders at the command line: ttasks add and ttasks set give a task its folder with --folder, a folder relative to the working one, folder= and --here, and --clear folder takes it away; --here beside --folder is a usage error; ttasks area create --folder --create makes a folder that is not there and binds it, one undo takes the project, its new area and its folder back and leaves the folder on disk; --folder . --create binds an existing folder; a refused call removes the folder --create made; ttasks area list and ttasks show print the folders",
       "source": "A2 3.10, A3 3.4.13",
       "owner": "M4",
       "kind": "ci",
@@ -2160,14 +2152,105 @@
     },
     {
       "id": "S2.tree.boundary",
-      "title": "The tree writer keeps today's guarantees at the request boundary: a write to what exists needs a base from no later than the space; fields written together stay together when one conflicts, so a stale reopen after an agent's outcome changes nothing; a task goes to the Trash only as the person saw it, the tasks below included, and is counted; Undo never hides a task someone else added below what it hides; the principal is an actor of the kind it claims and the author one of the space; only a person corrects or removes a note; all finishes every open task below, also after the task was finished alone; a second Trash and a restore of a live task are no change, and a task in the Trash takes no other change; a writer that is not the authority, or a request for another space, decides and stores nothing; a new step ends what could be redone, and a named Undo of another step leaves the stack; a commit's time never goes back; a request that fails its checks stores nothing, so the corrected request goes through under the same ID; text is normalised before the fingerprint and the write; the request ID, the writer's own scope, the size and a key no command knows are refused as today, without the key's text; a conflict names the task, the value now, and who changed it when, and its receipt keeps all but the value; a move under a task made just before is no step; retries are kept apart by scope, a reused ID says when it was first used, and warnings and the caller's answer replay; only a person undoes, never on a base; a request marked active changes active tasks only; a task is found by its legacy alias; a base from another copy of the space is refused, and a kept Undo's answer replays on a resend; the history check sees a row that went missing",
+      "title": "The tree writer keeps today's guarantees at the request boundary: a write to what exists needs a base from no later than the space; fields written together stay together when one conflicts, so a stale reopen after an agent's outcome changes nothing; a task goes to the Trash only as the person saw it, the tasks below included, and is counted; Undo never hides a task someone else added below what it hides; the principal is an actor of the kind it claims and the author one of the space; only a person corrects or removes a note; all finishes every open task below, also after the task was finished alone; a second Trash and a restore of a live task are no change, and a task in the Trash takes no other change; a writer that is not the authority, or a request for another space, decides and stores nothing; a new step ends what could be redone, and a named Undo of another step leaves the stack; a commit's time never goes back; a request that fails its checks stores nothing, so the corrected request goes through under the same ID; text is normalised before the fingerprint and the write; the request ID, the writer's own scope, the size and a key no command knows are refused as today, without the key's text; a conflict names the task, the value now, and who changed it when, and its receipt keeps all but the value; a move under a task made just before is no step; retries are kept apart by scope, a reused ID says when it was first used, and warnings and the caller's answer replay; only a person undoes, never on a base; a request marked active changes active tasks only; a base from another copy of the space is refused, and a kept Undo's answer replays on a resend; the history check sees a row that went missing",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "S2.undo.walk",
-      "title": "One walk of Undo's kinds against today's writer and the tree's: for a check-off, a drop, a reopen, the Trash, a restore, a removed note, a note put back, a title and a note's words edited twice, out of the Inbox and a dismissal, the action, its opposite by hand, two Undos and two Redos walk the state back and forth exactly; a first filing, and a filing into a project made just before, walk back and forth",
+      "title": "One walk of Undo's kinds against today's writer and the tree's: for a check-off, a drop, a reopen, the Trash, a restore, a removed note, a note put back, a title and a note's words edited twice, out of the Inbox and a dismissal, the action, its opposite by hand, two Undos and two Redos walk the state back and forth exactly; a first filing, and a filing into a project made just before, walk back and forth; a page's body, its title and brief, the Trash and out of it, and the space's description, brief and text for agents walk back and forth exactly",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.pages.both",
+      "title": "A page's and a node's texts by the same rules on today's writer and the tree's, the same sequences compared: a move, the Trash, a restore and a first text need no base, and a restore of a live page changes nothing; a save on a stale read is a conflict, also for the field whose words match; a restore gives the body or the version it comes from, not both; someone else's newer note keeps the Undo that would put it out of sight again, and on the tree a page's newer comment keeps it too",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.tree.pages",
+      "title": "Notes, pages and a node's texts on the tree writer: notes on a task, a project, the space and a page, one thread per owner of any kind, a page's comments belonging to its node; a page takes the space's next reference on any node, and edits of different passages from one read both stand; old words gone or standing twice write nothing and the answer holds the page's start; an append, a set and a Restore that meets newer words as a conflict; a page under a task in the Trash is not found and comes back unwritten; a node's brief and description, and a text for agents that only a person writes and never on a task; text stored as today's writer stores it; a page's change rows belong to the node that holds it; a page larger than a page may be is refused, also when an append or an edit would make it so",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.tree.sources",
+      "title": "A source's move takes no base, and a removal or a putting back already there changes nothing, as today's link; Sources, links and the capture by source on the tree writer: a repeat capture finds its task through the source it came from, wherever the source moved and also after the window for finished tasks; a source key is read as today's writer reads it; a source on a node, the same key elsewhere linked there, links that come and go, and a held key that keeps a removed source out; a source under a task in the Trash is not found and comes back with it",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.tree.prefs",
+      "title": "A stored value held to its base, the same value included, a first setting of the effort levels that needs one, and a change of the levels that moves the tasks on a dropped one also when one changed since the read, as today's writer; A space's preferences on the tree writer: a person sets and resets a preference and an agent may not set a person's; a preview is decided whole and rolled back, with no commit and no receipt; a task takes a status and a size of the space's lists only, and a status active tasks hold stays; a change of the effort levels moves the tasks on a level it drops, as the person says; a capture counts a finished task as its own within the space's window only",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.tree.actors",
+      "title": "What joins a tree space by its own system commits: the machine registers once with its create row and another machine registers nothing; an agent joins by its label once with no change row, the person is the space's own, and a label is one line; the preferences a space always holds are stored where it holds none, once, and again after a reset",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.tree.runs",
+      "title": "A folder's change held to its path and its removal as the caller saw them, and a new folder to a removal since the base, as today's writer; What Open and Run record on the tree writer, by today's rules: a launch opens prepared, a second click that continues the same agent conversation or none gets it, and it moves by the state machine's edges only, by one compare-and-set, with evidence that only grows and a reason where a state takes one; a run is queued for a task with the person's instruction and moves on its version; a node's folder on this machine is set as the machine spells a path, changed and cleared, and a removed folder is refused; a launch of a task in the Trash is refused, and one may name a note of its task as its request",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.tree.search",
+      "title": "Documents of equal rank found in the same order after a rebuild; The tree's search index, kept in each commit: a task's words, its notes, its pages and their comments are found, and a search keeps to what lies under one node; a parent's new title, a page or a source that moves, the Trash and a restore, and an Undo reach the documents that show them; a request refused after its writes leaves the index as it was, and a rebuild makes the same documents; after every tree test the index equals a fresh rebuild",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.tree.routines",
+      "title": "Routines on the tree writer, walked through a month with one open time and exactly one entry per time after every step: a weekly chore checked off early, kept done through a pause and resume that day, late, skipped, undone and redone, its Undo kept back by a new start, held to the person's read, found as a task and taken by no task command; a weekday agent routine whose failed start is retried at the service's own request IDs because a look that queued nothing keeps no receipt, a second start replayed, an agent's done always for its run's time, a check-off by hand that cancels the queued run and whose Undo opens the time for a fresh claim, a check-off while a run works that the run's done leaves alone, a done after the next time has come, a question that holds the time for two working days, and a reply's done for its own time with the missed slots run once; a monthly routine from the 31st on each month's last day; an archived project's routine paused and left paused by Undo and unarchive; a pause over two weeks; Undo of a done and a skip; finished for good by the person only; the Trash pauses it; an agent's routine is the person's to make, change, pause and switch on; the claim never while a run is queued or working or a question waits; one claim after a week with the computer off, and a failed run's time skipped by the next slot",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.sources.both",
+      "title": "Sources and the capture by source, the same ordinary sequences on today's writer and the tree's, answers and what a reader sees compared: a source added, moved to another task, removed and put back twice, and linked to a second task; a mail captured again while open with the same log, after an archive and after a backdated completion",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.prefs.both",
+      "title": "A space's preferences, the same ordinary sequences on both writers: an effort level renamed, two renames in one request that move each task once by the size it held, one dropped with tasks on it, with the tasks each move moved; a stale save of a renamed size refused by both; a preference set for the first time, again on a stale read, and without a base",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.actors.both",
+      "title": "Who joins a space, the same on both writers: the machine registered twice, an agent joining twice by its label as one actor, and another machine than the space's authority refused",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.runs.both",
+      "title": "Launches, runs and a task's folder, the same on both writers: a launch and a second click, its moves; a run queued, started and ended, one stopped; a folder set, changed, removed twice, and a clear refused while its task is in the Trash, the folder there after the restore",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.search.both",
+      "title": "The search index, the same on both writers: a word of a title, a note, a page and a source found after each step, after the Trash and back, with a source linked to a second task, and after Undo",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -3875,7 +3958,7 @@
     },
     {
       "id": "A2.3.2.4.hub.spaces",
-      "title": "The hub hosts the enabled [[spaces]] of machine.toml, takes [log] level from it, names a retired [roots] section once and leaves it and the old roots' revisions as they are, and refuses an invalid machine.toml with 64 and a line that names the key and code but no value",
+      "title": "The hub hosts the enabled [[spaces]] of machine.toml, takes [log] level from it, names a section it does not read and leaves it as it is, and refuses an invalid machine.toml with 64 and a line that names the key and code but no value",
       "source": "A2 3.2.4, A2 3.3.1, A7 3.9 M2.06",
       "owner": "M2",
       "kind": "ci",
@@ -4230,13 +4313,6 @@
       "title": "The in-folder check in real child processes started in the resolved folder: unchanged it passes and an agent the child starts is there too; a swap before the start is refused; a swap between the start and the check leaves the child in the resolved directory (Linux) or is impossible (Windows); A-B-A swaps are refused, except Windows' documented residual through a link taken out again; a changed remote, a removed folder and a folder moved out of the root are refused",
       "source": "A4 3.3",
       "owner": "M2",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A1.3.15.roots.retired",
-      "title": "Roots are retired: a machine.toml with [roots] sections parses, doctor names them once as lines that do nothing, ttasks roots points to where tasks open now and its add fails, and no command changes the file",
-      "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
@@ -5307,7 +5383,7 @@
     },
     {
       "id": "A7.3.12.m5-11.e2e.theme",
-      "title": "In Chromium and Firefox against the real service: a theme chosen in Settings shows at once, a second tab follows live, a fresh browser profile is served in it from the first paint with nothing in its storage, and a theme an older build kept in a browser is handed to this machine once",
+      "title": "In Chromium and Firefox against the real service: a theme chosen in Settings shows at once, a second tab follows live, a fresh browser profile is served in it from the first paint",
       "source": "A7 3.12 M5.11",
       "owner": "M5",
       "kind": "ci",
@@ -6388,14 +6464,6 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A2.3.12.4.install.earlier-folder",
-      "title": "An install that finds the data folder of a build from before the rename names it and how to open a space from it, and says nothing without one",
-      "source": "A2 3.12.4",
-      "owner": "M1",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A2.3.12.4.install.restart",
       "title": "Through a real install script over a real running service: the script's last lines name the pending restart, service status names the installed version, and service restart brings it up and says so",
       "source": "A2 3.12.4, A2 3.3.5",
@@ -6674,6 +6742,20 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.tree.client.tree",
+      "title": "The store's tree: a node's trail from the top down to it, siblings in their order with a project made without an area after every area, how today's operations file work into a node, and the node a read names by its area's and project's names",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.tree.http.feed",
+      "title": "The feed sends the space as a tree: the space, each area as a top-level project and each project under its area or the space, with the IDs they have, a project without an area after every area, a parent on every task row, a node row in each batch that creates, moves or archives a group, the node each page lies under, and the same tree to a phone",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.archived.web.groups",
       "title": "The sidebar lists each live area with its live projects, and under Archived each archived area with all its projects and each archived project of a live area, in the space's order; archiving recolours no other area; new work is offered only live groups; an archived group's page knows which group keeps it archived; a project without an area is listed after the areas, or under Archived after the areas' groups; a project's view is one list, open first, with or without an area",
       "owner": "M5",
@@ -6853,8 +6935,48 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.pages.web.card",
+      "title": "A task's card shows its Knowledge from the live store: the task's own pages, a new page on the task, and what is known above it (project, area, space, nearest first) folded with its count; each page opens with the way back to the list with the task expanded",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.build",
+      "title": "Build this project's library, on a project's Library with no pages: an ordinary task there with the person's note for agents saying what to build, then the task expanded in the project's list; a note that fails is tried again on the task made, never with a second task; a Library with pages has no such button",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.today",
+      "title": "Today's Changes names the pages an agent changed last in the past seven days, newest first, beside the tasks; a page the person changed after the agent is not named",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.activity",
+      "title": "Activity reads an agent's page changes as what they did to the page (text changed, text added, renamed, moved, moved to the Trash), and pages made by one change as a count",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.pages.e2e.library",
       "title": "Against the real service in Chromium and Firefox: a project's Library lists an agent's page as it comes and Back returns focus to its row; an agent's edit while the page is read is offered, never put in place; the pen corrects the body across a reload, a version is shown and restored with an Undo and focus on the words; a Restore that meets newer words writes nothing and shows them; New page opens with its pen and its row has no brief line; Move to Trash, the page's address saying it is in the Trash with its Restore, the page in the Trash and Restore; the space's text for agents keeps across a reload; screenshots at 1,440 and 390 px in Sumi and Washi, axe finds nothing and nothing scrolls sideways",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.e2e.knowledge",
+      "title": "Against the real service in Chromium and Firefox: a task's card shows its own pages and, folded, what is known above it, and Back from a page returns to the card with the focus on its link; + Page on a card makes a page on the task and opens it with its pen; Today names a page an agent changed and Activity reads the edit with the page as a link; Build this project's library adds its task with the person's note for agents, expanded in the list; screenshots of the card's Knowledge at 1,440 and 390 px in Sumi and Washi, axe finds nothing and nothing scrolls sideways",
       "source": "Step 1 design, pull request 228",
       "owner": "M5",
       "kind": "ci",

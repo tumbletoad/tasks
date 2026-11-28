@@ -80,7 +80,6 @@ describe("[A3.3.3.mcp.tool-list] one tool list on every connection, online and o
             TTASKS_SPACE: "sp_00000000000000000000000000",
           },
         }),
-        bridgeContext({ resume: { handle: "bh_fixturehandle" } }),
         bridgeContext({ instance: "codex-work", app: "codex", space: w.space }),
         bridgeContext({ instance: null, app: null }),
       ];

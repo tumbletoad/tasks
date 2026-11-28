@@ -11,6 +11,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
+import { areaNode, nodesOf } from "@ttasks/client/test/nodes";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -18,7 +19,7 @@ import type { Api } from "../api.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
-import type { BatchMessage, SnapshotMessage, TaskRow } from "../store/rows.ts";
+import type { BatchMessage, SnapshotMessage, TaskRow } from "@ttasks/client/store";
 import { TodayPage } from "./Today.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";
 
@@ -37,7 +38,7 @@ function task(n: number, fields: Partial<TaskRow> = {}): TaskRow {
     status: "open",
     inbox: false,
     lifecycle: "active",
-    area_id: "a_1",
+    parent: "a_1",
     position: `p${String(n).padStart(5, "0")}`,
     created_at: Date.UTC(2026, 10, 1),
     version: 1,
@@ -48,7 +49,7 @@ function task(n: number, fields: Partial<TaskRow> = {}): TaskRow {
 const TASKS: readonly TaskRow[] = [
   task(1, { title: "Fix appointment time zones", focus_on: "2026-11-11", priority: 1 }),
   task(2, { title: "Investigate checkout crash", focus_on: "2026-11-12", priority: 2 }),
-  task(3, { title: "Sign the lease", due_date: "2026-11-14", priority: 3, area_id: "a_2" }),
+  task(3, { title: "Sign the lease", due_date: "2026-11-14", priority: 3, parent: "a_2" }),
   task(4, { title: "Book the moving van", due_date: "2026-11-21", priority: 2 }),
   task(5, { title: "Docs migration", status: "review" }),
 ];
@@ -59,11 +60,11 @@ function snapshot(tasks: readonly TaskRow[]): SnapshotMessage {
     space: SPACE,
     cursor: CURSOR,
     tasks,
-    areas: [
-      { id: "a_1", title: "Lumen", position: "a" },
-      { id: "a_2", title: "Home", position: "b" },
-    ],
-    projects: [],
+    nodes: nodesOf(
+      SPACE.id,
+      areaNode({ id: "a_1", title: "Lumen", position: "a" }, SPACE.id),
+      areaNode({ id: "a_2", title: "Home", position: "b" }, SPACE.id),
+    ),
     instances: [],
   };
 }

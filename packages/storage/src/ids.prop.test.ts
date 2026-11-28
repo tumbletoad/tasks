@@ -53,6 +53,7 @@ describe("[A1.5.ids.property] IDs: 26 Crockford base32 characters, 128 random bi
         "ru",
         "p",
         "ro",
+        "oc",
         "n",
         "pr",
         "l",
@@ -69,6 +70,7 @@ describe("[A1.5.ids.property] IDs: 26 Crockford base32 characters, 128 random bi
         "rc",
         "ai",
         "tr",
+        "lk",
       ].sort(),
     );
     expect(new Set(PREFIXES).size).toBe(PREFIXES.length);

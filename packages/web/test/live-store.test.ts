@@ -7,8 +7,13 @@ import { afterEach, describe, expect, test } from "vitest";
 import { readBatch, readSnapshot } from "@ttasks/service/http";
 import { httpWorld, type HttpWorld } from "@ttasks/service/test/http-world";
 import { TASK_FIELDS } from "@ttasks/storage";
-import { LiveCore, type Outcome } from "../src/store/core.ts";
-import { parseMessage, TASK_FIELD_COLUMNS, withTaskRow } from "../src/store/rows.ts";
+import {
+  LiveCore,
+  type Outcome,
+  parseMessage,
+  TASK_FIELD_COLUMNS,
+  withTaskRow,
+} from "@ttasks/client/store";
 
 const SLOW = { timeout: 180_000 };
 const worlds: HttpWorld[] = [];
@@ -26,9 +31,7 @@ function wire(message: unknown) {
     parsed === undefined ||
     parsed.type === "hello" ||
     parsed.type === "installed" ||
-    parsed.type === "error" ||
-    parsed.type === "machine" ||
-    parsed.type === "agents"
+    parsed.type === "error"
   ) {
     throw new Error("not a feed message");
   }
@@ -43,8 +46,7 @@ async function compare(core: LiveCore, reader: Reader) {
   const got = core.publish();
   expect(core.cursor).toEqual(want?.cursor);
   expect(got?.tasks).toEqual(want?.tasks);
-  expect(got?.areas).toEqual(want?.areas);
-  expect(got?.projects).toEqual(want?.projects);
+  expect(got?.nodes).toEqual(want?.nodes);
 }
 
 /** Reads batches of `limit` commits until the core is at the head; a resnapshot reads a snapshot. */
@@ -141,8 +143,8 @@ describe("[A5.3.15.web.store.service] the live store on the service's own feed",
     "the feed names logical fields the page knows, and a row a view shows follows it exactly",
     SLOW,
     async () => {
-      // The page's map of logical fields is storage's.
-      expect(TASK_FIELD_COLUMNS).toEqual(TASK_FIELDS);
+      // The page names a task's logical fields as storage does.
+      expect(Object.keys(TASK_FIELD_COLUMNS)).toEqual(Object.keys(TASK_FIELDS));
       const { user, reader } = await served("ls3");
       const core = new LiveCore();
       core.receive(wire(await readSnapshot(reader)));

@@ -20,6 +20,7 @@ import { useIntl } from "react-intl";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { useT } from "../i18n/intl.tsx";
+import { trail } from "@ttasks/client/store";
 import { useLive } from "../store/hooks.ts";
 import { Markdown } from "../task/markdown.tsx";
 import { TEXT_MAX } from "../unsent.ts";
@@ -27,8 +28,9 @@ import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { NodeView } from "./calls.ts";
 import css from "./Library.module.css";
 import { listsOf, type Level, type LibraryNode } from "./lists.ts";
+import { BuildLibrary } from "./BuildLibrary.tsx";
 import { NewPage } from "./NewPage.tsx";
-import { PageList, Penned, useChanged, useFocusReturn, useFrom } from "./parts.tsx";
+import { PageList, Penned, useChanged, useFocusReturn } from "./parts.tsx";
 import { useLibraryWrites } from "./writes.ts";
 
 const styles = classes(css, [
@@ -50,6 +52,7 @@ const styles = classes(css, [
   "tabs",
   "tab",
   "headed",
+  "empty",
   "notice",
   "act",
   "place",
@@ -85,7 +88,7 @@ export function LibraryLink({
   readonly className?: string | undefined;
   readonly children: ReactNode;
 }) {
-  const { space, projects } = useLive();
+  const { space, nodes } = useLive();
   const id = space?.id ?? "";
   // The router marks the link of the page on screen as current: this one only when it is exactly.
   const props = { className, activeOptions: EXACT };
@@ -103,16 +106,8 @@ export function LibraryLink({
       </Link>
     );
   }
-  const area = projects.get(node.id)?.area_id;
-  return area === undefined ? (
-    <Link
-      to="/s/$space/project/$project/library"
-      params={{ space: id, project: node.id }}
-      {...props}
-    >
-      {children}
-    </Link>
-  ) : (
+  const area = trail(nodes, node.id)[0]?.id ?? "";
+  return (
     <Link
       to="/s/$space/area/$area/project/$project/library"
       params={{ space: id, area, project: node.id }}
@@ -139,11 +134,12 @@ export function NodeTabs({
   const intl = useIntl();
   const state = useLive();
   const pages = useMemo(() => {
-    const lists = listsOf(node, state.pages.values(), "", state.areas, state.projects);
+    const lists = listsOf(node, state.pages.values(), "", state.nodes);
     return lists.own.length + lists.tasks.length;
-  }, [node, state.pages, state.areas, state.projects]);
+  }, [node, state.pages, state.nodes]);
   const space = state.space?.id ?? "";
-  const area = node.kind === "area" ? node.id : state.projects.get(node.id)?.area_id;
+  const [areaRow, projectRow] = trail(state.nodes, node.id);
+  const area = areaRow?.id ?? "";
   const count = (n: number | undefined) =>
     n === undefined || n === 0 ? null : (
       <span className={styles.count} aria-hidden="true">
@@ -155,16 +151,6 @@ export function NodeTabs({
       <Link
         to="/s/$space/area/$area"
         params={{ space, area: node.id }}
-        className={styles.tab}
-        activeOptions={EXACT}
-      >
-        {t("library.tasksTab")}
-        {count(tasks)}
-      </Link>
-    ) : area === undefined ? (
-      <Link
-        to="/s/$space/project/$project"
-        params={{ space, project: node.id }}
         className={styles.tab}
         activeOptions={EXACT}
       >
@@ -183,9 +169,7 @@ export function NodeTabs({
       </Link>
     );
   // Where the person is, above the tabs: the side menu is not in sight at a narrow width.
-  const areaRow = area === undefined ? undefined : state.areas.get(area);
-  const name =
-    node.kind === "area" ? (areaRow?.title ?? "") : (state.projects.get(node.id)?.title ?? "");
+  const name = (node.kind === "area" ? areaRow : projectRow)?.title ?? "";
   return (
     <div className={styles.place}>
       <p className={styles.path} data-part="node-path">
@@ -349,13 +333,7 @@ function Texts({
 }
 
 /** What comes from above, folded: each level's name and count, and when open its pages. */
-function Above({
-  levels,
-  from,
-}: {
-  readonly levels: readonly Level[];
-  readonly from: { path: string; label: string };
-}) {
+function Above({ levels, from }: { readonly levels: readonly Level[]; readonly from: string }) {
   const t = useT();
   const intl = useIntl();
   const [open, setOpen] = useState(false);
@@ -437,11 +415,8 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
   const spaceId = state.space?.id ?? "";
   const { key, target } = idsOf(node, spaceId);
   const title =
-    node.kind === "space"
-      ? (state.space?.name ?? "")
-      : ((node.kind === "area" ? state.areas.get(node.id) : state.projects.get(node.id))?.title ??
-        "");
-  const from = useFrom(t("library.of", { name: title }));
+    node.kind === "space" ? (state.space?.name ?? "") : (state.nodes.get(node.id)?.title ?? "");
+  const from = t("library.of", { name: title });
   const changed = useChanged();
   const root = useRef<HTMLDivElement>(null);
   useFocusReturn(root);
@@ -485,8 +460,8 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
     };
   }, [api, live, target, round]);
   const lists = useMemo(
-    () => listsOf(node, state.pages.values(), state.space?.name ?? "", state.areas, state.projects),
-    [node, state.pages, state.space?.name, state.areas, state.projects],
+    () => listsOf(node, state.pages.values(), state.space?.name ?? "", state.nodes),
+    [node, state.pages, state.space?.name, state.nodes],
   );
   return (
     <div ref={root} className={styles.library} data-part="library">
@@ -537,7 +512,15 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
           {state.space?.read_only === undefined ? <NewPage on={target} from={from} /> : null}
         </div>
         {lists.own.length === 0 ? (
-          <p className={styles.quiet}>{t("library.empty")}</p>
+          <div className={styles.empty}>
+            <p className={styles.quiet}>{t("library.empty")}</p>
+            {/* Nothing here yet, its tasks' pages included: an agent can build it from them. */}
+            {node.kind !== "space" &&
+            lists.tasks.length === 0 &&
+            state.space?.read_only === undefined ? (
+              <BuildLibrary node={node} />
+            ) : null}
+          </div>
         ) : (
           <PageList pages={lists.own} from={from} label={t("library.pages")} />
         )}

@@ -1,4 +1,4 @@
-// The property behind resolve() (A1 3.15, R11; M2.07), with an oracle. Random folder trees with
+// The property behind resolve(), with an oracle. Random folder trees with
 // links that lead inside the root, outside it and nowhere are built by a model of the test's own,
 // which knows by construction which directory every path names (it never asks the code under
 // test, nor follows a link on the file system to find out). For random relative paths (`..`, `.`,

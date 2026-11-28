@@ -1,4 +1,4 @@
-// The CLI's help (A2 3.10.1): the list of commands, and the help of each one. Every command of
+// The CLI's help: the list of commands, and the help of each one. Every command of
 // the table below and every generated verb of `cli-spec.json` has its own help, which says what it
 // does in one line, its forms and its flags. `ttasks help <command>` and `ttasks <command> --help`
 // print the same text. A test walks both tables (help.test.ts).
@@ -8,7 +8,6 @@
 // does not exist.
 import { CLI_NAME } from "@ttasks/brand";
 import { CLI_SPEC, takesFolder, verbFaces, type VerbSpec } from "./args.ts";
-import { ROOTS_HELP } from "./roots.ts";
 import { SERVICE_HELP } from "./service.ts";
 import { SETUP_HELP } from "./setup.ts";
 import { SKILLS_HELP } from "./skills.ts";
@@ -147,11 +146,6 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
     name: "recover",
     summary: "Play back a space's rollback journal: the same as ttasks space recover",
     help: RECOVER_HELP,
-  },
-  {
-    name: "roots",
-    summary: "Retired: a task opens in its own folder or its project's",
-    help: ROOTS_HELP,
   },
   {
     name: "run",

@@ -1,9 +1,9 @@
-// The helper runner (A3 3.14): the one way setup, detection and doctor start a program and wait
+// The helper runner: the one way setup, detection and doctor start a program and wait
 // for it, and the one owner of every such program's life. Nothing else in those modules starts a
 // child: dependency-cruiser's `helpers-through-the-runner` refuses `node:child_process` there.
 //
 // - A helper runs without a shell or a window, with only the environment and folder it is given,
-//   and with a deadline. A `.cmd`, `.bat` or `.ps1` file is never run (A4 3.2). On Linux and macOS
+//   and with a deadline. A `.cmd`, `.bat` or `.ps1` file is never run. On Linux and macOS
 //   it leads a process group of its own (spawned `detached`).
 // - The runner keeps every helper it started until the helper exits. Ending a helper ends its
 //   tree: on Linux and macOS SIGKILL to its group; on Windows the system's taskkill /T /F, by its
@@ -16,12 +16,12 @@
 //   to watch it nor at the signal: a host's own handler, a one-shot one too, keeps its shutdown.
 // - When a helper exits by itself, on Linux and macOS what it left in its group is killed at once.
 //   On Windows nothing follows it: what it started and left running stays. One kind of helper is
-//   meant to leave a process behind (`serves`: a clipboard tool's selection holder, A4 3.4.6): it
+//   meant to leave a process behind (`serves`: a clipboard tool's selection holder): it
 //   leads no group, and only the helper itself is ever ended.
 //
 // What remains: a program that leaves its group (setsid), and on Windows anything a helper started
 // that outlives the helper (taskkill /T walks a tree only from a running process), cannot be found,
-// because Node has no job objects of its own. A native helper for runs (M6.04h) is where job-object
+// because Node has no job objects of its own. A native helper for runs is where job-object
 // ownership would come from. A process killed without its exit (SIGKILL, a crash of the runtime)
 // ends nothing.
 //
@@ -144,7 +144,7 @@ export interface HelperOptions {
   readonly stderr?: boolean;
   /**
    * The program forks a process that goes on serving after it exits, as a clipboard tool on Linux
-   * does to hold the selection (A4 3.4.6). It then leads no process group of its own, and what it
+   * does to hold the selection. It then leads no process group of its own, and what it
    * leaves when it exits by itself stays: that process is the tool's, as when the person runs the
    * tool in a shell. At the deadline, on `stop` and at this process's exit only the program itself
    * is ended (on Windows its tree, as for every helper).

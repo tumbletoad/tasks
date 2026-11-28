@@ -1,4 +1,4 @@
-// Codex's reference match (A4 3.4.3, A4 5.1 "Codex reference match"): fake session folders in a
+// Codex's reference match: fake session folders in a
 // temporary Codex home with another folder, the same folder without the reference, a compressed
 // file, a file from before the launch, a link, and two launches in one folder. Only the exact
 // match is accepted, and nothing older than the launch is read. Fixture data only.
@@ -23,7 +23,7 @@ const FOLDER = process.platform === "win32" ? "C:\\work\\lumen\\portal" : "/work
 const TARGET: MatchTarget = { folder: FOLDER, reference: REF, platform: process.platform };
 const THREAD = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b";
 
-/** A session file as A4 3.4.3 describes Codex's: its session record, then the messages. */
+/** A session file as Codex writes it: its session record, then the messages. */
 function rollout(
   options: { thread?: string; cwd?: string; prompt?: string; injected?: boolean } = {},
 ): string {

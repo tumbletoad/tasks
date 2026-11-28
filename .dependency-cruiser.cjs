@@ -11,8 +11,9 @@ const IO_BUILTINS =
   "tls|os|readline|readline/promises|worker_threads|sqlite|inspector|process|v8|vm|repl|tty)$";
 
 // Test files: *.test.ts and *.test.tsx (the only test file names, see vitest.config.ts), package
-// test/ folders and tests/. The layering rules of brand, contracts, core, web and bridge keep
-// shipped code small and pure, so they do not bind tests, which may use testkit, fixtures and I/O.
+// test/ folders and tests/. The layering rules of brand, contracts, core, client, web and bridge
+// keep shipped code small and pure, so they do not bind tests, which may use testkit, fixtures and
+// I/O.
 const TEST_FILE = "(\\.test\\.tsx?$|/test/|^tests/)";
 
 // Code that may use testkit (A7 3.2: "Nothing outside tests imports testkit"): test files,
@@ -120,11 +121,20 @@ module.exports = {
     {
       name: "web-only-contracts",
       comment:
-        "web imports contracts, and brand for the product's names, and nothing else from the " +
-        "repository (A7 3.2; brand has no dependency).",
+        "web imports contracts, brand for the product's names, and client for the rules it " +
+        "shares with the phone app, and nothing else from the repository (A7 3.2).",
       severity: "error",
       from: { path: "^packages/web/", pathNot: TEST_FILE },
-      to: { path: REPO, pathNot: "^packages/(web|contracts|brand)/" },
+      to: { path: REPO, pathNot: "^packages/(web|client|contracts|brand)/" },
+    },
+    {
+      name: "client-only-contracts",
+      comment:
+        "client is what the page and the phone app share, so it imports only contracts and " +
+        "brand: no other package, no npm package (React among them) and no Node built-in.",
+      severity: "error",
+      from: { path: "^packages/client/", pathNot: TEST_FILE },
+      to: { pathNot: "^packages/(client|contracts|brand)/" },
     },
     {
       name: "monitor-data-stays-with-the-page",

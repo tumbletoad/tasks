@@ -1,9 +1,9 @@
-// Places (A1 3.15, A4 3.3, R11): a place is a root ID and a relative path. Roots are this
+// Places: a place is a root ID and a relative path. Roots are this
 // machine's own (machine.toml `[roots]`), so a space holds no absolute path. This module turns a
 // place into the folder it names on this machine, or a reason, and an absolute folder into a
 // place, or a reason; and it holds the check the process that works in a place's folder runs there.
 //
-// What it promises, and what it does not (A1 3.15). A path cannot be checked and used
+// What it promises, and what it does not. A path cannot be checked and used
 // at one moment from Node: every look at a path resolves it again, so the tree may change between
 // two looks. What can be exact is the identity of a directory a process is in. So the guarantee is
 // in two parts:
@@ -20,12 +20,12 @@
 //   process holds, so a process that passed it is in the directory that was resolved, whatever
 //   happened to the path. On Windows Node reads `.` through the working-folder path; the directory
 //   a process is in, and its ancestors, cannot be renamed or removed while it is there, which ties
-//   the path to it, except for the residual cases A1 3.15 names. The remote is read
+//   the path to it, except for a few residual cases. The remote is read
 //   step by step: it is an observation of which repository is there, not part of the identity.
 //
 // The rules for the place's path (`isPlacePath`): `/`-separated, no empty, `.` or `..` segment, no
 // control, bidirectional or zero-width character, no backslash, no drive in front, NFC, at most
-// 1,024 characters (A1 3.15); on Windows also no segment Win32 would read as
+// 1,024 characters; on Windows also no segment Win32 would read as
 // another name (a trailing dot or space, `<>:"|?*`, a device name) and no short name (8.3).
 // Identity is a directory's volume and file number; a volume that gives no file number (0) gives
 // no identity, and then nothing resolves there (`identity_unavailable`), by design.
@@ -51,7 +51,7 @@ export const BIND_REASONS = [
   "path_missing",
   /** A file is there, not a folder. */
   "not_a_directory",
-  /** No root of this machine holds the folder (A1 3.15 `PLACE_OUTSIDE_ROOTS`). */
+  /** No root of this machine holds the folder (`PLACE_OUTSIDE_ROOTS`). */
   "outside_roots",
   /** Two roots name the same folder, so the folder has no one place. */
   "ambiguous_root",
@@ -144,7 +144,7 @@ const pathOf = (platform: NodeJS.Platform): PlatformPath => (platform === "win32
  * A name with each letter lowercased on its own, closer to NTFS's table: one character for one, with
  * no rule that looks at its neighbours (JavaScript's `toLowerCase` makes a final `Σ` a `ς`, which
  * NTFS keeps apart from `σ`) and none that turns one character into two (`İ`). Used only to refuse
- * a name that is not the folder's own (A1 3.15): the file system has already found the folder.
+ * a name that is not the folder's own: the file system has already found the folder.
  */
 function letterFold(name: string): string {
   let out = "";
@@ -162,10 +162,10 @@ const foldsCase = (platform: NodeJS.Platform): boolean =>
 // ---------------------------------------------------------------------------------------------
 // The relative path as text
 
-/** A place's path holds at most this many characters (A1 3.15). */
+/** A place's path holds at most this many characters. */
 export const MAX_PLACE_PATH = 1024;
 
-// Characters a place path never holds (A1 3.15, as storage's writer refuses them): C0 and C1
+// Characters a place path never holds (as storage's writer refuses them): C0 and C1
 // controls, DEL, bidirectional controls, zero-width characters and the backslash. Built from
 // escapes, so the source holds no invisible character.
 const PATH_FORBIDDEN = new RegExp(
@@ -194,7 +194,7 @@ function windowsName(segment: string): boolean {
 }
 
 /**
- * Whether `path` is a place's relative path on `platform` (A1 3.15): `""` for the
+ * Whether `path` is a place's relative path on `platform`: `""` for the
  * root itself, else segments joined by `/`, none empty, `.` or `..`, no forbidden character, no
  * drive in front, in NFC and well formed, at most 1,024 characters. On Windows each segment is
  * also a name Win32 opens as written.
@@ -291,7 +291,7 @@ const bigStat = (path: string): Promise<BigIntStats> => stat(path, { bigint: tru
 const MAX_LINKS = 40;
 
 /**
- * Why a path whose stat failed names no folder (A1 3.15). Linux and macOS follow a link to a file,
+ * Why a path whose stat failed names no folder. Linux and macOS follow a link to a file,
  * so their stat already says `not_a_directory`, and a failed stat there is `path_missing`. Windows
  * cannot follow a junction or a directory link to a file, and its stat says the path is missing:
  * there the link's own chain is read with lstat and readlink, at most 40 links as Linux follows
@@ -331,14 +331,14 @@ export function identityOf(found: Pick<BigIntStats, "dev" | "ino">): FolderIdent
   return { dev: found.dev, ino: found.ino };
 }
 
-/** A folder's identity as one evidence ID, `<volume>:<file number>` (A4 3.9's `folder_id`). */
+/** A folder's identity as one evidence ID, `<volume>:<file number>` (`folder_id`). */
 export const identityKey = (identity: FolderIdentity): string =>
   `${identity.dev.toString()}:${identity.ino.toString()}`;
 
 /**
  * The identity key of a folder now, by one stat: undefined when the path is not absolute, not a
  * directory, cannot be read, or its volume gives no identity. A best-effort app's binding compares
- * the bridge's working folder with the launch's this way (A4 3.4.4), never by spelling.
+ * the bridge's working folder with the launch's this way, never by spelling.
  */
 export async function folderKeyOf(
   folder: string,
@@ -430,7 +430,7 @@ async function readRoot(root: RootFolder, platform: NodeJS.Platform): Promise<Ro
 
 /**
  * The folder `place` names on this machine, given this machine's roots, or the reason it names
- * none (A1 3.15 `exact`, A4 3.3 steps 2 and 3). Never another folder: no parent, no sibling, no
+ * none. Never another folder: no parent, no sibling, no
  * fallback. One pass, no retries: the text, the root (its identity, then its real path), on
  * Windows each segment's own name, then the place read through the root as configured in one stat
  * (its kind and identity), its real path, which must lie at or below the root's real path with the
@@ -583,8 +583,8 @@ function matches(found: BigIntStats, dev: string, ino: string): boolean {
 }
 
 /**
- * The in-folder check (A1 3.15; A4 3.3 step 4: "the shim sets the process cwd and
- * re-checks it"). Called by the process that will work in a place's folder, after it made the
+ * The in-folder check (the shim sets the process cwd and
+ * re-checks it). Called by the process that will work in a place's folder, after it made the
  * folder its working directory (it was started there, or changed to it) and before it starts the
  * agent or does any other work there; on a refusal it starts nothing and reports the reason.
  * Everything is read through `.`, never through the folder's path:
@@ -598,7 +598,7 @@ function matches(found: BigIntStats, dev: string, ino: string): boolean {
  *   repository that stays there, not one changed while it is read.
  * On Linux and macOS `.` is the directory the process holds, so a process that passed this is in
  * the directory that was resolved, whatever happened to the path. On Windows Node reads `.`
- * through the working-folder path: see A1 3.15 for what that leaves.
+ * through the working-folder path.
  */
 export async function checkWorkingFolder(
   check: FolderCheck,
@@ -636,7 +636,7 @@ export async function checkWorkingFolder(
 // The inverse: an absolute folder to a place
 
 /**
- * The place an absolute folder on this machine is (A1 3.15): the root whose real folder holds it
+ * The place an absolute folder on this machine is: the root whose real folder holds it
  * most closely (a root nested in another wins) and the relative path below it, or the reason it is
  * none. The folder must exist, be a folder and have an identity. The result resolves back to the
  * same directory, by identity: that is checked before it is returned, so a folder whose name a

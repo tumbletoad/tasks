@@ -5,20 +5,15 @@
 // an Open that got no answer is the same Open when pressed again, only "Open another" asks for a
 // second session, and what busies the apps is read again until the service answers.
 import { act, type ReactNode } from "react";
+import { areaNode, nodesOf } from "@ttasks/client/test/nodes";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import {
-  Refused,
-  type Api,
-  type Busy,
-  type Instance,
-  type LastUsed,
-  type Receipt,
-} from "../api.ts";
+import { Refused, type Api, type Busy, type Receipt } from "../api.ts";
+import type { Instance, LastUsed } from "@ttasks/contracts/runs";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
-import type { SnapshotMessage, TaskRow } from "../store/rows.ts";
+import type { SnapshotMessage, TaskRow } from "@ttasks/client/store";
 import { TaskList } from "./TaskList.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";
 
@@ -32,7 +27,7 @@ const TASK: TaskRow = {
   status: "open",
   inbox: false,
   lifecycle: "active",
-  area_id: "a_1",
+  parent: "a_1",
   position: "p00001",
   created_at: Date.UTC(2026, 10, 1),
   version: 1,
@@ -51,8 +46,7 @@ const snapshot = (): SnapshotMessage => ({
   space: SPACE,
   cursor: { epoch: 1, incarnation: "ai_0123456789abcdefghjkmnpq", seq: 10 },
   tasks: [TASK],
-  areas: [{ id: "a_1", title: "Lumen", position: "a" }],
-  projects: [],
+  nodes: nodesOf(SPACE.id, areaNode({ id: "a_1", title: "Lumen", position: "a" }, SPACE.id)),
   instances: [CLAUDE],
 });
 

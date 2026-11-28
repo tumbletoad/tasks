@@ -14,6 +14,13 @@ export type FolderOs = "linux" | "windows" | "macos";
 /** The longest path a folder row holds, in characters (its CHECK counts the same). */
 export const FOLDER_PATH_MAX = 4_096;
 
+/**
+ * The fields of a folder a change of it is held to, for both writers: its path and its removal,
+ * as the caller saw them, whatever the change writes. A new folder for an owner is held to the
+ * removal since the base of the one it replaces, so a folder cleared since is not set again unseen.
+ */
+export const FOLDER_HELD = ["path", "deleted"] as const;
+
 // C0 controls, DEL and the C1 controls: no folder a person picks has one, and one would hide in
 // every place the path is shown.
 // eslint-disable-next-line no-control-regex -- the controls are what this refuses.

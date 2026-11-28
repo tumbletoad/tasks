@@ -1,7 +1,7 @@
 // Completed's page source and groups (A5 3.5) against a fake `task.finished` that answers as the
 // service does: finished tasks newest first by finish time, then by ID, from a key.
 import { describe, expect, test } from "vitest";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import { completedGroups, completedSource, type FinishedRead } from "./completed.ts";
 
 const CLOCK = { today: "2026-11-12", timeZone: "UTC", locale: "en" } as const;
@@ -23,6 +23,7 @@ function done(
     title: `Task ${ref}`,
     status: "open",
     inbox: false,
+    parent: "sp_0123456789abcdefghjkmnpqrs",
     lifecycle: how === "dropped" ? "archived" : "completed",
     position: "a0",
     created_at: at - 86_400_000,

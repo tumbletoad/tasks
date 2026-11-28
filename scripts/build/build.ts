@@ -1,4 +1,4 @@
-// `pnpm build` (A7 3.3, A2 3.12.8 "build"): one platform's version folder and archive in dist/,
+// `pnpm build`: one platform's version folder and archive in dist/,
 // with SHA256SUMS. Steps, each of which stops the build when it fails:
 //   1. the official Node for the platform, downloaded and verified (node-runtime.ts),
 //   2. the page (packages/web's buildWeb), the bundles (bundle.ts) and the launchers
@@ -7,10 +7,10 @@
 //   4. no path of the build machine in any file the build made,
 //   5. the archive, read back and compared with the folder, and SHA256SUMS,
 //   6. on request, SHA256SUMS signed with a throwaway test key (signing.ts), with the test build's
-//      install scripts pinned to it (scripts/install/render.ts, M1.14),
+//      install scripts pinned to it (scripts/install/render.ts),
 //   7. when the platform is this machine's, the runtime gate inside the folder (gate.ts),
 //   8. on request, everything from step 2 again in another work folder, and the two version
-//      folders and archives compared byte for byte (A7 3.8 M1.13: reproducible builds).
+//      folders and archives compared byte for byte (reproducible builds).
 // The release signature is never made here: scripts/release/ makes it, from release.yml or by hand.
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -63,8 +63,8 @@ const LOG_VERSION = /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-[0-9A-Za-z.-]{1,40})?$/;
 const LOG_BUILD = /^[0-9A-Za-z][0-9A-Za-z.-]{0,39}$/;
 
 /**
- * Problems with a version and build label. A version names the version folder and `current`
- * (A2 3.12.3), is the app version spaces record (A1, SemVer without build metadata) and appears in
+ * Problems with a version and build label. A version names the version folder and `current`,
+ * is the app version spaces record (SemVer without build metadata) and appears in
  * the service log; a build label appears in the log and the handshake. "source" is what a run from
  * source calls itself.
  */
@@ -129,7 +129,7 @@ export interface BuildOptions {
   readonly testSign?: boolean;
   /** Run the runtime gate when the platform is this machine's. Default true. */
   readonly gate?: boolean;
-  /** Build a second time elsewhere and compare (A7 3.8 M1.13). */
+  /** Build a second time elsewhere and compare. */
   readonly checkReproducible?: boolean;
   /** zlib level of the archive: 9 for a release, 0 keeps tests quick. */
   readonly level?: number;
@@ -182,7 +182,7 @@ async function makeVersionFolder(
   const problems = checkVersionFolder(out);
   if (problems.length > 0)
     throw new Error(`the version folder fails its manifest: ${problems.join("; ")}`);
-  // The binaries the build ships carry no test hook (A2 3.12.8).
+  // The binaries the build ships carry no test hook.
   if (platform === "win-x64") {
     for (const exe of [`${PRODUCT_ID}.exe`, `${PRODUCT_ID}w.exe`, `${PRODUCT_ID}-run.exe`]) {
       assertReleaseBinary(join(out, "bin", exe));
@@ -314,7 +314,7 @@ export async function buildVersion(options: BuildOptions): Promise<BuildResult> 
     log(
       `SHA256SUMS signed with a throwaway test key, ${signed.fingerprint}: SHA256SUMS.sig, SHA256SUMS.sshsig`,
     );
-    // M1.14: the install scripts of a test build, pinned to its throwaway key, one per kind of
+    // The install scripts of a test build, pinned to its throwaway key, one per kind of
     // archive in dist/, so the folder installs as it is (test installs on real machines).
     for (const kind of installerKinds(listed)) {
       const name = installerName(kind, identity.version, "test");

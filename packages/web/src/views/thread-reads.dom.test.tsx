@@ -12,7 +12,7 @@ import { ToastContext } from "../app/frame.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
-import type { SnapshotMessage, TaskRow } from "../store/rows.ts";
+import type { SnapshotMessage, TaskRow } from "@ttasks/client/store";
 import { TaskList } from "./TaskList.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";
 
@@ -25,6 +25,7 @@ const TASK: TaskRow = {
   title: "Plan the garden shed",
   status: "open",
   inbox: false,
+  parent: "sp_0123456789abcdefghjkmnpqrs",
   lifecycle: "active",
   position: "p00001",
   created_at: Date.UTC(2026, 10, 1),
@@ -36,8 +37,7 @@ const snapshot: SnapshotMessage = {
   space: SPACE,
   cursor: { epoch: 1, incarnation: "ai_0123456789abcdefghjkmnpq", seq: 10 },
   tasks: [TASK],
-  areas: [],
-  projects: [],
+  nodes: [],
   instances: [],
 };
 

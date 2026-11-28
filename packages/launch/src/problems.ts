@@ -1,8 +1,8 @@
-// Typed, content-free problems with machine-local configuration (A2 3.2.4), and a strict reader for
+// Typed, content-free problems with machine-local configuration, and a strict reader for
 // one table of it. A problem names the key and a fixed code, never the value: machine.toml holds
 // paths, account labels and commands, which no log, status line or crash file may carry.
 //
-// The reader takes plain values (what a TOML parser returns), so the sections A4 owns are checked
+// The reader takes plain values (what a TOML parser returns), so the launch's sections are checked
 // here and the file itself is read by the service (packages/service/src/config).
 
 /** Every code a configuration problem can have. A closed list: logs and doctor print these. */
@@ -37,17 +37,12 @@ export const PROBLEM_CODES = [
   "not_absolute",
   /** An instance names a target that is neither built in nor a `custom:` ID. */
   "unknown_target",
-  /** A template names a placeholder that does not exist (A4 3.6.4). */
+  /** A template names a placeholder that does not exist. */
   "unknown_placeholder",
   /** A key that this entry's target does not take (`via_login_shell` on Windows). */
   "not_for_target",
-  /** A second instance of a target that has a single instance (A4 3.2). */
+  /** A second instance of a target that has a single instance. */
   "single_instance",
-  /**
-   * A section or key this build no longer reads (`[roots]`, an instance's `prompt` or T3 keys): its
-   * lines do nothing. A warning.
-   */
-  "retired",
   /**
    * A preference this build declares and does not read yet (`LATER_PREFERENCES`): its value changes
    * nothing. A warning.
@@ -61,7 +56,7 @@ export type Severity = "error" | "warning";
 
 export interface ConfigProblem {
   /**
-   * The key, as a path into the file: `instance[2].exec`, `roots.work.path`, `spaces[1]`. Array
+   * The key, as a path into the file: `instance[2].exec`, `spaces[1].path`. Array
    * entries count from 1, as a person counts `[[instance]]` blocks. Empty for the whole file.
    */
   readonly key: string;
@@ -181,17 +176,6 @@ export class TableReader {
   raw(name: string): unknown {
     this.#seen.add(name);
     return this.#table[name];
-  }
-
-  has(name: string): boolean {
-    return Object.hasOwn(this.#table, name);
-  }
-
-  /** A key this build no longer reads: present, it is a `retired` warning and changes nothing. */
-  retired(name: string): void {
-    if (!this.has(name)) return;
-    this.#seen.add(name);
-    this.#problems.warn(this.key(name), "retired");
   }
 
   string(name: string, rule: StringRule = {}): string | undefined {

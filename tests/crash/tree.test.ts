@@ -23,8 +23,12 @@ interface RoundEnd {
   killed: boolean;
 }
 
-/** Runs one child with `plan`, killing it at its armed point or `afterMs` after its first send. */
-async function round(plan: TreePlan, afterMs?: number): Promise<RoundEnd> {
+/**
+ * Runs one child with `plan`, killing it at its armed point, or `afterMs` after its first send. A
+ * round that begins with a resend arms its timer only once the resend is answered (`resend`), so
+ * the answer to a lost reply is checked in every run, however slow the machine.
+ */
+async function round(plan: TreePlan, afterMs?: number, resend?: string): Promise<RoundEnd> {
   const child = spawn(process.execPath, [CHILD], {
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
@@ -40,7 +44,11 @@ async function round(plan: TreePlan, afterMs?: number): Promise<RoundEnd> {
     const message = JSON.parse(line) as TreeMessage;
     messages.push(message);
     if (message.t === "at") kill();
-    if (message.t === "send" && afterMs !== undefined) timer ??= setTimeout(kill, afterMs);
+    const starts =
+      resend === undefined
+        ? message.t === "send"
+        : message.t === "ack" && message.request_id === resend;
+    if (starts && afterMs !== undefined) timer ??= setTimeout(kill, afterMs);
   });
   child.stdin.on("error", () => undefined);
   child.stdin.end(JSON.stringify(plan));
@@ -50,10 +58,14 @@ async function round(plan: TreePlan, afterMs?: number): Promise<RoundEnd> {
   return { messages, killed };
 }
 
-/** The requests of round `n`: adds, a finish with follow-ups, edits on fresh and stale bases. */
+/**
+ * The requests of round `n`: adds, a finish with follow-ups, edits on fresh and stale bases, an
+ * Undo, a page with an edit of its words, and a note on the page.
+ */
 function requests(n: number): TreePlanned[] {
   const id = (k: number) => `round-${String(n)}-request-${String(k)}`;
   const parent = `t_${String(n + 1).padStart(26, "0")}`;
+  const page = `pg_${String(n + 1).padStart(26, "0")}`;
   return [
     {
       request_id: id(1),
@@ -91,6 +103,55 @@ function requests(n: number): TreePlanned[] {
       input: { task: parent, subtasks: "all", outcome: "Done", follow_ups: [{ title: "Next" }] },
     },
     { request_id: id(6), agent: false, base: "none", command: "undo", input: {} },
+    {
+      request_id: id(7),
+      agent: true,
+      base: "fresh",
+      command: "page.create",
+      input: {
+        id: page,
+        on: "space",
+        title: `Notes ${String(n)}`,
+        body: "First line. Second line.",
+      },
+    },
+    {
+      request_id: id(8),
+      agent: true,
+      base: "none",
+      command: "page.edit",
+      input: { page, old: "First line.", new: "The first line." },
+    },
+    {
+      request_id: id(9),
+      agent: false,
+      base: "fresh",
+      command: "note.add",
+      input: { on: page, body: "Read it" },
+    },
+    {
+      request_id: id(10),
+      agent: true,
+      base: "none",
+      command: "tasks.add",
+      input: {
+        tasks: [{ title: "Captured", source: { kind: "ticket", title: "T-1", key: "crash:T-1" } }],
+      },
+    },
+    {
+      request_id: id(11),
+      agent: false,
+      base: "none",
+      command: "launch.create",
+      input: {
+        task: parent,
+        instance: "codex-work",
+        route: "terminal",
+        folder: null,
+        task_version: 1,
+        brief_hash: "a1b2c3d4".repeat(8),
+      },
+    },
   ];
 }
 
@@ -120,6 +181,7 @@ describe("[S2.tree.crash] the tree writer survives a kill at each write point an
         const end = await round(
           { folder, arm, requests: planned },
           typeof kill === "number" ? kill : undefined,
+          resend?.request_id,
         );
         expect(end.messages.filter((m) => m.t === "error")).toEqual([]);
         const at = end.messages.find((m) => m.t === "at");

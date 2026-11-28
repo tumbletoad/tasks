@@ -1,4 +1,4 @@
-// The clipboard tools of `ttasks brief --copy` (A4 3.4.6): which tool runs on each OS and session,
+// The clipboard tools of `ttasks brief --copy`: which tool runs on each OS and session,
 // that the text reaches it through standard input byte for byte and never through its argv, that
 // only an exit 0 is a copy, that the next tool runs when one fails, that a tool that does not
 // finish is ended, and that the selection holder a Linux tool forks is left to serve. The tools

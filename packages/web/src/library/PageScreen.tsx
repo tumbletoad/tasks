@@ -17,10 +17,10 @@ import { useTitle, useToast } from "../app/frame.ts";
 import { Session } from "../context.ts";
 import { refusalText } from "../folder/FolderDialog.tsx";
 import { useT } from "../i18n/intl.tsx";
-import { formatWhen } from "../row/dates.ts";
+import { formatWhen } from "@ttasks/client/today";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
-import type { PageRow } from "../store/rows.ts";
+import { trail, type PageRow } from "@ttasks/client/store";
 import { Markdown } from "../task/markdown.tsx";
 import { TEXT_MAX } from "../unsent.ts";
 import type { Client } from "@ttasks/contracts/generated/client.ts";
@@ -147,16 +147,13 @@ function Back({ page, row }: { readonly page: PageView; readonly row: PageRow | 
 
 /** Where the page stands: its area and project, each to its Library. */
 function Crumb({ row }: { readonly row: PageRow | undefined }) {
-  const { areas, projects } = useLive();
+  const { nodes } = useLive();
   if (row === undefined) return null;
-  const area = row.area_id === undefined ? undefined : areas.get(row.area_id);
-  const project = row.project_id === undefined ? undefined : projects.get(row.project_id);
-  if (area === undefined && project === undefined) return null;
+  const [area, project] = trail(nodes, row.under);
+  if (area === undefined) return null;
   return (
     <span className={styles.crumb} data-part="page-crumb">
-      {area === undefined ? null : (
-        <LibraryLink node={{ kind: "area", id: area.id }}>{area.title}</LibraryLink>
-      )}
+      <LibraryLink node={{ kind: "area", id: area.id }}>{area.title}</LibraryLink>
       {project === undefined ? null : (
         <LibraryLink node={{ kind: "project", id: project.id }}>{project.title}</LibraryLink>
       )}

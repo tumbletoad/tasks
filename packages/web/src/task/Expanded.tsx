@@ -25,7 +25,8 @@ import {
   type ReactNode,
 } from "react";
 import { Link } from "@tanstack/react-router";
-import type { Instance, LastUsed, Receipt, Run } from "../api.ts";
+import type { Instance, LastUsed } from "@ttasks/contracts/runs";
+import type { Receipt, Run } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { useToast } from "../app/frame.ts";
@@ -49,7 +50,7 @@ import {
 } from "../row/icons.tsx";
 import { safeHref } from "../row/model.ts";
 import { useClock } from "../row/useClock.ts";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import { Composer, KeptDraft } from "./Composer.tsx";
 import type { Detail, DetailNote, SourceOutput } from "./detail.ts";
 import css from "./Expanded.module.css";
@@ -62,9 +63,11 @@ import { useTextWrites, type TextWrites } from "./textWrites.ts";
 import { TEXT_MAX } from "../unsent.ts";
 import { actorOf, Thread } from "./Thread.tsx";
 import { useDetail } from "./useDetail.ts";
+import { Knowledge } from "../library/Knowledge.tsx";
 
 const styles = classes(css, [
   "body",
+  "side",
   "content",
   "outcome",
   "context",
@@ -705,13 +708,13 @@ function Context({
   }, [text, open, editing]);
   // The person's refused words, kept in sight while the box is open again to put them in.
   const notSaved =
-    write === undefined ? null : <NotSaved space={space} task={task.id} part="context" />;
+    write === undefined ? null : <NotSaved space={space} owner={task.id} part="context" />;
   if (editing && write !== undefined) {
     return (
       <div className={styles.context} data-part="context">
         <TextEditor
           space={space}
-          task={task.id}
+          owner={task.id}
           part="context"
           label={t("task.context")}
           text={text}
@@ -835,7 +838,11 @@ export function Expanded({
   return (
     <div className={styles.body} data-part="expanded" hidden={hidden}>
       {/* First in the document: below 1,024 px the facts come before the content (A5 3.7). */}
-      <Facts task={facts} clock={clock} />
+      <div className={styles.side}>
+        <Facts task={facts} clock={clock} />
+        {/* Under the facts, from the card's first frame: it never moves what is drawn. */}
+        <Knowledge task={task} />
+      </div>
       <div className={styles.content}>
         {/* First in the content, above all that its reads bring in: the composer and its strip
             keep their place from the card's first frame, whatever the thread holds. */}

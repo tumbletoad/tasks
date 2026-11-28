@@ -5,6 +5,7 @@
 // one, leaves the stored draft, the task and the requests as they were. Only reads reach the
 // service. Fixture text only.
 import { act } from "react";
+import { areaNode, nodesOf } from "@ttasks/client/test/nodes";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { PRODUCT_ID } from "@ttasks/brand";
@@ -12,7 +13,7 @@ import type { Api } from "../api.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
-import type { SnapshotMessage } from "../store/rows.ts";
+import type { SnapshotMessage } from "@ttasks/client/store";
 import { keepDraft, keepNote, readDraft, readNotes } from "../unsent.ts";
 import { TaskList } from "./TaskList.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";
@@ -29,8 +30,7 @@ const snapshot: SnapshotMessage = {
   space: SPACE,
   cursor: CURSOR,
   tasks: [],
-  areas: [{ id: "a_1", title: "Lumen", position: "a" }],
-  projects: [],
+  nodes: nodesOf(SPACE.id, areaNode({ id: "a_1", title: "Lumen", position: "a" }, SPACE.id)),
   instances: [
     {
       key: "codex-work",

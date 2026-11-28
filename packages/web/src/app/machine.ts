@@ -12,16 +12,8 @@ import {
   useState,
 } from "react";
 import type { Api } from "../api.ts";
-import type { TokenStore } from "../stored.ts";
-import type { MachinePreference } from "../store/rows.ts";
-import {
-  applyTheme,
-  forgetLegacyTheme,
-  isThemeChoice,
-  legacyTheme,
-  servedTheme,
-  type ThemeChoice,
-} from "../theme/preference.ts";
+import type { MachinePreference } from "../store/messages.ts";
+import { applyTheme, isThemeChoice, servedTheme, type ThemeChoice } from "../theme/preference.ts";
 import { Turns } from "./turns.ts";
 
 export interface MachineSettings {
@@ -58,20 +50,16 @@ type Kept = Awaited<ReturnType<Api["setMachinePreference"]>>;
 function settingsOf(
   preferences: readonly MachinePreference[],
   before: MachineSettings,
-): MachineSettings & { readonly themeChosen: boolean } {
+): MachineSettings {
   const theme = preferences.find((p) => p.key === "ui.theme");
   const keys = preferences.find((p) => p.key === "ui.single_keys");
   return {
     theme: isThemeChoice(theme?.value) ? theme.value : before.theme,
     singleKeys: typeof keys?.value === "boolean" ? keys.value : before.singleKeys,
-    themeChosen: theme?.state === "set",
   };
 }
 
-export function useMachineControl(
-  api: Api | undefined,
-  store: TokenStore | undefined,
-): MachineControl {
+export function useMachineControl(api: Api | undefined): MachineControl {
   const [shown, setShown] = useState<MachineSettings>(() => ({
     ...DEFAULTS,
     theme: servedTheme(document.documentElement),
@@ -82,8 +70,6 @@ export function useMachineControl(
   const pending = useRef(new Map<Key, number>());
   /** Each key's changes, sent one at a time. */
   const turns = useRef(new Map<Key, Turns<Kept>>());
-  /** An older build's choice in this browser, handed over at the first message. */
-  const legacy = useRef(legacyTheme(store));
 
   const shownRef = useRef(shown);
   shownRef.current = shown;
@@ -146,24 +132,10 @@ export function useMachineControl(
 
   const receive = useCallback(
     (preferences: readonly MachinePreference[]) => {
-      const next = settingsOf(preferences, held.current ?? DEFAULTS);
-      held.current = next;
+      held.current = settingsOf(preferences, held.current ?? DEFAULTS);
       settle();
-      const old = legacy.current;
-      if (old === undefined) return;
-      legacy.current = undefined;
-      if (next.themeChosen) {
-        forgetLegacyTheme(store);
-        return;
-      }
-      setTheme(old).then(
-        () => {
-          forgetLegacyTheme(store);
-        },
-        () => undefined,
-      );
     },
-    [settle, setTheme, store],
+    [settle],
   );
 
   return useMemo(

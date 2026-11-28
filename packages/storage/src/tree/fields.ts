@@ -28,6 +28,35 @@ export const FIELDS = {
     wrap: ["wrap_state", "outcome", "wrapped_at", "wrapped_by"],
   },
   notes: { body: ["body", "edited_at"], deleted: ["deleted_at"] },
+  pages: {
+    title: ["title"],
+    brief: ["brief"],
+    body: ["body"],
+    owner: ["owner_id"],
+    deleted: ["deleted_at", "deleted_by"],
+  },
+  sources: { owner: ["owner_id"], deleted: ["deleted_at"] },
+  links: { removed: ["removed_at"] },
+  // A machine is registered once, by a system commit, and no command changes it after.
+  machines: {},
+  // A folder's path and its removal; a launch's and a run's state, written as a unit with its
+  // reason, evidence and times.
+  folders: { path: ["path"], deleted: ["deleted_at"] },
+  launches: { state: ["state", "reason", "detail", "updated_at"] },
+  runs: { state: ["state", "reason", "detail", "result", "started_at", "ended_at"] },
+  // A preference's value with the version of its shape, which `pref.set` writes as a unit.
+  preferences: { value: ["value", "schema_ver"] },
+  // A routine's schedule, its open time, who does it and its words, and its pause with who last
+  // switched an agent's routine on.
+  routines: {
+    schedule: ["rule", "start", "tz"],
+    open: ["due_date", "due_at"],
+    instance: ["instance"],
+    instruction: ["instruction"],
+    paused: ["paused", "enabled_by"],
+  },
+  // A time done or skipped is written once; only Undo takes it back.
+  occurrences: { deleted: ["deleted_at"] },
 } as const satisfies Record<string, Record<string, readonly string[]>>;
 
 export type Entity = keyof typeof FIELDS;
@@ -38,7 +67,7 @@ export const isEntity = (value: string): value is Entity => Object.hasOwn(FIELDS
 /** The columns a create may set besides the fields' own. */
 export const KEYS: Record<Entity, readonly string[]> = {
   nodes: ["id", "kind", "slug", "created_at", "created_by"],
-  tasks: ["id", "ref", "created_session"],
+  tasks: ["id", "ref", "origin_source_id", "created_session"],
   notes: [
     "id",
     "owner_id",
@@ -50,7 +79,69 @@ export const KEYS: Record<Entity, readonly string[]> = {
     "run_id",
     "created_at",
   ],
+  pages: ["id", "ref", "created_at", "created_by"],
+  sources: [
+    "id",
+    "ref",
+    "kind",
+    "title",
+    "brief",
+    "body",
+    "who",
+    "outside_ref",
+    "url",
+    "at",
+    "source_key",
+    "created_at",
+    "created_by",
+  ],
+  links: ["id", "owner_id", "target_id", "position", "added_by"],
+  preferences: ["key", "policy"],
+  machines: ["id", "name", "os", "first_seen"],
+  folders: ["id", "owner_id", "machine_id", "is_default", "label", "created_at"],
+  launches: [
+    "id",
+    "reference",
+    "task_id",
+    "session_id",
+    "instance_id",
+    "machine_id",
+    "route",
+    "folder_id",
+    "task_version",
+    "brief_hash",
+    "created_at",
+  ],
+  runs: [
+    "id",
+    "task_id",
+    "session_id",
+    "instance_id",
+    "machine_id",
+    "adapter",
+    "folder_id",
+    "request",
+    "spec",
+    "attempt",
+    "queued_at",
+  ],
+  routines: ["id"],
+  occurrences: [
+    "id",
+    "routine_id",
+    "due_date",
+    "due_at",
+    "state",
+    "actor_id",
+    "at",
+    "run_id",
+    "why",
+    "note",
+  ],
 };
+
+/** The column that names a row: its `id`, or a preference's `key`. */
+export const keyOf = (entity: Entity): string => (entity === "preferences" ? "key" : "id");
 
 /** A field's columns. */
 export function columnsOf(entity: Entity, field: string): readonly string[] {

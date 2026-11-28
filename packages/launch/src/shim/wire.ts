@@ -1,4 +1,4 @@
-// The shim's part of ttasks-local/1 (A4 3.6.3, A2 3.6.4): the methods a shim connection calls, the
+// The shim's part of ttasks-local/1: the methods a shim connection calls, the
 // shapes of their params and replies, the patterns of the ticket and the attachment credential, and
 // the shim's timings. Both sides read this file: the shim (`ttasks shim`, packages/cli/src/shim) and
 // the service (host.ts). It imports types only, so the shim loads it without anything else of
@@ -8,17 +8,17 @@
 // - `launch.claim {ticket, role, pid, start_time}` presents the one-use ticket, once, from the
 //   process the claim names. Its reply is the only message that carries what starts an agent:
 //   argv, the environment, the attachment credential, and the check of the folder the shim was
-//   started in (places.ts FolderCheck, A1 3.15), never in argv or in the agent's environment.
+//   started in (places.ts FolderCheck), never in argv or in the agent's environment.
 // - `launch.attach {credential, pid, start_time}` presents the credential after a reconnect. Its
 //   reply carries no argv, environment or brief, so an attachment can report and never start.
 // - The reports (`launch.started`, `settled`, `exited`, `failed`) go on a connection that claimed
 //   or attached, and only there: the connection holds the attachment, not the message.
 import type { FolderCheck, ResolveReason } from "../places.ts";
 
-/** The shim protocol's version, which the claim reply names and the shim checks (A4 3.6.3 step 4). */
+/** The shim protocol's version, which the claim reply names and the shim checks. */
 export const SHIM_PROTOCOL = 1;
 
-/** The methods (A2 3.6.4's A4 methods for interactive launches). */
+/** The methods for interactive launches. */
 export const SHIM_METHODS = {
   claim: "launch.claim",
   attach: "launch.attach",
@@ -31,14 +31,14 @@ export const SHIM_METHODS = {
 export type ShimMethod = (typeof SHIM_METHODS)[keyof typeof SHIM_METHODS];
 export type ReportMethod = Exclude<ShimMethod, "launch.claim" | "launch.attach">;
 
-/** A1's ID alphabet in upper case: the ticket's symbols. */
+/** The ID alphabet in upper case: the ticket's symbols. */
 export const TICKET_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
-/** A4 3.1: 120 random bits in base32, A1's alphabet in upper case, 24 symbols. */
+/** 120 random bits in base32, the ID alphabet in upper case, 24 symbols. */
 export const TICKET = /^[0-9A-HJKMNP-TV-Z]{24}$/;
 
 /**
- * A4 3.1: 128 random bits as unpadded base64url, 22 characters. The last character carries two
+ * 128 random bits as unpadded base64url, 22 characters. The last character carries two
  * bits, so it is one of four. No ticket fits this pattern, and no credential fits a ticket's.
  */
 export const CREDENTIAL = /^[A-Za-z0-9_-]{21}[AQgw]$/;
@@ -61,7 +61,7 @@ export const REMOTE = /^[\x21-\x7e]{1,2048}$/;
 /** A launch ID (store.ts LAUNCH_ID: a test compares them), for the shim, which loads no store. */
 export const LAUNCH_ID_FORM = /^la_[0-7][0-9a-hjkmnp-tv-z]{25}$/;
 
-/** A launch reference's form (A4 3.1; intents.ts isLaunchRef also checks its check character). */
+/** A launch reference's form (intents.ts isLaunchRef also checks its check character). */
 export const LAUNCH_REF_FORM = /^L[0-9A-HJKMNP-TV-Z]{5}$/;
 
 /**
@@ -148,11 +148,11 @@ export function checkFolderCheck(value: unknown): FolderCheck | undefined {
   };
 }
 
-/** A4 3.6.1 `after_exit` (sections.ts holds the same list; a test compares them). */
+/** `after_exit` (sections.ts holds the same list; a test compares them). */
 export const AFTER_EXIT_MODES = ["close", "close-on-success", "pause", "shell"] as const;
 export type AfterExit = (typeof AFTER_EXIT_MODES)[number];
 
-/** `launch.claim`'s params (A4 3.6.3 step 3). */
+/** `launch.claim`'s params. */
 export interface ClaimParams {
   readonly ticket: string;
   readonly role: "shim";
@@ -160,7 +160,7 @@ export interface ClaimParams {
   readonly start_time: string;
 }
 
-/** The claim's reply: what the shim verifies and starts (A4 3.6.3 steps 3 to 6). */
+/** The claim's reply: what the shim verifies and starts. */
 export interface ClaimReply {
   readonly protocol: number;
   readonly launch: { readonly id: string; readonly reference: string };
@@ -168,28 +168,28 @@ export interface ClaimReply {
   readonly argv: readonly string[];
   /**
    * The folder the service resolved right before the launch, as its real path. The shim enters it
-   * itself (M2.09): no terminal's working-directory flag or start-folder setting decides where the
+   * itself: no terminal's working-directory flag or start-folder setting decides where the
    * agent starts, and the folder never goes into a terminal's argv.
    */
   readonly folder: string;
   /**
    * What the shim checks about the folder once it is in it, before it does anything else
-   * (`checkWorkingFolder`, A1 3.15): the identity of the folder the service resolved, the
+   * (`checkWorkingFolder`): the identity of the folder the service resolved, the
    * root's directory at its depth above it, and the remote the place recorded. The agent starts
    * there with no working-directory option of its own, so it inherits the checked folder.
    */
   readonly check: FolderCheck;
   /**
-   * The agent's environment as the service computed it (A4 3.8), final: the shim starts the agent
+   * The agent's environment as the service computed it, final: the shim starts the agent
    * directly with it, never through a shell whose profile could change it or the folder.
    */
   readonly env: Readonly<Record<string, string>>;
   /** For the terminal title and the announce line. */
   readonly title: string;
   readonly after_exit: AfterExit;
-  /** The attachment credential (A4 3.1). The shim keeps it in memory only. */
+  /** The attachment credential. The shim keeps it in memory only. */
   readonly credential: string;
-  /** Where the shim writes `exit.json` when the service cannot be reached (A4 3.6.3 step 9). */
+  /** Where the shim writes `exit.json` when the service cannot be reached. */
   readonly exit_file: string;
   /** A fixed line to print under the announce line. */
   readonly notice?: Notice;
@@ -202,7 +202,7 @@ export interface ClaimReply {
 export const NOTICES = ["brief_sent"] as const;
 export type Notice = (typeof NOTICES)[number];
 
-/** `launch.attach`'s params (A4 3.6.3 "Re-attaching"). */
+/** `launch.attach`'s params. */
 export interface AttachParams {
   readonly credential: string;
   readonly pid: number;
@@ -221,7 +221,7 @@ export interface StartedParams {
   readonly started_at: number;
 }
 
-/** `launch.exited` (A4 3.6.3 steps 7 and 9). `settled`: the agent ran for 3 s or longer. */
+/** `launch.exited`. `settled`: the agent ran for 3 s or longer. */
 export interface ExitedParams {
   readonly code: number | null;
   readonly signal: string | null;
@@ -229,7 +229,7 @@ export interface ExitedParams {
   readonly settled: boolean;
 }
 
-/** Why the shim started no agent after its claim (A4 3.6.3 step 4, a spawn error in step 6). */
+/** Why the shim started no agent after its claim: its check of the reply failed, or the spawn did. */
 export const FAILED_REASONS = ["verify", "spawn"] as const;
 export type FailedReason = (typeof FAILED_REASONS)[number];
 
@@ -240,7 +240,7 @@ export interface FailedParams {
 }
 
 /**
- * `exit.json` (A4 3.6.3 step 9): what the shim could not report because the service was down,
+ * `exit.json`: what the shim could not report because the service was down,
  * written atomically into its launch folder. The service collects it at start-up and in its check.
  */
 export interface ExitFile {
@@ -262,7 +262,7 @@ export const REFUSED = "launch_refused";
 
 /**
  * Terminal variables the shim adds from its own environment when the service's environment does
- * not name them (A4 3.8 has no terminal layer: the terminal sets these for the shim, and an
+ * not name them (the agent's environment has no terminal layer: the terminal sets these for the shim, and an
  * interactive agent needs them). Names only from this list, never a pass-through.
  */
 export const TERMINAL_ENV = [
@@ -275,11 +275,11 @@ export const TERMINAL_ENV = [
   "VTE_VERSION",
 ] as const;
 
-/** A4 3.6.3 step 7: the agent counts as settled once it has run this long. */
+/** The agent counts as settled once it has run this long. */
 export const SETTLE_MS = 3_000;
 
-/** A4 3.6.3 step 2: how long the shim tries to reach a service that is not reachable. */
+/** How long the shim tries to reach a service that is not reachable. */
 export const CONNECT_RETRY_MS = 30_000;
 
-/** A4 3.6.3 "Re-attaching": how often a shim whose connection dropped tries again. */
+/** How often a shim whose connection dropped tries again. */
 export const REATTACH_MS = 5_000;

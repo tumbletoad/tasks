@@ -8,7 +8,7 @@ import { describe, expect, test, vi } from "vitest";
 import { PRODUCT_NAME, CLI_NAME } from "@ttasks/brand";
 import en from "../i18n/en.json" with { type: "json" };
 import type { MessageId, Values } from "../i18n/intl.tsx";
-import type { Clock } from "../row/dates.ts";
+import type { Clock } from "@ttasks/client/today";
 import type { Changes } from "../store/store.ts";
 import {
   ActivityLog,
@@ -278,5 +278,33 @@ describe("[A5.activity.web] the Activity screen's words and lines", () => {
     setPhase("live");
     expect(asked).toHaveBeenCalledTimes(2);
     stop();
+  });
+});
+
+describe("[A5.pages.web.activity] page lines in Activity", () => {
+  const page = (acts: Target["acts"], extra: Partial<Target> = {}): Target => ({
+    kind: "page",
+    id: "pg_1b5f9k3p7t1x5c9h3m7r1w5a9e",
+    ref: "M-180",
+    name: "Time zone rules",
+    acts,
+    ...extra,
+  });
+
+  test("an agent's page edits read as what they did to the page, and pages made by one change are a count", () => {
+    expect(wordsOf(page([{ op: "page.edit" }]), say)).toBe("text changed");
+    expect(wordsOf(page([{ op: "page.append" }]), say)).toBe("text added");
+    expect(wordsOf(page([{ op: "page.set", field: "title" }]), say)).toBe("renamed");
+    expect(wordsOf(page([{ op: "page.set", field: "body" }]), say)).toBe("text changed");
+    expect(wordsOf(page([{ op: "page.move", to: "Client work" }]), say)).toBe(
+      "moved to Client work",
+    );
+    expect(wordsOf(page([{ op: "page.trash" }]), say)).toBe("moved to the Trash");
+    const made = (name: string) =>
+      page([{ op: "page.create", to: "Lumen Health" }], { name, created: true });
+    expect(read(line(1, [made("A"), made("B")]))).toMatchObject({
+      many: "2 pages",
+      words: "added",
+    });
   });
 });

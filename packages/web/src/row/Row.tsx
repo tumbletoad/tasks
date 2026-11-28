@@ -17,7 +17,8 @@ import {
   type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
-import type { Instance, LastUsed, Receipt, Run } from "../api.ts";
+import type { Instance, LastUsed } from "@ttasks/contracts/runs";
+import type { Receipt, Run } from "../api.ts";
 import { Session } from "../context.ts";
 import { titleChange } from "../edit/change.ts";
 import { whoOf, type Leaving } from "../edit/edits.ts";
@@ -26,7 +27,7 @@ import { useEdits } from "../edit/useEdits.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { is } from "../keys/keymap.ts";
 import { useIntl } from "react-intl";
-import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
+import type { NodeRow, TaskRow } from "@ttasks/client/store";
 import { Expanded } from "../task/Expanded.tsx";
 import { NotSaved, Pen, TextEditor, useEditing, useSaved } from "../task/TextEditor.tsx";
 import { useTextWrites } from "../task/textWrites.ts";
@@ -35,7 +36,7 @@ import { placeFact, sourceFacts } from "../task/sources.ts";
 import { classes } from "../app/css.ts";
 import { readOnly, type RowActions } from "./actions.ts";
 import { tileClick, type BusyOf, type Cannot, type FolderRefusal } from "./launch.ts";
-import { formatInstant } from "./dates.ts";
+import { formatInstant } from "@ttasks/client/today";
 import { renderRow, type RowContext, type RowModel } from "./model.ts";
 import { sayMsg } from "./say.ts";
 import { KeptTitles } from "./KeptTitles.tsx";
@@ -102,9 +103,9 @@ const NO_CANNOT: Cannot = new Map();
 
 export interface RowProps {
   readonly task: TaskRow;
-  readonly area: AreaRow | undefined;
+  readonly area: NodeRow | undefined;
   readonly slot: number | undefined;
-  readonly project: ProjectRow | undefined;
+  readonly project: NodeRow | undefined;
   readonly instances: readonly Instance[];
   /** The instances the space last opened a task in and ran one with here. */
   readonly last?: LastUsed;
@@ -791,7 +792,7 @@ function RowView({
           {summing ? (
             <TextEditor
               space={space}
-              task={task.id}
+              owner={task.id}
               part="summary"
               label={t("task.summary")}
               text={summary}
@@ -843,7 +844,7 @@ function RowView({
               ) : null}
             </div>
           )}
-          {expanded && editable ? <NotSaved space={space} task={task.id} part="summary" /> : null}
+          {expanded && editable ? <NotSaved space={space} owner={task.id} part="summary" /> : null}
           {/* A title the person typed while the task was finished stays readable, with Copy and
               Discard; Try again only once the task is active again (A5 3.11). */}
           {expanded ? (

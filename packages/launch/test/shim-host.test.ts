@@ -1,18 +1,9 @@
-// The shim host's rules one by one (A4 3.1, 3.6.3, 3.9.3), on the in-memory
+// The shim host's rules one by one, on the in-memory
 // execution store with the real launch machine, machine state in memory, and a fake process
 // table. The property test (shim.prop.test.ts) covers their combinations; the service's end-to-end
 // test runs a real shim through a restart.
 import { spawn } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { CLAIM_WINDOW_MS, isLaunchRef, launchRefCheck, type Route } from "../src/intents.ts";
@@ -243,7 +234,7 @@ describe("[A4.5.shim.claim] the one spawn claim", () => {
     expect(seen[0]?.claim).toMatch(/^claim-/);
     const [reply] = replies;
     expect(reply?.argv).toEqual(PLAN.argv);
-    // The folder resolved at dispatch, its real path for the shim to enter (M2.09: no terminal's
+    // The folder resolved at dispatch, its real path for the shim to enter (no terminal's
     // flag decides it) and its check as plain JSON; the agent's environment holds neither.
     expect(reply?.folder).toBe(FOLDER.path);
     expect(reply?.check).toEqual(FOLDER.check);
@@ -972,39 +963,6 @@ describe("[A4.5.shim.attach] machine state in folders", () => {
     }
   });
 
-  test("after an update, a launch the build before folders wrote is read back with the folder its terminal started in", async () => {
-    const temp = tempFolder();
-    temps.push(temp);
-    const root = join(temp.path, "launch");
-    records = new FolderRecords(root);
-    boot();
-    const { id, ticket } = await dispatched();
-    await claim(ticket);
-    const file = join(root, id, "launch.json");
-    const written = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown> & {
-      plan: Record<string, unknown>;
-    };
-    // That build's plan held a place where it now holds a folder.
-    const older = (place: unknown, resolved: boolean): string => {
-      const plan: Record<string, unknown> = { ...written.plan, place };
-      delete plan["folder"];
-      const file: Record<string, unknown> = { ...written, plan };
-      if (resolved) file["folder"] = FOLDER;
-      else delete file["folder"];
-      return JSON.stringify(file);
-    };
-    writeFileSync(file, older({ root: "work", path: "lumen/portal" }, true));
-    const placed = new FolderRecords(root).get(id);
-    expect(placed?.plan.folder).toEqual({ stored: FOLDER.path, path: FOLDER.path });
-    expect(placed?.folder).toEqual(FOLDER);
-    expect(placed?.attachment?.pid).toBe(SHIM_PID);
-    writeFileSync(file, older(null, true));
-    expect(new FolderRecords(root).get(id)?.plan.folder).toBeNull();
-    // A place never dispatched names no folder here: that launch is left out and never starts.
-    writeFileSync(file, older({ root: "work", path: "lumen/portal" }, false));
-    expect(new FolderRecords(root).get(id)).toBeUndefined();
-  });
-
   test("a plan too large for a launch file is refused at the click; every plan taken is read back after a restart", async () => {
     const temp = tempFolder();
     temps.push(temp);
@@ -1107,7 +1065,7 @@ describe("[A4.5.environment.scrub] the claim's reply builds the agent's environm
       TTASKS_HOME: "/k",
     };
     // A via_login_shell launch's own base, as its dispatch step took it in the task's folder: the
-    // profile re-exported what A4 scrubs and set a home variable, and the scrub still applies.
+    // profile re-exported what the scrub removes and set a home variable, and the scrub still applies.
     const own = {
       ...base,
       FROM_FOLDER: "1",
@@ -1304,24 +1262,20 @@ describe("[A4.5.shim.attach] what the click records of the agent it starts", () 
     expect(back?.session).toBe(`se_${id.slice("la_".length)}`);
   });
 
-  test("a record of the build before loads, and a field this build does not know is left aside, as the build before leaves this build's", async () => {
+  test("a record without the click's optional fields loads, and a field this build does not know is left aside", async () => {
     const root = folderRecords();
     const { id, ticket } = await dispatched();
     const attachment = attachmentOf((await claim(ticket)).outcome);
     await host.report(attachment, SHIM_METHODS.started, { pid: 5151, started_at: now });
     const file = join(root, id, "launch.json");
     const written = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
-    // The builds before refuse a ticket without `bridgeUsed`: written for a rollback, read by none.
-    const { bridgeUsed, ...ticketRead } = written["ticket"] as Record<string, unknown>;
-    expect(bridgeUsed).toBe(false);
-    const loaded: Record<string, unknown> = { ...written, ticket: ticketRead };
-    const { app, home, session, preset, ...before } = loaded;
+    const { app, home, session, preset, ...before } = written;
     expect([app, home, session, preset].every((v) => typeof v === "string")).toBe(true);
-    writeFileSync(file, JSON.stringify({ ...before, ticket: written["ticket"] }));
+    writeFileSync(file, JSON.stringify(before));
     expect(new FolderRecords(root).get(id)).toEqual(before);
-    // A later build's field: the record loads with every field this build knows, as written.
-    writeFileSync(file, JSON.stringify({ ...written, thread: "a later build's field" }));
-    expect(new FolderRecords(root).get(id)).toEqual({ ...written, ticket: ticketRead });
+    // A field this build does not know: the record loads with every field it knows, as written.
+    writeFileSync(file, JSON.stringify({ ...written, thread: "a field of another build" }));
+    expect(new FolderRecords(root).get(id)).toEqual(written);
   });
 });
 
@@ -1331,7 +1285,7 @@ describe("[A4.5.shim.attach] an ended launch leaves nothing", () => {
     for (const t of temps.splice(0)) t.remove();
   });
 
-  test("its folder goes with its end and nothing of it stays; a start removes the records earlier builds kept of ended launches", async () => {
+  test("its folder goes with its end and nothing of it stays", async () => {
     const temp = tempFolder();
     temps.push(temp);
     const root = join(temp.path, "launch");
@@ -1348,64 +1302,5 @@ describe("[A4.5.shim.attach] an ended launch leaves nothing", () => {
     });
     expect(readdirSync(root)).toEqual([]);
     expect(host.liveByTicket(ticket)).toBeUndefined();
-
-    // What an earlier build left: a record of an ended launch, beside a launch still running.
-    const running = await dispatched();
-    const ended = join(root, "ended");
-    mkdirSync(ended);
-    writeFileSync(join(ended, `${randomId("la")}.json`), '{"format":1}');
-    records = new FolderRecords(root);
-    boot();
-    expect(existsSync(ended)).toBe(false);
-    expect(records.get(running.id)?.launch).toBe(running.id);
   });
-
-  test("a start removes only the old records it knows from the ended folder: anything else there, and a link in its place, stays", () => {
-    const temp = tempFolder();
-    temps.push(temp);
-    const root = join(temp.path, "launch");
-    const ended = join(root, "ended");
-    mkdirSync(ended, { recursive: true });
-    const record = join(ended, `${randomId("la")}.json`);
-    const other = join(ended, "space.sqlite");
-    writeFileSync(record, '{"format":1}');
-    writeFileSync(other, "not a record");
-    new FolderRecords(root);
-    expect(existsSync(record)).toBe(false);
-    expect(readdirSync(ended)).toEqual(["space.sqlite"]);
-
-    // A link in the folder's place is not the product's: neither it nor what it names is touched.
-    rmSync(ended, { recursive: true });
-    const elsewhere = join(temp.path, "elsewhere");
-    mkdirSync(elsewhere);
-    const linked = join(elsewhere, `${randomId("la")}.json`);
-    writeFileSync(linked, '{"format":1}');
-    symlinkSync(elsewhere, ended, "junction");
-    new FolderRecords(root);
-    expect(existsSync(ended)).toBe(true);
-    expect(existsSync(linked)).toBe(true);
-  });
-
-  // Only Windows holds a file against its removal; elsewhere the folder's mode decides.
-  test.skipIf(process.platform !== "win32")(
-    "an old record another program holds stays, with its folder, and a later start removes it",
-    () => {
-      const temp = tempFolder();
-      temps.push(temp);
-      const root = join(temp.path, "launch");
-      const ended = join(root, "ended");
-      mkdirSync(ended, { recursive: true });
-      const held = join(ended, `${randomId("la")}.json`);
-      writeFileSync(held, '{"format":1}');
-      const hold = holdFile(held);
-      try {
-        new FolderRecords(root);
-        expect(existsSync(held)).toBe(true);
-      } finally {
-        hold.release();
-      }
-      new FolderRecords(root);
-      expect(existsSync(ended)).toBe(false);
-    },
-  );
 });

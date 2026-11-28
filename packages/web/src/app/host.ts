@@ -4,19 +4,20 @@
 //
 // | Task state                             | Host view                                    |
 // | Active, in Inbox                       | Inbox                                        |
-// | Active, with an area                   | The area view                                |
+// | Active, under an area                  | The area view                                |
 // | Active, no area, not in Inbox          | Its status view (Open for another status)    |
 // | Completed, or archived (dropped)       | Completed                                    |
 // | In the Trash                           | The Trash, with Restore                      |
 // | Purged or unknown                      | The landing view, with "no longer exists"    |
-import type { View } from "./views.ts";
+import type { View } from "@ttasks/client/today";
 
 /** What the route knows of the task: from the live row, or from `task.get` for another lifecycle. */
 export interface HostFacts {
   readonly lifecycle: string;
   readonly inbox: boolean;
   readonly status: string;
-  readonly area_id?: string | undefined;
+  /** The area it lies under: the project at the top of its trail. */
+  readonly area?: string | undefined;
   /** In the Trash: moved there on purpose, so Restore brings it back. */
   readonly deleted?: boolean;
 }
@@ -36,7 +37,7 @@ export function hostOf(task: HostFacts | undefined): Host {
     return { kind: "view", view: "completed" };
   }
   if (task.inbox) return { kind: "view", view: "inbox" };
-  if (task.area_id !== undefined) return { kind: "area", area: task.area_id };
+  if (task.area !== undefined) return { kind: "area", area: task.area };
   const view = STATUS_VIEWS.find((v) => v === task.status);
   return { kind: "view", view: view ?? "open" };
 }

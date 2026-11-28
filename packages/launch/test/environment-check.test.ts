@@ -1,4 +1,4 @@
-// Doctor's check of the agent's environment (A4 3.8; A3 3.14 `launch.env`; A7 3.11 M4.05b): the
+// Doctor's check of the agent's environment (`launch.env`): the
 // last snapshot attempt's outcome and the age of the one in use, and with `take` (`doctor --live`)
 // a login-shell snapshot taken now, fresh or not, and kept when it succeeds; on Windows whether
 // the registry could be read. Testkit's fake login shell stands in for a person's profile, and a fake

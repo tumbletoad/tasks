@@ -1,27 +1,26 @@
-// `ttasks install --finish [--created <path>]...` (A2 3.12.4 step 4 on Linux, step 5 on Windows):
+// `ttasks install --finish [--created <path>]...`:
 // the install scripts' hand-over to the version they have verified and renamed into
 // `<root>/versions/<v>/`, run through that version's own version-local launcher. Authenticity was
-// settled by the script before anything from the archive ran (review SL-13); this is the
+// settled by the script before anything from the archive ran; this is the
 // functional half:
 //   1. the install it belongs to is checked: a separate install whose root the launcher named, a
 //      umask that leaves the person's own bits, and a state folder no other user can change,
-//   2. the self-test: doctor's integrity and runtime rows and the candidate's checks (A2 3.12.6),
+//   2. the self-test: doctor's integrity and runtime rows and the candidate's checks,
 //      printed as doctor prints them. Any failure stops here, and current stays as it was. It
 //      checks the version, not whether bin holds both stable launchers yet: an install cut off
 //      between them is finished by the next step, never refused by this one,
 //   3. only then the switch (service's finishInstall): update.lock, current, the stable command,
 //      install.json with what the installer created,
-//   4. the stable command, and the offer of `ttasks service install` (A2 3.12.4), which this
+//   4. the stable command, and the offer of `ttasks service install`, which this
 //      never runs itself,
 //   5. when this install's service runs another version, the last lines say so and name the
 //      restart. A person at a terminal is asked once whether to restart it now: a restart ends
 //      background runs, so it never happens unasked.
 // It loads the service's install code, and with it storage, only for this command.
 import { existsSync, readdirSync, rmdirSync } from "node:fs";
-import { join } from "node:path";
-import { CLI_NAME, EARLIER_DATA_FOLDER, PRODUCT_NAME } from "@ttasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { shellLine } from "@ttasks/launch";
-import { homeFolder, hostFacts, type HostFacts, type Layout } from "@ttasks/service/paths";
+import { hostFacts, type Layout } from "@ttasks/service/paths";
 import type { Globals } from "./args.ts";
 import { candidateRows, versionChecks, type Check } from "./doctor.ts";
 import type { Io } from "./io.ts";
@@ -55,35 +54,6 @@ function removeIfMade(layout: Pick<Layout, "state" | "tmp">): void {
   }
 }
 
-/**
- * The line that names the data folder of a build from before the rename, so its spaces do not look
- * lost. Only the install that makes this version's data folder shows it: once, and never to a
- * person who already uses this version.
- */
-export function earlierDataNotice(facts: HostFacts, madeData: boolean): string | undefined {
-  if (!madeData) return undefined;
-  let home: string;
-  try {
-    home = homeFolder(facts);
-  } catch {
-    return undefined;
-  }
-  const folder = join(home, EARLIER_DATA_FOLDER);
-  if (!existsSync(folder)) return undefined;
-  return `${folder} holds the spaces and settings of a build from before the product was called ${PRODUCT_NAME}. This version does not use that folder and leaves it untouched.`;
-}
-
-/**
- * Whether this install makes the data folder. A separate install keeps its data in its root, which
- * the install script made in this run when it names "." among what it created.
- */
-export function makesDataFolder(
-  layout: Pick<Layout, "data" | "home">,
-  created: readonly string[],
-): boolean {
-  return layout.home === undefined ? !existsSync(layout.data) : created.includes(".");
-}
-
 export async function installCommand(
   io: Io,
   globals: Globals,
@@ -104,8 +74,7 @@ export async function installCommand(
   let target: ReturnType<typeof install.installTarget>;
   try {
     target = install.installTarget(versionFolder, facts);
-    // Before the self-test writes into `<state>/tmp`: the umask and the state folder
-    // (A2 3.2.2 rule 5).
+    // Before the self-test writes into `<state>/tmp`: the umask and the state folder.
     install.refuseBeforeFinish(target, io.platform);
   } catch (error) {
     if (error instanceof install.InstallError) {
@@ -116,7 +85,6 @@ export async function installCommand(
   }
   const state = target.layout.state;
   const stateExisted = existsSync(state);
-  const madeData = makesDataFolder(target.layout, parsed.created);
 
   const checks: Check[] = [
     ...(await versionChecks(io, versionFolder, undefined, { launchers: false })),
@@ -185,8 +153,6 @@ export async function installCommand(
       "",
     ].join("\n"),
   );
-  const earlier = earlierDataNotice(facts, madeData);
-  if (earlier !== undefined) io.stdout(`${earlier}\n`);
   if (pending && service !== undefined) {
     await offerRestart(
       io,

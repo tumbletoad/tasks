@@ -42,7 +42,14 @@ import { restoreBackup, restoreBackupWith, restoreInPlace } from "../src/restore
 import { SPACE_ROW_MAX_BYTES, unpackBackup } from "../src/restore/unpack.ts";
 import { encodeRevision } from "../src/schema.ts";
 import { LATEST_REVISION, openSpace } from "../src/space.ts";
-import { copyTree, rawWriter, readFacts, treeDigest, writeCommits } from "./backup-helpers.ts";
+import {
+  backupsBeside,
+  copyTree,
+  rawWriter,
+  readFacts,
+  treeDigest,
+  writeCommits,
+} from "./backup-helpers.ts";
 import { checkedDriver, createFixtureSpace, tempFolders, TEST_MACHINE } from "./space-helpers.ts";
 import { STEPS_0_1 } from "./revisions.ts";
 import { STEPS_MARK_GUARD } from "./stand-in-steps.ts";
@@ -768,18 +775,27 @@ describe("[A1.5.backup.free-reserve] the backup writer and the exporter keep the
       };
 
     const backupNeeds = backupPeak(size);
+    const dir = backupsBeside(folder);
     await expectCode(
       () =>
-        backupSpaceWith(checked, folder, { kind: "manual" }, { freeBytes: free(backupNeeds - 1) }),
+        backupSpaceWith(
+          checked,
+          folder,
+          { backupDir: dir, kind: "manual" },
+          { freeBytes: free(backupNeeds - 1) },
+        ),
       "BUNDLE_LIMIT_EXCEEDED",
     );
-    expect(existsSync(join(folder, "backups"))).toBe(false);
-    // Asked of the nearest folder that exists: the backups folder is not made yet.
-    expect(seen).toEqual([folder]);
-    await backupSpaceWith(checked, folder, { kind: "manual" }, { freeBytes: free(backupNeeds) });
+    expect(readdirSync(dir)).toEqual([]);
+    expect(seen).toEqual([dir]);
+    await backupSpaceWith(
+      checked,
+      folder,
+      { backupDir: dir, kind: "manual" },
+      { freeBytes: free(backupNeeds) },
+    );
     // Where the file system makes no hard link, the publication copies the compressed file: the
     // snapshot is gone by then, so the backup's files on disk never pass its peak.
-    const dir = join(folder, "backups");
     const onDisk = (): number =>
       readdirSync(dir)
         .filter((name) => !before.has(name))
@@ -800,7 +816,7 @@ describe("[A1.5.backup.free-reserve] the backup writer and the exporter keep the
     await backupSpaceWith(
       checked,
       folder,
-      { kind: "manual", now: () => Date.now() + 1000 },
+      { backupDir: backupsBeside(folder), kind: "manual", now: () => Date.now() + 1000 },
       { io: noLinks, freeBytes: free(backupNeeds) },
     );
     expect(most).toBeGreaterThan(0);
@@ -819,7 +835,7 @@ describe("[A1.5.backup.free-reserve] the backup writer and the exporter keep the
     await backupSpaceWith(
       checked,
       folder,
-      { kind: "manual", now: () => Date.now() + 2000 },
+      { backupDir: backupsBeside(folder), kind: "manual", now: () => Date.now() + 2000 },
       { io: held, freeBytes: free(backupNeeds) },
     );
     expect(most).toBeGreaterThan(2 * size);
@@ -887,7 +903,10 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     const { folder } = await createFixtureSpace(folders.make());
     await writeCommits(folder, 12);
     const live = await readFacts(folder);
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     const bundle = await exportBundle(checked, folder, { mode: "backup" });
     for (const file of [backup.file, bundle.file]) {
       const restored = await restoreBackup(checked, file, join(folders.make(), "mira"));
@@ -949,7 +968,10 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
       expect(readdirSync(join(folder, "exports")), sql).toEqual([clean.name]);
       // A backup is still taken (the writer copies what is there), and a crafted bundle holds the
       // change: a restore refuses both before its first write.
-      const backup = await backupSpace(checked, folder, { kind: "manual" });
+      const backup = await backupSpace(checked, folder, {
+        backupDir: backupsBeside(folder),
+        kind: "manual",
+      });
       const bundle = await rebuildBundle(clean.file, async (unpacked) => {
         const edit = await rawWriter(unpacked);
         try {
@@ -975,9 +997,7 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
       expect(bundleRefusal.message, sql).toContain("schema is not its revision's");
       expect(existsSync(join(parent, "a")) || existsSync(join(parent, "b")), sql).toBe(false);
       // Retention calls it unverified too: verified means what a restore accepts.
-      const listed = listBackups(join(folder, "backups")).backups.find(
-        (b) => b.name === backup.name,
-      );
+      const listed = listBackups(backupsBeside(folder)).backups.find((b) => b.name === backup.name);
       expect(listed === undefined ? "none" : await verifyBackup(checked, listed), sql).toEqual({
         state: "failed",
       });
@@ -988,8 +1008,13 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make(), "mira", {}, STEPS_0_1);
     await writeCommits(folder, 2, "s", STEPS_0_1);
-    const backup = await backupSpaceWith(checked, folder, { kind: "manual" }, { steps: STEPS_0_1 });
-    const listed = listBackups(join(folder, "backups")).backups[0];
+    const backup = await backupSpaceWith(
+      checked,
+      folder,
+      { backupDir: backupsBeside(folder), kind: "manual" },
+      { steps: STEPS_0_1 },
+    );
+    const listed = listBackups(backupsBeside(folder)).backups[0];
     if (listed === undefined) throw new Error("the backup is listed");
     expect(await verifyBackup(checked, listed)).toEqual({
       state: "verified",
@@ -1006,7 +1031,11 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     const { folder } = await createFixtureSpace(folders.make());
     await writeCommits(folder, 2);
     const at = Date.now() - 60_000;
-    const good = await backupSpace(checked, folder, { kind: "manual", now: () => at });
+    const good = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+      now: () => at,
+    });
     const conn = await rawWriter(folder);
     try {
       // A lineage the space's own writes never make: the first write would rewrite it twice.
@@ -1016,8 +1045,12 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     } finally {
       conn.close();
     }
-    const big = await backupSpace(checked, folder, { kind: "manual", now: () => at + 1000 });
-    const listing = listBackups(join(folder, "backups"));
+    const big = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+      now: () => at + 1000,
+    });
+    const listing = listBackups(backupsBeside(folder));
     for (const b of listing.backups) {
       expect(await verifyBackup(checked, b), b.name).toEqual(
         b.name === good.name ? { state: "verified", sidecar: good.sidecar } : { state: "failed" },
@@ -1049,7 +1082,11 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
       const { folder } = await createFixtureSpace(folders.make());
       await writeCommits(folder, 2);
       const at = Date.now() - 60_000;
-      const good = await backupSpace(checked, folder, { kind: "daily", now: () => at });
+      const good = await backupSpace(checked, folder, {
+        backupDir: backupsBeside(folder),
+        kind: "daily",
+        now: () => at,
+      });
       plant(join(folder, "space.db"), sql);
       const refusal = await expectCode(
         () => exportBundle(checked, folder, { mode: "backup" }),
@@ -1059,8 +1096,12 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
       expect(
         existsSync(join(folder, "exports")) ? readdirSync(join(folder, "exports")) : [],
       ).toEqual([]);
-      const bad = await backupSpace(checked, folder, { kind: "daily", now: () => at + 1000 });
-      const listing = listBackups(join(folder, "backups"));
+      const bad = await backupSpace(checked, folder, {
+        backupDir: backupsBeside(folder),
+        kind: "daily",
+        now: () => at + 1000,
+      });
+      const listing = listBackups(backupsBeside(folder));
       const listed = listing.backups.find((b) => b.name === bad.name);
       expect(listed === undefined ? "none" : await verifyBackup(checked, listed), sql).toEqual({
         state: "failed",
@@ -1125,8 +1166,11 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     expect(unchecked(join(unpacked, "space.db"))).toBe(0);
     expect(readFileSync(join(unpacked, "space.db")).includes(Buffer.from(token))).toBe(false);
     expect(readFileSync(bundle.file).includes(Buffer.from(token))).toBe(false);
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
-    const listed = listBackups(join(folder, "backups")).backups[0];
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
+    const listed = listBackups(backupsBeside(folder)).backups[0];
     if (listed === undefined) throw new Error("the backup is listed");
     expect(await verifyBackup(checked, listed)).toEqual({
       state: "verified",
@@ -1142,7 +1186,10 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
     await writeCommits(folder, 3, "s");
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     const bundle = await exportBundleWith(checked, folder, { mode: "backup" }, {});
     // The index is derived: neither record counts its rows.
     for (const counts of [backup.sidecar.counts, bundle.manifest.counts]) {
@@ -1153,7 +1200,7 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
       expect(restored.revision, file).toEqual(LATEST_REVISION);
       expect(restored.space.lastSeq, file).toBe(3);
     }
-    const listed = listBackups(join(folder, "backups")).backups[0];
+    const listed = listBackups(backupsBeside(folder)).backups[0];
     if (listed === undefined) throw new Error("the backup is listed");
     expect(await verifyBackup(checked, listed)).toEqual({
       state: "verified",
@@ -1170,7 +1217,10 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
       () => exportBundleWith(checked, folder, { mode: "backup" }, {}),
       "SPACE_SCHEMA_FOREIGN",
     );
-    const foreign = await backupSpace(checked, folder, { kind: "manual" });
+    const foreign = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     await expectCode(
       () => restoreBackup(checked, foreign.file, join(folders.make(), "mira")),
       "BACKUP_INVALID",
@@ -1260,7 +1310,10 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     };
     await addTriggers(folder);
     const before = await readFacts(folder);
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     // The export leaves triggers out of its bundle; another tool's bundle may hold them.
     const exported = await exportBundle(checked, folder, { mode: "backup" });
     const bundle = await rebuildBundle(exported.file, addTriggers);
@@ -1301,14 +1354,26 @@ describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backu
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
     const id = space.spaceId;
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const at = Date.UTC(2026, 10, 14);
     await writeCommits(folder, 1);
-    const oldest = await backupSpace(checked, folder, { kind: "daily", now: () => at - 3_000 });
+    const oldest = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "daily",
+      now: () => at - 3_000,
+    });
     await writeCommits(folder, 1);
-    const middle = await backupSpace(checked, folder, { kind: "daily", now: () => at - 2_000 });
+    const middle = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "daily",
+      now: () => at - 2_000,
+    });
     await writeCommits(folder, 1);
-    const newest = await backupSpace(checked, folder, { kind: "manual", now: () => at - 1_000 });
+    const newest = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+      now: () => at - 1_000,
+    });
     // The newest no longer verifies, though its size is right.
     const bytes = readFileSync(newest.file);
     bytes[bytes.length - 5] = (bytes[bytes.length - 5] ?? 0) ^ 1;
@@ -1320,7 +1385,7 @@ describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backu
     const parent = folders.make();
     const { restored, backup } = await restoreLatest(
       checked,
-      [dir],
+      dir,
       id,
       join(parent, "mira"),
       {},
@@ -1339,10 +1404,10 @@ describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backu
     expect(existsSync(newest.file)).toBe(true);
 
     // The target is checked before any candidate: one already there is refused at once.
-    await expectCode(() => restoreLatest(checked, [dir], id, join(parent, "mira")), "SPACE_EXISTS");
+    await expectCode(() => restoreLatest(checked, dir, id, join(parent, "mira")), "SPACE_EXISTS");
     // No backup of the space restores.
     await expectCode(
-      () => restoreLatest(checked, [dir], newId("sp", osRandom), join(parent, "other")),
+      () => restoreLatest(checked, dir, newId("sp", osRandom), join(parent, "other")),
       "BACKUP_INVALID",
     );
   });
@@ -1350,11 +1415,19 @@ describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backu
   test("a disk with room for an older backup but not the newest refuses, and never restores the older one", async () => {
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const at = Date.UTC(2026, 10, 14);
-    const older = await backupSpace(checked, folder, { kind: "daily", now: () => at - 2_000 });
+    const older = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "daily",
+      now: () => at - 2_000,
+    });
     await writeCommits(folder, 40);
-    const newest = await backupSpace(checked, folder, { kind: "manual", now: () => at - 1_000 });
+    const newest = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+      now: () => at - 1_000,
+    });
     expect(newest.sidecar.size).toBeGreaterThan(older.sidecar.size);
     const parent = folders.make();
     const room = BUNDLE_POLICY.freeSpaceReserveBytes + older.sidecar.size;
@@ -1362,7 +1435,7 @@ describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backu
       () =>
         restoreLatest(
           checked,
-          [dir],
+          dir,
           space.spaceId,
           join(parent, "mira"),
           {},
@@ -1374,7 +1447,7 @@ describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backu
     );
     expect(readdirSync(parent)).toEqual([]);
     // With room for it, the newest is the one restored.
-    const { backup } = await restoreLatest(checked, [dir], space.spaceId, join(parent, "mira"));
+    const { backup } = await restoreLatest(checked, dir, space.spaceId, join(parent, "mira"));
     expect(backup).toBe(newest.name);
   });
 });
@@ -1409,30 +1482,41 @@ describe("[A1.5.restore.not-the-backup] a failure that is not the backup's is sa
   test("SQLite running out of memory while the newest backup is checked or first written stops restore latest, and the older backup is not restored", async () => {
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const at = Date.UTC(2026, 10, 14);
-    await backupSpace(checked, folder, { kind: "manual", now: () => at - 2_000 });
+    await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+      now: () => at - 2_000,
+    });
     await writeCommits(folder, 3);
-    const newest = await backupSpace(checked, folder, { kind: "manual", now: () => at - 1_000 });
+    const newest = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+      now: () => at - 1_000,
+    });
     const parent = folders.make();
     // The first open of the staged copy is its check, the second the restore's first write.
     for (const nth of [1, 2]) {
       const failing = await failingOnce(".mira.restoring-", NO_MEMORY(), nth);
       await expectCode(
-        () => restoreLatest(failing, [dir], space.spaceId, join(parent, "mira")),
+        () => restoreLatest(failing, dir, space.spaceId, join(parent, "mira")),
         "STORAGE_SQL",
       );
       expect(readdirSync(parent)).toEqual([]);
     }
-    const { backup } = await restoreLatest(checked, [dir], space.spaceId, join(parent, "mira"));
+    const { backup } = await restoreLatest(checked, dir, space.spaceId, join(parent, "mira"));
     expect(backup).toBe(newest.name);
   });
 
   test("SQLite running out of memory in a trial restore leaves the backup unchecked, and a restore by name says it as itself", async () => {
     const { folder } = await createFixtureSpace(folders.make());
     const checked = await checkedDriver();
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
-    const [listed] = listBackups(join(folder, "backups")).backups;
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
+    const [listed] = listBackups(backupsBeside(folder)).backups;
     if (listed === undefined) throw new Error("a backup expected");
     for (const nth of [1, 2]) {
       const failing = await failingOnce(".backup.tmp-", NO_MEMORY(), nth);
@@ -1457,14 +1541,22 @@ describe("[A1.5.restore.not-the-backup] a failure that is not the backup's is sa
   test("a backup whose database SQLite finds corrupt is damaged: restore latest takes the older one, and its trial restore fails", async () => {
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const at = Date.UTC(2026, 10, 14);
-    const older = await backupSpace(checked, folder, { kind: "manual", now: () => at - 2_000 });
+    const older = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+      now: () => at - 2_000,
+    });
     await writeCommits(folder, 3);
-    await backupSpace(checked, folder, { kind: "manual", now: () => at - 1_000 });
+    await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+      now: () => at - 1_000,
+    });
     const parent = folders.make();
     const corrupt = await failingOnce(".mira.restoring-", sqliteError(11));
-    const { backup } = await restoreLatest(corrupt, [dir], space.spaceId, join(parent, "mira"));
+    const { backup } = await restoreLatest(corrupt, dir, space.spaceId, join(parent, "mira"));
     expect(backup).toBe(older.name);
     const [newest] = listBackups(dir).backups;
     if (newest === undefined) throw new Error("a backup expected");
@@ -1475,19 +1567,27 @@ describe("[A1.5.restore.not-the-backup] a failure that is not the backup's is sa
   test("an I/O error on the destination while the newest backup is checked stops restore latest, and the older backup is not restored", async () => {
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
-    const dir = join(folder, "backups");
+    const dir = backupsBeside(folder);
     const at = Date.UTC(2026, 10, 14);
-    const older = await backupSpace(checked, folder, { kind: "manual", now: () => at - 2_000 });
+    const older = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+      now: () => at - 2_000,
+    });
     await writeCommits(folder, 3);
-    const newest = await backupSpace(checked, folder, { kind: "manual", now: () => at - 1_000 });
+    const newest = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+      now: () => at - 1_000,
+    });
     const parent = folders.make();
     const failing = await failingOnce(".mira.restoring-", "DURABILITY_FAILED");
     await expectCode(
-      () => restoreLatest(failing, [dir], space.spaceId, join(parent, "mira")),
+      () => restoreLatest(failing, dir, space.spaceId, join(parent, "mira")),
       "DURABILITY_FAILED",
     );
     expect(readdirSync(parent)).toEqual([]);
-    const { backup } = await restoreLatest(checked, [dir], space.spaceId, join(parent, "mira"));
+    const { backup } = await restoreLatest(checked, dir, space.spaceId, join(parent, "mira"));
     expect(backup).toBe(newest.name);
     expect(older.name).not.toBe(newest.name);
   });
@@ -1495,8 +1595,11 @@ describe("[A1.5.restore.not-the-backup] a failure that is not the backup's is sa
   test("a trial restore that fails on the disk says so, and leaves the backup neither verified nor failed", async () => {
     const { folder } = await createFixtureSpace(folders.make());
     const checked = await checkedDriver();
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
-    const [listed] = listBackups(join(folder, "backups")).backups;
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
+    const [listed] = listBackups(backupsBeside(folder)).backups;
     if (listed === undefined) throw new Error("a backup expected");
     const failing = await failingOnce(".backup.tmp-", "DURABILITY_FAILED");
     expect(await verifyBackup(failing, listed)).toEqual({

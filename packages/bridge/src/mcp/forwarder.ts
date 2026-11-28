@@ -1,16 +1,16 @@
-// The forwarder (A2 3.7): the agent app's stdio on one side, the service's mcp mode connection on
+// The forwarder: the agent app's stdio on one side, the service's mcp mode connection on
 // the other. It holds no task logic and no MCP server. It
-// - pipes whole lines both ways without changing them (A2 3.7.2), and tracks the requests in
+// - pipes whole lines both ways without changing them, and tracks the requests in
 //   flight from one parse of each line;
-// - answers from the offline file while there is no connection (A2 3.7.4), and keeps the client's
+// - answers from the offline file while there is no connection, and keeps the client's
 //   first `initialize` or `server/discover` to hand to the service as `mcp_init`;
 // - reconnects with the backoff 0.5, 1, 2, 5, then every 10 s, binding again with what its first
 //   bind answer named, a space or none, which it keeps for its life, and with the handle an older
-//   service's last answer carried (A2 3.7.5).
+//   service's last answer carried.
 //   Requests in flight at a loss get `connection_lost`. Requests that arrive while it reconnects
 //   wait for the new connection, up to `holdMs`, so a restart costs the agent at most the call
 //   that was in flight;
-// - respects backpressure both ways (A2 3.6.2): a stdin line goes to the socket only while
+// - respects backpressure both ways: a stdin line goes to the socket only while
 //   the socket takes them, a service line to stdout only while stdout takes them, and every
 //   buffer it holds has a bound;
 // - keeps its process alive until stop(): stdin may be paused with no connection open, so its
@@ -47,11 +47,11 @@ import {
 import { unavailableOf, type OfflineReason, type Unavailable } from "./unavailable.ts";
 
 export interface Timing {
-  /** The delay before each reconnect attempt; the last one repeats (A2 3.7.4). */
+  /** The delay before each reconnect attempt; the last one repeats. */
   readonly backoffMs: readonly number[];
   /**
    * After a lost connection, requests wait this long for a new one before the offline answer.
-   * It covers a service restart: a drain of up to 5 s (A2 3.3.1) and a new start.
+   * It covers a service restart: a drain of up to 5 s and a new start.
    */
   readonly holdMs: number;
 }
@@ -137,25 +137,13 @@ const isPowerOfTen = (n: number): boolean => /^10*$/.test(String(n));
 /**
  * What a bind answer says of this process's space: a space, or null for none. One bridge process
  * works in one space for its life, so the first answer is kept and sent back at every bind.
- * Undefined: the answer says nothing of it. An older service's answer carries a handle, and its
- * null is a space that service has not chosen yet, not none.
+ * Undefined: the answer says nothing of it.
  */
 function spaceIn(binding: unknown): string | null | undefined {
   if (!isObject(binding) || !Object.hasOwn(binding, "space")) return undefined;
   const space = binding["space"];
-  if (space === null) return Object.hasOwn(binding, "handle") ? undefined : null;
+  if (space === null) return null;
   return typeof space === "string" && /^sp_[0-9a-z]{26}$/.test(space) ? space : undefined;
-}
-
-/**
- * The handle an older service's answer carries, kept for the next bind: A2's `bh_…`, shaped as an
- * ID, never logged. This service sends none. Sent back, it lets an older service (an update rolled
- * back) resume the binding it made, and tells this service that the bridge met an older one, so a
- * bridge whose space that service chose is not moved to the default of this moment.
- */
-function handleOf(binding: unknown): string | undefined {
-  const handle = isObject(binding) ? binding["handle"] : undefined;
-  return typeof handle === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(handle) ? handle : undefined;
 }
 
 export class Forwarder {
@@ -190,7 +178,6 @@ export class Forwarder {
   #era: Era | undefined;
   /** The latest `initialize` or `server/discover` the bridge dispatched, for later binds. */
   #mcpInit: JsonObject | undefined;
-  #handle: string | undefined;
   #space: string | null | undefined;
   #content: OfflineContent | undefined;
   #missingReported = false;
@@ -391,7 +378,7 @@ export class Forwarder {
   }
 
   /**
-   * Keeps the client's `initialize` or `server/discover` for later binds (A2 3.7.4), and its era.
+   * Keeps the client's `initialize` or `server/discover` for later binds, and its era.
    * The latest one counts: a client whose `server/discover` was refused falls back to
    * `initialize` and the legacy era, and its session goes on from that request.
    */
@@ -445,7 +432,7 @@ export class Forwarder {
     let session: LineSession | undefined;
     let failure: Unavailable | undefined;
     try {
-      session = await this.#o.dial(bindContext(this.#o.context, init, this.#handle, this.#space));
+      session = await this.#o.dial(bindContext(this.#o.context, init, this.#space));
     } catch (error) {
       failure = unavailableOf(error);
     }
@@ -461,7 +448,6 @@ export class Forwarder {
       // The client's initialize or server/discover was answered offline while this bind was on
       // its way without it. Bind again, so the service starts the session from it. An older
       // service's handle resumes the binding this bind made (its result was authenticated).
-      this.#handle = handleOf(session.bound.binding) ?? this.#handle;
       if (this.#space === undefined) this.#space = spaceIn(session.bound.binding);
       session.close();
       this.#schedule(0);
@@ -475,7 +461,6 @@ export class Forwarder {
     this.#backoff = 0;
     this.#failure = undefined;
     this.#reported = undefined;
-    this.#handle = handleOf(session.bound.binding);
     if (this.#space === undefined) this.#space = spaceIn(session.bound.binding);
     clearTimeout(this.#hold);
     this.#hold = undefined;
@@ -498,7 +483,7 @@ export class Forwarder {
     this.#inflight.clear();
     this.#inflightBytes = 0;
     if (this.#stopping) return;
-    // Every request still in flight gets its answer now (A2 3.7.5): a tool call `connection_lost`.
+    // Every request still in flight gets its answer now: a tool call `connection_lost`.
     const content = lost.length === 0 ? undefined : this.#offlineContent();
     for (const pending of lost) this.#reply(lostReply(content, pending, this.#era));
     this.#o.warn("lost the connection to the service; reconnecting");

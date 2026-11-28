@@ -21,6 +21,8 @@ import {
   isOpenRun,
   RECORDED,
   RUN_REQUEST_MAX_BYTES,
+  type Instance,
+  type LastUsed,
   type ReadRunState,
   type RunRecord,
 } from "@ttasks/contracts/runs";
@@ -47,22 +49,9 @@ import { WORK_ON_IT } from "../runs/agent.ts";
 import { runAnswer } from "../runs/service.ts";
 import type { HttpLog } from "./events.ts";
 
-/** An instance as the page draws its tile (A5 3.6): a key, a label, a monogram and a ring slot. */
-export interface UiInstance {
-  /** The instance's key in machine.toml's `[[instance]]`. */
-  readonly key: string;
-  /** The app's name, which the page groups its instances by: "Codex". */
-  readonly app: string;
-  /** Its name as every place shows it: "Codex", or "Codex · work" beside another Codex. */
-  readonly label: string;
-  /** A neutral monogram, one or two characters: "Cx". */
-  readonly glyph: string;
-  /** One of the eight ring slots of A5 3.19. */
-  readonly ring: number;
-  /** How Open opens it here; absent when Open cannot, and the tile is for Run. */
+/** An instance as the page draws its tile, with a route Open knows. */
+export interface UiInstance extends Instance {
   readonly route?: Route;
-  /** It can work on a task in the background (Run). Absent: it cannot. */
-  readonly runs?: true;
 }
 
 /**
@@ -309,17 +298,9 @@ const LAST_OPEN =
   "FROM launches WHERE machine_id = $machine AND route <> 'clipboard' AND state <> 'failed' " +
   "ORDER BY created_at DESC, id DESC LIMIT 1";
 const LAST_SQL =
-  `SELECT (SELECT instance_id ${LAST_OPEN}) AS open, (SELECT route ${LAST_OPEN}) AS open_route, ` +
+  `SELECT (SELECT instance_id ${LAST_OPEN}) AS open, ` +
   "(SELECT instance_id FROM runs WHERE machine_id = $machine ORDER BY queued_at DESC, id DESC " +
   "LIMIT 1) AS run";
-
-/** The instance a space's last Open here used, and its last Run's, by key. */
-export interface UiLast {
-  readonly open?: string;
-  /** The route of that Open: a key no longer in machine.toml still says T3 Code (`t3-mcp`). */
-  readonly open_route?: string;
-  readonly run?: string;
-}
 
 const LIST_SQL =
   "SELECT id, reference, instance_id, route, state, reason, detail FROM launches " +
@@ -489,14 +470,13 @@ export class UiLaunches {
    * The instances this machine last opened a task of the space in and last ran one with, from the
    * space's own records: what the page's Open and Run use when the task names none of its own.
    */
-  async last(spaceRef: string | undefined, copy?: string): Promise<UiLast> {
+  async last(spaceRef: string | undefined, copy?: string): Promise<LastUsed> {
     const { reader } = this.#space(spaceRef, copy);
     if (reader === undefined) return {};
     const [row] = await reader.all(LAST_SQL, { machine: this.#options.host.machine.id });
-    const { open, open_route: route, run } = row ?? {};
+    const { open, run } = row ?? {};
     return {
       ...(typeof open === "string" ? { open } : {}),
-      ...(typeof route === "string" ? { open_route: route } : {}),
       ...(typeof run === "string" ? { run } : {}),
     };
   }

@@ -10,10 +10,16 @@ import { takeTaskRef } from "../refs.ts";
 import { columnsValue, fieldJson } from "../write/fields.ts";
 import { Fields, type Credential, type Envelope } from "../write/request.ts";
 import { provenanceOf, rowState, versionOf, type RowState } from "../write/row-state.ts";
-import { columnsOf, FIELDS, KEYS, TreeProblem, type Entity, type FieldOf } from "./fields.ts";
-
-/** Columns a create change leaves out: each follows from the change's seq. */
-const DERIVED = new Set(["created_seq", "version", "touched", "fv", "fp"]);
+import {
+  columnsOf,
+  FIELDS,
+  keyOf,
+  KEYS,
+  TreeProblem,
+  type Entity,
+  type FieldOf,
+} from "./fields.ts";
+import { DERIVED } from "./schema.ts";
 
 const SQL = {
   lifecycle: "SELECT lifecycle FROM tasks WHERE id = $id",
@@ -21,7 +27,7 @@ const SQL = {
   touched: "UPDATE nodes SET touched = $seq WHERE id = $id",
 } as const;
 
-const rowSql = (entity: Entity): string => `SELECT * FROM ${entity} WHERE id = $id`;
+const rowSql = (entity: Entity): string => `SELECT * FROM ${entity} WHERE ${keyOf(entity)} = $id`;
 
 /** Who asks, as today's writer reads a credential. */
 export type TreeActor = Credential;
@@ -140,7 +146,9 @@ export class Tx {
     return takeTaskRef(this.conn);
   }
 
-  newId<P extends "t" | "p" | "n">(prefix: P): Id<P> {
+  newId<P extends "t" | "p" | "n" | "pg" | "s" | "lk" | "la" | "ru" | "fo" | "oc">(
+    prefix: P,
+  ): Id<P> {
     return newId(prefix, this.random);
   }
 
@@ -165,7 +173,7 @@ export class Tx {
       `INSERT INTO ${entity} (${all.join(", ")}) VALUES (` +
       `${[...columns.map((c) => `$${c}`), "$seq", "$seq", ...(entity === "nodes" ? ["$seq"] : [])].join(", ")})`;
     this.conn.prepare(sql).run({ ...values, seq: this.seq });
-    const id = String(values["id"]);
+    const id = String(values[keyOf(entity)]);
     this.#rows.set(`${entity}|${id}`, {
       entity,
       id,
@@ -236,6 +244,15 @@ export class Tx {
   }
 
   /**
+   * Holds the request to `fields` of a row as they stood at the base, written or not; true when
+   * one changed since, and the request then writes nothing.
+   */
+  held(entity: Entity, id: string, node: string | null, fields: readonly string[]): boolean {
+    if (fields.length === 0) return false;
+    return this.#newer(this.#touch(entity, id, node), fields).length > 0;
+  }
+
+  /**
    * Sets fields of an existing row, each as an object of its columns (a one-column field may be
    * given as its value). The fields of one call change together: when any of them changed after
    * the base, the call writes none of them, the conflicts are collected, and the request writes
@@ -273,7 +290,8 @@ export class Tx {
       row.fields.add(field);
     }
     if (assign.length > 0) {
-      this.conn.prepare(`UPDATE ${entity} SET ${assign.join(", ")} WHERE id = $id`).run(params);
+      const where = `WHERE ${keyOf(entity)} = $id`;
+      this.conn.prepare(`UPDATE ${entity} SET ${assign.join(", ")} ${where}`).run(params);
     }
   }
 
@@ -326,7 +344,9 @@ export class Tx {
         }
         if (!changed) continue;
         this.conn
-          .prepare(`UPDATE ${row.entity} SET version = $seq, fv = $fv, fp = $fp WHERE id = $id`)
+          .prepare(
+            `UPDATE ${row.entity} SET version = $seq, fv = $fv, fp = $fp WHERE ${keyOf(row.entity)} = $id`,
+          )
           .run({ seq: this.seq, fv: JSON.stringify(fv), fp: JSON.stringify(fp), id: row.id });
       }
       if (row.node !== null) nodes.add(row.node);
@@ -359,6 +379,8 @@ const head = (row: Written) => ({ entity: row.entity, entityId: row.id, node: ro
 export interface Command {
   check: (input: Fields) => Record<string, unknown>;
   run: (tx: Tx, input: Record<string, unknown>) => unknown;
+  /** A look that is asked again: an answer that wrote nothing keeps no receipt. */
+  poll?: true;
 }
 
 /** What Undo and Redo ask the core for: the commit they answer, and what to run. */

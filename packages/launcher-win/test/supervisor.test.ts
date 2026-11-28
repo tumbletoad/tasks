@@ -1,4 +1,4 @@
-// ttasksw.exe's supervisor loop (A2 3.3.1, 3.3.2),
+// ttasksw.exe's supervisor loop,
 // with the stub service of test/stub/ttasks.mjs. The test build (TTASKS_TEST_HOOKS) shortens the
 // time unit and traces each decision, so the sequence is checked exactly and the waits are
 // checked against the stub's own clock. Windows only: elsewhere every test is collected and skipped.
@@ -203,7 +203,7 @@ describe.runIf(windows)(
       for (const start of s.starts) {
         expect(start.args).toEqual(["serve"]);
         expect(start.mode).toBe("stable");
-        // The service learns who supervises it, whatever the caller had set (M1.12).
+        // The service learns who supervises it, whatever the caller had set.
         expect(start.manager).toBe("ttasksw");
         expect(start.version).toBe(OLD);
         expect(samePath(start.execPath, join(root, "versions", OLD, "runtime", "node.exe"))).toBe(

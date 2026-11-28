@@ -26,6 +26,7 @@ export const ID_PREFIXES = {
   run: "ru",
   project: "p",
   routine: "ro",
+  occurrence: "oc",
   note: "n",
   proposal: "pr",
   log: "l",
@@ -42,6 +43,7 @@ export const ID_PREFIXES = {
   remoteCommand: "rc",
   incarnation: "ai",
   transfer: "tr",
+  link: "lk",
 } as const;
 
 export type IdKind = keyof typeof ID_PREFIXES;

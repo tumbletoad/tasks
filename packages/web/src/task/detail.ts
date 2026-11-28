@@ -8,7 +8,7 @@
 // as their requests come whole with the digest, by reference, whatever their age or length. Plain
 // code: the hook (useDetail.ts) refetches it when the feed touches the task.
 import type { Client } from "@ttasks/contracts/generated/client.ts";
-import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
+import { nodeNamed, type Nodes, type TaskRow } from "@ttasks/client/store";
 
 type GetResult = Awaited<ReturnType<Client["task"]["get"]>>;
 type DigestView = Extract<GetResult, { view: "digest" }>;
@@ -202,16 +202,7 @@ export function mergePages(
  * A row for a task the live store does not hold (a completed or archived one, A5 3.3's injected
  * row), from its digest. Its area and project are found by their names among the live ones.
  */
-export function rowOfFacts(
-  facts: TaskFacts,
-  areas: ReadonlyMap<string, AreaRow>,
-  projects: ReadonlyMap<string, ProjectRow>,
-  today: string,
-): TaskRow {
-  const area = [...areas.values()].find((a) => a.title === facts.area);
-  const project = [...projects.values()].find(
-    (p) => p.title === facts.project && (area === undefined || p.area_id === area.id),
-  );
+export function rowOfFacts(facts: TaskFacts, nodes: Nodes, today: string): TaskRow {
   const created = facts.created === undefined ? Number.NaN : Date.parse(facts.created);
   const due = facts.due;
   // The digest bounds the title (A3 3.9.6): a title it cut ends in an ellipsis, so the row never
@@ -231,8 +222,7 @@ export function rowOfFacts(
     ...(typeof due === "object" ? { due_at: Date.parse(due.at), due_tz: due.tz } : {}),
     ...(facts.focus ? { focus_on: today } : {}),
     ...(facts.waiting_on === undefined ? {} : { waiting_on: facts.waiting_on }),
-    ...(area === undefined ? {} : { area_id: area.id }),
-    ...(project === undefined ? {} : { project_id: project.id }),
+    parent: nodeNamed(nodes, facts.area, facts.project),
     // First in its group: the injected row sits at the top of it (A5 3.3).
     position: "",
     ...(facts.wrap_state === undefined ? {} : { wrap_state: facts.wrap_state }),

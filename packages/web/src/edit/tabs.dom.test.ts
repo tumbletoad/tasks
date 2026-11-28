@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import { FakeFrames } from "../../test/fake-frames.ts";
 import { LiveStore } from "../store/store.ts";
-import type { SnapshotMessage, TaskRow } from "../store/rows.ts";
+import type { SnapshotMessage, TaskRow } from "@ttasks/client/store";
 import { priorityChange } from "./change.ts";
 import { Edits, type Unsaved } from "./edits.ts";
 import { unsavedKeeper } from "../unsent.ts";
@@ -22,6 +22,7 @@ const TASK: TaskRow = {
   position: "p1",
   created_at: Date.UTC(2026, 10, 1),
   version: 1,
+  parent: SPACE.id,
 };
 
 const flush = async () => {
@@ -93,8 +94,7 @@ function tab(outcome: () => Promise<unknown>) {
     space: SPACE,
     cursor: { epoch: 1, incarnation: "ai_0123456789abcdefghjkmnpq", seq: 10 },
     tasks: [TASK],
-    areas: [],
-    projects: [],
+    nodes: [],
     instances: [],
   };
   store.push(snapshot);
@@ -116,6 +116,7 @@ function tab(outcome: () => Promise<unknown>) {
     failed: () => false,
     onChanges: (listener) => store.onChanges(listener),
     rowOf: () => TASK,
+    space: () => SPACE.id,
     newRequest: () => "rq-1",
     keeper: unsavedKeeper(SPACE.id),
   });

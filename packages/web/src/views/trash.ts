@@ -3,9 +3,9 @@
 // groups are unit tests: the page source, one group per change that moved tasks there, and how many
 // tasks agents moved there since the person last had it open in this browser.
 import type { Client } from "@ttasks/contracts/generated/client.ts";
-import type { Group } from "../groups.ts";
+import type { Group } from "../list/items.ts";
 import { browserKept, type Kept } from "../kept.ts";
-import { taskRow, type TaskRow } from "../store/rows.ts";
+import { taskRow, type TaskRow } from "@ttasks/client/store";
 import type { Page, PageSource } from "../store/queries.ts";
 import type { HeldRow } from "./TaskList.tsx";
 

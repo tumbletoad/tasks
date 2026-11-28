@@ -1,4 +1,4 @@
-// The install scripts (A7 3.8 M1.14, A2 3.12.4): install.sh on Linux and install.ps1 on Windows,
+// The install scripts: install.sh on Linux and install.ps1 on Windows,
 // run as a person runs them, on the run's release (scripts/install/test/install-file.ts). Every
 // install goes into a root below a temporary folder of this file's own; nothing touches the real
 // install root, PATH, a profile, a start-up entry or the registry. The canary stand-ins prove that
@@ -50,7 +50,7 @@ describe("[A2.3.12.4.install.replace] installing again, a newer version, and a f
       const kept = snapshot(folder);
       expectInstalled(root, install({ root }));
       expect(snapshot(folder)).toEqual(kept);
-      // A2 3.12.4 step 7: a changed file, every runnable file a stand-in with a matching manifest,
+      // A changed file, every runnable file a stand-in with a matching manifest,
       // and the files of another build of the same version. Each in a copy of the install.
       const cases: [string, (dir: string) => void, RegExp][] = [
         [
@@ -147,7 +147,7 @@ describe("[A2.3.12.4.install.replace] installing again, a newer version, and a f
       expect(failed.stderr).toMatch(/failed its self-test, so current was not changed/);
       // current and install.json are as they were, and the installed command still runs. The
       // failed version's verified folder stays, not current: in an existing install an update may
-      // use it meanwhile (A2 3.12.4), so the script never removes it. The new version's own
+      // use it meanwhile, so the script never removes it. The new version's own
       // start may leave its compile cache.
       const after = snapshot(root);
       const failedFolder = "versions/0.1.0-dev.3/";

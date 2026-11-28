@@ -1,4 +1,4 @@
-// The handshake's messages (A2 3.6.3): builders for the side that sends each one and strict
+// The handshake's messages: builders for the side that sends each one and strict
 // parsers for the side that receives it. A parser returns undefined for anything that is not
 // exactly the expected message, so the caller refuses it without looking further.
 import {
@@ -16,13 +16,13 @@ import { decode32, isNonce, type BindBody } from "./proofs.ts";
 
 export type JsonObject = Record<string, unknown>;
 
-/** The client details of the bind frame (A2 3.6.3). */
+/** The client details of the bind frame. */
 export interface ClientInfo {
   readonly kind: ClientKind;
   readonly version: string;
   readonly build: string;
   readonly pid: number;
-  /** The package identity of a packaged parent (Windows), else null (A2 3.5 rule 7). */
+  /** The package identity of a packaged parent (Windows), else null. */
   readonly package: string | null;
   /**
    * Which of the client's standard streams are terminals. `stderr` is absent from a client that

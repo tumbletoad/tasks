@@ -2,7 +2,7 @@
 // a folder relative to the working one, --here and folder=, and clear it; `ttasks area` makes a
 // project with its folder, and with --create makes the folder first, as the person's mkdir would,
 // removed after a refusal and kept after a lost reply; one undo takes the whole act back; `tasks
-// area list` shows the folders; the old --place and place= name --folder. The CLI in this process
+// area list` shows the folders. The CLI in this process
 // against a service in this process; fixture text and temporary folders only.
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -175,14 +175,5 @@ describe("[A3.3.4.folders.cli] folders at the command line", () => {
       error: { code: "invalid_input", data: { reason: "folder_reserved" } },
     });
     expect(existsSync(inside)).toBe(false);
-  });
-
-  test("the old --place and place= name --folder", async () => {
-    const flag = await tasks(["add", "Fixture old flag", "--place", "."], w.root);
-    expect(flag.code).toBe(2);
-    expect(flag.stderr).toContain("use --folder");
-    const key = await tasks(["set", "M-1", "place=."], w.root);
-    expect(key.code).toBe(2);
-    expect(key.stderr).toContain("use folder=");
   });
 });

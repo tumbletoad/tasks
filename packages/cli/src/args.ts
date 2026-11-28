@@ -1,4 +1,4 @@
-// The CLI's arguments (A2 3.10.2, A3 3.2.2): the global flags, then a generated verb's arguments
+// The CLI's arguments: the global flags, then a generated verb's arguments
 // from `cli-spec.json`. Argv can hold task text, so a usage error names the option or the verb,
 // never a value it was given.
 import { RequestId } from "@ttasks/contracts";
@@ -10,7 +10,7 @@ export class UsageError extends Error {
 }
 
 /**
- * Whether `value` is a request ID (A3 3.4.1), from whatever source: --request-id or --input. The
+ * Whether `value` is a request ID, from whatever source: --request-id or --input. The
  * CLI prints a request ID in its retry hint, so one that is not checked could carry any text.
  */
 export const isRequestId = (value: unknown): value is string => RequestId.safeParse(value).success;
@@ -20,7 +20,7 @@ export interface Globals {
   readonly json: boolean;
   readonly space: string | undefined;
   readonly requestId: string | undefined;
-  /** Seconds a call may take (A2 3.10.2: 30 by default). */
+  /** Seconds a call may take (30 by default). */
   readonly timeoutS: number;
   readonly quiet: boolean;
   readonly verbose: boolean;
@@ -43,24 +43,16 @@ const FLAG_GLOBALS = new Set([
   "--help",
 ]);
 
-/** Fields an earlier build took, and the field that replaced each. */
-const RENAMED: Readonly<Record<string, string>> = { place: "folder" };
-
 /**
  * The usage error for an unknown option: it names the option when it is a plain option word, else
  * nothing of what was typed (argv can hold task text).
  */
 export function unknownOption(command: string, token: string): UsageError {
   const name = token.split("=")[0] ?? "";
-  const now = Object.hasOwn(RENAMED, name.replace(/^--/, ""))
-    ? RENAMED[name.replace(/^--/, "")]
-    : undefined;
   return new UsageError(
-    now !== undefined
-      ? `${command} has no option ${name}: use --${now}`
-      : /^--?[A-Za-z][A-Za-z0-9-]{0,40}$/.test(name)
-        ? `${command} has no option ${name}`
-        : `${command} has no such option`,
+    /^--?[A-Za-z][A-Za-z0-9-]{0,40}$/.test(name)
+      ? `${command} has no option ${name}`
+      : `${command} has no such option`,
   );
 }
 
@@ -183,7 +175,7 @@ export interface VerbSpec {
   readonly item?: string;
   readonly fixed?: Readonly<Record<string, unknown>>;
   readonly inputOnly: readonly string[];
-  /** A write verb whose action field also picks reads (A3 3.2.3): those take no request ID. */
+  /** A write verb whose action field also picks reads: those take no request ID. */
   readonly actions?: { readonly field: string; readonly reads: readonly string[] };
 }
 
@@ -323,9 +315,9 @@ export interface ParsedVerb {
 }
 
 /**
- * A generated verb's input from its arguments (A3 3.2.2): positionals in order, flags, repeated
+ * A generated verb's input from its arguments: positionals in order, flags, repeated
  * flags, `key=value` for the verb's object field, and its fixed values. A text value `-` reads
- * stdin (A2 3.10.2), once.
+ * stdin, once.
  */
 export async function parseVerb(
   verb: VerbSpec,
@@ -383,15 +375,6 @@ export async function parseVerb(
     }
     const eq = token.indexOf("=");
     const key = eq > 0 ? keys.get(token.slice(0, eq)) : undefined;
-    const old = eq > 0 ? token.slice(0, eq) : "";
-    if (
-      !ended &&
-      key === undefined &&
-      Object.hasOwn(RENAMED, old) &&
-      keys.has(RENAMED[old] ?? "")
-    ) {
-      throw new UsageError(`ttasks ${verb.verb} has no key ${old}: use ${RENAMED[old] ?? ""}=`);
-    }
     if (!ended && key !== undefined && verb.keyValue !== undefined) {
       const raw = await text(token.slice(eq + 1), key.type);
       setAt(input, key.field, typed(raw, key.type, key.values, key.key), false);

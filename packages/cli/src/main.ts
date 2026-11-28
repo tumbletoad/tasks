@@ -1,12 +1,12 @@
-// `ttasks` (A2 3.10): one command. The generated operation verbs come from the registry's
-// `cli-spec.json` (A3 3.2.2); the local commands are routed here.
+// `ttasks`: one command. The generated operation verbs come from the registry's
+// `cli-spec.json`; the local commands are routed here.
 //
-// Every operation verb, `ttasks space`, `ttasks roots` and `ttasks view` go through the service: the CLI opens no space database
+// Every operation verb, `ttasks space` and `ttasks view` go through the service: the CLI opens no space database
 // itself. These work without a service, by design: `ttasks` alone and `ttasks help` (they print the
 // service's state from service.json), `ttasks version`, `ttasks doctor` (a stopped or untrusted
 // service is what it diagnoses) and `ttasks serve` (it is the service).
 //
-// The two verbs other steps brought: `ttasks service` (M1.12) and `ttasks mcp` (the bridge, M2.01).
+// The two verbs other steps brought: `ttasks service` and `ttasks mcp` (the bridge).
 //
 // `ttasks mcp` takes its arguments unparsed: they are the bridge's, so it is routed before the
 // CLI's options are split, and an option of the CLI's before it is a usage error. bin.ts hands
@@ -24,7 +24,6 @@ import type { Io } from "./io.ts";
 import { isBridge, runBridge } from "./mcp.ts";
 import { openCommand, servicePortCommand, type OpenOptions } from "./open.ts";
 import { bodyOf, printError, printUsage } from "./output.ts";
-import { rootsCommand } from "./roots.ts";
 import { runCommand } from "./runs.ts";
 import { refusedArgument, refusedGlobal, serviceCommand, serviceUsage } from "./service.ts";
 import { setupCommand, type SetupOptions } from "./setup.ts";
@@ -62,7 +61,7 @@ type Command = (
 export const SLOTS: Record<"service" | "mcp", Command | undefined> = {
   service: (io, globals, args, options) =>
     serviceCommand(io, globals, args, options.serviceContext),
-  // The bridge: the arguments after `mcp`, as they are (A2 3.7.1).
+  // The bridge: the arguments after `mcp`, as they are.
   mcp: (_io, _globals, args, options) => (options.mcp ?? runBridge)(args),
 };
 
@@ -80,7 +79,7 @@ function serviceLine(io: Io): string {
   }
 }
 
-/** Runs one `ttasks` command and returns its exit code (A2 3.10.3). */
+/** Runs one `ttasks` command and returns its exit code. */
 export async function main(io: Io, options: MainOptions = {}): Promise<number> {
   const mcp = SLOTS.mcp;
   if (isBridge(io.argv) && mcp !== undefined) {
@@ -129,11 +128,9 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
       }
       case "space":
         return await spaceCommand(io, globals, args, options);
-      // `ttasks recover <space>` is `ttasks space recover <space>` under a second name (A2 3.10.1).
+      // `ttasks recover <space>` is `ttasks space recover <space>` under a second name.
       case "recover":
         return await spaceCommand(io, globals, ["recover", ...args], options);
-      case "roots":
-        return rootsCommand(io, globals, args);
       case "view":
         return await viewCommand(io, globals, args, options);
       case "run":
@@ -145,12 +142,12 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
       case "doctor":
         return await doctor(io, globals, args, options);
       case "install":
-        // The install scripts' hand-over (M1.14). Loaded only for this command: it loads storage.
+        // The install scripts' hand-over. Loaded only for this command: it loads storage.
         return await (
           await import("./install.ts")
         ).installCommand(io, globals, args, options.versionFolder);
       case "update":
-        // The updater (M6.12). Loaded only for this command: it loads storage for its lock.
+        // The updater. Loaded only for this command: it loads storage for its lock.
         return await (
           await import("./update.ts")
         ).updateCommand(io, globals, args, options.versionFolder);
@@ -164,7 +161,7 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
         if (refused !== undefined) {
           return serviceUsage(io, globals.json, refusedArgument(args[0], refused));
         }
-        // `ttasks service port` is the UI listener's (M2.12), routed ahead of M1.12's slot.
+        // `ttasks service port` is the UI listener's, routed ahead of the service install's entries.
         if (args[0] === "port") {
           return await servicePortCommand(io, globals, args.slice(1), options);
         }

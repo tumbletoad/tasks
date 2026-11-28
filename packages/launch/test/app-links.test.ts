@@ -1,6 +1,6 @@
-// Golden URLs per OS for the best-effort app links (A4 3.4.4, 3.4.5; A7 3.14 M6.11's Verify line):
+// Golden URLs per OS for the best-effort app links:
 // Claude Desktop's `claude://code/new?folder=&q=` and the Codex app's
-// `codex://threads/new?path=&prompt=`, each value percent-encoded once (A4 3.6.4), for a Windows and
+// `codex://threads/new?path=&prompt=`, each value percent-encoded once, for a Windows and
 // a Linux folder whose name holds what a URL or a shell would read, and the URL handed to the OS's
 // opener as one argv element. No real opener runs and no app is started. Fixture data only.
 import { describe, expect, test } from "vitest";
@@ -74,7 +74,7 @@ describe("[A4.5.routes.golden-urls] the best-effort app links: golden URLs per O
         expect(query.get(folderKey)).toBe(folder);
         expect(query.get(briefKey)).toBe(BRIEF);
 
-        // The OS's opener gets the URL as one element (A4 3.6.5).
+        // The OS's opener gets the URL as one element.
         const r = recorder();
         const opened = await openUrl(url, {
           platform,

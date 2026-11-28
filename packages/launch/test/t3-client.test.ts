@@ -1,4 +1,4 @@
-// The MCP client of T3 (A4 3.4.1; A7 3.9 M2.11): how it reads an answer streamed as server-sent
+// The MCP client of T3: how it reads an answer streamed as server-sent
 // events. A server may keep the stream open after the reply (the specification only says it SHOULD
 // close it), and the SSE grammar allows CRLF, LF and CR line endings in any mix, also split across
 // chunks. The reply must be taken as soon as its event is complete; waiting for the end of the

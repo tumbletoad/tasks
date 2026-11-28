@@ -4,7 +4,8 @@
 import { createIntl } from "react-intl";
 import { describe, expect, test } from "vitest";
 import { PRODUCT_NAME, CLI_NAME } from "@ttasks/brand";
-import { Refused, type Instance, type Run } from "../api.ts";
+import { Refused, type Run } from "../api.ts";
+import type { Instance } from "@ttasks/contracts/runs";
 import en from "../i18n/en.json" with { type: "json" };
 import { continueRefusal } from "../row/launch.ts";
 import { mergeRuns, agentMarker, runRefusal, runners, runView, withStops } from "./runs.ts";

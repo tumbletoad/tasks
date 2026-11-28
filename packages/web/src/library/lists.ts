@@ -1,6 +1,6 @@
 // What a Library lists, from the live store's pages: the node's own pages, the pages of its tasks,
 // and the levels above it with theirs, each by title. Pure, so the lists are unit tests.
-import type { AreaRow, PageRow, ProjectRow } from "../store/rows.ts";
+import { isUnder, trail, type Nodes, type PageRow } from "@ttasks/client/store";
 
 /** The space, an area or a project: what holds a Library. */
 export type LibraryNode =
@@ -25,41 +25,87 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "bas
 const byTitle = (a: PageRow, b: PageRow): number =>
   collator.compare(a.title, b.title) || collator.compare(a.ref, b.ref);
 
-const ownedBy = (pages: readonly PageRow[], node: LibraryNode): PageRow[] =>
-  pages
-    .filter((page) =>
-      node.kind === "space"
-        ? page.owner_kind === "space"
-        : page.owner_kind === node.kind && page.owner_id === node.id,
-    )
-    .sort(byTitle);
+/** The pages held by `node` itself, not by a task. */
+function ownedBy(pages: readonly PageRow[], node: LibraryNode, nodes: Nodes): PageRow[] {
+  const owner =
+    node.kind === "space" ? [...nodes.values()].find((n) => n.kind === "space")?.id : node.id;
+  return pages.filter((page) => page.task === undefined && page.owner_id === owner).sort(byTitle);
+}
+
+/** A level of the tree as a Library names it: the project at the top is an area. */
+const levelOf = (id: string, depth: number): LibraryNode =>
+  depth === 0 ? { kind: "area", id } : { kind: "project", id };
 
 export function listsOf(
   node: LibraryNode,
   pages: Iterable<PageRow>,
   space: string,
-  areas: ReadonlyMap<string, AreaRow>,
-  projects: ReadonlyMap<string, ProjectRow>,
+  nodes: Nodes,
 ): Lists {
   const all = [...pages];
   const tasks =
     node.kind === "space"
       ? []
       : all
-          .filter(
-            (page) =>
-              page.owner_kind === "task" &&
-              (node.kind === "area" ? page.area_id : page.project_id) === node.id,
-          )
+          .filter((page) => page.task !== undefined && isUnder(nodes, page.under, node.id))
           .sort(byTitle);
   const above: Level[] = [];
-  const area = node.kind === "project" ? projects.get(node.id)?.area_id : undefined;
-  if (area !== undefined) {
-    const level = { kind: "area", id: area } as const;
-    above.push({ node: level, title: areas.get(area)?.title ?? "", pages: ownedBy(all, level) });
-  }
   if (node.kind !== "space") {
-    above.push({ node: { kind: "space" }, title: space, pages: ownedBy(all, { kind: "space" }) });
+    const path = trail(nodes, node.id);
+    path.slice(0, -1).forEach((n, depth) => {
+      const level = levelOf(n.id, depth);
+      above.unshift({ node: level, title: n.title, pages: ownedBy(all, level, nodes) });
+    });
+    above.push({
+      node: { kind: "space" },
+      title: space,
+      pages: ownedBy(all, { kind: "space" }, nodes),
+    });
   }
-  return { own: ownedBy(all, node), tasks, above };
+  return { own: ownedBy(all, node, nodes), tasks, above };
+}
+
+/**
+ * What a task's card shows of the library: the task's own pages, and the levels above it, nearest
+ * first (its project, its area, the space), each with its pages.
+ */
+export function taskLists(
+  task: { readonly id: string; readonly parent: string },
+  pages: Iterable<PageRow>,
+  space: string,
+  nodes: Nodes,
+): { readonly own: readonly PageRow[]; readonly above: readonly Level[] } {
+  const all = [...pages];
+  const own = all
+    .filter((page) => page.task !== undefined && page.owner_id === task.id)
+    .sort(byTitle);
+  const above: Level[] = trail(nodes, task.parent)
+    .map((n, depth) => {
+      const level = levelOf(n.id, depth);
+      return { node: level, title: n.title, pages: ownedBy(all, level, nodes) };
+    })
+    .reverse();
+  above.push({
+    node: { kind: "space" },
+    title: space,
+    pages: ownedBy(all, { kind: "space" }, nodes),
+  });
+  return { own, above };
+}
+
+/**
+ * The pages an agent or a routine changed last in the past `days`, newest first, at most `limit`:
+ * Today's Changes beside the tasks. A page the person changed after it is the person's again.
+ */
+export function agentPages(
+  pages: Iterable<PageRow>,
+  now: number,
+  days: number,
+  limit: number,
+): PageRow[] {
+  const since = now - days * 86_400_000;
+  return [...pages]
+    .filter((page) => page.by !== "user" && page.by !== "import" && page.at >= since)
+    .sort((a, b) => b.at - a.at)
+    .slice(0, limit);
 }

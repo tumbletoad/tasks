@@ -3,7 +3,7 @@
 // dist/, the install scripts run the way a person runs them, the canary stand-ins that prove that
 // nothing from a refused download ran, and the tampered downloads. Tooling and tests only.
 //
-// Safety (M1.14): every install goes into a root below a temporary folder of the caller's own
+// Safety: every install goes into a root below a temporary folder of the caller's own
 // (runInstaller refuses any other), the scripts have no default root, and nothing here writes the
 // real install root, PATH, a shell profile, a start-up entry or the registry.
 import { spawn, spawnSync, type SpawnSyncReturns } from "node:child_process";
@@ -83,13 +83,13 @@ export const HOME_VAR = `${ENV_PREFIX}HOME`;
 /**
  * Whether this process runs elevated on Windows, by the service's own check (identity.ts). An
  * installed service started from an elevated process inherits the token and refuses to run (exit
- * 64, A2 3.3.1), so a test that runs one is skipped there and runs on a Windows machine that is not
- * elevated (A7 3.18.4). An elevation the check cannot read is not skipped: the test then fails
+ * 64), so a test that runs one is skipped there and runs on a Windows machine that is not
+ * elevated. An elevation the check cannot read is not skipped: the test then fails
  * with the service's own refusal.
  */
 export const runsElevated = (): boolean => windows && windowsElevated() === true;
 
-/** The verifier paths of A2 3.12.4 on this system: the OS's ssh-keygen, then the fallback. */
+/** The verifier paths on this system: the OS's ssh-keygen, then the fallback. */
 export const VERIFIERS: readonly string[] = windows
   ? ["ssh-keygen", "node"]
   : ["ssh-keygen", "openssl"];
@@ -451,7 +451,7 @@ function mySid(): string {
 
 /**
  * Sets a folder of the caller's own to this user, SYSTEM and Administrators alone (Windows): no
- * inherited rule. An install root inside it then inherits a trusted ACL (A2 3.2.2 rule 5). The
+ * inherited rule. An install root inside it then inherits a trusted ACL. The
  * OS temporary folder need not be one: on Windows, Codex's sandbox accounts may change it.
  */
 export function restrictToMe(dir: string): void {
@@ -490,7 +490,7 @@ export function grantUsers(path: string, rights: string): void {
 /**
  * Where test installs go on Windows: `%USERPROFILE%\.ttasks-test`, made when needed and removed
  * when its last test folder goes. The install script refuses a root below a folder that another
- * account may rename (A2 3.2.2 rule 5), and the OS temporary folder can be one: on Windows,
+ * account may rename, and the OS temporary folder can be one: on Windows,
  * Codex's sandbox accounts may change `%TEMP%` and everything in `%LOCALAPPDATA%`. The profile
  * folder itself lets no other account rename what is in it. Linux uses the OS temporary folder,
  * which is sticky.
@@ -584,7 +584,7 @@ export interface RunOptions {
   readonly powershell?: "5.1" | "7";
   /**
    * Windows PowerShell 5.1 started from PowerShell 7 inherits PowerShell 7's module path (lab row
-   * R09, A2 3.12.4): `inherit` keeps this process's PSModulePath for it. Default: none, so 5.1
+   * R09): `inherit` keeps this process's PSModulePath for it. Default: none, so 5.1
    * uses its own, as in a new window.
    */
   readonly modulePath?: "inherit";

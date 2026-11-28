@@ -1,4 +1,4 @@
-// The shim's link to the service (A4 3.6.3 "Re-attaching", step 9): reports wait in order, a
+// The shim's link to the service: reports wait in order, a
 // dropped connection is attached again, and only the service's refusal of the launch ends the link.
 // Fake sessions and a fake agent in this process: no service, no process.
 import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
@@ -10,7 +10,7 @@ import { REFUSED, SHIM_PROTOCOL } from "@ttasks/launch/shim-wire";
 import { Link } from "../src/shim/link.ts";
 import { runShim, shellAfterExit, TEXT, type ShimIo } from "../src/shim/run.ts";
 
-/** A TTasks error as the service sends it: A3's body in `data`. */
+/** A TTasks error as the service sends it: the error body in `data`. */
 const appError = (code: string, data: JsonObject): RpcError =>
   new RpcError(-32000, "fixture", { code, message: "fixture", data });
 
@@ -20,7 +20,7 @@ const STOPPING = appError("service_unavailable", { reason: "not_running", retrya
 /** A folder check as the claim's reply carries it (places.ts FolderCheck). */
 const CHECK = { dev: "2049", ino: "1311007", rootDev: "2049", rootIno: "1310977", depth: 1 };
 
-/** A launch ID and reference of A1's and A4's forms. */
+/** A launch ID and reference in their forms. */
 const LAUNCH = { id: `la_0${"0".repeat(25)}`, reference: "LAAAA0" };
 
 interface FakeSession {

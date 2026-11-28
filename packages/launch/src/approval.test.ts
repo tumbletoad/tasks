@@ -1,17 +1,11 @@
-// Approval of definitions that arrive with data (A4 3.2, A4 5.1 "Approval hashes"): the canonical
+// Approval of definitions that arrive with data: the canonical
 // form is stable under key order, and changing any one byte of an approved definition disables it.
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
-import {
-  approvalHash,
-  approvalState,
-  canonicalJson,
-  NotCanonical,
-  routineApproval,
-} from "./approval.ts";
+import { approvalHash, approvalState, canonicalJson, NotCanonical } from "./approval.ts";
 import { APPROVAL_KEY, type Verdict } from "./sections.ts";
 
-/** A custom target as a space would carry it (A4 3.4.7), fixture text only. */
+/** A custom target as a space would carry it, fixture text only. */
 const CURSOR_AGENT = {
   id: "custom:cursor-agent",
   label: "Cursor Agent",
@@ -63,8 +57,6 @@ describe("[A4.3.2.approval.hash] approval hashes of definitions that arrive with
     // Reference-only keys are storage bookkeeping: a new revision of the record is no new content.
     const content = without(CURSOR_AGENT, ["space_id", "updated_at"]);
     expect(approvalHash("custom_target", { ...content, seq: 9, created_at: "x" })).toBe(hash);
-    // The kind is part of the input: the same JSON as a routine never matches.
-    expect(approvalHash("routine", CURSOR_AGENT)).not.toBe(hash);
     // The golden value pins the canonical form and the domain line. Computed independently with
     // printf 'tasks-approval/1\ncustom_target\n<canonical JSON>' | sha256sum.
     expect(hash).toBe("sha256-5a2c6fc40086e5b31b295eae1f864a54a65f488e891a6a5d55fd919d92bd989a");
@@ -154,30 +146,6 @@ describe("[A4.3.2.approval.hash] approval hashes of definitions that arrive with
     const other = { ...CURSOR_AGENT, argv: ["{exec}", "--", "{brief}"] };
     expect(approvalState("custom_target", other, deny)).toBe("needs_approval");
     expect(approvalState("custom_target", CURSOR_AGENT, new Map())).toBe("needs_approval");
-  });
-
-  test("a routine's approval covers its template, params, instance and that instance's run permission", () => {
-    const routine = {
-      template: "Refresh {{sources}}",
-      params: { sources: "mail" },
-      instance_id: "codex-work",
-    };
-    const approved = routineApproval(routine, "auto-edit");
-    const approvals = new Map([[approvalHash("routine", approved), "allow" as const]]);
-    expect(approvalState("routine", routineApproval(routine, "auto-edit"), approvals)).toBe(
-      "approved",
-    );
-    // A raised permission asks again (A4 3.12.1).
-    expect(approvalState("routine", routineApproval(routine, "full-access"), approvals)).toBe(
-      "needs_approval",
-    );
-    expect(
-      approvalState(
-        "routine",
-        routineApproval({ ...routine, instance_id: "codex-second" }, "auto-edit"),
-        approvals,
-      ),
-    ).toBe("needs_approval");
   });
 
   test("property: random definitions hash the same under any key order and differently after any leaf change", () => {

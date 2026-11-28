@@ -5,7 +5,7 @@
 // back-forward cache lets the next wait run in turn again.
 import { afterEach, describe, expect, test } from "vitest";
 import { LiveStore } from "../store/store.ts";
-import type { SnapshotMessage, TaskRow } from "../store/rows.ts";
+import type { SnapshotMessage, TaskRow } from "@ttasks/client/store";
 import { FakeFrames } from "../../test/fake-frames.ts";
 import { effortChange, priorityChange, statusChange, titleChange } from "./change.ts";
 import { Edits } from "./edits.ts";
@@ -21,6 +21,7 @@ const TASK: TaskRow = {
   position: "p1",
   created_at: Date.UTC(2026, 10, 1),
   version: 1,
+  parent: SPACE.id,
 };
 
 const flush = async () => {
@@ -48,8 +49,7 @@ describe("[A5.3.11.web.edit-queue] the page's own leaving ends a wait behind ano
       space: SPACE,
       cursor: { epoch: 1, incarnation: "ai_0123456789abcdefghjkmnpq", seq: 10 },
       tasks: [TASK],
-      areas: [],
-      projects: [],
+      nodes: [],
       instances: [],
     };
     store.push(snapshot);
@@ -68,6 +68,7 @@ describe("[A5.3.11.web.edit-queue] the page's own leaving ends a wait behind ano
       failed: () => false,
       onChanges: (listener) => store.onChanges(listener),
       rowOf: () => TASK,
+      space: () => SPACE.id,
       newRequest: () => `rq-${String((requests += 1))}`,
     });
     const answered = (seq: number) => ({

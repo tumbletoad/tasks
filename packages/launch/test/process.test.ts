@@ -1,4 +1,4 @@
-// A process's identity as the OS records it (A4 3.1, 3.6.3): the start time read for a real child
+// A process's identity as the OS records it: the start time read for a real child
 // process, the same on every read, another for another process, and none once it has ended. The
 // Linux reader also runs on every OS against a fake /proc.
 import { spawn } from "node:child_process";

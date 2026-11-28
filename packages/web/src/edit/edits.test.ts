@@ -3,7 +3,7 @@
 // redo with their conflicts. The store is fed by hand, as the feed would (fake frames).
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { LiveStore } from "../store/store.ts";
-import type { BatchMessage, SnapshotMessage, TaskRow } from "../store/rows.ts";
+import type { BatchMessage, SnapshotMessage, TaskRow } from "@ttasks/client/store";
 import { FakeFrames } from "../../test/fake-frames.ts";
 import {
   dueChange,
@@ -49,6 +49,7 @@ function task(n: number, fields: Partial<TaskRow> = {}): TaskRow {
     position: `p${String(n)}`,
     created_at: Date.UTC(2026, 10, 1),
     version: 1,
+    parent: SPACE.id,
     ...fields,
   };
 }
@@ -84,8 +85,7 @@ class World {
       space: SPACE,
       cursor: { epoch: 1, incarnation: INCARNATION, seq: this.seq },
       tasks: rows,
-      areas: [],
-      projects: [],
+      nodes: [],
       instances: [],
     };
     this.store.push(snapshot);
@@ -117,6 +117,7 @@ class World {
       failed: () => false,
       onChanges: (listener) => this.store.onChanges(listener),
       rowOf: (ref) => [...this.store.getState().tasks.values()].find((t) => t.ref === ref),
+      space: () => SPACE.id,
       levels: () => this.levels,
       newRequest: () => `rq-${String((requests += 1))}`,
       ...(keeper === undefined ? {} : { keeper: { onGone: () => () => undefined, ...keeper } }),
@@ -875,8 +876,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
       space: SPACE,
       cursor: { epoch: 2, incarnation: "ai_zzzzzzzzzzzzzzzzzzzzzzzzzz", seq: 4 },
       tasks: [task(1)],
-      areas: [],
-      projects: [],
+      nodes: [],
       instances: [],
     });
     restored.store.flush();
@@ -886,7 +886,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     expect(restored.calls).toEqual([]);
     expect(restored.edits.unsaved("t_00001", "priority")).toBe(line);
     expect(saves).toEqual([]);
-    // A failed edit kept with no base (an earlier build) alike.
+    // A failed edit kept with no base alike.
     const old = new World([task(1)], { load: () => [kept(undefined)], save: () => undefined });
     const none = old.edits.unsaved("t_00001", "priority");
     expect(none === undefined ? undefined : old.edits.restored(none)).toBe(true);
@@ -1452,7 +1452,7 @@ describe("[A5.3.12.web.undo-steps] Undo for the steps worth it, and Redo beside 
   });
 
   test("a change whose old value the page cannot choose again keeps Undo: out of the Inbox, and a first area; a move between areas does not", async () => {
-    const w = new World([task(1, { inbox: true }), task(2), task(3, { area_id: "a_home" })]);
+    const w = new World([task(1, { inbox: true }), task(2), task(3, { parent: "a_home" })]);
     const answered = (ref: string) => () => ({
       result: "updated",
       task: ref,
@@ -1468,7 +1468,7 @@ describe("[A5.3.12.web.undo-steps] Undo for the steps worth it, and Redo beside 
     expect(w.lastToast()).toMatchObject({ kind: "undo", action: { label: { id: "toast.undo" } } });
     w.answer("task.update", answered("M-3"));
     w.edits.edit(
-      task(3, { area_id: "a_home" }),
+      task(3, { parent: "a_home" }),
       groupingChange({ id: "a_yard", title: "Yard" }, undefined),
     );
     expect(w.lastToast()).toBeUndefined();
@@ -1801,20 +1801,6 @@ describe("[A5.3.12.web.undo-levels] the effort levels beside Undo: a checked row
     await flush();
     expect(w.calls.filter((c) => c.name === "task.update")).toHaveLength(1);
     expect(w.edits.unsaved("t_00001", "effort")?.change.set).toEqual({ effort: "M" });
-  });
-
-  test("a size kept by an earlier build, which does not say its levels, is chosen again", async () => {
-    const w = new World([task(1)]);
-    w.answer("task.update", () => {
-      throw appError("internal", {});
-    });
-    w.edits.edit(task(1), effortChange("M"));
-    await flush();
-    w.edits.apply("t_00001", "effort");
-    await flush();
-    expect(w.calls.filter((c) => c.name === "task.update")).toHaveLength(1);
-    const kept = w.edits.unsaved("t_00001", "effort");
-    expect(kept === undefined ? undefined : w.edits.relevelled(kept)).toBe(true);
   });
 });
 

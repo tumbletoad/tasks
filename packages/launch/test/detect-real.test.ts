@@ -1,4 +1,4 @@
-// Detection on the real file system and with real processes (A4 3.2): fake commands
+// Detection on the real file system and with real processes: fake commands
 // and homes in a temporary folder, an injected environment whose PATH names only those folders,
 // and a home that is that folder. No test looks at the real homes of this machine.
 //

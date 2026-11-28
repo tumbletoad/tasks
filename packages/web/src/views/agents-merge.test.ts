@@ -8,7 +8,7 @@ import type {
   AgentsThread,
 } from "@ttasks/contracts/monitor";
 import { describe, expect, test } from "vitest";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import { linkedOutside, mergeAgents } from "./agents-merge.ts";
 const row = (id: string, patch: Partial<TaskRow> = {}): TaskRow => ({
   id,
@@ -16,6 +16,7 @@ const row = (id: string, patch: Partial<TaskRow> = {}): TaskRow => ({
   title: `Fixture ${id}`,
   status: "open",
   inbox: false,
+  parent: "sp_0123456789abcdefghjkmnpqrs",
   lifecycle: "active",
   position: id,
   created_at: 1,
@@ -58,6 +59,7 @@ const numbered = (n: number, fields: Partial<TaskRow> = {}): TaskRow => ({
   title: `Task ${String(n)}`,
   status: "open",
   inbox: false,
+  parent: "sp_0123456789abcdefghjkmnpqrs",
   lifecycle: "active",
   position: `p${String(n)}`,
   created_at: 0,

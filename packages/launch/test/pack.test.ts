@@ -1,6 +1,6 @@
-// The context pack (A4 3.15.5, Shift+Copy) as a pure function of the task's text: its headings in
-// A4's order, the framing of task text in data blocks, the notes the user addressed to agents kept
-// whole, the return block, and the budget: a large task stays within 8,000 characters, cut in A4's
+// The context pack (Shift+Copy) as a pure function of the task's text: its headings in
+// order, the framing of task text in data blocks, the notes the user addressed to agents kept
+// whole, the return block, and the budget: a large task stays within 8,000 characters, cut in its
 // order with a last line that says what was left out. Fixture data only.
 import { describe, expect, test } from "vitest";
 import {
@@ -138,7 +138,7 @@ describe("[A4.5.brief.pack] the context pack: framed task text, the user's notes
     const pack = renderContextPack(big);
     expect(pack.over).toBe(false);
     expect(pack.text.length).toBeLessThanOrEqual(PACK_BUDGET);
-    // A4's order: older log entries first (down to the newest), then sources beyond ten, then
+    // The trimming order: older log entries first (down to the newest), then sources beyond ten, then
     // learnings beyond one, then context paragraphs from the end.
     expect(pack.left.log).toBe(4);
     expect(pack.left.sources).toBe(20);
@@ -202,7 +202,7 @@ describe("[A4.5.brief.pack] the context pack: framed task text, the user's notes
   });
 
   test("the hash is the copied pack's with the reference as a slot and the person's words as a marker: what was copied, never the words", () => {
-    // The hash of exactly the text given, its reference and composer words replaced (A4 3.15.1).
+    // The hash of exactly the text given, its reference and composer words replaced.
     const copied = (pack: { text: string }, reference: string, words: string): string =>
       briefHash(
         pack.text

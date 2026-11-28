@@ -1,26 +1,18 @@
-// The shim's machine state (A4 3.6.3 "Launch folder", 3.9.1): one folder per launch
+// The shim's machine state: one folder per launch
 // under the install's launch folders, `<launch root>/<launch ID>/`, 0700, holding
 // - `launch.json` (0600, replaced atomically, written by the service): the spawn plan (argv, the
 //   folder or none, the instance's environment, the title), from dispatch the folder resolved right
 //   before the launch with the check the shim runs there, the ticket's hash and whether its shim
 //   role is spent, and once claimed the attachment credential's hash with the shim's PID and start
 //   time;
-// - `exit.json` (written atomically by the shim when the service cannot be reached, A4 3.6.3 step 9).
-// The folder goes with the launch's end, and nothing of the launch stays. None of this enters a space: a space holds IDs and codes only (A4 3.9.1). The launch root is
-// A2 3.2.1's: Linux `/run/user/<uid>/ttasks-<install>/launch/` (tmpfs, gone at logout, when no shim
+// - `exit.json` (written atomically by the shim when the service cannot be reached).
+// The folder goes with the launch's end, and nothing of the launch stays. None of this enters a space: a space holds IDs and codes only. The launch root is
+// on Linux `/run/user/<uid>/ttasks-<install>/launch/` (tmpfs, gone at logout, when no shim
 // can be left either), Windows `<state>\launch\`.
 //
 // Folders are named after the launch ID, not its reference: a reference is unique within one space
 // only, and one machine's launch root holds the launches of all its spaces.
-import {
-  lstatSync,
-  readdirSync,
-  readFileSync,
-  rmdirSync,
-  rmSync,
-  statSync,
-  unlinkSync,
-} from "node:fs";
+import { readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWrite, makeDir } from "@ttasks/files";
 import { isBuiltInTarget, type BuiltInTargetId } from "../catalogue.ts";
@@ -60,9 +52,9 @@ export interface PlanFolder {
 /** An identityKey: `<volume>:<file number>`. */
 const IDENTITY_KEY = /^[0-9]{1,20}:[0-9]{1,20}$/u;
 
-/** What the claim's reply hands the shim to start (A4 3.6.3 step 3), kept from the click. */
+/** What the claim's reply hands the shim to start, kept from the click. */
 export interface SpawnPlan {
-  /** The absolute executable first: the route's argv (M2.10 builds it). */
+  /** The absolute executable first: the route's argv. */
   readonly argv: readonly string[];
   /**
    * Where the agent works: the task's or its project's folder on this machine, or null for the
@@ -70,7 +62,7 @@ export interface SpawnPlan {
    * the folder is a fact of this machine's tree at that moment.
    */
   readonly folder: PlanFolder | null;
-  /** The instance's `env` (A4 3.8 layer 3). */
+  /** The instance's `env` (layer 3 of the agent's environment). */
   readonly env: Readonly<Record<string, string>>;
   /**
    * The app whose home the instance has of its own: the person's variables that say which account
@@ -81,19 +73,19 @@ export interface SpawnPlan {
   readonly title: string;
   readonly afterExit: AfterExit;
   /**
-   * The instance's `via_login_shell` (A4 3.8, Linux and macOS): the agent's environment starts
+   * The instance's `via_login_shell` (Linux and macOS): the agent's environment starts
    * from a login-shell snapshot the service takes in the task's folder right before the launch,
    * not from the stored one. The agent itself still starts directly. Absent: false.
    */
   readonly loginShell?: boolean;
   /**
-   * The argv elements the resolved folder fills at the claim (A4 3.6.4 `{cwd}`, Codex's `-C`):
+   * The argv elements the resolved folder fills at the claim (`{cwd}`, Codex's `-C`):
    * the folder is resolved right before the launch, after the plan was written, so those elements
    * are empty here. Absent: none.
    */
   readonly folderArgs?: readonly number[];
   /**
-   * Codex's reference match (A4 3.4.3): the home whose session files the service reads for this
+   * Codex's reference match: the home whose session files the service reads for this
    * launch's thread ID, after the agent started. Absent: no match.
    */
   readonly match?: { readonly home: string };
@@ -117,13 +109,13 @@ export interface LaunchFile {
    * was resolved with.
    */
   readonly folder?: { readonly path: string; readonly check: FolderCheck };
-  /** Issued at dispatch, when the ticket first leaves the service (A4 3.6.3). */
+  /** Issued at dispatch, when the ticket first leaves the service. */
   readonly ticket?: {
     readonly hash: string;
     readonly issuedAt: number;
     readonly shimUsed: boolean;
   };
-  /** Issued inside the claim, before its reply leaves (A4 3.1). */
+  /** Issued inside the claim, before its reply leaves. */
   readonly attachment?: { readonly hash: string; readonly pid: number; readonly startTime: string };
   /** The agent, as `launch.started` reported it. */
   readonly agent?: { readonly pid: number; readonly startedAt: number };
@@ -137,7 +129,7 @@ export interface LaunchFile {
   readonly preset?: string;
   /**
    * The copy of the space the click was made in (the service's copy token): the launch's session
-   * and reports belong to that copy only. Absent in a record an earlier build wrote.
+   * and reports belong to that copy only.
    */
   readonly copy?: string;
 }
@@ -250,26 +242,11 @@ export function checkPlan(value: unknown): SpawnPlan | undefined {
   return Buffer.byteLength(JSON.stringify(plan), "utf8") <= PLAN_MAX_BYTES ? plan : undefined;
 }
 
-/**
- * A plan as a build before folders wrote it, with a `place` where a plan now has its `folder`: an
- * agent started by that build may still be running after an update, and its shim reattaches to
- * its launch. Its place was resolved at dispatch into `resolved`, the folder its terminal started
- * in. No place is the work folder, as no folder is now. A place never dispatched names no folder
- * this build can find, so that launch is left out and never starts.
- */
-function withFolder(plan: unknown, resolved: unknown): unknown {
-  if (!isObject(plan) || "folder" in plan || !("place" in plan)) return plan;
-  const { place, ...rest } = plan;
-  if (place === null) return { ...rest, folder: null };
-  const path = isObject(resolved) ? resolved["path"] : undefined;
-  return typeof path === "string" ? { ...rest, folder: { stored: path, path } } : undefined;
-}
-
 /** A launch file as read from disk, checked field by field; undefined when it is not one. */
 export function checkLaunchFile(value: unknown): LaunchFile | undefined {
   if (!isObject(value) || value["format"] !== 1) return undefined;
   const { space, launch, reference, task, createdAt, folder, ticket, attachment, agent } = value;
-  const plan = checkPlan(withFolder(value["plan"], folder));
+  const plan = checkPlan(value["plan"]);
   if (plan === undefined) return undefined;
   if (typeof space !== "string" || !SPACE_ID.test(space)) return undefined;
   if (typeof launch !== "string" || !LAUNCH_ID.test(launch) || !isLaunchRef(reference)) {
@@ -446,57 +423,14 @@ function pause(ms: number): void {
 
 export const LAUNCH_FILE = "launch.json";
 export const EXIT_FILE = "exit.json";
-/** Where earlier builds kept a record of each ended launch, in the launch root. */
-const ENDED_FOLDER = "ended";
 
 /**
- * The launch root and each launch folder, and the files in them (A2 3.2.1, A4 3.6.3): set on each
+ * The launch root and each launch folder, and the files in them: set on each
  * new folder and file through @ttasks/files, so no umask decides them. On Windows the folder's ACL
  * decides.
  */
 export const LAUNCH_FOLDER_MODE = 0o700;
 export const LAUNCH_FILE_MODE = 0o600;
-
-/**
- * A launch file as written. The builds before refuse a ticket without `bridgeUsed`, so it is
- * written, always false, for as long as an update can be rolled back to one of them; nothing reads
- * it.
- */
-function onDisk(file: LaunchFile): string {
-  const written =
-    file.ticket === undefined ? file : { ...file, ticket: { ...file.ticket, bridgeUsed: false } };
-  return `${JSON.stringify(written)}\n`;
-}
-
-/**
- * Removes the records earlier builds kept of ended launches, which nothing reads, and then their
- * folder when it is empty. Only a file named `<launch ID>.json` is one: anything else in the
- * folder, or a link in its place, is not the product's and stays.
- */
-function removeEndedRecords(root: string): void {
-  const folder = join(root, ENDED_FOLDER);
-  let names: string[];
-  try {
-    if (!lstatSync(folder).isDirectory()) return;
-    names = readdirSync(folder);
-  } catch {
-    return; // None there.
-  }
-  for (const name of names) {
-    if (!name.endsWith(".json") || !LAUNCH_ID.test(name.slice(0, -".json".length))) continue;
-    const path = join(folder, name);
-    try {
-      if (lstatSync(path).isFile()) unlinkSync(path);
-    } catch {
-      // Held by another program, or not removable now: it stays, with no wait, for a later start.
-    }
-  }
-  try {
-    rmdirSync(folder);
-  } catch {
-    // Not empty, or not removable now: it stays.
-  }
-}
 
 /** The machine state in folders under the install's launch root. */
 export class FolderRecords implements RecordStore {
@@ -524,7 +458,6 @@ export class FolderRecords implements RecordStore {
       for (const [name] of passing) this.#load(name, failed);
     }
     for (const [name, code] of failed) options.unreadable?.(name, code);
-    removeEndedRecords(root);
   }
 
   /** Reads a launch's file into the records, or notes the error that kept it from being read. */
@@ -549,7 +482,8 @@ export class FolderRecords implements RecordStore {
 
   put(file: LaunchFile): void {
     if (!LAUNCH_ID.test(file.launch)) throw new Error("Not a launch ID");
-    const text = onDisk(file);
+    const text = `${JSON.stringify(file)}
+`;
     // Never a file the reader would leave out after a restart.
     if (Buffer.byteLength(text, "utf8") > MAX_FILE) throw new Error("The launch file is too large");
     const folder = join(this.root, file.launch);

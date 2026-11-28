@@ -8,12 +8,12 @@
 // Anatomy, inline start to end: marker, check, title (+ status chip) and summary (+ area dot and
 // project on views that mix areas), then fixed columns: due, age, priority, effort, sources,
 // folder, star, launch. Every column keeps its width when it is empty, so columns line up on every row.
-import type { Instance, LastUsed } from "../api.ts";
+import type { Instance, LastUsed } from "@ttasks/contracts/runs";
 import type { MessageId } from "../i18n/intl.tsx";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import type { EffortLevel } from "@ttasks/contracts/preferences";
 import { dayNumber, isStarred, localDate } from "@ttasks/contracts/day";
-import { formatDay, formatInstant, type Clock } from "./dates.ts";
+import { formatDay, formatInstant, type Clock, type Grouping } from "@ttasks/client/today";
 import { launchOf, type BusyOf, type LaunchBlock, type LaunchModel } from "./launch.ts";
 
 /** A message's values: plain values, or other messages that are formatted first. */
@@ -37,17 +37,6 @@ export type RowView =
   | "completed"
   | "agents"
   | "trash";
-
-/** How a list groups its rows: each grouping states some facts in its headings. */
-export type Grouping =
-  /** One flat list, or Today's sections: no fact is stated. */
-  | "flat"
-  /** Area headings, then project labels (Open, Backlog, the skeleton's lists). */
-  | "area"
-  /** Project labels inside one area (the area view). */
-  | "project"
-  /** Person labels (Waiting). */
-  | "person";
 
 /** A fact a view or group may already state, so the row leaves it out. */
 export type Fact = "area" | "project" | "status" | "waiting_on" | "due";

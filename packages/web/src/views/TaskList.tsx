@@ -16,24 +16,24 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  Refused,
-  requestId,
-  type Instance,
-  type LastUsed,
-  type Receipt,
-  type Run,
-} from "../api.ts";
+import { Refused, requestId, type Receipt, type Run } from "../api.ts";
+import type { Instance, LastUsed } from "@ttasks/contracts/runs";
 import { useToast, type ToastAction } from "../app/frame.ts";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { starChange, statusChange, triageChange } from "../edit/change.ts";
 import { useEditState, useEdits } from "../edit/useEdits.ts";
 import { askFor, savedWords } from "../task/composer.ts";
-import { areaSlots, groupTasks, type Group, type GroupTasks } from "../groups.ts";
+import {
+  areaSlots,
+  groupTasks,
+  type GroupTasks,
+  type Grouping,
+  type Clock,
+} from "@ttasks/client/today";
+import { type Group, itemsOf, type RowItem } from "../list/items.ts";
 import { useList, useT } from "../i18n/intl.tsx";
 import { Latest } from "../latest.ts";
-import { itemsOf, type RowItem } from "../list/items.ts";
 import { List, type Place } from "../list/List.tsx";
 import {
   busyByTask,
@@ -49,14 +49,13 @@ import {
   type FolderRefusal,
 } from "../row/launch.ts";
 import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
-import { contextFor, type Grouping, type RowView } from "../row/model.ts";
+import { contextFor, type RowView } from "../row/model.ts";
 import { sayMsg } from "../row/say.ts";
 import type { OpenWith, RowActions } from "../row/actions.ts";
-import type { Clock } from "../row/dates.ts";
 import { Row } from "../row/Row.tsx";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import { rowOfFacts } from "../task/detail.ts";
 import { mergeRuns, runRefusal, withStops } from "../task/runs.ts";
 import css from "./TaskList.module.css";
@@ -332,10 +331,10 @@ export function TaskList({
       if (expandedRow !== undefined && !shown.some((task) => task.id === expandedRow.id)) {
         shown.push(expandedRow);
       }
-      groups = group(shown, state.areas.values(), state.projects.values());
+      groups = group(shown, state.nodes);
     }
-    return itemsOf(groups, state.areas, state.projects, areaSlots(state.areas.values()));
-  }, [tasks, state.areas, state.projects, filter, group, groupsOf, expandedRow]);
+    return itemsOf(groups, state.nodes, areaSlots(state.nodes));
+  }, [tasks, state.nodes, filter, group, groupsOf, expandedRow]);
 
   // Where the expanded row is now, for the next update (a view's own groups keep it there). Taken
   // after the commit, so a render React throws away (a transition it interrupted, a StrictMode
@@ -537,8 +536,7 @@ export function TaskList({
         .get({ task: id })
         .then((answer) => {
           if (!applies() || answer.view !== "digest") return;
-          const { areas, projects } = live.getState();
-          const row = rowOfFacts(answer.task, areas, projects, latest.current.today);
+          const row = rowOfFacts(answer.task, live.getState().nodes, latest.current.today);
           setUnresolved(undefined);
           setInjected(row);
           readOut.current?.(row);
@@ -747,14 +745,14 @@ export function TaskList({
     const settled = () => {
       if (asking.current === wantedRef) asking.current = undefined;
     };
-    const { areas, projects } = state;
+    const { nodes } = state;
     api.client.task
       .get({ task: wantedRef })
       .then((read) => {
         settled();
         if (!applies() || read.view !== "digest") return;
         handled.current = wantedRef;
-        const found = rowOfFacts(read.task, areas, projects, latest.current.today);
+        const found = rowOfFacts(read.task, nodes, latest.current.today);
         setInjected(found);
         expandTask(found);
       })

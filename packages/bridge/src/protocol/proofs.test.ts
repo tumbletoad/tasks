@@ -1,5 +1,5 @@
-// The handshake's proofs and canonical JSON (A2 3.6.3, A2 5 "Handshake: good proof, wrong key,
-// wrong instance, replayed client proof against a new nonce, constant-time comparison used").
+// The handshake's proofs and canonical JSON: a good proof, a wrong key,
+// a wrong instance, a replayed client proof against a new nonce, constant-time comparison used.
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { canonicalJson, CanonicalJsonError } from "./jcs.ts";

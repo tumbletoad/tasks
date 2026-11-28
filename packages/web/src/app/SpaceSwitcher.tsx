@@ -35,7 +35,7 @@ import {
   type SpaceList,
 } from "./spaces.ts";
 import css from "./SpaceSwitcher.module.css";
-import { LANDING } from "./views.ts";
+import { LANDING } from "@ttasks/client/today";
 import { classes } from "./css.ts";
 
 const styles = classes(css, [

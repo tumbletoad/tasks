@@ -1,9 +1,9 @@
-// The sections of machine.toml that A4 owns (A2 3.2.4): `[terminal]`, `[[instance]]` and
+// The sections of machine.toml that the launch owns: `[terminal]`, `[[instance]]` and
 // `[approvals]`. Each is checked strictly into a typed value plus problems (problems.ts). A bad
 // entry is dropped, never guessed: an instance with a bad key is not offered, an approval that is
 // not `allow` approves nothing.
 //
-// `[[custom_target]]` and `[override.*]` (A4 3.2, 3.4.7) belong to the launch steps; until they
+// `[[custom_target]]` and `[override.*]` belong to the launch steps; until they
 // read them, this build passes them by without checking (sections RESERVED in the service).
 import {
   CUSTOM_TARGET_ID,
@@ -27,21 +27,7 @@ import {
 } from "./problems.ts";
 
 // ---------------------------------------------------------------------------------------------
-// Roots: a named folder an older place was relative to. machine.toml's `[roots]` is no longer
-// read.
-
-/** A root ID: lower case, at most 32 characters, never changed. */
-export const ROOT_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/u;
-
-export interface Root {
-  readonly id: string;
-  readonly label: string;
-  readonly path: string;
-  readonly runs: boolean;
-}
-
-// ---------------------------------------------------------------------------------------------
-// [terminal] (A4 3.6.1)
+// [terminal]
 
 export const TERMINAL_APPS = [
   "auto",
@@ -112,7 +98,7 @@ export function readTerminal(
       r.error("custom", "unknown_placeholder");
       custom = undefined;
     } else if (!custom.includes("{shim}")) {
-      // Every terminal runs the shim and nothing else (A4 3.6.2).
+      // Every terminal runs the shim and nothing else.
       r.error("custom", "invalid_value");
       custom = undefined;
     }
@@ -130,18 +116,18 @@ export function readTerminal(
 }
 
 // ---------------------------------------------------------------------------------------------
-// [[instance]] (A4 3.2)
+// [[instance]]
 
 /** An instance ID: a stable slug that space data refers to. */
 export const INSTANCE_ID = /^[a-z0-9][a-z0-9-]{0,39}$/u;
 /**
- * The instance an MCP entry without a usable `--instance` acts as (A3 3.7.4: a hand-made entry,
+ * The instance an MCP entry without a usable `--instance` acts as (a hand-made entry,
  * `agent:manual`, in the machine's default space). No configured instance may take the word: its
  * actor, writer scope, sessions and grant rows would be the hand-made entry's.
  */
 export const MANUAL_INSTANCE = "manual";
 
-/** The most characters an instance's label holds (A4 3.2). */
+/** The most characters an instance's label holds. */
 export const LABEL_MAX = 40;
 
 /**
@@ -206,13 +192,13 @@ export interface Instance {
   readonly id: string;
   readonly target: TargetId;
   readonly label: string;
-  /** A free label, checked against spaces and areas (A4 3.2 "Account check"). */
+  /** A free label, checked against spaces and areas. */
   readonly account: string;
   /** Spaces it may open, by ID or name; empty means all. */
   readonly spaces: readonly string[];
   /** The executable: a user wrapper, the native binary, or Node for an npm CLI. */
   readonly exec: string | undefined;
-  /** Arguments before TTasks's: the npm entry when `exec` is Node (A4 3.6.4 `{exec}`). */
+  /** Arguments before TTasks's: the npm entry when `exec` is Node (`{exec}`). */
   readonly argsPrefix: readonly string[];
   /** For display, trust and session lookup. A wrapper sets the home itself. */
   readonly configHome: string | undefined;
@@ -222,7 +208,7 @@ export interface Instance {
   readonly runPermission: Permission;
   readonly extraArgs: readonly string[];
   readonly viaLoginShell: boolean;
-  /** Reserved for L1 (A6): may a command from another machine use this instance. v1 stores it. */
+  /** Reserved for L1: may a command from another machine use this instance. v1 stores it. */
   readonly remoteAllowed: boolean;
   /** False keeps a written instance out of every launch without deleting it. */
   readonly enabled: boolean;
@@ -237,12 +223,6 @@ export function servesSpace(
   const name = space.name?.toLowerCase();
   return instance.spaces.some((s) => s === space.id || s.toLowerCase() === name);
 }
-
-/**
- * Keys an instance no longer takes. Open leaves the prompt unsent wherever the app can, and T3 Code
- * opens on its own default profile and model, which the person changes in T3.
- */
-const RETIRED_KEYS = ["prompt", "t3_environment", "t3_provider_instance", "t3_model"] as const;
 
 /**
  * `[[instance]]`. An entry with any error is dropped (the rest stay), so a half-understood
@@ -341,7 +321,6 @@ function readInstance(
   const viaLoginShell = r.bool("via_login_shell", false);
   const remoteAllowed = r.bool("remote_allowed", false);
   const enabled = r.bool("enabled", true);
-  for (const name of RETIRED_KEYS) r.retired(name);
   if (platform === "win32" && viaLoginShell) r.error("via_login_shell", "not_for_target");
   r.done();
   if (r.failed || id === undefined || target === undefined || label === undefined) {
@@ -367,7 +346,7 @@ function readInstance(
 }
 
 // ---------------------------------------------------------------------------------------------
-// [approvals] (A4 3.2): `<hash> = "allow" | "deny"`
+// [approvals]: `<hash> = "allow" | "deny"`
 
 export type Verdict = "allow" | "deny";
 

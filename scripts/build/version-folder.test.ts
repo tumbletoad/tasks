@@ -1,4 +1,4 @@
-// The version folder (A2 3.12.2) and the build's checks around it, offline. The last test assembles
+// The version folder and the build's checks around it, offline. The last test assembles
 // a real version folder for this machine's platform with the Node that runs the tests as its
 // runtime (pnpm's download of the same official 26.13.1, checked against pnpm-lock.yaml), the real
 // bundles, the real page (packages/web) and the real launchers, archives it, and runs the build's runtime gate inside it through
@@ -68,7 +68,7 @@ describe("[A2.3.12.2.build.version-folder] the version folder, its checks and it
         "runtime/node.exe",
       ].sort(),
     );
-    // The launchd wrapper (M1.12's text) is macOS's only.
+    // The launchd wrapper is macOS's only.
     expect(plan("darwin-arm64")).toEqual(
       [...common, "bin/ttasks", "bin/ttasks-launchd", "runtime/node"].sort(),
     );

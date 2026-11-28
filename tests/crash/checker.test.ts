@@ -15,7 +15,11 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { backupSpace, type BackupRecord } from "../../packages/storage/src/backup/backup.ts";
+import {
+  backupSpace,
+  makeDurableFolder,
+  type BackupRecord,
+} from "../../packages/storage/src/backup/backup.ts";
 import { newId, osRandom, type Id } from "../../packages/storage/src/ids.ts";
 import { claimSpace } from "../../packages/storage/src/restore/claim.ts";
 import { swapIntoPlace, swapNames } from "../../packages/storage/src/restore/folders.ts";
@@ -37,7 +41,7 @@ import { createSpaceAt, openSpaceAt } from "../../packages/storage/test/revision
 import { checkedDriver } from "../../packages/storage/test/space-helpers.ts";
 import { checkFolders, checkSpace } from "./checker.ts";
 import { Ledger, type Violation } from "./ledger.ts";
-import { reduce, type Acked, type BackupFacts } from "./protocol.ts";
+import { backupsBeside, reduce, type Acked, type BackupFacts } from "./protocol.ts";
 import {
   CREATE_STEPS,
   REVISION_0_1,
@@ -78,6 +82,7 @@ async function build(): Promise<Built> {
     { name: "Crash", ownerLabel: "Crash owner", machineId: FIXTURE_MACHINE.id, refPrefix: "CR" },
     CREATE_STEPS,
   );
+  makeDurableFolder(backupsBeside(created.folder));
   const { authority } = created.space;
   const ledger = new Ledger(created.folder, created.space.spaceId, created.actors.human);
   ledger.incarnation = authority.incarnation;
@@ -381,7 +386,10 @@ describe(
     test("a backup that is incomplete, does not verify, or went missing", async () => {
       for (const harm of ["data", "bytes", "both"] as const) {
         const built = await build();
-        const record = await backupSpace(built.checked, built.folder, { kind: "manual" });
+        const record = await backupSpace(built.checked, built.folder, {
+          kind: "manual",
+          backupDir: backupsBeside(built.folder),
+        });
         built.ledger.take({ t: "backup-start", n: 1 });
         built.ledger.take({
           t: "backup-done",
@@ -567,7 +575,10 @@ describe(
       // acknowledged result is lost and no counter goes back, but the old incarnation now has
       // the space's name and the folder it replaced (A1 3.18).
       const built = await build();
-      const record = await backupSpace(built.checked, built.folder, { kind: "manual" });
+      const record = await backupSpace(built.checked, built.folder, {
+        kind: "manual",
+        backupDir: backupsBeside(built.folder),
+      });
       built.ledger.take({ t: "backup-start", n: 1 });
       built.ledger.take({ t: "backup-done", n: 1, backup: facts(record) });
       built.ledger.take({ t: "restore-start", backup: record.name });
@@ -586,7 +597,10 @@ describe(
 
     test("a backup or a replaced folder harmed after it was checked is checked again", async () => {
       const built = await build();
-      const record = await backupSpace(built.checked, built.folder, { kind: "manual" });
+      const record = await backupSpace(built.checked, built.folder, {
+        kind: "manual",
+        backupDir: backupsBeside(built.folder),
+      });
       built.ledger.take({ t: "backup-start", n: 1 });
       built.ledger.take({ t: "backup-done", n: 1, backup: facts(record) });
       built.ledger.take({ t: "restore-start", backup: record.name });
@@ -610,13 +624,13 @@ describe(
       expect(await again()).toEqual([]);
       // The backup, verified once, overwritten with bytes of the same size, and its modification
       // time put back: only its content tells.
-      const backupFile = join(built.folder, "backups", basename(record.file));
+      const backupFile = join(backupsBeside(built.folder), basename(record.file));
       const { atime, mtime } = statSync(backupFile);
       writeFileSync(backupFile, Buffer.alloc(record.sidecar.compressed_size, 7));
       utimesSync(backupFile, atime, mtime);
       expect(await again()).toEqual(["backup-complete-or-absent"]);
       unlinkSync(backupFile);
-      unlinkSync(join(built.folder, "backups", basename(record.sidecarFile)));
+      unlinkSync(join(backupsBeside(built.folder), basename(record.sidecarFile)));
       built.ledger.backups.clear();
       expect(await again()).toEqual([]);
       // The replaced folder, checked once: a note's body changed there, then its receipts lost.
@@ -637,7 +651,10 @@ describe(
     test("a restore that reported its end but claimed another backup than it was asked for", async () => {
       // Both backups hold every acknowledged result, so only the claim tells them apart.
       const built = await build();
-      const asked = await backupSpace(built.checked, built.folder, { kind: "manual" });
+      const asked = await backupSpace(built.checked, built.folder, {
+        kind: "manual",
+        backupDir: backupsBeside(built.folder),
+      });
       built.ledger.take({ t: "backup-start", n: 1 });
       built.ledger.take({ t: "backup-done", n: 1, backup: facts(asked) });
       const writer = SpaceWriter.open(
@@ -668,7 +685,10 @@ describe(
       });
       writer.close();
       built.ledger.take({ t: "ack", key, result: reduce(result) });
-      const other = await backupSpace(built.checked, built.folder, { kind: "manual" });
+      const other = await backupSpace(built.checked, built.folder, {
+        kind: "manual",
+        backupDir: backupsBeside(built.folder),
+      });
       built.ledger.take({ t: "backup-start", n: 2 });
       built.ledger.take({ t: "backup-done", n: 2, backup: facts(other) });
       built.ledger.take({ t: "restore-start", backup: asked.name });

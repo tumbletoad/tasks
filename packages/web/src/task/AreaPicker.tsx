@@ -27,10 +27,10 @@ import { Session } from "../context.ts";
 import { groupingChange } from "../edit/change.ts";
 import { useEdits } from "../edit/useEdits.ts";
 import { refusalText } from "../folder/FolderDialog.tsx";
-import { archivedGroup, areaSlots } from "../groups.ts";
+import { archivedGroup, areaSlots } from "@ttasks/client/today";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
-import type { TaskRow } from "../store/rows.ts";
+import { childrenOf, topLevel, trail, type TaskRow } from "@ttasks/client/store";
 import { closeName, sameName } from "./areaNames.ts";
 import css from "./Picker.module.css";
 
@@ -56,9 +56,6 @@ interface Choice {
   readonly archived?: boolean;
 }
 
-const byPosition = <T extends { position: string }>(a: T, b: T) =>
-  a.position < b.position ? -1 : a.position > b.position ? 1 : 0;
-
 /** The choice that makes a new area of what was typed. */
 const NEW_AREA = "new-area";
 
@@ -74,32 +71,30 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const { contains } = useFilter({ sensitivity: "base" });
-  const slots = useMemo(() => areaSlots(state.areas.values()), [state.areas]);
+  const slots = useMemo(() => areaSlots(state.nodes), [state.nodes]);
+  const areas = useMemo(() => topLevel(state.nodes), [state.nodes]);
   const choices = useMemo(() => {
     const out: Choice[] = [];
-    const projects = [...state.projects.values()].sort(byPosition);
-    for (const area of [...state.areas.values()].sort(byPosition)) {
+    for (const area of areas) {
       const slot = slots.get(area.id) ?? 1;
       const a = { id: area.id, title: area.title };
-      const shelved = area.lifecycle === "archived";
+      const shelved = area.state === "archived";
       out.push({ id: area.id, text: area.title, area: a, slot, archived: shelved });
-      for (const project of projects) {
-        if (project.area_id !== area.id) continue;
+      for (const project of childrenOf(state.nodes, area.id)) {
         out.push({
           id: project.id,
           text: t("fact.areaProject", { area: area.title, project: project.title }),
           area: a,
           project: { id: project.id, title: project.title },
           slot,
-          archived: shelved || project.lifecycle === "archived",
+          archived: shelved || project.state === "archived",
         });
       }
     }
     return out;
-  }, [state.areas, state.projects, slots, t]);
+  }, [state.nodes, areas, slots, t]);
   // A slash would make the name an area and a project.
   const name = typed.replaceAll("/", " ").trim();
-  const areas = [...state.areas.values()].sort(byPosition);
   // The areas the name likely means are shown whatever the filter's spelling: the same name, then a
   // close one. The live ones come first; an archived one stays with the archived ones, last. A new
   // area is offered unless an area has the name, since making it would give that one.
@@ -110,7 +105,7 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
           ...areas.filter((a) => sameName(a.title, name)),
           ...areas.filter((a) => closeName(a.title, name)),
         ];
-  const meant = near.filter((a) => a.lifecycle !== "archived");
+  const meant = near.filter((a) => a.state !== "archived");
   const first = new Set(meant.map((a) => a.id));
   const listed = new Set(near.map((a) => a.id));
   const named = name !== "" && areas.some((a) => sameName(a.title, name));
@@ -172,18 +167,17 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
       );
   };
 
-  const area = task.area_id === undefined ? undefined : state.areas.get(task.area_id);
-  const project = task.project_id === undefined ? undefined : state.projects.get(task.project_id);
+  const [area, project] = trail(state.nodes, task.parent);
   const slot = area === undefined ? undefined : slots.get(area.id);
   const shown =
     area === undefined
-      ? project?.title
+      ? undefined
       : project === undefined
         ? area.title
         : t("fact.areaProject", { area: area.title, project: project.title });
   // A task stays in its area or project when that is archived: the pill says so.
   const shelved = archivedGroup(area, project) !== undefined;
-  const current = task.project_id ?? task.area_id;
+  const current = task.parent;
   const take = (key: unknown) => {
     const choice = items.find((c) => c.id === key);
     const seen = edits.seen(task, ["grouping"]);

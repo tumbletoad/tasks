@@ -71,11 +71,5 @@
       }
     }
   },
-  "problems": [
-    {
-      "key": "roots",
-      "code": "retired",
-      "severity": "warning"
-    }
-  ]
+  "problems": []
 }

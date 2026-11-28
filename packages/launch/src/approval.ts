@@ -1,5 +1,5 @@
-// Approval of definitions that arrive with data (A4 3.2, L2; R10). A space may carry a custom target
-// definition or a routine: executable intent that another machine, an import or a copy can plant.
+// Approval of definitions that arrive with data. A space may carry a custom target
+// definition: executable intent that another machine, an import or a copy can plant.
 // Each machine pins what its person allowed by a content hash in machine.toml `[approvals]`:
 //
 //   1. SHA-256 over the canonical JSON of the definition, with its reference-only keys removed.
@@ -13,15 +13,14 @@
 // value JSON cannot carry exactly (undefined, a function, a bigint, NaN, Infinity, a Date, a class
 // instance) is refused rather than dropped, so two different definitions never share a form.
 //
-// The hash input starts with a domain line and the kind (`tasks-approval/1`, `custom_target`), so
-// a routine's hash can never approve a target definition with the same JSON, or the reverse.
+// The hash input starts with a domain line and the kind (`tasks-approval/1`, `custom_target`).
 //
-// Approving is a user-only operation (A4 3.2 step 4): the UI session or an interactive CLI writes
+// Approving is a user-only operation: the UI session or an interactive CLI writes
 // the verdict through the service's machine.toml editor. Nothing here writes.
 import { createHash } from "node:crypto";
 import { APPROVAL_KEY, type Verdict } from "./sections.ts";
 
-export const APPROVAL_KINDS = ["custom_target", "routine"] as const;
+export const APPROVAL_KINDS = ["custom_target"] as const;
 export type ApprovalKind = (typeof APPROVAL_KINDS)[number];
 
 /**
@@ -30,8 +29,6 @@ export type ApprovalKind = (typeof APPROVAL_KINDS)[number];
  */
 export const REFERENCE_KEYS: Readonly<Record<ApprovalKind, readonly string[]>> = {
   custom_target: ["space_id", "created_at", "updated_at", "seq", "rev"],
-  // A routine's hash covers an explicit projection (routineApproval below).
-  routine: [],
 };
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [k: string]: JsonValue };
@@ -110,27 +107,6 @@ export function approvalHash(kind: ApprovalKind, definition: unknown): string {
   const canonical = canonicalJson(approvalContent(kind, definition));
   const digest = createHash("sha256").update(`${DOMAIN}\n${kind}\n${canonical}`, "utf8").digest();
   return `sha256-${digest.toString("hex")}`;
-}
-
-/**
- * The content a routine's approval covers (A4 3.12.1): its template, its parameters, the instance
- * it runs in and that instance's run permission at approval time. A raised permission changes the
- * hash, so the routine asks again.
- */
-export function routineApproval(
-  routine: {
-    readonly template: string;
-    readonly params: Readonly<Record<string, string>>;
-    readonly instance_id: string;
-  },
-  runPermission: string,
-): JsonValue {
-  return {
-    template: routine.template,
-    params: { ...routine.params },
-    instance_id: routine.instance_id,
-    run_permission: runPermission,
-  };
 }
 
 export type ApprovalState = "approved" | "denied" | "needs_approval";

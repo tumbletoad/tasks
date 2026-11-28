@@ -7,7 +7,6 @@ export const SECTIONS = [
   "updates",
   "log",
   "spaces",
-  "roots",
   "terminal",
   "instance",
   "approvals",

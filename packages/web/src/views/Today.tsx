@@ -1,9 +1,9 @@
 // Today (A5 3.4): today's date and a few numbers about the day, then Focus, This week, Next and
-// Changes, with no heading above them. The sections and their membership are `todayOf`
-// (app/views.ts), a pure function of the live rows; this component hands their rows to the one
-// list (TaskList), which draws every row and keeps the list's rules: nothing moves under focus,
-// and the expanded task stays at its place in its section until it is collapsed (`holdExpanded`),
-// its reference in the URL's `?task=`.
+// Changes, with no heading above them, and after the tasks the pages agents changed (PageChanges).
+// The sections and their membership are `todayOf` (@ttasks/client/today), a pure function of the
+// live rows; this component hands their rows to the one list (TaskList), which draws every row and
+// keeps the list's rules: nothing moves under focus, and the expanded task stays at its place in
+// its section until it is collapsed (`holdExpanded`), its reference in the URL's `?task=`.
 //
 // The numbers count what the page each links to lists: late and due today (Search), waiting on
 // others (Waiting), and done this week (Completed). Each keeps its place and width as it changes,
@@ -22,18 +22,20 @@ import {
   todayOf,
   weekStartOf,
   type DayNumbers,
-} from "../app/views.ts";
+  formatDay,
+  type Clock,
+} from "@ttasks/client/today";
 import { Session } from "../context.ts";
-import type { Group } from "../groups.ts";
+import type { Group } from "../list/items.ts";
 import { useT, type MessageId } from "../i18n/intl.tsx";
-import { formatDay, type Clock } from "../row/dates.ts";
 import { affects } from "../store/queries.ts";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
 import { countFinished, type FinishedCounts } from "./finished.ts";
 import css from "./Today.module.css";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
+import { PageChanges } from "../library/PageChanges.tsx";
 
 const styles = classes(css, ["day", "date", "numbers", "number", "value", "label", "sub"]);
 
@@ -108,6 +110,7 @@ export function TodayPage({ task, onExpand }: TodayProps) {
         expand={task}
         onExpand={onExpand}
       />
+      <PageChanges />
     </div>
   );
 }

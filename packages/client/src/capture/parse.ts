@@ -8,7 +8,8 @@
 // "tom", "may" alone) are never read as dates; numbers that differ by locale ("11/12") are not
 // read either, so no date is a guess. Only the first shortcut of each kind applies: a second
 // "p2" stays in the title.
-import { addDays, isDate, weekdayOf } from "../edit/due.ts";
+import { filedAs } from "../store/tree.ts";
+import { addDays, isDate, weekdayOf } from "./due.ts";
 
 export interface CaptureArea {
   readonly id: string;
@@ -18,7 +19,8 @@ export interface CaptureArea {
 export interface CaptureProject {
   readonly id: string;
   readonly title: string;
-  readonly area_id?: string;
+  /** Its area's ID. */
+  readonly parent?: string;
 }
 
 export interface CaptureContext {
@@ -243,24 +245,24 @@ function groupOf(
     }
     if (areasNamed.length !== 1) return undefined;
     const area = areasNamed[0] as CaptureArea;
-    const inArea = projects.filter((p) => p.area_id === area.id && slugOf(p.title) === second);
+    const inArea = projects.filter((p) => p.parent === area.id && slugOf(p.title) === second);
     if (inArea.length === 1) return { area, project: inArea[0] as CaptureProject };
     if (inArea.length > 1) return undefined;
-    const gone = shelved.projects.find((p) => p.area_id === area.id && slugOf(p.title) === second);
+    const gone = shelved.projects.find((p) => p.parent === area.id && slugOf(p.title) === second);
     return gone === undefined ? undefined : { archived: gone.title };
   }
   if (areasNamed.length === 1) return { area: areasNamed[0] as CaptureArea };
   if (areasNamed.length > 1) return undefined;
   if (shelvedArea !== undefined) return { archived: shelvedArea.title };
   // A project's name alone, when one project in an area has it.
-  const named = projects.filter((p) => slugOf(p.title) === first && p.area_id !== undefined);
+  const named = projects.filter((p) => slugOf(p.title) === first && p.parent !== undefined);
   if (named.length > 1) return undefined;
   const project = named[0];
   if (project === undefined) {
     const gone = shelved.projects.find((p) => slugOf(p.title) === first);
     return gone === undefined ? undefined : { archived: gone.title };
   }
-  const area = areas.find((a) => a.id === project.area_id);
+  const area = areas.find((a) => a.id === project.parent);
   return area === undefined ? undefined : { area, project };
 }
 
@@ -350,7 +352,7 @@ export function parseCapture(text: string, ctx: CaptureContext): Capture {
     const project =
       ctx.here.project === undefined
         ? undefined
-        : ctx.projects.find((p) => p.id === ctx.here?.project && p.area_id === area?.id);
+        : ctx.projects.find((p) => p.id === ctx.here?.project && p.parent === area?.id);
     if (area !== undefined) {
       found.unshift({
         kind: "area",
@@ -393,14 +395,16 @@ function draftOf(title: string, chips: readonly Chip[]): CaptureDraft {
       case "waiting":
         draft = { ...draft, status: "waiting", waiting_on: chip.who, inbox: false };
         break;
-      case "area":
+      case "area": {
+        const filed = filedAs(chip.area, chip.project);
         draft = {
           ...draft,
-          area: chip.area.title,
-          ...(chip.project === undefined ? {} : { project: chip.project.title }),
+          ...(filed.area === undefined ? {} : { area: filed.area.title }),
+          ...(filed.project === undefined ? {} : { project: filed.project.title }),
           inbox: false,
         };
         break;
+      }
     }
   }
   return draft;
@@ -440,7 +444,7 @@ export function groupSuggestions(
     const areaSlug = slugOf(area.title);
     if (second !== undefined && areaSlug !== a) continue;
     for (const project of projects) {
-      if (project.area_id !== area.id) continue;
+      if (project.parent !== area.id) continue;
       const p = slugOf(project.title);
       const wanted = second === undefined ? p.startsWith(a) : p.startsWith(slugOf(second));
       if (wanted) out.push({ insert: `#${areaSlug}/${p}`, area, project });

@@ -43,14 +43,14 @@ const task = (id: string, title: string) => ({
   position: "a",
   created_at: 0,
   version: 1,
+  parent: SPACE,
 });
 const snapshot = (seq: number, tasks: unknown[] = []) => ({
   type: "snapshot",
   space: { id: SPACE, name: "Mira", ref_prefix: "M" },
   cursor: cursor(seq),
   tasks,
-  areas: [],
-  projects: [],
+  nodes: [],
   instances: [],
 });
 const batch = (from: number, through: number, events: unknown[] = [], space = SPACE) => ({

@@ -12,7 +12,7 @@ import { useEditState } from "../edit/useEdits.ts";
 import { useT } from "../i18n/intl.tsx";
 import { pageDay, useClock } from "../row/useClock.ts";
 import { useLive, usePagedQuery } from "../store/hooks.ts";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import {
   filtersOnly,
   hasWords,
@@ -122,8 +122,7 @@ function Results({ q, typed, task, onExpand, onUnindexed }: ResultsProps) {
         input.cursor === undefined ? { ...input, time_zone: pageDay().timeZone } : input,
       );
     const rowOf = (row: SearchRow, found: Found, read: number) => {
-      const { areas, projects } = live.getState();
-      return rowOfFound(row, found, areas, projects, read);
+      return rowOfFound(row, found, live.getState().nodes, read);
     };
     return {
       open: searchSource({ search, q, found: "open", rowOf, all: true }),

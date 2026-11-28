@@ -1477,7 +1477,7 @@ const launchUnknown = (typo: boolean): AppError =>
 
 /**
  * The launch a reference names in the call's space: one whose check character fails, that no
- * launch of this space and machine has, of a routine, or that never left the service (Prepared) is
+ * launch of this space and machine has, without a task, or that never left the service (Prepared) is
  * `launch_unknown`. Any other reads its task, whatever its age or state: a reference is never
  * given to another launch.
  */

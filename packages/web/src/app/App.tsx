@@ -28,7 +28,7 @@ export function App({
     () => (token === null ? undefined : new Api(token, build, () => undefined)),
     [token, build],
   );
-  const machine = useMachineControl(out ? undefined : api, store);
+  const machine = useMachineControl(out ? undefined : api);
   const signedOut = useCallback(() => {
     keepToken(store, null);
     setOut(true);

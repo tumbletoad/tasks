@@ -20,8 +20,7 @@
 //
 // The read itself is injected (`PageSource`): the service's paged reads (`task.search`,
 // `task.finished`); this module is the part that decides when they read again.
-import type { Change } from "./core.ts";
-import { withTaskRow } from "./rows.ts";
+import { type Change, withTaskRow } from "@ttasks/client/store";
 import type { Changes } from "./store.ts";
 
 export type QueryKind = "completed" | "trash" | "search";
@@ -60,8 +59,13 @@ export function affects(def: QueryDef, change: Change): boolean {
     case "search": {
       if (SEARCH_CHILDREN.has(change.type)) return true;
       const fields = def.fields ?? [];
-      if (change.type === "area" || change.type === "project") {
-        return fields.includes(change.type) && touches(change, ["title", "slug", "deleted"]);
+      // An area or a project, renamed, moved, trashed or brought back: a filter that names one
+      // by name may now match other tasks.
+      if (change.type === "node") {
+        return (
+          (fields.includes("area") || fields.includes("project")) &&
+          touches(change, ["title", "place", "deleted"])
+        );
       }
       if (change.type !== "task") return false;
       return change.created || touches(change, [...SEARCH_FIELDS, ...fields]);

@@ -30,12 +30,6 @@ export const MCP_SERVER_KEY = "ttasks";
 export const DATA_FOLDER = `.${PRODUCT_ID}`;
 
 /**
- * The data folder of builds made before the product was renamed. Install names it when it finds
- * one, so its spaces do not look lost.
- */
-export const EARLIER_DATA_FOLDER = ".tasks";
-
-/**
  * The marker TTasks leaves in a project's or a task's folder, naming whose folder it is:
  * `.ttasks-marker/`. Not the data folder's name, which a project whose folder is the home would meet.
  */

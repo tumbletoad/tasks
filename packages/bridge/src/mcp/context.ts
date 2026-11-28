@@ -1,4 +1,4 @@
-// The bind context of mcp mode (A2 3.6.4, A3 3.7.2), built from an allow-list. The bridge
+// The bind context of mcp mode, built from an allow-list. The bridge
 // copies nothing else from its environment: not the whole environment, not other agent markers,
 // not a variable that merely looks related.
 import { MCP_CONTEXT_ENV, type JsonObject } from "../protocol/index.ts";
@@ -27,7 +27,7 @@ export interface BaseContext {
 const sendable = (value: string | undefined, max: number): value is string =>
   value !== undefined && value !== "" && value.length <= max && value.isWellFormed();
 
-/** The allow-listed environment values (A3 3.7.2), each present, short and well-formed. */
+/** The allow-listed environment values, each present, short and well-formed. */
 export function contextEnv(
   env: Readonly<Record<string, string | undefined>>,
 ): Record<string, string> {
@@ -59,13 +59,12 @@ export function baseContext(
 
 /**
  * The context of one bind: the base, the client's first `initialize` or `server/discover` once it
- * was answered (A2 3.7.4), the binding handle an older service gave an earlier bind (A2 3.7.5), and
- * what an earlier bind answer named of its space, a space or null for none, kept for its life.
+ * was answered, and what an earlier bind answer named of its space, a space or null for none,
+ * kept for its life.
  */
 export function bindContext(
   base: BaseContext,
   mcpInit: JsonObject | undefined,
-  handle: string | undefined,
   held?: string | null,
 ): JsonObject {
   return {
@@ -76,7 +75,6 @@ export function bindContext(
     env: { ...base.env },
     parent: { pid: base.parent.pid },
     ...(mcpInit === undefined ? {} : { mcp_init: mcpInit }),
-    ...(handle === undefined ? {} : { resume: { handle } }),
     ...(held === undefined ? {} : { held_space: held }),
   };
 }

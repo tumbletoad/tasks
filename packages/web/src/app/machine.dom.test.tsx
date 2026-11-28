@@ -6,7 +6,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { Api } from "../api.ts";
-import type { MachinePreference } from "../store/rows.ts";
+import type { MachinePreference } from "../store/messages.ts";
 import { useMachineControl, type MachineControl } from "./machine.ts";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -21,7 +21,7 @@ let root: Root;
 let control: MachineControl;
 
 function Probe({ api }: { readonly api: Api }) {
-  control = useMachineControl(api, undefined);
+  control = useMachineControl(api);
   return null;
 }
 

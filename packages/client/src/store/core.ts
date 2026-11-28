@@ -11,7 +11,7 @@
 //   never by consecutive `seq` values, because a filtered feed leaves out commits.
 // - A batch wholly at or behind the cursor is a repeat: nothing happens.
 // - A gap (`from` beyond the cursor), another epoch or incarnation, a withheld row (`row: null`
-//   for a task, area, project or page: A5 3.15), a changed status or effort scale (its value comes with
+//   for a task, a node or a page: A5 3.15), a changed status or effort scale (its value comes with
 //   a snapshot) or a batch the page cannot read asks for a fresh snapshot. Until it arrives, every
 //   batch waits for it and is dropped; the rows stay on screen.
 // - Each batch applies whole or not at all: it is checked first, then applied.
@@ -21,7 +21,7 @@
 //
 // Rows are held in maps the core changes in place. `publish()` hands out new maps for the kinds
 // that changed since the last call, so a frame that applies many batches copies each map once.
-import type { Instance } from "../api.ts";
+import type { Instance } from "@ttasks/contracts/runs";
 import {
   DEFAULT_SCALES,
   inWorkingSet,
@@ -30,11 +30,10 @@ import {
   questionsWaiting,
   ROW_OF,
   type AnyRow,
-  type AreaRow,
   type BatchMessage,
+  type NodeRow,
   type PageRow,
   type Cursor,
-  type ProjectRow,
   type RowType,
   type Scales,
   type SnapshotMessage,
@@ -50,7 +49,7 @@ export interface Change {
   readonly task?: string;
   /** The working set's row before the change; undefined when the set did not hold it. */
   readonly before?: AnyRow;
-  /** The post-change row the event carried, for a task, area or project. */
+  /** The post-change row the event carried, for a task, a node or a page. */
   readonly after?: AnyRow;
   readonly changed: readonly string[];
   readonly created: boolean;
@@ -101,8 +100,8 @@ export interface Held {
   readonly tasks: ReadonlyMap<string, TaskRow>;
   /** The finished and dropped tasks on which a question waits for the person. */
   readonly asking: ReadonlyMap<string, TaskRow>;
-  readonly areas: ReadonlyMap<string, AreaRow>;
-  readonly projects: ReadonlyMap<string, ProjectRow>;
+  /** The space and its projects, by ID: the tree a task's `parent` names a node of. */
+  readonly nodes: ReadonlyMap<string, NodeRow>;
   /** The pages shown: the Library's lists, without bodies. */
   readonly pages: ReadonlyMap<string, PageRow>;
   readonly instances: readonly Instance[];
@@ -111,8 +110,7 @@ export interface Held {
 
 interface Maps {
   task: Map<string, AnyRow>;
-  area: Map<string, AnyRow>;
-  project: Map<string, AnyRow>;
+  node: Map<string, AnyRow>;
   page: Map<string, AnyRow>;
   asking: Map<string, TaskRow>;
 }
@@ -217,13 +215,12 @@ export class LiveCore {
     this.#scales = message.scales ?? DEFAULT_SCALES;
     this.#maps = {
       task: mapOf("task", message.tasks),
-      area: mapOf("area", message.areas),
-      project: mapOf("project", message.projects),
+      node: mapOf("node", message.nodes),
       page: mapOf("page", message.pages ?? []),
       asking: new Map((message.asking ?? []).filter(asksOutside).map((row) => [row.id, row])),
     };
     this.#awaiting = false;
-    this.#dirty.add("task").add("area").add("project").add("page");
+    this.#dirty.add("task").add("node").add("page");
     this.#askingDirty = true;
     this.#published = undefined;
     return { kind: "snapshot", agentChanges: message.agent_changes ?? [] };
@@ -342,8 +339,7 @@ export class LiveCore {
       space: head,
       cursor,
       tasks: copy<TaskRow>("task", before?.tasks),
-      areas: copy<AreaRow>("area", before?.areas),
-      projects: copy<ProjectRow>("project", before?.projects),
+      nodes: copy<NodeRow>("node", before?.nodes),
       pages: copy<PageRow>("page", before?.pages),
       asking: before !== undefined && !this.#askingDirty ? before.asking : new Map(maps.asking),
       instances: this.#instances,

@@ -23,7 +23,7 @@ import type { Api } from "../api.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
-import type { SnapshotMessage, TaskRow } from "../store/rows.ts";
+import type { SnapshotMessage, TaskRow } from "@ttasks/client/store";
 import { AgentsPage } from "./Agents.tsx";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -38,6 +38,7 @@ const working: TaskRow = {
   title: "Fix appointment time zones",
   status: "open",
   inbox: false,
+  parent: "sp_0123456789abcdefghjkmnpqrs",
   lifecycle: "active",
   position: "p1",
   created_at: 0,
@@ -51,8 +52,7 @@ function snapshot(tasks: readonly TaskRow[]): SnapshotMessage {
     space: SPACE,
     cursor: CURSOR,
     tasks,
-    areas: [],
-    projects: [],
+    nodes: [],
     instances: [],
   };
 }
@@ -544,6 +544,7 @@ const task = (n: number): TaskRow => ({
   title: `Fixture task ${String(n)}`,
   status: "open",
   inbox: false,
+  parent: "sp_0123456789abcdefghjkmnpqrs",
   lifecycle: "active",
   position: `p${String(n)}`,
   created_at: 0,

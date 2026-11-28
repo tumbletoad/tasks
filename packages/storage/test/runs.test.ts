@@ -4,14 +4,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import { newId, type Id } from "../src/ids.ts";
 import type { Credential, Operation, WriteResult } from "../src/write/request.ts";
-import {
-  decodeRun,
-  RUN_EDGES,
-  RUN_REASONS,
-  RUN_SQL,
-  RUN_STATES,
-  type RunState,
-} from "../src/write/runs.ts";
+import { RUN_EDGES, RUN_REASONS, RUN_SQL, RUN_STATES, type RunState } from "../src/write/runs.ts";
 import { TEST_MACHINE, tempFolders } from "./space-helpers.ts";
 import { checkHistory, expectStatus, type Fixture, fixtureCopies } from "./write-helpers.ts";
 
@@ -49,17 +42,18 @@ function task(): Id<"t"> {
   return id;
 }
 
-const createOp = (extra: Record<string, unknown> = {}): Operation => ({
-  kind: "run.create",
-  instance: "codex-work",
-  adapter: "codex",
-  place: null,
-  request: "Check the export\r\nand fix the time zone.",
-  brief_hash: HASH,
-  permission: "full-access",
-  limits: LIMITS,
-  ...extra,
-});
+const createOp = (extra: Record<string, unknown> = {}): Operation =>
+  ({
+    kind: "run.create",
+    instance: "codex-work",
+    adapter: "codex",
+    place: null,
+    request: "Check the export\r\nand fix the time zone.",
+    brief_hash: HASH,
+    permission: "full-access",
+    limits: LIMITS,
+    ...extra,
+  }) as Operation;
 
 function create(extra: Record<string, unknown> = { task: task() }): Id<"ru"> {
   const result = submit([createOp(extra)]);
@@ -114,7 +108,6 @@ describe("[A1.5.write.runs] run records through the write path", () => {
     expect(fx.writer.run(id)).toEqual({
       id,
       task_id: taskId,
-      routine_id: null,
       session_id: null,
       instance_id: "codex-work",
       machine_id: TEST_MACHINE,
@@ -148,20 +141,13 @@ describe("[A1.5.write.runs] run records through the write path", () => {
     ).toBe("run.create");
   });
 
-  test("a routine's run has no task; a run needs a task or a routine, never both", () => {
-    const routine = newId("ro");
-    const id = create({ routine, request: undefined, limits: { ...LIMITS, max_turns: 150 } });
-    expect(fx.writer.run(id)).toMatchObject({ task_id: null, routine_id: routine, request: null });
-    // A task's run takes the person's instruction; a routine's takes none (A4 3.11.7).
+  test("a run needs its task and the person's instruction (A4 3.11.7)", () => {
     expect(submit([createOp({ task: task(), request: undefined })]).error).toMatchObject({
       field: "ops[0].request",
     });
-    expect(submit([createOp({ routine })]).error).toMatchObject({ field: "ops[0].request" });
-    for (const extra of [{}, { task: task(), routine }]) {
-      const refused = submit([createOp(extra)]);
-      expectStatus(refused, "rejected");
-      expect(refused.error).toMatchObject({ code: "VALIDATION_FAILED", field: "ops[0].task" });
-    }
+    const refused = submit([createOp({})]);
+    expectStatus(refused, "rejected");
+    expect(refused.error).toMatchObject({ code: "VALIDATION_FAILED", field: "ops[0].task" });
   });
 
   test("a run moves along A4's edges: start, evidence, result and times", () => {
@@ -206,18 +192,13 @@ describe("[A1.5.write.runs] run records through the write path", () => {
     expect(lastSeq()).toBe(seq);
   });
 
-  test("a run records its process group, and a record of before names it under its old key", () => {
+  test("a run records its process group under that key only", () => {
     const id = create();
     expectStatus(move(id, "queued", "starting", { evidence: { process_group: "job" } }), "applied");
     expect(fx.writer.run(id)?.evidence).toEqual({ process_group: "job" });
     expect(
       move(id, "starting", "starting", { evidence: { container: "job" } }).error,
     ).toMatchObject({ code: "VALIDATION_FAILED" });
-    // A record written before the rename holds `container`: it reads as the process group.
-    const row = fx.reader.prepare("SELECT * FROM runs WHERE id = $id").get({ id }) ?? {};
-    const before = { ...row, detail: String(row["detail"]).replace("process_group", "container") };
-    expect(before.detail).toContain('"container":"job"');
-    expect(decodeRun(before).evidence).toEqual({ process_group: "job" });
   });
 
   test("the compare-and-set refuses a stale state or version, other evidence and a second result", () => {
