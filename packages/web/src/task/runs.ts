@@ -220,7 +220,8 @@ export function agentMarker(
   instances: readonly Instance[],
   question?: RowQuestion,
 ): MarkerFact | undefined {
-  const by = run?.instance === undefined ? undefined : runLabel({ instance: run.instance }, instances);
+  const by =
+    run?.instance === undefined ? undefined : runLabel({ instance: run.instance }, instances);
   if (question !== undefined) return { kind: "needs_input", by: questionBy(question, instances) };
   if (by !== undefined && run?.state === "needs_you") return { kind: "needs_input", by };
   if (by !== undefined && run?.state === "working") return { kind: "working", by };

@@ -445,8 +445,7 @@ export function Today(props: {
 }
 
 /** An agent waits for the person on it: a question, or a run that ended needing them. */
-const needsYou = (task: TaskRow) =>
-  questionsWaiting(task) > 0 || task.run?.state === "needs_you";
+const needsYou = (task: TaskRow) => questionsWaiting(task) > 0 || task.run?.state === "needs_you";
 
 function Row(props: {
   /** In Changes: who changed it, and when. */
