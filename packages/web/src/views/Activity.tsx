@@ -23,7 +23,7 @@ import { Session } from "../context.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { formatWhen } from "@ttasks/client/today";
 import { useClock } from "../row/useClock.ts";
-import { useLive } from "../store/hooks.ts";
+import { useLive, useServes } from "../store/hooks.ts";
 import { agentName } from "./agent-name.ts";
 import {
   ActivityLog,
@@ -214,6 +214,7 @@ function readPlace(root: HTMLElement | null): { seq: string; top: number } | und
 
 export function ActivityPage() {
   const t = useT();
+  const served = useServes("activity.list");
   const { api, live } = useContext(Session);
   const { space, instances } = useLive();
   const clock = useClock(false);
@@ -282,6 +283,14 @@ export function ActivityPage() {
   }, [next, state.lines, log]);
 
   if (space === undefined) return null;
+  // A space that cannot show its activity yet says so once, with nothing to try again.
+  if (!served) {
+    return (
+      <p className={list.line} role="status">
+        {t("activity.notYet")}
+      </p>
+    );
+  }
   if (state.phase === "failed") {
     return (
       <p className={list.line} role="status">

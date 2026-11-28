@@ -7,7 +7,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { Api, Receipt } from "../api.ts";
+import { Unserved, type Api, type Receipt } from "../api.ts";
 import { ToastContext } from "../app/frame.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
@@ -127,6 +127,7 @@ async function open(
     busy: () => Promise.resolve({ busy: [], last: {} }),
     receipts: () => (fails === "receipts" ? lost() : Promise.resolve(receipts())),
     runs: () => (fails === "runs" ? lost() : Promise.resolve([])),
+    unserved: new Unserved(),
   } as unknown as Api;
   live = new Live({
     api,

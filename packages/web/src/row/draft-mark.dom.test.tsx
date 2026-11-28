@@ -8,7 +8,7 @@ import { areaNode, nodesOf } from "@ttasks/client/test/nodes";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { Api } from "../api.ts";
+import { Unserved, type Api } from "../api.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
@@ -46,6 +46,7 @@ beforeEach(() => {
     client: { task: {} },
     busy: () => Promise.resolve({ busy: [], last: {} }),
     receipts: () => Promise.resolve([]),
+    unserved: new Unserved(),
   } as unknown as Api;
   live = new Live({
     api,

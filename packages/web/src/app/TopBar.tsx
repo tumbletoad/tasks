@@ -37,7 +37,7 @@ import { parseRule } from "@ttasks/contracts/schedule";
 import { joinRest, splitPaste } from "../capture/paste.ts";
 import { requestId } from "../api.ts";
 import { Session } from "../context.ts";
-import { trail } from "@ttasks/client/store";
+import { placeOf } from "@ttasks/client/store";
 import { formatDay, LANDING } from "@ttasks/client/today";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { tabKept } from "../kept.ts";
@@ -378,9 +378,9 @@ export function TopBar({
   // New work goes to live groups only: an archived one is neither suggested nor taken, and its name
   // is said to be archived rather than read as another group's.
   const { areas, projects, archived } = useMemo(() => captureGroups(state.nodes), [state.nodes]);
-  // Only a project's routes have one. A capture there goes into the project as today's operations
-  // file it: its top and the project under that, where it sits deeper.
-  const [hereTop, hereBelow] = trail(state.nodes, params.project);
+  // Only a project's routes have one. A capture there goes into that project, at any depth.
+  const [hereTop, hereBelow] = placeOf(state.nodes, params.project);
+  const tree = state.space?.tree === true;
   const hereArea = hereTop?.id;
   const hereProject = hereBelow?.id;
   const capture = useMemo(() => {
@@ -388,8 +388,16 @@ export function TopBar({
       hereArea === undefined
         ? undefined
         : { area: hereArea, ...(hereProject === undefined ? {} : { project: hereProject }) };
-    return parseCapture(text, { today: clock.today, areas, projects, archived, here, kept });
-  }, [text, clock.today, areas, projects, archived, hereArea, hereProject, kept]);
+    return parseCapture(text, {
+      today: clock.today,
+      areas,
+      projects,
+      archived,
+      here,
+      kept,
+      tree,
+    });
+  }, [text, clock.today, areas, projects, archived, hereArea, hereProject, kept, tree]);
   // On a group's page a capture usually lands in that group: one that goes to the Inbox instead (an
   // archived group, the page's chip taken off) says so.
   const toInbox =

@@ -64,7 +64,13 @@ export type Source =
   | { readonly kind: "status"; readonly status: string }
   | { readonly kind: "inbox" }
   | { readonly kind: "waiting"; readonly person?: string }
-  | { readonly kind: "grouping"; readonly area: Named; readonly project?: Named };
+  | {
+      readonly kind: "grouping";
+      readonly area: Named;
+      readonly project?: Named;
+      /** Filed as a tree space takes it (filedAs). */
+      readonly tree?: true;
+    };
 
 /** Words for a value: a message, or the person's own text. */
 export type Words = Msg | string;
@@ -225,8 +231,12 @@ export function waitingChange(person: string | undefined): Change {
 }
 
 /** The IDs `task.move` takes for an area and a project of it. */
-function filedSet(area: { id: string }, project: { id: string } | undefined): UpdateSet {
-  const filed = filedAs(area, project);
+function filedSet(
+  area: { id: string },
+  project: { id: string } | undefined,
+  tree: boolean,
+): UpdateSet {
+  const filed = filedAs(area, project, tree);
   return {
     ...(filed.area === undefined ? {} : { area: filed.area.id }),
     ...(filed.project === undefined ? {} : { project: filed.project.id }),
@@ -235,11 +245,12 @@ function filedSet(area: { id: string }, project: { id: string } | undefined): Up
 
 /**
  * Into an area, or a project of it (the service moves the task with `task.move`). A project made
- * without an area takes the task as its project.
+ * without an area takes the task as its project; on a tree space, a project at any depth.
  */
 export function groupingChange(
   area: { id: string; title: string },
   project: { id: string; title: string } | undefined,
+  tree = false,
 ): Change {
   const shown: Words =
     project === undefined
@@ -247,7 +258,7 @@ export function groupingChange(
       : { id: "fact.areaProject", values: { area: area.title, project: project.title } };
   return {
     fields: ["grouping"],
-    set: filedSet(area, project),
+    set: filedSet(area, project, tree),
     overlay: { set: { parent: project?.id ?? area.id } },
     said: { id: "toast.moved", values: { value: shown } },
     shown,
@@ -255,6 +266,7 @@ export function groupingChange(
       kind: "grouping",
       area: { id: area.id, title: area.title },
       ...(project === undefined ? {} : { project: { id: project.id, title: project.title } }),
+      ...(tree ? { tree: true } : {}),
     },
   };
 }
@@ -406,7 +418,7 @@ export function changeOf(source: unknown): Change | undefined {
       if (area === undefined || (s["project"] !== undefined && project === undefined)) {
         return undefined;
       }
-      return groupingChange(area, project);
+      return groupingChange(area, project, s["tree"] === true);
     }
     default:
       return undefined;

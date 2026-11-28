@@ -63,6 +63,7 @@ import {
   type NoteRequest,
 } from "../unsent.ts";
 import { onAsk, onSaved } from "./composer.ts";
+import { useServes } from "../store/hooks.ts";
 import { openAsked, useUnansweredOpens } from "../views/unanswered.ts";
 import keptCss from "../edit/Unsaved.module.css";
 import css from "./Expanded.module.css";
@@ -524,6 +525,8 @@ export function Composer({ task, busy, instances, last, cannot, actions }: Compo
   const noteKeys = keysOf("note", singleKeys);
   const openKeys = keysOf("open-first", singleKeys);
   const runKeys = keysOf("run-first", singleKeys);
+  // Copy is Open's too: a space that cannot open tasks yet offers neither.
+  const launches = useServes("launch/busy");
   const opens = openers(instances);
   const first = agentFor(opens, "open", task, last);
   const runs = runners(instances);
@@ -746,18 +749,20 @@ export function Composer({ task, busy, instances, last, cannot, actions }: Compo
           </span>
         ) : null}
         <span className={styles.gap} aria-hidden="true" />
-        <button
-          type="button"
-          className={styles.button}
-          data-part="copy"
-          aria-label={t("row.copyFor", { title: task.title })}
-          aria-description={t(words === "" ? "row.copyTip" : "composer.copyTip")}
-          data-tip={t(words === "" ? "row.copyTip" : "composer.copyTip")}
-          onClick={copy}
-        >
-          <CopyIcon />
-          <span className={styles.wide}>{t("row.copy")}</span>
-        </button>
+        {launches ? (
+          <button
+            type="button"
+            className={styles.button}
+            data-part="copy"
+            aria-label={t("row.copyFor", { title: task.title })}
+            aria-description={t(words === "" ? "row.copyTip" : "composer.copyTip")}
+            data-tip={t(words === "" ? "row.copyTip" : "composer.copyTip")}
+            onClick={copy}
+          >
+            <CopyIcon />
+            <span className={styles.wide}>{t("row.copy")}</span>
+          </button>
+        ) : null}
       </Toolbar>
     </>
   );

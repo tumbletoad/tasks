@@ -13,7 +13,7 @@ import { Session } from "../context.ts";
 import { useEdits } from "../edit/useEdits.ts";
 import { refusalText } from "../folder/FolderDialog.tsx";
 import { useT } from "../i18n/intl.tsx";
-import { filedAs, trail } from "@ttasks/client/store";
+import { filedAs, placeOf } from "@ttasks/client/store";
 import { useLive } from "../store/hooks.ts";
 import css from "./Library.module.css";
 import type { LibraryNode } from "./lists.ts";
@@ -38,12 +38,13 @@ export function BuildLibrary({
   const router = useRouter({ warn: false }) as ReturnType<typeof useRouter> | null;
   const { api, live } = useContext(Session);
   const edits = useEdits();
-  const { nodes } = useLive();
+  const { nodes, space } = useLive();
+  const tree = space?.tree === true;
   const [sending, setSending] = useState(false);
   /** The task made for it whose note for agents did not land yet. */
   const [made, setMade] = useState<string | undefined>(undefined);
-  const [area, project] = trail(nodes, node.id);
-  const filed = area === undefined ? {} : filedAs(area, project);
+  const [area, project] = placeOf(nodes, node.id);
+  const filed = area === undefined ? {} : filedAs(area, project, tree);
   const kind = filed.area !== undefined && filed.project === undefined ? "area" : "project";
   const add = async (): Promise<string | undefined> => {
     const title = t(WORDS[job].title, { kind });
@@ -54,7 +55,9 @@ export function BuildLibrary({
             {
               title,
               ...(filed.area === undefined ? {} : { area: filed.area.title }),
-              ...(filed.project === undefined ? {} : { project: filed.project.title }),
+              ...(filed.project === undefined
+                ? {}
+                : { project: tree ? filed.project.id : filed.project.title }),
             },
           ],
           request_id,

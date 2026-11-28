@@ -9,7 +9,7 @@ import type { BatchMessage, SnapshotMessage, TaskRow } from "@ttasks/client/stor
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { Api } from "../api.ts";
+import { Unserved, type Api } from "../api.ts";
 import { ToastContext, type ToastAction } from "../app/frame.ts";
 import { Session } from "../context.ts";
 import type { Toast } from "../edit/edits.ts";
@@ -208,6 +208,7 @@ beforeEach(() => {
     busy: () => Promise.resolve({ busy: [], last: {} }),
     receipts: () => Promise.resolve([]),
     runs: () => Promise.resolve([]),
+    unserved: new Unserved(),
   } as unknown as Api;
   live = new Live({
     api,

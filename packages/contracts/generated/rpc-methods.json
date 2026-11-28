@@ -2629,7 +2629,7 @@
                   ],
                   "type": "object"
                 },
-                "maxItems": 2,
+                "maxItems": 32,
                 "type": "array"
               },
               "as_of": {
@@ -8218,7 +8218,7 @@
                   ],
                   "type": "object"
                 },
-                "maxItems": 3,
+                "maxItems": 32,
                 "type": "array"
               },
               "view": {
@@ -9301,7 +9301,7 @@
                   ],
                   "type": "object"
                 },
-                "maxItems": 3,
+                "maxItems": 32,
                 "type": "array"
               },
               "view": {

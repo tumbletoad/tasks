@@ -112,7 +112,8 @@ export function Penned({
     if (opening) setEditing(true);
   }, [opening, setEditing]);
   const [shown, saved] = useSaved(text);
-  const notSaved = save === undefined ? null : <NotSaved space={space} owner={owner} part={part} />;
+  // Words a save left waiting stay reachable, with Copy and Discard, also once the pen is gone.
+  const notSaved = <NotSaved space={space} owner={owner} part={part} />;
   if (editing && save !== undefined) {
     return (
       <>

@@ -45,6 +45,7 @@ import { copyGone, findSpace, isAmbiguity } from "../ops/copies.ts";
 import { launchError } from "../ops/handlers.ts";
 import { readOnly, type OpsHost, type ServedSpace } from "../ops/index.ts";
 import { readLaunchTask, type TaskFolder } from "../ops/read.ts";
+import { isTree, notOnTreeYet } from "../ops/tree.ts";
 import { WORK_ON_IT } from "../runs/agent.ts";
 import { runAnswer } from "../runs/service.ts";
 import type { HttpLog } from "./events.ts";
@@ -439,7 +440,11 @@ export class UiLaunches {
     );
     const space = isAmbiguity(found) ? undefined : found;
     const served = space?.reader !== undefined && space.id !== undefined;
-    if (served && (copy === undefined || space.copy === copy)) return space;
+    if (served && (copy === undefined || space.copy === copy)) {
+      // Open and Run come to a tree space with their family: until then the page leaves them out.
+      if (isTree(space)) throw notOnTreeYet("launch.open");
+      return space;
+    }
     if (copy !== undefined) throw copyGone(this.#options.host.spaces(), ref);
     throw new AppError({
       code: "space_unavailable",

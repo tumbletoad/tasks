@@ -3,7 +3,7 @@
 // space's overview.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
-import { PAGE_LIST, PageRow, TrailLevel } from "../pages.ts";
+import { PAGE_LIST, PageRow, TRAIL_LEVELS, TrailLevel } from "../pages.ts";
 import {
   AsOf,
   Cwd,
@@ -291,7 +291,7 @@ export const TaskGetResult = z.union([
     task: TaskDetail.describe("The task"),
     trail: z
       .array(TrailLevel)
-      .max(3)
+      .max(TRAIL_LEVELS)
       .describe("The levels above the task, nearest first: their pages")
       .optional(),
     notes: NamedNotes,
@@ -315,7 +315,7 @@ export const TaskGetResult = z.union([
     pages_more: Count.describe("Pages on this task not here").optional(),
     trail: z
       .array(TrailLevel)
-      .max(3)
+      .max(TRAIL_LEVELS)
       .describe("The levels above the task, nearest first: their pages")
       .optional(),
     notes: NamedNotes,

@@ -187,6 +187,26 @@ describe("[A5.tree.http.feed] the feed sends the space as a tree: areas as top-l
     expect(phoneNodes.map((x) => x.row)).toEqual([created?.row, moved?.row, archived?.row]);
   });
 
+  test("a project's brief: its node row carries it, and the batch that changes it names it with the new row", async () => {
+    const garden = idOf((await readSnapshot(reader)).nodes, "Garden");
+    expect(titled((await readSnapshot(reader)).nodes, "Garden")).not.toHaveProperty("brief");
+    const start = (await readHead(reader)).cursor.seq;
+    await call("page.write", {
+      action: "set",
+      target: garden,
+      brief: "Beds, the shed and the hedge",
+      base: await asOf(),
+      request_id: rid(),
+    });
+    const snapshot = await readSnapshot(reader);
+    const row = titled(snapshot.nodes, "Garden");
+    expect(row).toMatchObject({ id: garden, brief: "Beds, the shed and the hedge" });
+    expect(CompactNode.parse(row)).toEqual(row);
+    const { batch } = await readBatch(reader, start);
+    const changed = batch.events.flatMap((e) => e.entities.filter((x) => x.type === "node"));
+    expect(changed).toEqual([expect.objectContaining({ id: garden, changed: ["brief"], row })]);
+  });
+
   test("a batch: a task filed into another project carries its page's row, under the new project", async () => {
     const start = (await readHead(reader)).cursor.seq;
     const before = await readSnapshot(reader);
