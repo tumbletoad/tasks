@@ -52,7 +52,7 @@ describe("[A5.3.3.web.views] the sidebar's views and counts", () => {
     const counts = viewCounts(TASKS);
     // A status of the space's own without a view ("someday") is in Open.
     expect(counts).toEqual({ inbox: 2, open: 3, waiting: 1, review: 1, backlog: 1 });
-    // A task in the Inbox appears in no status view until triaged (A5 3.5).
+    // A task in the Inbox appears in no status view until triaged.
     for (const t of TASKS) {
       const holders = COUNTED.filter((view) => viewFilter(view)?.(t) === true);
       expect(holders.length, t.ref).toBeLessThanOrEqual(1);

@@ -1,4 +1,4 @@
-// The task row (A5 3.6, 3.22): the model from `renderRow` drawn in fixed columns. The title is a
+// The task row: the model from `renderRow` drawn in fixed columns. The title is a
 // button that expands the row in place; the checkbox, the sources, the folder, the star and the
 // launch tile are its siblings, never its children, and never expand it by themselves. A click
 // anywhere else in the title's column, empty space included, expands it as the title does. A roving
@@ -130,12 +130,12 @@ export interface RowProps {
   readonly expanded: boolean;
   /** The row in the tab order (the roving tabindex). */
   readonly current: boolean;
-  /** An agent just added it: it fades in (A5 3.15 item 7). */
+  /** An agent just added it: it fades in. */
   readonly fresh: boolean;
   readonly posinset: number;
   readonly setsize: number;
   readonly actions: RowActions;
-  /** Checked off and in its hold, or completed by someone else and leaving (A5 3.12). */
+  /** Checked off and in its hold, or completed by someone else and leaving. */
   readonly leaving?: Leaving | undefined;
   /** Its last Open, refused on its folder: the expanded task says so at once. */
   readonly refused?: FolderRefusal | undefined;
@@ -149,7 +149,7 @@ export interface RowProps {
   readonly measure?: ((element: HTMLElement | null) => void) | undefined;
 }
 
-/** A source opens in a new tab with no opener and no referrer (A5 3.26). */
+/** A source opens in a new tab with no opener and no referrer. */
 const LINK_REL = ["noopener", "noreferrer"].join(" ");
 
 function Slots({
@@ -261,7 +261,7 @@ function Slots({
           data-on={model.starred}
           aria-label={t("row.star")}
           aria-pressed={model.starred}
-          // A finished task takes no edit (A5 3.11), nor one in the Trash: its star would only be
+          // A finished task takes no edit, nor one in the Trash: its star would only be
           // refused.
           aria-disabled={still || task.lifecycle !== "active" || undefined}
           data-tip={t("row.star")}
@@ -273,7 +273,7 @@ function Slots({
           <StarIcon />
         </button>
       </span>
-      {/* Expanded, the launch slot holds the collapse button: the body owns the launch (A5 3.7). */}
+      {/* Expanded, the launch slot holds the collapse button: the body owns the launch. */}
       {expanded ? (
         <span className={styles.slot}>
           <button
@@ -332,7 +332,7 @@ function Slots({
 }
 
 /**
- * The title's editor (A5 3.7, 3.11): Enter or leaving the field saves a changed title, Escape keeps
+ * The title's editor: Enter or leaving the field saves a changed title, Escape keeps
  * the old one. Enter and Escape put focus back on the title, so the keyboard stays on the row;
  * leaving for another control keeps focus there. The save
  * is the person's edit like any other (edits.ts), with the base taken when the editor opened: a
@@ -458,7 +458,7 @@ function TitleEditor({
       line?.querySelector<HTMLElement>('[data-part="title"]')?.focus({ preventScroll: true });
     }
   };
-  // Someone else changed the title while the person types: the typed text stays (A5 3.15 item 9).
+  // Someone else changed the title while the person types: the typed text stays.
   const remote =
     task.title === before ? undefined : edits.changedSince(task.id, "title", opened.mark);
   return (
@@ -515,7 +515,7 @@ function TitleEditor({
 }
 /**
  * After a check-off or a dismissed question, focus moves to the next row, or else the previous
- * one, or else the view (A5 3.12): never to a row that is itself leaving. A row that holds focus
+ * one, or else the view: never to a row that is itself leaving. A row that holds focus
  * stays where it is, so the row the person acted on is free to move.
  */
 export function focusAfter(from: HTMLElement): void {
@@ -606,7 +606,7 @@ function RowView({
   const toggle = () => {
     actions.toggle(task);
   };
-  // The title edits in place, for typo fixes (A5 3.7): only an open task's, the one kind the
+  // The title edits in place, for typo fixes: only an open task's, the one kind the
   // service changes. Editing expands the row, so the card is what is being edited. The card opens
   // it for kept words with those words, so the editor works from what the card read.
   const [editing, setEditing] = useState<false | { readonly brought?: TitleDraft }>(false);
@@ -624,8 +624,8 @@ function RowView({
   const [summed, setSummed] = useSaved(summary);
   const text = summary === "" || model.ending !== undefined ? line : summed;
   const writes = useTextWrites();
-  // The row the person moved out of the view (A5 3.5): while focus holds it there with the data it
-  // had (3.15 item 6), its move is done, so the button goes. Newer data (an undo) brings it back.
+  // The row the person moved out of the view: while focus holds it there with the data it
+  // had, its move is done, so the button goes. Newer data (an undo) brings it back.
   const [movedFrom, setMovedFrom] = useState<TaskRow | undefined>(undefined);
   const edit = () => {
     if (!editable) return;
@@ -684,7 +684,7 @@ function RowView({
           )}
         </span>
         <span className={styles.check} data-tip={completedTip}>
-          {/* Check-off is final at once (D12): the row holds, the toast offers Undo (A5 3.12). A task
+          {/* Check-off is final at once (D12): the row holds, the toast offers Undo. A task
               in the Trash has no box: Restore is its one action. */}
           {trashed ? null : (
             <input
@@ -765,7 +765,7 @@ function RowView({
               </span>
             )}
             {model.move === undefined || expanded || movedFrom === task ? null : (
-              // The view's move out of it, visible on the row (A5 3.5); expanded, the facts own it.
+              // The view's move out of it, visible on the row; expanded, the facts own it.
               <button
                 type="button"
                 className={styles.move}
@@ -774,7 +774,7 @@ function RowView({
                 tabIndex={tab}
                 onClick={(event) => {
                   // Focus goes to the title first: the row then stays where it is, with its new
-                  // data, until focus leaves it (A5 3.15 item 6), and the button that goes with
+                  // data, until focus leaves it, and the button that goes with
                   // the move takes no focus with it.
                   event.currentTarget
                     .closest("[data-row-line]")
@@ -811,7 +811,7 @@ function RowView({
               data-part={model.ending === undefined ? "summary" : "ending"}
               data-tip={expanded && !trashed ? t("ask.tip") : undefined}
               onClick={(event) => {
-                // Expanded, the line is an agent's to change: a click asks one (A5 3.11), unless
+                // Expanded, the line is an agent's to change: a click asks one, unless
                 // it ends a selection of its text or was on its pen.
                 if (!expanded || !(window.getSelection()?.isCollapsed ?? true)) return;
                 if ((event.target as Element).closest("button") !== null) return;
@@ -846,7 +846,7 @@ function RowView({
           )}
           {expanded && editable ? <NotSaved space={space} owner={task.id} part="summary" /> : null}
           {/* A title the person typed while the task was finished stays readable, with Copy and
-              Discard; Try again only once the task is active again (A5 3.11). */}
+              Discard; Try again only once the task is active again. */}
           {expanded ? (
             <Unsaved task={task.id} field="title" finished={!active} trashed={trashed} />
           ) : null}

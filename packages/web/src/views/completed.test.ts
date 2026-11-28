@@ -1,4 +1,4 @@
-// Completed's page source and groups (A5 3.5) against a fake `task.finished` that answers as the
+// Completed's page source and groups against a fake `task.finished` that answers as the
 // service does: finished tasks newest first by finish time, then by ID, from a key.
 import { describe, expect, test } from "vitest";
 import type { TaskRow } from "@ttasks/client/store";

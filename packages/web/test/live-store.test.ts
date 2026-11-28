@@ -1,4 +1,4 @@
-// The live store's core on the real service's feed (A7 3.12 M5.02; A5 3.15): the messages
+// The live store's core on the real service's feed: the messages
 // are the ones packages/service/src/http/feed.ts reads from a real space, sent through JSON as the
 // socket sends them. After real operations (adds, edits, a log entry, completion and reopening),
 // read in batches of one to three commits, the core holds exactly the service's own snapshot.

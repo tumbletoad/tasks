@@ -1,9 +1,9 @@
 // The content of each route: Today's sections (views/Today.tsx), each status view's list grouped
-// as A5 3.5 says (`VIEW_LIST`), the area and project views, Completed (views/Completed.tsx),
+// by `VIEW_LIST`, the area and project views, Completed (views/Completed.tsx),
 // Agents (views/Agents.tsx) and Activity (views/Activity.tsx). No view has a heading (U3); the
 // sidebar's active item and the tab's title name it.
 //
-// A view holds its expanded task in the URL (`?task=<ref>`, A5 3.3): expanding a row writes it
+// A view holds its expanded task in the URL (`?task=<ref>`): expanding a row writes it
 // there without a new history entry, collapsing removes it, and a reload, Back and Forward expand
 // the same task again. A task link (`/s/:space/task/:id`) resolves to its host view (host.ts) and
 // lands there with the task expanded, so the host view's own list shows it, injected when the
@@ -46,7 +46,7 @@ const styles = classes(css, ["line"]);
 
 /**
  * Writes the expanded task into the view's URL. Expanding replaces the entry; collapsing pushes
- * the view's own route, so Back returns to the task (A5 3.3). A task that does not exist leaves
+ * the view's own route, so Back returns to the task. A task that does not exist leaves
  * the URL without a step to come back to.
  */
 function useExpandInUrl(): (task: TaskRow | undefined, gone?: boolean) => void {

@@ -1,9 +1,9 @@
-// The tab's route (A5 3.3): the space lives in the URL, so each tab keeps its own space, and a
+// The tab's route: the space lives in the URL, so each tab keeps its own space, and a
 // reload, Back and Forward or a link from `ttasks open` land on it. The router (app/router.tsx)
 // owns the routes; this module reads what arrives from outside, by its shape only: the path a
 // link names and the sign-in fragment. Both come from whoever wrote the link.
 //
-//   /                              the machine's default space (A2 3.1), resolved by the page
+//   /                              the machine's default space, resolved by the page
 //   /?task=<ref>                   a task in the default space (`ttasks open <task>` without a space)
 //   /s/<space ID>/<view…>          a view of the space, at most five plain segments
 //   /s/<space ID>/task/<ref>       a task of the space, expanded
@@ -20,7 +20,7 @@ export const SEGMENT = /^[A-Za-z0-9_-]{1,64}$/;
  * next edit in another list.
  */
 export const NO_SUCH_SPACE = "/s/unknown";
-/** A sign-in code: 32 random bytes as base64url (A2 3.8.4). */
+/** A sign-in code: 32 random bytes as base64url. */
 const CODE = /^[A-Za-z0-9_-]{43}$/;
 
 /**
@@ -75,7 +75,7 @@ export interface Fragment {
   readonly to?: string;
 }
 
-/** `#k=<code>&to=<path>` (A2 3.8.4 step 3), checked. Anything else in it is ignored. */
+/** `#k=<code>&to=<path>`, checked. Anything else in it is ignored. */
 export function readFragment(hash: string): Fragment {
   if (!hash.startsWith("#") || hash.length > 512) return {};
   const params = new URLSearchParams(hash.slice(1));

@@ -1,4 +1,4 @@
-// The toast (A5 3.12): one at a time, at the foot of the main column, a short past-tense sentence
+// The toast: one at a time, at the foot of the main column, a short past-tense sentence
 // and its action; after an Undo or a Redo, Undo and Redo side by side. A new one replaces the old;
 // the replaced step stays undoable with Ctrl+Z. Undo toasts last 6 s and plain ones 2.5 s, or as long as their sentence takes to read,
 // and errors stay until they are dismissed. A timer pauses while the pointer or focus is on the
@@ -18,7 +18,7 @@ import css from "./Toast.module.css";
 
 const styles = classes(css, ["toast", "text", "action", "dismiss"]);
 
-/** The least each kind stays (A5 3.12): errors until dismissed. */
+/** The least each kind stays: errors until dismissed. */
 const LASTS: Readonly<Record<ToastKind, number | undefined>> = {
   undo: 6_000,
   info: 2_500,
