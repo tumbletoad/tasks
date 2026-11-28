@@ -147,7 +147,7 @@ export interface UiFolders {
 export interface UiPhones {
   view(input: Record<string, unknown>): unknown;
   pair(input: Record<string, unknown>): Promise<unknown>;
-  rights(input: Record<string, unknown>): unknown;
+  rights(input: Record<string, unknown>): Promise<unknown>;
   remove(input: Record<string, unknown>): Promise<unknown>;
 }
 
@@ -1011,7 +1011,7 @@ export class HttpApp {
             : action === "phone_pair"
               ? await phones.pair(input)
               : action === "phone_rights"
-                ? phones.rights(input)
+                ? await phones.rights(input)
                 : await phones.remove(input);
         this.#json(res, port, 200, { result });
         return;

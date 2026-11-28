@@ -534,6 +534,8 @@ class FeedSocket {
   #find(ref: string | undefined): ServedSpace | "ambiguous" | "not_served" | undefined {
     const host = this.#hub.options.host;
     const served = host.spaces().filter((s) => s.reader !== undefined && s.id !== undefined);
+    // A phone's space is its grant's, by ID alone: never another space that has that name.
+    if (this.#phone !== undefined) return ref === undefined ? undefined : copyOf(served, ref);
     const found =
       ref !== undefined
         ? findSpace(served, ref)

@@ -13,29 +13,32 @@
 //   no answer at all.
 // - After the hello the socket is the feed (http/ws.ts, with a phone's own rows) and the phone's
 //   calls: `{type: "call", id, path, body, copy?}`, answered `{type: "reply", id, status, body}`.
-//   A call reaches only the registry's entries that a linked device may call and a task's runs,
-//   always in the grant's space, and Run and Stop only with the Run right. The grant is read
-//   again for every call, so a change of rights or a removal applies to the next one.
+//   A call reaches only what the app's screens use (allowed.ts), with the fields a phone may
+//   send and may see, always in the grant's space found by its ID, and Run and Stop only with
+//   the Run right. The grant is read again for every call, so a change of rights or a removal
+//   applies to the next one. Remove and the Run switch answer once they are saved.
 //
-// The listener runs only while a phone is paired or a pairing code waits. A code is 32 random
-// bytes, kept only as its hash, valid once for 5 minutes, and ended when the page's dialog
-// closes.
+// The listener runs only while a phone is paired or a pairing code waits: it closes with the
+// last phone removed. A removed phone is told so when it reaches the listener while it is open.
+// A code is 32 random bytes, kept only as its hash, valid once for 5 minutes, and ended when the
+// page's dialog closes.
 import { randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:https";
 import { networkInterfaces } from "node:os";
 import type { Socket } from "node:net";
 import type { TLSSocket } from "node:tls";
 import { PRODUCT_NAME } from "@ttasks/brand";
-import { AppError, ERROR_CODES, findEntry, type ErrorBody } from "@ttasks/contracts";
+import { AppError, ERROR_CODES, type ErrorBody } from "@ttasks/contracts";
 import { WebSocketServer, type WebSocket } from "ws";
 import { OneTimeSecrets } from "../http/auth.ts";
 import type { HttpLog } from "../http/events.ts";
 import type { FeedHub } from "../http/ws.ts";
 import type { UiLaunches } from "../http/launches.ts";
 import { isLive, type Grant, type GrantStore } from "../local/index.ts";
-import { findSpace, isAmbiguity } from "../ops/copies.ts";
+import { copyOf, findSpace, isAmbiguity } from "../ops/copies.ts";
 import { opCall, type OpsHost } from "../ops/index.ts";
-import { certPin, PIN } from "./cert.ts";
+import { PHONE_CALLS } from "./allowed.ts";
+import { certPin } from "./cert.ts";
 import { keepPort, loadOrCreateHome, type LinkHome } from "./home.ts";
 
 /** The link protocol's number, in the phone's `open` and the hello. */
@@ -49,8 +52,6 @@ export const PAIRING_MS = 5 * 60_000;
 export const PAIRING_MAX = 4;
 /** The port tried first; when it is taken, the system chooses one, and that one is kept. */
 export const LINK_PORT = 7740;
-/** A removed phone is told so when it comes back within this long; later it finds nothing. */
-export const REMOVED_TOLD_MS = 30 * 86_400_000;
 
 /** The scopes of a phone's grant: reading and editing are one right, Run is a second. */
 export const EDIT_SCOPES = ["space:read", "space:write"] as const;
@@ -92,6 +93,8 @@ export interface PhoneView {
   readonly paired_at: string;
   readonly last_used_at: string | null;
   readonly run: boolean;
+  /** Removed, but the removal was not saved: Remove again saves it. */
+  readonly removing: boolean;
 }
 
 /** What became of a pairing code the page shows. */
@@ -143,6 +146,14 @@ const shortText = (v: unknown, max: number): string | undefined =>
 const forbidden = (message: string, rule: string) =>
   new AppError({ code: "forbidden", message, data: { rule } });
 
+/** A change that holds in this process but did not reach the disk: the person tries again. */
+const notSaved = (holds: string) =>
+  new AppError({
+    code: "service_unavailable",
+    message: `${holds} It was not saved, so it may not last a restart. Try again.`,
+    data: { reason: "not_saved", retryable: true },
+  });
+
 interface Ticket {
   readonly space: string;
   readonly expires: number;
@@ -159,6 +170,8 @@ export class LinkService {
   readonly #codes = new OneTimeSecrets<string>(PAIRING_MS, PAIRING_MAX);
   readonly #tickets = new Map<string, Ticket>();
   readonly #sockets = new Map<WebSocket, string>();
+  /** Removed phones whose removal has not reached the disk: Settings lists them to remove again. */
+  readonly #unsaved = new Set<string>();
   readonly #wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
   readonly #unrevoke: () => void;
   #conn = 0;
@@ -177,17 +190,11 @@ export class LinkService {
   }
 
   /**
-   * Whether phones need the listener: one is paired, or one was removed lately and may still
-   * come back to be told so.
+   * Whether phones need the listener: one is paired. A removed phone is told so only while the
+   * listener is open for another phone or a code.
    */
   #wanted(): boolean {
-    const since = this.#options.now() - REMOVED_TOLD_MS;
-    return this.#options.grants
-      .list("device")
-      .some(
-        (g) =>
-          isLive(g, this.#date()) || (g.revoked_at !== null && Date.parse(g.revoked_at) > since),
-      );
+    return this.#phones().length > 0;
   }
 
   get port(): number | undefined {
@@ -223,7 +230,8 @@ export class LinkService {
   /** The paired phones, and what became of the code `ticket` when one is named. */
   view(input: Record<string, unknown>): { phones: PhoneView[]; pairing?: PairingState } {
     const names = new Map(this.#options.ops.spaces().map((s) => [s.id, s.name]));
-    const phones = this.#phones().map((g): PhoneView => ({
+    const unsaved = [...this.#unsaved].flatMap((id) => this.#options.grants.get(id) ?? []);
+    const phones = [...this.#phones(), ...unsaved].map((g): PhoneView => ({
       id: g.grant_id,
       name: typeof g.attrs["name"] === "string" ? g.attrs["name"] : "",
       platform: typeof g.attrs["platform"] === "string" ? g.attrs["platform"] : "",
@@ -232,6 +240,7 @@ export class LinkService {
       paired_at: g.created_at,
       last_used_at: g.last_used_at,
       run: g.scopes.includes(RUN_SCOPE),
+      removing: g.revoked_at !== null,
     }));
     const ticket = input["ticket"];
     if (typeof ticket !== "string") return { phones };
@@ -300,25 +309,46 @@ export class LinkService {
     };
   }
 
-  /** Run switched on or off for one phone. */
-  rights(input: Record<string, unknown>): { run: boolean } {
+  /**
+   * Run switched on or off for one phone, answered once it is saved. Off holds at once, also
+   * when the save fails; on holds only once saved, so a restart never brings back a Run that
+   * the person was told is off, nor one they were not told is on.
+   */
+  async rights(input: Record<string, unknown>): Promise<{ run: boolean }> {
     const grant = this.#phone(input["phone"]);
     const run = input["run"];
     if (typeof run !== "boolean") {
       throw new AppError({ code: "invalid_input", message: "Expected run: true or false." });
     }
-    this.#options.grants.setScopes(
-      grant.grant_id,
-      run ? [...EDIT_SCOPES, RUN_SCOPE] : [...EDIT_SCOPES],
-    );
+    const grants = this.#options.grants;
+    grants.setScopes(grant.grant_id, run ? [...EDIT_SCOPES, RUN_SCOPE] : [...EDIT_SCOPES]);
+    try {
+      await grants.flush();
+    } catch {
+      if (run) grants.setScopes(grant.grant_id, [...EDIT_SCOPES]);
+      throw notSaved(run ? "Run stays off for this phone." : "Run is off for this phone now.");
+    }
     return { run };
   }
 
-  /** Remove: the phone's access ends now, and its open connection closes. */
+  /**
+   * Remove: the phone's access ends now and its open connection closes; the answer comes once
+   * that is saved. A save that failed is said, and Remove again saves it.
+   */
   async remove(input: Record<string, unknown>): Promise<{ removed: true }> {
-    const grant = this.#phone(input["phone"]);
-    this.#options.grants.revoke(grant.grant_id, this.#date());
-    await this.#options.grants.flush().catch(() => undefined);
+    const id = input["phone"];
+    const grant = typeof id === "string" ? this.#options.grants.get(id) : undefined;
+    if (grant === undefined || grant.kind !== "device") {
+      throw new AppError({ code: "not_found", message: "No paired phone has this ID." });
+    }
+    if (grant.revoked_at === null) this.#options.grants.revoke(grant.grant_id, this.#date());
+    try {
+      await this.#options.grants.flush();
+    } catch {
+      this.#unsaved.add(grant.grant_id);
+      throw notSaved("The phone has no access now.");
+    }
+    this.#unsaved.delete(grant.grant_id);
     return { removed: true };
   }
 
@@ -633,7 +663,11 @@ export class LinkService {
     }
   }
 
-  #route(
+  /**
+   * A call from the phone's list (allowed.ts), with the fields it may send, in the grant's space,
+   * answered with the fields it may see. Anything else is refused before a handler reads it.
+   */
+  async #route(
     path: string,
     body: Record<string, unknown>,
     space: string,
@@ -642,26 +676,49 @@ export class LinkService {
     pin: string,
     copy: string | undefined,
   ): Promise<unknown> {
+    const allowed = PHONE_CALLS[path];
+    if (allowed === undefined) {
+      throw forbidden(
+        `A phone cannot do this. Use ${PRODUCT_NAME} on the computer.`,
+        "phone_rights",
+      );
+    }
+    const field =
+      Object.keys(body).find((key) => !allowed.input.includes(key)) ?? allowed.check?.(body);
+    if (field !== undefined) {
+      throw new AppError({
+        code: "forbidden",
+        message: `A phone cannot send this. Use ${PRODUCT_NAME} on the computer.`,
+        data: { rule: "phone_field", field },
+      });
+    }
+    if (allowed.right === "run" && !scopes.includes(RUN_SCOPE)) {
+      throw forbidden(
+        "Run is off for this phone. It can be switched on in Settings > Phones on the computer.",
+        "phone_run",
+      );
+    }
+    if (!EDIT_SCOPES.every((s) => scopes.includes(s))) {
+      throw forbidden(
+        `A phone cannot do this. Use ${PRODUCT_NAME} on the computer.`,
+        "phone_rights",
+      );
+    }
+    // The granted space by its ID alone: a space of another ID is never found by its name.
+    if (copyOf(this.#options.ops.spaces(), space)?.reader === undefined) {
+      throw new AppError({
+        code: "space_unavailable",
+        message: "The space this phone was paired for is not open on the computer now.",
+      });
+    }
     const { launches } = this.#options;
-    if (path.startsWith("/api/v1/op/")) {
-      const name = path.slice("/api/v1/op/".length);
-      const entry = findEntry(name);
-      if (entry === undefined || entry.name !== name) {
-        throw new AppError({ code: "not_found", message: "Nothing is here." });
-      }
-      const needs =
-        entry.remote === "read"
-          ? "space:read"
-          : entry.remote === "write"
-            ? "space:write"
-            : undefined;
-      if (needs === undefined || !scopes.includes(needs)) {
-        throw forbidden(
-          `A phone cannot do this. Use ${PRODUCT_NAME} on the computer.`,
-          "phone_rights",
-        );
-      }
-      return opCall(
+    let result: unknown;
+    if (path === "/api/v1/launch/runs") result = { runs: await launches.runs(space, body, copy) };
+    else if (path === "/api/v1/launch/run") result = { run: await launches.run(space, body, copy) };
+    else if (path === "/api/v1/launch/stop")
+      result = { run: await launches.stop(space, body, copy) };
+    else {
+      result = await opCall(
         this.#options.ops,
         {
           class: "ui",
@@ -676,32 +733,9 @@ export class LinkService {
             origin: "ui",
           },
         },
-        { op: name, input: body, space },
+        { op: path.slice("/api/v1/op/".length), input: body, space },
       );
     }
-    if (path === "/api/v1/launch/runs") {
-      if (!scopes.includes("space:read")) {
-        throw forbidden(
-          `A phone cannot do this. Use ${PRODUCT_NAME} on the computer.`,
-          "phone_rights",
-        );
-      }
-      return launches.runs(space, body, copy).then((runs) => ({ runs }));
-    }
-    if (path === "/api/v1/launch/run" || path === "/api/v1/launch/stop") {
-      if (!scopes.includes(RUN_SCOPE)) {
-        throw forbidden(
-          "Run is off for this phone. It can be switched on in Settings > Phones on the computer.",
-          "phone_run",
-        );
-      }
-      return path === "/api/v1/launch/run"
-        ? launches.run(space, body, copy).then((run) => ({ run }))
-        : launches.stop(space, body, copy).then((run) => ({ run }));
-    }
-    throw new AppError({ code: "not_found", message: "Nothing is here." });
+    return allowed.output(result);
   }
 }
-
-/** Whether a text has the shape of a pin. */
-export const isPin = (text: unknown): text is string => typeof text === "string" && PIN.test(text);

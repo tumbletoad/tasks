@@ -6728,14 +6728,14 @@
     },
     {
       "id": "S5.link.unpaired",
-      "title": "A peer without a client certificate, a request on another path, plain HTTP, and a phone with a certificate but no grant or code each get no byte of answer and are closed",
+      "title": "A peer that is not paired sees the open port and the certificate (a stable public key, the neutral name link, its dates) and nothing of a space: plain HTTP without TLS, a connection without a client certificate, another path and HTTP inside TLS that is no upgrade are closed with no answer; an unknown key or a wrong code gets no reply, and the right code still pairs",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "S5.link.rights",
-      "title": "A paired phone calls every registry entry a linked device may call and none of the others, watches a task's runs, gets Run and Stop only once switched on for it, reaches no machine, space or sign-in route, and can neither open nor subscribe to another space",
+      "title": "A paired phone calls only the entries its screens use, whatever their remote class, and the list is exactly those; it watches a task's runs, gets Run and Stop only once switched on for it, reaches no machine, space or sign-in route, and can neither open nor subscribe to another space",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -6749,14 +6749,35 @@
     },
     {
       "id": "S5.link.capture-once",
-      "title": "A capture whose answer was lost, sent again after the app restarted and after the phone was removed and paired again, makes one task and replays its first result",
+      "title": "A capture whose reply was dropped, sent again with its request ID on a new connection and again after the same phone key was removed and paired anew, replays its first reply and leaves one task; a real app restart and its offline queue are not tested here",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "S5.link.remove",
-      "title": "Remove closes the phone's open connection at once, Settings no longer lists it, and the phone is told it was removed when it comes back",
+      "title": "Remove closes the phone's open connection at once and Settings no longer lists it; the listener closes with the last phone, and once a pairing opens it again the removed phone is told it was removed",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.saved",
+      "title": "Remove and the Run switch answer once saved: a Remove that was not saved says so, holds at once, stays listed to remove again and is saved by Remove again; Run on that was not saved stays off, Run off that was not saved holds at once",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.answers",
+      "title": "A phone's answers keep what its screens use and leave out a task's folder, a launch's request, a note's launches, the person's skills, a run's agent instance, its cleanup and its error; a capture may send a task's own fields only, and a page read takes a page's reference only",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.fields",
+      "title": "Against the real service: a task whose folder the page shows reads on a phone without its folder or skills; a folder on a capture and a launch reference on a read are refused by name, and a task update, a folder change and the space's status are refused",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
