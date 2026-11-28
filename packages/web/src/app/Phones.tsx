@@ -16,14 +16,23 @@ import { useT } from "../i18n/intl.tsx";
 import { formatWhen } from "../row/dates.ts";
 import { useClock } from "../row/useClock.ts";
 import { classes } from "./css.ts";
-import { useToast } from "./frame.ts";
 import { phoneCalls, qrPath, type Phone, type PhoneCode } from "./phones.ts";
 import { useMachineApi } from "./session.tsx";
 import css from "./Phones.module.css";
 import settingsCss from "./Settings.module.css";
 import setupCss from "./Setup.module.css";
 
-const styles = classes(css, ["list", "phone", "who", "facts", "qr", "plate", "warning", "code"]);
+const styles = classes(css, [
+  "list",
+  "phone",
+  "who",
+  "facts",
+  "unsaved",
+  "qr",
+  "plate",
+  "warning",
+  "code",
+]);
 const settings = classes(settingsCss, [
   "section",
   "heading",
@@ -51,15 +60,19 @@ const sheet = classes(setupCss, [
 /** How often an open dialog asks whether its code was used. */
 const FOLLOW_MS = 2000;
 
+/** A change of a phone the service holds now but could not save: offered again. */
+type Unsaved = { readonly kind: "run"; readonly run: boolean } | { readonly kind: "remove" };
+
 export function Phones({ space }: { readonly space: string }) {
   const t = useT();
-  const say = useToast();
   const api = useMachineApi();
   const calls = useMemo(() => phoneCalls(api), [api]);
   const [phones, setPhones] = useState<readonly Phone[] | undefined>(undefined);
   const [failed, setFailed] = useState(false);
   const [pairing, setPairing] = useState(false);
   const [removing, setRemoving] = useState<Phone | undefined>(undefined);
+  const [unsaved, setUnsaved] = useState<ReadonlyMap<string, Unsaved>>(new Map());
+  const [saving, setSaving] = useState<ReadonlySet<string>>(new Set());
 
   const load = useCallback(() => {
     calls.view().then(
@@ -74,6 +87,36 @@ export function Phones({ space }: { readonly space: string }) {
   }, [calls]);
   useEffect(load, [load]);
 
+  /** Runs a change and shows what the service holds after it: saved, or offered again. */
+  const change = useCallback(
+    (id: string, what: Unsaved) => {
+      setSaving((s) => new Set(s).add(id));
+      const done = what.kind === "run" ? calls.run(id, what.run) : calls.remove(id);
+      done
+        .then(
+          () => {
+            setUnsaved((u) => {
+              const next = new Map(u);
+              next.delete(id);
+              return next;
+            });
+          },
+          () => {
+            setUnsaved((u) => new Map(u).set(id, what));
+          },
+        )
+        .finally(() => {
+          setSaving((s) => {
+            const next = new Set(s);
+            next.delete(id);
+            return next;
+          });
+          load();
+        });
+    },
+    [calls, load],
+  );
+
   return (
     <section className={settings.section} aria-labelledby="settings-phones">
       <Heading id="settings-phones" level={2} className={settings.heading}>
@@ -87,13 +130,16 @@ export function Phones({ space }: { readonly space: string }) {
             <PhoneRow
               key={phone.id}
               phone={phone}
+              saving={saving.has(phone.id)}
+              unsaved={phone.removing ? { kind: "remove" } : unsaved.get(phone.id)}
               onRun={(run) => {
-                calls.run(phone.id, run).then(load, () => {
-                  say(t("phones.notSaved"));
-                });
+                change(phone.id, { kind: "run", run });
               }}
               onRemove={() => {
                 setRemoving(phone);
+              }}
+              onAgain={(what) => {
+                change(phone.id, what);
               }}
             />
           ))}
@@ -119,12 +165,10 @@ export function Phones({ space }: { readonly space: string }) {
       {removing === undefined ? null : (
         <RemoveDialog
           phone={removing}
-          onClose={(removed) => {
+          onClose={(confirmed) => {
             setRemoving(undefined);
-            if (removed === false) say(t("phones.notSaved"));
-            load();
+            if (confirmed) change(removing.id, { kind: "remove" });
           }}
-          remove={() => calls.remove(removing.id)}
         />
       )}
     </section>
@@ -133,17 +177,31 @@ export function Phones({ space }: { readonly space: string }) {
 
 function PhoneRow({
   phone,
+  saving,
+  unsaved,
   onRun,
   onRemove,
+  onAgain,
 }: {
   readonly phone: Phone;
+  readonly saving: boolean;
+  readonly unsaved: Unsaved | undefined;
   readonly onRun: (run: boolean) => void;
   readonly onRemove: () => void;
+  readonly onAgain: (what: Unsaved) => void;
 }) {
   const t = useT();
   const clock = useClock(true);
   const used = phone.lastUsedAt === null ? undefined : Date.parse(phone.lastUsedAt);
   const name = phone.name === "" ? t("phones.unnamed") : phone.name;
+  const again =
+    unsaved === undefined
+      ? undefined
+      : unsaved.kind === "remove"
+        ? { said: t("phones.removeUnsaved"), button: t("phones.removeAgain") }
+        : unsaved.run
+          ? { said: t("phones.runOnUnsaved"), button: t("phones.runOnAgain") }
+          : { said: t("phones.runOffUnsaved"), button: t("phones.runOffAgain") };
   return (
     <li className={styles.phone}>
       <span className={styles.who}>{name}</span>
@@ -153,25 +211,46 @@ function PhoneRow({
           time: used === undefined ? t("phones.neverUsed") : formatWhen(used, clock),
         })}
       </span>
-      <SwitchField
-        isSelected={phone.run}
-        onChange={onRun}
-        aria-label={t("phones.runFor", { name })}
-      >
-        <SwitchButton className={settings.switch}>
-          <span className={settings.track} aria-hidden="true">
-            <span className={settings.thumb} />
-          </span>
-          <span className={settings.name}>{t("phones.run")}</span>
-        </SwitchButton>
-      </SwitchField>
-      <Button
-        className={settings.button}
-        onPress={onRemove}
-        aria-label={t("phones.removeFor", { name })}
-      >
-        {t("phones.remove")}
-      </Button>
+      {phone.removing ? null : (
+        <>
+          {/* The switch shows what the service saved: Run on shows once its save answered. */}
+          <SwitchField
+            isSelected={phone.run}
+            isDisabled={saving}
+            onChange={onRun}
+            aria-label={t("phones.runFor", { name })}
+          >
+            <SwitchButton className={settings.switch}>
+              <span className={settings.track} aria-hidden="true">
+                <span className={settings.thumb} />
+              </span>
+              <span className={settings.name}>{t("phones.run")}</span>
+            </SwitchButton>
+          </SwitchField>
+          <Button
+            className={settings.button}
+            isDisabled={saving}
+            onPress={onRemove}
+            aria-label={t("phones.removeFor", { name })}
+          >
+            {t("phones.remove")}
+          </Button>
+        </>
+      )}
+      {again === undefined || unsaved === undefined ? null : (
+        <span className={styles.unsaved} role="status">
+          <span>{again.said}</span>
+          <Button
+            className={settings.button}
+            isDisabled={saving}
+            onPress={() => {
+              onAgain(unsaved);
+            }}
+          >
+            {again.button}
+          </Button>
+        </span>
+      )}
     </li>
   );
 }
@@ -300,17 +379,15 @@ function PairDialog({ space, onClose }: { readonly space: string; readonly onClo
   );
 }
 
+/** Remove, confirmed first: the list then removes it and shows whether that was saved. */
 function RemoveDialog({
   phone,
-  remove,
   onClose,
 }: {
   readonly phone: Phone;
-  readonly remove: () => Promise<unknown>;
-  readonly onClose: (removed?: boolean) => void;
+  readonly onClose: (confirmed: boolean) => void;
 }) {
   const t = useT();
-  const [busy, setBusy] = useState(false);
   const name = phone.name === "" ? t("phones.unnamed") : phone.name;
   return (
     <ModalOverlay
@@ -318,7 +395,7 @@ function RemoveDialog({
       isOpen
       isDismissable
       onOpenChange={(isOpen) => {
-        if (!isOpen) onClose();
+        if (!isOpen) onClose(false);
       }}
     >
       <Modal className={sheet.modal}>
@@ -337,17 +414,8 @@ function RemoveDialog({
             </Button>
             <Button
               className={sheet.primary}
-              isDisabled={busy}
               onPress={() => {
-                setBusy(true);
-                remove().then(
-                  () => {
-                    onClose(true);
-                  },
-                  () => {
-                    onClose(false);
-                  },
-                );
+                onClose(true);
               }}
             >
               {t("phones.remove")}

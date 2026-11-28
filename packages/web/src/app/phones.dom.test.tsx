@@ -26,9 +26,15 @@ const PHONE = {
   paired_at: "2026-11-01T10:00:00.000Z",
   last_used_at: null,
   run: false,
+  removing: false,
 };
 
-function answer(action: string, body: Record<string, unknown>): unknown {
+/** The next answer to these actions fails as a save that did not reach the disk. */
+const failNext = new Set<string>();
+/** The next answer to Run waits for this. */
+let holdRun: Promise<void> | undefined;
+
+function answer(action: string, body: Record<string, unknown>, failed = false): unknown {
   if (action === "phones") {
     return typeof body["ticket"] === "string"
       ? { phones, pairing: { state: "waiting" } }
@@ -39,23 +45,42 @@ function answer(action: string, body: Record<string, unknown>): unknown {
       ? { code: "TTASKS1:fixture-code", ticket: "fixture-ticket", expires_at: "", addresses: 1 }
       : { ended: true };
   }
-  if (action === "phone_rights") return { run: body["run"] };
-  phones = [];
+  if (action === "phone_rights") {
+    // As the service: Run on counts only once saved; Run off holds at once.
+    const on = body["run"] === true;
+    if (!failed || !on) phones = phones.map((p) => ({ ...p, run: on }));
+    return { run: body["run"] };
+  }
+  phones = failed ? phones.map((p) => ({ ...p, removing: true })) : [];
   return { removed: true };
 }
 
 beforeEach(() => {
   posted.length = 0;
   phones = [PHONE];
+  failNext.clear();
+  holdRun = undefined;
   vi.stubGlobal(
     "fetch",
-    vi.fn((url: string, init: { body: string }) => {
+    vi.fn(async (url: string, init: { body: string }) => {
       const action = url.split("/").pop() ?? "";
       const body = JSON.parse(init.body) as Record<string, unknown>;
       posted.push({ action, body });
-      return Promise.resolve(
-        new Response(JSON.stringify({ result: answer(action, body) }), { status: 200 }),
-      );
+      if (action === "phone_rights") await holdRun;
+      const failed = failNext.delete(action);
+      const result = answer(action, body, failed);
+      return failed
+        ? new Response(
+            JSON.stringify({
+              error: {
+                code: "service_unavailable",
+                message: "Not saved",
+                data: { reason: "not_saved" },
+              },
+            }),
+            { status: 503 },
+          )
+        : new Response(JSON.stringify({ result }), { status: 200 });
     }),
   );
   container = document.createElement("div");
@@ -133,6 +158,47 @@ describe("[S5.phones.web] Settings > Phones", () => {
     if (dialog === null) throw new Error("no confirmation");
     await press(button("Remove", dialog));
     expect(posted).toContainEqual({ action: "phone_remove", body: { phone: "gr_phone" } });
+  });
+
+  test("Run on shows as on only once its save answered", async () => {
+    await render();
+    let release: () => void = () => undefined;
+    holdRun = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const run = () =>
+      container.querySelector<HTMLInputElement>('input[aria-label="Run from Fixture phone"]');
+    await press(run() as unknown as HTMLElement);
+    expect(run()?.checked).toBe(false);
+    expect(run()?.disabled).toBe(true);
+    release();
+    await settle();
+    expect(run()?.checked).toBe(true);
+  });
+
+  test("a Run switch or a Remove that was not saved shows as it is, with the way to save it again", async () => {
+    await render();
+    failNext.add("phone_rights");
+    const run = () =>
+      container.querySelector<HTMLInputElement>('input[aria-label="Run from Fixture phone"]');
+    await press(run() as unknown as HTMLElement);
+    expect(run()?.checked).toBe(false);
+    expect(container.textContent).toContain(
+      "Run on was not saved, so Run stays off for this phone.",
+    );
+    await press(button("Switch Run on again"));
+    expect(run()?.checked).toBe(true);
+    expect(container.textContent).not.toContain("was not saved");
+    failNext.add("phone_remove");
+    await press(button("Remove Fixture phone"));
+    const dialog = document.querySelector('[role="alertdialog"]');
+    if (dialog === null) throw new Error("no confirmation");
+    await press(button("Remove", dialog));
+    expect(container.textContent).toContain("Removed: it has no access now. This was not saved");
+    expect(run()).toBeNull();
+    await press(button("Remove again"));
+    expect(container.textContent).not.toContain("Fixture phone");
+    expect(posted.filter((p) => p.action === "phone_remove")).toHaveLength(2);
   });
 
   test("the pairing dialog shows the code with its warning, and ends it when it closes", async () => {

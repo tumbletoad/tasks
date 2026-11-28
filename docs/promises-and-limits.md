@@ -465,13 +465,16 @@ the behaviour it describes, and keep each one to a sentence or two.
   code works once, until its dialog closes or for five minutes. Anyone who sees the code and is on
   your network can use it first, which is why the dialog says so.
 - Before it sends anything, the phone checks that it reached the computer whose key the code
-  carried. A device on your network that is not paired gets no answer, and learns only that a
-  port is open.
-- A paired phone reads and edits the one space it was paired for, and nothing of this computer:
-  not its folders, its agent apps or its backups. It never starts or stops an agent unless you
-  switch Run on for that phone, and nothing it asks is kept to run later.
-- Remove ends the phone's access at once and closes its connection. A removed phone that comes
-  back within 30 days is told so.
+  carried. A device on your network that is not paired sees that a port is open and this
+  computer's certificate, and is told nothing of a space.
+- A paired phone reads and edits the one space it was paired for, and is told nothing of this
+  computer: not its folders, its agent apps, its backups or its name, also when something fails.
+  An agent's work reads on it by the agent app's name.
+- A phone never starts or stops an agent unless you switched Run on for it and that was saved,
+  and nothing it asks is kept to run later.
+- Remove ends the phone's access at once and closes its connection. When that could not be saved,
+  Settings says so and offers Remove again. A removed phone is told so when it next reaches this
+  computer while it listens for a phone.
 - A capture the phone sends again after its answer was lost, also after you removed and paired
   the same phone again, makes one task.
 
@@ -527,11 +530,12 @@ the behaviour it describes, and keep each one to a sentence or two.
 
 ## Where the protection stops
 
-- What a phone read stays on it until it reaches this computer again and is told it was removed.
+- What a phone read stays on it until it reaches this computer again, while it listens for a
+  phone, and is told it was removed.
   A lost phone that never comes back keeps what it read.
 - A phone listens to no one but the computer it paired with, but this computer's listener for
-  phones is open on your private network while a phone is paired, a code waits or a phone was
-  removed in the last 30 days, and shows its certificate to anyone who connects.
+  phones is open on your private network while a phone is paired or a code waits, and shows its
+  certificate to anyone who connects. It closes with the last phone removed.
 - A program that runs as you, or an administrator of the machine, can read and change your
   spaces. TTasks guards against mistakes and against agents that are misled, not against software
   on your own machine that works against it on purpose.

@@ -58,3 +58,15 @@
     forced-color-adjust: none;
   }
 }
+
+/* A change the computer holds but could not save: said in words, with the way to save it again. */
+.unsaved {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  color: var(--k-text);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}

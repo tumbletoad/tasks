@@ -95,6 +95,32 @@ test.describe("[S5.phones.e2e] Settings > Phones pairs a phone with its QR code,
             expect(scroll, `sideways scroll at ${String(width)} px`).toBe(0);
             await phones(page).scrollIntoViewIfNeeded();
             await picture(phones(page), `phones-${name}-${String(width)}.png`);
+            // A Run switch the computer could not save: answered as the service answers it.
+            await page.route("**/api/v1/machine/phone_rights", (route) =>
+              route.fulfill({
+                status: 503,
+                contentType: "application/json",
+                body: JSON.stringify({
+                  error: {
+                    code: "service_unavailable",
+                    message: "Run stays off for this phone. It was not saved.",
+                    data: { reason: "not_saved", retryable: true },
+                  },
+                }),
+              }),
+            );
+            const run = phones(page).getByRole("switch", {
+              name: `Run from Screens phone ${name}`,
+            });
+            await run.click({ force: true });
+            await expect(phones(page)).toContainText("Run on was not saved");
+            await expect(run).not.toBeChecked();
+            await picture(phones(page), `phones-unsaved-${name}-${String(width)}.png`);
+            await page.unroute("**/api/v1/machine/phone_rights");
+            await phones(page).getByRole("button", { name: "Switch Run on again" }).click();
+            await expect(run).toBeChecked();
+            await run.click({ force: true });
+            await expect(run).not.toBeChecked();
             if (pictures()) expect(await axeFound(page, ["main"]), "axe on Settings").toEqual([]);
             const made = page.waitForResponse((r) =>
               r.url().endsWith("/api/v1/machine/phone_pair"),

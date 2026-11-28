@@ -14,6 +14,8 @@ export interface Phone {
   readonly pairedAt: string;
   readonly lastUsedAt: string | null;
   readonly run: boolean;
+  /** Removed, but the removal was not saved: Remove again saves it. */
+  readonly removing: boolean;
 }
 
 /** What became of the code a dialog shows. */
@@ -53,6 +55,7 @@ export function readPhones(value: unknown): PhonesView {
       pairedAt: text(p["paired_at"]),
       lastUsedAt: typeof p["last_used_at"] === "string" ? p["last_used_at"] : null,
       run: p["run"] === true,
+      removing: p["removing"] === true,
     }))
     .filter((p) => p.id !== "");
   const pairing = record["pairing"];
