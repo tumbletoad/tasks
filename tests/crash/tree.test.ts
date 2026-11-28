@@ -121,6 +121,15 @@ function requests(n: number): TreePlanned[] {
       command: "note.add",
       input: { on: page, body: "Read it" },
     },
+    {
+      request_id: id(10),
+      agent: true,
+      base: "none",
+      command: "tasks.add",
+      input: {
+        tasks: [{ title: "Captured", source: { kind: "ticket", title: "T-1", key: "crash:T-1" } }],
+      },
+    },
   ];
 }
 

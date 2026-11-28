@@ -7,7 +7,8 @@ import type { Row, SqlValue } from "../driver.ts";
 import { formatTaskRef, parseTaskRef } from "../refs.ts";
 import { positionBetween } from "../write/positions.ts";
 import { freeSlug } from "../write/slugs.ts";
-import { Fields, WRITE_LIMITS } from "../write/request.ts";
+import { readPreference } from "@ttasks/contracts/preferences";
+import { Fields, sourceFields, WRITE_LIMITS } from "../write/request.ts";
 import type { Command, Tx } from "./tx.ts";
 
 type Run = Command["run"];
@@ -26,7 +27,14 @@ const NOTE_KINDS = [
   "learning",
 ] as const;
 
+const DAY_MS = 86_400_000;
+
 const SQL = {
+  liveSource: "SELECT id FROM sources WHERE source_key = $key AND deleted_at IS NULL",
+  /** The newest live task a source is the origin of. */
+  originTask:
+    "SELECT t.id, t.ref, t.lifecycle, t.completed_at FROM tasks t JOIN nodes n ON n.id = t.id " +
+    "WHERE t.origin_source_id = $source AND n.deleted_at IS NULL ORDER BY n.created_seq DESC LIMIT 1",
   node: "SELECT * FROM nodes WHERE id = $id",
   alias: "SELECT entity_id FROM aliases WHERE namespace = 'planning' AND alias = $alias",
   taskByRef: "SELECT id FROM tasks WHERE ref = $ref",
@@ -166,12 +174,36 @@ export function addNote(
   return { id, ordinal };
 }
 
+/**
+ * The task a draft with source key `key` captured before, when it still counts (open, or finished
+ * within the space's window), and the live source of that key.
+ */
+function captured(tx: Tx, key: string): { task: Row | undefined; source: string | null } {
+  const source = tx.get(SQL.liveSource, { key })?.["id"];
+  if (typeof source !== "string") return { task: undefined, source: null };
+  const task = tx.get(SQL.originTask, { source });
+  const days = readPreference("tasks.dedupe_window_days", undefined).value as number;
+  const finished = task?.["completed_at"];
+  const counts =
+    task?.["lifecycle"] === "active" ||
+    (typeof finished === "number" && finished >= tx.at - days * DAY_MS);
+  return { task: counts ? task : undefined, source };
+}
+
 const tasksAdd: Run = (tx, input) => {
   const drafts = input["tasks"] as Input[];
   return {
     tasks: drafts.map((draft, i) => {
       const at = (field: string) => `tasks.${String(i)}.${field}`;
       const log = str(draft, "log");
+      const source = draft["source"] as Input | undefined;
+      const key = source === undefined ? undefined : str(source, "key");
+      const found = key === undefined ? undefined : captured(tx, key);
+      if (found?.task !== undefined) {
+        const id = String(found.task["id"]);
+        if (log !== undefined) addNote(tx, id, id, log, "progress");
+        return { status: "exists", id, ref: refText(tx, found.task["ref"]) };
+      }
       const parent = parentFor(tx, draft["under"], at("under"));
       const id = str(draft, "id") ?? tx.newId("t");
       const ref = tx.ref();
@@ -191,11 +223,19 @@ const tasksAdd: Run = (tx, input) => {
         },
         id,
       );
+      // The source the task is made from: the one that holds the key already, else a new one on the
+      // task. A repeat capture of the key finds the task through it, wherever it moves.
+      let origin = found?.source ?? null;
+      if (source !== undefined && origin === null) {
+        const made = tx.call("source.add", { on: id, source }) as { source: { id: string } };
+        origin = made.source.id;
+      }
       tx.create(
         "tasks",
         {
           id,
           ref,
+          origin_source_id: origin,
           status: str(draft, "status") ?? "open",
           inbox: draft["inbox"] === true ? 1 : 0,
           priority,
@@ -513,6 +553,7 @@ function draft(f: Fields): Input {
     inbox: (k) => f.boolean(k),
     priority: (k) => f.int(k, 1, 4),
     log: (k) => f.text(k, { bytes: WRITE_LIMITS.log }),
+    source: (k) => ({ ...sourceFields(f.sub(k)) }),
   });
 }
 
