@@ -791,7 +791,7 @@ function RowView({
           {summing ? (
             <TextEditor
               space={space}
-              task={task.id}
+              owner={task.id}
               part="summary"
               label={t("task.summary")}
               text={summary}
@@ -843,7 +843,7 @@ function RowView({
               ) : null}
             </div>
           )}
-          {expanded && editable ? <NotSaved space={space} task={task.id} part="summary" /> : null}
+          {expanded && editable ? <NotSaved space={space} owner={task.id} part="summary" /> : null}
           {/* A title the person typed while the task was finished stays readable, with Copy and
               Discard; Try again only once the task is active again (A5 3.11). */}
           {expanded ? (

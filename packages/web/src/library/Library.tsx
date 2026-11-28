@@ -27,8 +27,9 @@ import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { NodeView } from "./calls.ts";
 import css from "./Library.module.css";
 import { listsOf, type Level, type LibraryNode } from "./lists.ts";
+import { BuildLibrary } from "./BuildLibrary.tsx";
 import { NewPage } from "./NewPage.tsx";
-import { PageList, Penned, useChanged, useFocusReturn, useFrom } from "./parts.tsx";
+import { PageList, Penned, useChanged, useFocusReturn } from "./parts.tsx";
 import { useLibraryWrites } from "./writes.ts";
 
 const styles = classes(css, [
@@ -50,6 +51,7 @@ const styles = classes(css, [
   "tabs",
   "tab",
   "headed",
+  "empty",
   "notice",
   "act",
   "place",
@@ -349,13 +351,7 @@ function Texts({
 }
 
 /** What comes from above, folded: each level's name and count, and when open its pages. */
-function Above({
-  levels,
-  from,
-}: {
-  readonly levels: readonly Level[];
-  readonly from: { path: string; label: string };
-}) {
+function Above({ levels, from }: { readonly levels: readonly Level[]; readonly from: string }) {
   const t = useT();
   const intl = useIntl();
   const [open, setOpen] = useState(false);
@@ -441,7 +437,7 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
       ? (state.space?.name ?? "")
       : ((node.kind === "area" ? state.areas.get(node.id) : state.projects.get(node.id))?.title ??
         "");
-  const from = useFrom(t("library.of", { name: title }));
+  const from = t("library.of", { name: title });
   const changed = useChanged();
   const root = useRef<HTMLDivElement>(null);
   useFocusReturn(root);
@@ -537,7 +533,15 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
           {state.space?.read_only === undefined ? <NewPage on={target} from={from} /> : null}
         </div>
         {lists.own.length === 0 ? (
-          <p className={styles.quiet}>{t("library.empty")}</p>
+          <div className={styles.empty}>
+            <p className={styles.quiet}>{t("library.empty")}</p>
+            {/* Nothing here yet, its tasks' pages included: an agent can build it from them. */}
+            {node.kind !== "space" &&
+            lists.tasks.length === 0 &&
+            state.space?.read_only === undefined ? (
+              <BuildLibrary node={node} />
+            ) : null}
+          </div>
         ) : (
           <PageList pages={lists.own} from={from} label={t("library.pages")} />
         )}

@@ -6853,8 +6853,48 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.pages.web.card",
+      "title": "A task's card shows its Knowledge from the live store: the task's own pages, a new page on the task, and what is known above it (project, area, space, nearest first) folded with its count; each page opens with the way back to the list with the task expanded",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.build",
+      "title": "Build this project's library, on a project's Library with no pages: an ordinary task there with the person's note for agents saying what to build, then the task expanded in the project's list; a note that fails is tried again on the task made, never with a second task; a Library with pages has no such button",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.today",
+      "title": "Today's Changes names the pages an agent changed last in the past seven days, newest first, beside the tasks; a page the person changed after the agent is not named",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.activity",
+      "title": "Activity reads an agent's page changes as what they did to the page (text changed, text added, renamed, moved, moved to the Trash), and pages made by one change as a count",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.pages.e2e.library",
       "title": "Against the real service in Chromium and Firefox: a project's Library lists an agent's page as it comes and Back returns focus to its row; an agent's edit while the page is read is offered, never put in place; the pen corrects the body across a reload, a version is shown and restored with an Undo and focus on the words; a Restore that meets newer words writes nothing and shows them; New page opens with its pen and its row has no brief line; Move to Trash, the page's address saying it is in the Trash with its Restore, the page in the Trash and Restore; the space's text for agents keeps across a reload; screenshots at 1,440 and 390 px in Sumi and Washi, axe finds nothing and nothing scrolls sideways",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.e2e.knowledge",
+      "title": "Against the real service in Chromium and Firefox: a task's card shows its own pages and, folded, what is known above it, and Back from a page returns to the card with the focus on its link; + Page on a card makes a page on the task and opens it with its pen; Today names a page an agent changed and Activity reads the edit with the page as a link; Build this project's library adds its task with the person's note for agents, expanded in the list; screenshots of the card's Knowledge at 1,440 and 390 px in Sumi and Washi, axe finds nothing and nothing scrolls sideways",
       "source": "Step 1 design, pull request 228",
       "owner": "M5",
       "kind": "ci",

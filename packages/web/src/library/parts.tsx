@@ -1,6 +1,6 @@
 // The pieces the Library and a page's screen share: who changed something and how long ago, a text
 // the person corrects with the pen, and a list of pages to open.
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useContext, useEffect, type ReactNode, type RefObject } from "react";
 import { useIntl, type IntlShape } from "react-intl";
 import type { Instance } from "../api.ts";
@@ -109,13 +109,13 @@ export function Penned({
     if (opening) setEditing(true);
   }, [opening, setEditing]);
   const [shown, saved] = useSaved(text);
-  const notSaved = save === undefined ? null : <NotSaved space={space} task={owner} part={part} />;
+  const notSaved = save === undefined ? null : <NotSaved space={space} owner={owner} part={part} />;
   if (editing && save !== undefined) {
     return (
       <>
         <TextEditor
           space={space}
-          task={owner}
+          owner={owner}
           part={part}
           label={label}
           text={shown}
@@ -154,10 +154,12 @@ export function Penned({
   );
 }
 
-/** Where the person is now, for a page's way back: the address and its name. */
-export function useFrom(label: string): { readonly path: string; readonly label: string } {
-  const path = useRouterState({ select: (s) => `${s.location.pathname}${s.location.searchStr}` });
-  return { path, label };
+/**
+ * Where the person is as they open a page, for its way back: the address, `?task=` included, and
+ * its name. Read when the link is followed, so it is the address of that moment.
+ */
+export function fromHere(label: string): { readonly path: string; readonly label: string } {
+  return { path: `${location.pathname}${location.search}`, label };
 }
 
 /** The page link the person followed last, and the address it was on: Back focuses it again. */
@@ -176,14 +178,16 @@ export function useFocusReturn(root: RefObject<HTMLElement | null>): void {
   useEffect(() => {
     const last = followed;
     if (last === undefined || last.path !== `${location.pathname}${location.search}`) return;
-    followed = undefined;
     const within = root.current;
     const target =
       within?.querySelector<HTMLElement>(`[data-ref="${last.ref}"]`) ??
       [...(within?.querySelectorAll<HTMLElement>("[data-holds]") ?? [])].find((fold) =>
         (fold.dataset["holds"] ?? "").split(" ").includes(last.ref),
       );
-    target?.focus();
+    // Another part of the screen may hold the link (Today has the card and its own list).
+    if (target === undefined) return;
+    followed = undefined;
+    target.focus();
   }, [root]);
 }
 
@@ -197,7 +201,8 @@ export function PageList({
   label,
 }: {
   readonly pages: readonly PageRow[];
-  readonly from: { readonly path: string; readonly label: string };
+  /** The name of where the person is: the page's way back. */
+  readonly from: string;
   /** The list's name. */
   readonly label: string;
 }) {
@@ -212,7 +217,7 @@ export function PageList({
           <Link
             to="/s/$space/page/$ref"
             params={{ space, ref: page.ref }}
-            state={{ from }}
+            state={() => ({ from: fromHere(from) })}
             className={styles.row}
             data-part="page-row"
             data-ref={page.ref}
