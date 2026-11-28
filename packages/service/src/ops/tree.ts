@@ -25,7 +25,8 @@ export const notOnTreeYet = (what: string): AppError =>
 /** The entries a tree space serves, with the fields of each whose family has not moved yet. */
 const ON_TREE: Readonly<Record<string, readonly string[]>> = {
   "task.add": [],
-  "task.update": ["folder", "add_sources", "remove_sources", "put_back_sources"],
+  "task.update": ["add_sources", "remove_sources", "put_back_sources"],
+  "folder.manage": [],
   "task.finish": [],
   "task.reopen": [],
   "task.delete": [],
@@ -48,9 +49,9 @@ const ON_TREE: Readonly<Record<string, readonly string[]>> = {
 
 /**
  * The search filters a tree space answers now: words, a task's status, size, priority, due date
- * and dates, its area and project, the Inbox, the star, overdue, finished and wrapped, and `id:`.
- * The others read what a tree keeps elsewhere (its folders, sources, notes, learnings, proposals
- * and live sessions), and come with their families.
+ * and dates, its area and project, its folder and the machines it has one on, the Inbox, the star,
+ * overdue, finished and wrapped, and `id:`. The others read what a tree keeps elsewhere (its
+ * sources, notes, learnings, proposals and live sessions), and come with their families.
  */
 const FILTERS: ReadonlySet<string> = new Set([
   "status",
@@ -62,6 +63,8 @@ const FILTERS: ReadonlySet<string> = new Set([
   "created",
   "completed",
   "id",
+  "folder",
+  "on",
 ]);
 const IS: ReadonlySet<string> = new Set([
   "inbox",
@@ -72,14 +75,25 @@ const IS: ReadonlySet<string> = new Set([
   "unwrapped",
 ]);
 
+const HAS: ReadonlySet<string> = new Set(["folder"]);
+
 /** A search's part the tree does not answer yet, by its name. */
 function searchGap(input: Record<string, unknown>): string | undefined {
   if (input["scope"] === "library") return "scope library";
   if (typeof input["q"] !== "string") return undefined;
   for (const term of termsOf(parseQuery(input["q"]))) {
     if (term.type !== "filter") continue;
-    if (term.key === "is" ? IS.has(term.value.toLowerCase()) : FILTERS.has(term.key)) continue;
-    return `${term.key}:${term.key === "is" ? term.value : ""}`;
+    const value = term.value.toLowerCase();
+    if (
+      term.key === "is"
+        ? IS.has(value)
+        : term.key === "has"
+          ? HAS.has(value)
+          : FILTERS.has(term.key)
+    ) {
+      continue;
+    }
+    return `${term.key}:${term.key === "is" || term.key === "has" ? term.value : ""}`;
   }
   return undefined;
 }
@@ -92,7 +106,6 @@ export function checkOnTree(entry: AnyEntry, input: Record<string, unknown>): vo
     Array.isArray(input[key]) && (input[key] as unknown[]).includes(value) ? value : undefined;
   const field =
     later.find((key) => input[key] !== undefined) ??
-    listed("clear", "folder") ??
     // A task's history is read from today's commits; the tree's comes with the reads.
     (entry.name === "task.get" ? listed("sections", "history") : undefined) ??
     (entry.name === "task.search" ? searchGap(input) : undefined);

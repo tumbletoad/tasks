@@ -1794,15 +1794,19 @@ type Names = ReadonlyMap<string, string>;
 function movedOf(result: WriteResult, names: Names | undefined): Record<string, unknown> {
   const inside = result.results.find((op) => op.inside !== undefined)?.inside;
   if (result.status !== "applied" || inside === undefined) return {};
+  // By their folders, so an answer lists them alike however the space numbers its rows.
   const named = (list: readonly InsideFolder[]) =>
-    list.slice(0, FOLLOWERS_SHOWN).map((f) => {
-      const name = names?.get(f.owner);
-      return {
-        kind: f.kind,
-        ...(f.kind === "task" ? { ref: f.ref } : name === undefined ? {} : { name }),
-        folder: f.to,
-      };
-    });
+    [...list]
+      .sort((a, b) => a.from.localeCompare(b.from))
+      .slice(0, FOLLOWERS_SHOWN)
+      .map((f) => {
+        const name = names?.get(f.owner);
+        return {
+          kind: f.kind,
+          ...(f.kind === "task" ? { ref: f.ref } : name === undefined ? {} : { name }),
+          folder: f.to,
+        };
+      });
   const because = result.answer?.["stayed_because"] ?? "unchecked";
   return {
     ...(inside.moved === 0 ? {} : { moved: inside.moved, followed: named(inside.along) }),

@@ -60,8 +60,12 @@ const KINDS: KindRows = {
     "AND json_extract(c.before, '$.parent_id') = (SELECT space_id FROM space)) " +
     `OR (c.entity = 'nodes' AND c.field = 'place' AND ${IS_TASK} AND ${INTO_NEW_PROJECT})`,
   // An archive pauses the routines in its project, and an unarchive leaves them paused.
+  // A project made for a folder is one step with its folder, as today's is.
   group:
     `(c.entity = 'nodes' AND ${IS_PROJECT} AND (c.action = 'create' OR c.field = 'archived')) ` +
+    "OR (c.entity = 'folders' AND c.action = 'create' AND EXISTS (SELECT 1 FROM changes p " +
+    "WHERE p.seq = c.seq AND p.entity = 'nodes' AND p.action = 'create' AND EXISTS " +
+    "(SELECT 1 FROM nodes n WHERE n.id = p.entity_id AND n.kind = 'project'))) " +
     "OR (c.entity = 'routines' AND c.field = 'paused' AND EXISTS (SELECT 1 FROM changes d " +
     "WHERE d.seq = c.seq AND d.entity = 'nodes' AND d.field = 'archived'))",
   dismissal: "c.entity = 'tasks' AND c.field = 'reviewed_at'",
@@ -76,6 +80,7 @@ const SQL = {
   commit: "SELECT seq FROM commits WHERE id = $id",
   changes: "SELECT * FROM changes WHERE seq = $seq ORDER BY n",
   node: "SELECT kind, parent_id FROM nodes WHERE id = $id",
+  folderOwner: "SELECT owner_id FROM folders WHERE id = $id",
   /** The live tasks below `$id`, at any depth. */
   below:
     "WITH RECURSIVE down(id) AS (SELECT id FROM nodes WHERE parent_id = $id AND kind = 'task' " +
@@ -267,6 +272,13 @@ function oppositeOf(conn: Connection, changes: readonly Stored[]): Call[] {
     }
     // A routine's open time goes back with its entry; its pause and a cancelled run stay.
     if (first.entity === "routines" || first.entity === "runs") continue;
+    // A folder made with its project goes with the project's creation.
+    if (first.entity === "folders" && first.action === "create") {
+      const owner = conn.prepare(SQL.folderOwner).get({ id })?.["owner_id"];
+      if (typeof owner === "string")
+        calls.push({ command: "folder.clear", input: { node: owner } });
+      continue;
+    }
     if (first.entity === "pages") {
       const deleted = of("deleted");
       if (deleted !== undefined) {
@@ -318,9 +330,12 @@ function written(changes: readonly Stored[]): Stored[] {
   });
 }
 
-/** The field a create's Undo writes: a new project's archive, a time's entry taken back. */
+/**
+ * The field a create's Undo writes: a new project's archive, a time's entry taken back, a project's
+ * new folder cleared.
+ */
 const createdField = (c: Stored): "archived" | "deleted" =>
-  c.entity === "occurrences" ? "deleted" : "archived";
+  c.entity === "occurrences" || c.entity === "folders" ? "deleted" : "archived";
 
 /** What `c`'s field holds now, as a change row writes it; undefined for a row that is gone. */
 function valueNow(conn: Connection, c: Stored): string | undefined {
@@ -430,7 +445,10 @@ function newerOn(
   const work = new Work(conn, prefix);
   let moved = false;
   for (const c of written(changes)) {
-    if (stateOf(c, valueNow(conn, c)) === stateOf(c, wrote(c))) continue;
+    const now = valueNow(conn, c);
+    if (stateOf(c, now) === stateOf(c, wrote(c))) continue;
+    // A folder the step made and someone cleared since is already as its Undo leaves it.
+    if (c.entity === "folders" && c.action === "create" && now !== "null") continue;
     moved = true;
     work.add({
       since,

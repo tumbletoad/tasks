@@ -6,7 +6,7 @@
 // (replay.prop.test.ts). A step where the backends may differ names those fields and says why.
 // Fixture text only.
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { CheckedDriver, createSpace, loadDriver, DEFAULT_DRIVER } from "@ttasks/storage";
 import { both, type Sequence } from "../../storage/test/both-helpers.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
@@ -14,6 +14,7 @@ import { classSession } from "./ops-helpers.ts";
 import { readBatch, readSnapshot } from "../src/http/feed.ts";
 import {
   backend,
+  foldersUnder,
   newSpaces,
   normal,
   type Session,
@@ -27,6 +28,7 @@ let tree: string;
 
 beforeAll(async () => {
   w = await contractWorld("replay");
+  foldersUnder(join(w.root, "work", "replay"));
   const checked = await CheckedDriver.check(await loadDriver(DEFAULT_DRIVER));
   const folder = join(w.root, "s", "tree");
   createSpace(checked, folder, {
@@ -808,6 +810,29 @@ const FEED: Sequence<Step> = [
   { op: "task.delete", input: { tasks: ["{gate}"] }, base: true, user: true },
 ];
 
+const manage = (input: Record<string, unknown>, more: Partial<Step> = {}): Step => ({
+  op: "folder.manage",
+  input,
+  user: true,
+  ...more,
+});
+
+/** The feed's rows of a task with a folder of its own and one in a project with a folder. */
+const FEED_FOLDERS: Sequence<Step> = [
+  manage({ action: "add_project", project: "Fence", area: "Garden", folder: "{dir:fence}" }),
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "Fix the gate", area: "Garden", project: "Fence" }] },
+    as: "gate",
+    user: true,
+  },
+  { op: "task.add", input: { tasks: [{ title: "Order the paint" }] }, as: "paint", user: true },
+  manage({ action: "set", task: "{paint}", folder: "{dir:paint}" }, { base: true }),
+  manage({ action: "set", project: "Garden/Fence", folder: "{dir:fence-2}" }, { base: true }),
+  manage({ action: "clear", task: "{paint}" }, { base: true }),
+  manage({ action: "clear", project: "Garden/Fence" }, { base: true }),
+];
+
 describe("[S2.replay.feed] the feed of both backends: the snapshot and each batch", () => {
   test(
     "the tree of areas and projects, a task's row, a question waiting, a finish and the Trash",
@@ -823,6 +848,121 @@ describe("[S2.replay.feed] the feed of both backends: the snapshot and each batc
       } finally {
         await spaces.close();
       }
+    },
+    LONG,
+  );
+
+  test(
+    "a task's row with its project's folder and with its own, as each is set, changed and cleared",
+    async () => {
+      const spaces = await newSpaces(w, "feed-folders");
+      try {
+        await both(
+          { today: feedBackend(() => spaces.today), tree: feedBackend(() => spaces.tree) },
+          FEED_FOLDERS,
+        );
+      } finally {
+        await spaces.close();
+      }
+    },
+    LONG,
+  );
+});
+
+/** Folders on a project and a task, as the page and the folder tests send them. */
+const FOLDERS: Sequence<Step> = [
+  manage({ action: "add_project", project: "Holder", area: "Home", folder: "{dir:held}" }),
+  // Another project for the same folder names the first, and its lost reply is answered again.
+  manage({ action: "add_project", project: "Second", area: "Home", folder: "{dir:held}" }),
+  manage(
+    { action: "add_project", project: "Second", area: "Home", folder: "{dir:held}" },
+    { again: 2 },
+  ),
+  // Asked again under a new ID: the project of that name in that area has the folder already.
+  manage({ action: "add_project", project: "Second", area: "Home", folder: "{dir:held}" }),
+  // A project named after its folder, in a new area.
+  manage({ action: "add_project", area: "Garden", folder: "{dir:shed}" }),
+  // A draft's folder files it: in the one project that has it, with a folder of its own when it
+  // is inside the project's; in none when two projects share it.
+  {
+    op: "task.add",
+    input: {
+      tasks: [
+        { title: "On the bench", folder: "{dir:shed/bench}" },
+        { title: "In the shed", folder: "{dir:shed}" },
+        { title: "Inside the held folder", folder: "{dir:held/inner}" },
+      ],
+    },
+    user: true,
+  },
+  { op: "task.add", input: { tasks: [{ title: "Sorted later" }] }, as: "t" },
+  manage({ action: "set", task: "{t}", folder: "{dir:held/own}" }, { base: true }),
+  // An agent's draft in its working folder, and its search from there.
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "From the shed", folder: "cwd" }], cwd: "{dir:shed}" },
+    as: "cwd",
+  },
+  { op: "task.search", input: { q: "on:cwd", cwd: "{dir:shed}" } },
+  { op: "task.search", input: { q: "on:this-machine" }, user: true },
+  { op: "task.search", input: { q: "folder:cwd", cwd: "{dir:held}" } },
+  { op: "task.search", input: { q: "has:folder" }, user: true },
+  // A project's folder set elsewhere: the folders inside the old one stay, and are named.
+  manage({ action: "set", project: "Home/Holder", folder: "{dir:elsewhere}" }, { base: true }),
+  // The person moved a folder on disk, then says where it is: the folders inside it move along.
+  manage(
+    { action: "set", project: "Garden/shed", folder: "{dir:barn}" },
+    { base: true, moved: ["shed", "barn"] },
+  ),
+  {
+    op: "task.update",
+    input: { task: "{t}", set: { folder: "{dir:own}" } },
+    base: true,
+    user: true,
+  },
+  { op: "task.update", input: { task: "{t}", clear: ["folder"] }, base: true, user: true },
+  { op: "task.update", input: { task: "{t}", clear: ["folder"] }, base: true, user: true },
+  manage({ action: "clear", task: "{cwd}" }, { base: true }),
+  manage({ action: "clear", project: "Holder" }, { base: true }),
+  manage({ action: "clear", project: "Holder" }, { base: true }),
+  // A project's folder set from a read before its last change is a conflict.
+  manage({ action: "set", project: "Second", folder: "{dir:second}" }, { base: true }),
+  manage({ action: "set", project: "Second", folder: "{dir:third}" }, { stale: true }),
+  // A folder that is not there, and a project the space lacks.
+  manage({ action: "set", project: "Second", folder: "{dir:held}/missing" }, { base: true }),
+  manage({ action: "set", project: "Nowhere", folder: "{dir:held}" }, { base: true }),
+  // A project made for a folder is one step: its Undo, and its Redo.
+  manage({ action: "add_project", project: "Tried", area: "Home", folder: "{dir:tried}" }),
+  { op: "history.undo", input: {}, user: true },
+  { op: "history.redo", input: {}, user: true },
+];
+
+describe("[S2.replay.folders] today's service requests through both backends: folders", () => {
+  test(
+    "a project made for a folder, another for the same folder, drafts filed by their folders, an agent's working folder, a project's folder set elsewhere and moved on disk, a task's set and cleared, a stale set, Undo and Redo",
+    async () => {
+      await replay(FOLDERS);
+    },
+    LONG,
+  );
+
+  // Where the backends differ by decision: today's project without an area takes a folder. The
+  // tree keeps such a project at the top, read as an area, which has no folder under today's names.
+  test(
+    "a project at the top of a tree space is refused a folder by name, and nothing is made",
+    async () => {
+      const side = backend(w.service.ops, () => tree);
+      const session = await side.open();
+      const alone = { action: "add_project", project: "Alone", folder: "{dir:alone}" };
+      expect(await side.step(session, manage(alone))).toMatchObject({
+        status: "error",
+        code: "invalid_input",
+        said: { data: { field: "project" } },
+      });
+      expect(
+        await side.step(session, { op: "page.read", input: { target: "Alone" } }),
+      ).toMatchObject({ status: "error", code: "not_found" });
+      expect(await side.seen(session)).toEqual({ "marker alone": [] });
     },
     LONG,
   );

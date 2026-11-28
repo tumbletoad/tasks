@@ -767,7 +767,7 @@
                   },
                   "id": {
                     "description": "Area ID",
-                    "pattern": "^a_[0-9a-hjkmnp-tv-z]{26}$",
+                    "pattern": "^[ap]_[0-9a-hjkmnp-tv-z]{26}$",
                     "type": "string"
                   },
                   "name": {
@@ -1165,7 +1165,7 @@
                   },
                   "id": {
                     "description": "Area ID",
-                    "pattern": "^a_[0-9a-hjkmnp-tv-z]{26}$",
+                    "pattern": "^[ap]_[0-9a-hjkmnp-tv-z]{26}$",
                     "type": "string"
                   },
                   "name": {

@@ -5,8 +5,10 @@
 // and a value that comes back gets its token again. Times are left out of that, as two commits in
 // one millisecond are chance; a retry is held to the as_of its first answer gave, in each space.
 // Fixture text only.
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
+import { basename, join } from "node:path";
 import { expect } from "vitest";
+import { FOLDER_MARKER } from "@ttasks/brand";
 import { AppError, findEntry, type ErrorBody } from "@ttasks/contracts";
 import { CheckedDriver, createSpace, loadDriver, DEFAULT_DRIVER } from "@ttasks/storage";
 import type { Side } from "../../storage/test/both-helpers.ts";
@@ -86,6 +88,11 @@ export interface Step {
   stale?: true;
   /** Sent twice under one request ID: the second answer is held to the first, in each space. */
   retry?: true;
+  /**
+   * Before it is sent, the person moves a folder of the space's own on disk, from the first to the
+   * second, when the first is there and the second is free.
+   */
+  moved?: readonly [string, string];
 }
 
 export interface Session {
@@ -106,6 +113,8 @@ export interface Session {
   counts: Map<string, number>;
   /** This sequence's run in its space: request IDs are a space's, across sequences. */
   run: number;
+  /** The folders of the space's own that steps named, by their names. */
+  dirs: Set<string>;
 }
 
 /** How many sequences each space has run. */
@@ -134,7 +143,7 @@ export function normal(value: unknown, s: Session, task = ""): unknown {
     // An entry's number is its space's own: the tree numbers a task's notes and log in one thread.
     if (ENTRY.test(value)) return token(s, "e", `${task}|${value}`);
     return (
-      value
+      inDir(value, s)
         .replace(/\b\d+\.\d+\.[0-9a-z]{8,}\b/gu, (asOf) => token(s, "as_of", asOf))
         .replace(/\b\d{4}-\d\d-\d\dT[\d:.]+Z\b/gu, "<at>")
         .replace(/\b(?:[a-z]{1,3}_[0-9a-z]{26}|[A-Z]{1,6}-\d+)\b/gu, (id) => token(s, "", id))
@@ -167,12 +176,38 @@ export function normal(value: unknown, s: Session, task = ""): unknown {
   return value;
 }
 
+/** Where each space's folders are made: steps name them `{dir:name}`. */
+let foldersRoot = "";
+
+/** The folder steps name `{dir:…}` in, a folder of each space's own under `root`. */
+export function foldersUnder(root: string): void {
+  foldersRoot = root;
+}
+
+/** A space's own folder: its folders, as an answer names them, are `<dir>` and what follows. */
+const dirOf = (s: Session): string => join(foldersRoot, s.space);
+
+/** A path in the space's own folder as `<dir>` and what follows, however an answer spells home. */
+function inDir(value: string, s: Session): string {
+  if (foldersRoot === "") return value;
+  const mark = join(basename(foldersRoot), s.space);
+  const at = value.indexOf(mark);
+  return at < 0 ? value : `<dir>${value.slice(at + mark.length)}`;
+}
+
 const filled = (value: unknown, s: Session): unknown => {
   if (typeof value === "string") {
-    return value.replace(
-      /\{(\w+)\}/gu,
-      (_, name: string) => s.names.get(name) ?? s.entries.get(name) ?? `{${name}}`,
-    );
+    return value
+      .replace(/\{dir:([\w/-]+)\}/gu, (_, name: string) => {
+        const path = join(dirOf(s), ...name.split("/"));
+        mkdirSync(path, { recursive: true, mode: 0o700 });
+        s.dirs.add(name);
+        return path;
+      })
+      .replace(
+        /\{(\w+)\}/gu,
+        (_, name: string) => s.names.get(name) ?? s.entries.get(name) ?? `{${name}}`,
+      );
   }
   if (Array.isArray(value)) return value.map((v) => filled(v, s));
   if (typeof value === "object" && value !== null) {
@@ -180,6 +215,16 @@ const filled = (value: unknown, s: Session): unknown => {
   }
   return value;
 };
+
+/** The owners a folder's marker names, in the order it names them; none without a marker. */
+function markerOf(folder: string): unknown {
+  try {
+    const text = readFileSync(join(folder, FOLDER_MARKER, "owners.json"), "utf8");
+    return (JSON.parse(text) as { owners?: unknown }).owners ?? [];
+  } catch {
+    return [];
+  }
+}
 
 export type Sent =
   { ok: Record<string, unknown>; error?: undefined } | { ok?: undefined; error: ErrorBody };
@@ -230,6 +275,7 @@ export const backend = (ops: OpsHost, space: () => string): Side<Step, Session> 
       after: [],
       answered: [],
       refs: new Set(),
+      dirs: new Set(),
       run: (() => {
         const n = (runs.get(space()) ?? 0) + 1;
         runs.set(space(), n);
@@ -242,6 +288,15 @@ export const backend = (ops: OpsHost, space: () => string): Side<Step, Session> 
         ? `replay-${String(s.run)}-request-${String(s.sent.length + 1).padStart(6, "0")}`
         : (s.sent[step.again - 1] ?? "");
     s.sent.push(id);
+    if (step.moved !== undefined) {
+      const [from, to] = step.moved.map((name) => join(dirOf(s), ...name.split("/"))) as [
+        string,
+        string,
+      ];
+      // A folder that is there moves to a place that is free; else the person moved nothing.
+      if (existsSync(from) && !existsSync(to)) renameSync(from, to);
+      s.dirs.add(step.moved[1]);
+    }
     const input = {
       ...(filled(step.input, s) as Record<string, unknown>),
       // A read takes no request ID.
@@ -252,6 +307,11 @@ export const backend = (ops: OpsHost, space: () => string): Side<Step, Session> 
     };
     const caller = step.user === true ? USER : AGENT;
     const got = await send(ops, s, step.op, input, caller);
+    // An answer is its entry's: IDs compare as tokens, so their forms are held here.
+    if (got.ok !== undefined) {
+      const parsed = findEntry(step.op)?.output.safeParse(got.ok);
+      expect(parsed?.error?.issues, `${step.op} answers by its contract`).toBeUndefined();
+    }
     if (step.retry === true) {
       // A lost reply: the same request again is answered as it was decided, at that commit.
       const again = await send(ops, s, step.op, input, caller);
@@ -307,6 +367,10 @@ export const backend = (ops: OpsHost, space: () => string): Side<Step, Session> 
       const title = read.ok?.["title"];
       const key = typeof title === "string" ? title : String(normal(target, s));
       seen[`read ${key}`] = normal(read.ok ?? { error: read.error.code }, s);
+    }
+    // The marker each folder a step named has on disk: whose folder the service says it is.
+    for (const name of [...s.dirs].sort()) {
+      seen[`marker ${name}`] = normal(markerOf(join(dirOf(s), ...name.split("/"))), s);
     }
     return seen;
   },
