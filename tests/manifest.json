@@ -2216,7 +2216,42 @@
     },
     {
       "id": "S2.tree.search",
-      "title": "The tree's search index, kept in each commit: a task's words, its notes, its pages and their comments are found, and a search keeps to what lies under one node; a parent's new title, a page or a source that moves, the Trash and a restore, and an Undo reach the documents that show them; a request refused after its writes leaves the index as it was, and a rebuild makes the same documents; after every tree test the index equals a fresh rebuild",
+      "title": "Documents of equal rank found in the same order after a rebuild; The tree's search index, kept in each commit: a task's words, its notes, its pages and their comments are found, and a search keeps to what lies under one node; a parent's new title, a page or a source that moves, the Trash and a restore, and an Undo reach the documents that show them; a request refused after its writes leaves the index as it was, and a rebuild makes the same documents; after every tree test the index equals a fresh rebuild",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.sources.both",
+      "title": "Sources and the capture by source, the same ordinary sequences on today's writer and the tree's, answers and what a reader sees compared: a source added, moved to another task, removed and put back twice, and linked to a second task; a mail captured again while open with the same log, after an archive and after a backdated completion",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.prefs.both",
+      "title": "A space's preferences, the same ordinary sequences on both writers: an effort level renamed, two renames in one request that move each task once by the size it held, one dropped with tasks on it, with the tasks each move moved; a stale save of a renamed size refused by both; a preference set for the first time, again on a stale read, and without a base",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.actors.both",
+      "title": "Who joins a space, the same on both writers: the machine registered twice, an agent joining twice by its label as one actor, and another machine than the space's authority refused",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.runs.both",
+      "title": "Launches, runs and a task's folder, the same on both writers: a launch and a second click, its moves; a run queued, started and ended, one stopped; a folder set, changed, removed twice, and a clear refused while its task is in the Trash, the folder there after the restore",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.search.both",
+      "title": "The search index, the same on both writers: a word of a title, a note, a page and a source found after each step, after the Trash and back, with a source linked to a second task, and after Undo",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
