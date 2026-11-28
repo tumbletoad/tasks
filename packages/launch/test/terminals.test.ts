@@ -1,5 +1,5 @@
-// Terminal command lines, the chain and the acceptance rule of each adapter (A4 3.6.1, 3.6.2, 3.7;
-// A7 3.9 M2.09; SL-09). Pure functions and a recording spawner: no terminal starts.
+// Terminal command lines, the chain and the acceptance rule of each adapter.
+// Pure functions and a recording spawner: no terminal starts.
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -48,7 +48,7 @@ import {
 } from "../src/index.ts";
 
 const TICKET = "0123456789ABCDEFGHJKMNPQ";
-// The command in the layout's command folder (A2 3.2.1): `~/.local/bin`.
+// The command in the layout's command folder: `~/.local/bin`.
 const LINUX_TASKS = `/home/mira/.local/bin/${PRODUCT_ID}`;
 const WIN_TASKS = `C:\\Users\\Mira\\.local\\bin\\${PRODUCT_ID}.exe`;
 const LAUNCH = "la_00r5mfcw5rfzxb9enb2vg50z3g";

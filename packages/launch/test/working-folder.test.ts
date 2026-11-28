@@ -1,5 +1,5 @@
-// The in-folder check with real child processes (A1 3.15). A child is started in the
-// folder resolvePlace returned, as the shim (M2.08) will be, and runs checkWorkingFolder there.
+// The in-folder check with real child processes. A child is started in the
+// folder resolvePlace returned, as the shim will be, and runs checkWorkingFolder there.
 // The tree is changed before the start, between the start and the check, and before the start
 // and back before the check (A-B-A). The child either is in the directory with the resolved
 // identity or refuses. What "is in" means is read independently: on Linux from /proc/self/cwd, the
@@ -7,7 +7,7 @@
 // folder above it, cannot be renamed or removed while it is there (asserted below); Node reads `.`
 // through the working-folder path, and the one case where that path and the directory the process
 // holds differ at the check (a link put into the path before the start and taken out again) is
-// asserted as the residual A1 3.15 names.
+// asserted as a known residual case.
 import { spawn } from "node:child_process";
 import {
   mkdirSync,
@@ -291,7 +291,7 @@ describe("[A1.3.15.places.working-folder] the in-folder check in a real child pr
       if (LINUX) expect(got.held).toBe(idOf(join(decoy, "portal")));
       return;
     }
-    // Windows, the residual (A1 3.15): Node reads `.` through the working-folder path, which
+    // Windows, the residual: Node reads `.` through the working-folder path, which
     // names the resolved directory again, so the check passes and an agent started now starts
     // there. But the child holds the decoy: the decoy cannot be renamed, the resolved directory
     // can, so the path is not tied to it until the child enters it again.

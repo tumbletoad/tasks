@@ -1,7 +1,7 @@
-// Golden argv per target, route and OS (A4 5.1 "Golden argv tests", A7 3.9 M2.10's Verify line):
+// Golden argv per target, route and OS:
 // the command line each CLI route gives for fixed inputs, compared as arrays of decoded elements,
 // and the link route's URL compared by its decoded values, never as rendered strings. The inputs
-// are each OS's instances as A4 3.2 shapes them: a native binary or a wrapper on
+// are each OS's instances: a native binary or a wrapper on
 // Linux, `node <entry>` for an npm install on Windows. Fixture data only.
 import { describe, expect, test } from "vitest";
 import { envVar, MCP_SERVER_KEY, PRODUCT_NAME } from "@ttasks/brand";

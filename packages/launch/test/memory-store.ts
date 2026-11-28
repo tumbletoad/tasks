@@ -62,7 +62,7 @@ export class MemoryDurable {
 
 const ID_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz";
 
-/** An A1 ID: the prefix and 26 characters for 128 random bits (the first is 0 to 7). */
+/** An ID: the prefix and 26 characters for 128 random bits (the first is 0 to 7). */
 export function randomId(prefix: string): string {
   const bytes = new Uint8Array(26);
   globalThis.crypto.getRandomValues(bytes);
@@ -167,7 +167,7 @@ export class MemoryExecutionStore implements ExecutionStore {
       return structuredClone(found);
     }
     const now = durable.now();
-    // checkNewRun gives the request text as the space stores it (A1 3.7).
+    // checkNewRun gives the request text as the space stores it.
     const request = input.request;
     const run: RunRecord = {
       id: randomId("ru"),
@@ -284,7 +284,7 @@ export class MemoryExecutionStore implements ExecutionStore {
       return copy(found);
     }
     const now = durable.now();
-    // A second click on the same task and instance (A4 3.9.1).
+    // A second click on the same task and instance.
     const focus = [...durable.intents.values()]
       .filter(
         (i) =>

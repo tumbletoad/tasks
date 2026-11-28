@@ -1,4 +1,4 @@
-// Pairing with T3 Code (A4 3.4.1 "Pairing"): TTasks registers as an outside OAuth client of the
+// Pairing with T3 Code: TTasks registers as an outside OAuth client of the
 // local T3 server and the person approves it on T3's own page in the browser. The flow is the MCP
 // authorization specification's: protected resource metadata (RFC 9728) names the authorization
 // server, whose metadata (RFC 8414) names its endpoints; dynamic client registration (RFC 7591);

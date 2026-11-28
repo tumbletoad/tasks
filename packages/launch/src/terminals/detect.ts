@@ -89,7 +89,7 @@ export interface TerminalHost {
   readonly platform: NodeJS.Platform;
   /** PATH entries to search, in order: the person's own PATH first, then the service's. */
   readonly path: readonly string[];
-  /** The session's TERMINAL, when it has one (A4 3.8 layer 1). */
+  /** The session's TERMINAL, when it has one. */
   readonly terminalVar: string | undefined;
   /** Linux: the session's XDG variables, for the desktop's default. */
   readonly xdg?: XdgVars | undefined;
@@ -168,7 +168,7 @@ function find(host: TerminalHost, name: string): string | undefined {
   return undefined;
 }
 
-/** Windows Terminal's app execution alias, when it exists (A4 3.6.2 detection). */
+/** Windows Terminal's app execution alias, when it exists. */
 export function windowsTerminalAlias(host: TerminalHost): string | undefined {
   if (host.windowsApps === undefined || !win32.isAbsolute(host.windowsApps)) return undefined;
   const alias = win32.join(host.windowsApps, "wt.exe");

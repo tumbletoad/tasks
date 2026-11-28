@@ -1,4 +1,4 @@
-// The shim host's rules one by one (A4 3.1, 3.6.3, 3.9.3), on the in-memory
+// The shim host's rules one by one, on the in-memory
 // execution store with the real launch machine, machine state in memory, and a fake process
 // table. The property test (shim.prop.test.ts) covers their combinations; the service's end-to-end
 // test runs a real shim through a restart.
@@ -243,7 +243,7 @@ describe("[A4.5.shim.claim] the one spawn claim", () => {
     expect(seen[0]?.claim).toMatch(/^claim-/);
     const [reply] = replies;
     expect(reply?.argv).toEqual(PLAN.argv);
-    // The folder resolved at dispatch, its real path for the shim to enter (M2.09: no terminal's
+    // The folder resolved at dispatch, its real path for the shim to enter (no terminal's
     // flag decides it) and its check as plain JSON; the agent's environment holds neither.
     expect(reply?.folder).toBe(FOLDER.path);
     expect(reply?.check).toEqual(FOLDER.check);
@@ -1107,7 +1107,7 @@ describe("[A4.5.environment.scrub] the claim's reply builds the agent's environm
       TTASKS_HOME: "/k",
     };
     // A via_login_shell launch's own base, as its dispatch step took it in the task's folder: the
-    // profile re-exported what A4 scrubs and set a home variable, and the scrub still applies.
+    // profile re-exported what the scrub removes and set a home variable, and the scrub still applies.
     const own = {
       ...base,
       FROM_FOLDER: "1",

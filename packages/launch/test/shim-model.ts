@@ -1,4 +1,4 @@
-// A model of terminal launches with real shims for the property test (A4 3.6.3, 3.9.3, A4 5.1):
+// A model of terminal launches with real shims for the property test:
 // the real LaunchMachine and the real ShimHost over the in-memory execution store and machine
 // state, a model process table (PIDs, start times, PID reuse), model shims that hold their ticket
 // and, once replied to, their credential and their agent, and service lives that die and restart.
@@ -278,7 +278,7 @@ export class ShimWorld {
       const now = await this.#durable(launch);
       this.#require(now?.evidence.claim !== undefined, "a reply leaves only on a durable claim");
       // The window as the service can know it: on the monotonic clock in the life that
-      // dispatched, and only on the wall clock after a restart (A4 3.9.1), where a step of
+      // dispatched, and only on the wall clock after a restart, where a step of
       // the wall clock cannot be told from time passing.
       this.#require(
         owner !== undefined &&

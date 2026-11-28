@@ -1,5 +1,5 @@
-// Two roots that are one folder, where the real paths do not say so (A1 3.15, "Case is the
-// volume's"). Linux's realpath keeps the spelling it was given on a case-folding folder (ext4
+// Two roots that are one folder, where the real paths do not say so (case is the
+// volume's). Linux's realpath keeps the spelling it was given on a case-folding folder (ext4
 // casefold, vfat, an SMB mount) and through a bind mount, so one folder can have two real paths.
 // Sameness of roots is decided by identity, so `placeOf` still finds the folder held by two roots.
 // The file system here is real; only realpath is made to keep the spelling of one root, as such a
