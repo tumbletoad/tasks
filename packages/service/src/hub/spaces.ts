@@ -117,7 +117,7 @@ import { BackupWatch, type BackupTroubleView } from "./backup-health.ts";
 import { MaintenanceFailed, type Maintenance, type MaintenanceReport } from "./maintenance.ts";
 import { BUILD } from "./build.ts";
 import { ProjectionRunner } from "./projection.ts";
-import { FilesRunner } from "./view-files.ts";
+import { FilesRunner, type FilesRebuilt } from "./view-files.ts";
 import {
   clearFailedMigrations,
   failedOn,
@@ -1072,7 +1072,7 @@ export class SpaceManager {
    * reconciliation found, or undefined while the space has no projection running (it is not open
    * as this machine's).
    */
-  rebuildView(entry: number): Promise<Reconciled> | undefined {
+  rebuildView(entry: number): Promise<Reconciled | FilesRebuilt> | undefined {
     return this.#space(entry).projection?.rebuild();
   }
 

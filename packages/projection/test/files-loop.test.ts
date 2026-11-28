@@ -1,7 +1,12 @@
 // When the readable files' passes run, on a clock the test moves: no wait of real time.
-import { describe, expect, test } from "vitest";
-import type { FilesProjector, PassReport } from "../src/index.ts";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { CAN_HOLD_FILES, holdFile } from "@ttasks/testkit";
+import { afterAll, describe, expect, test } from "vitest";
+import type { FilesProjector, PassReport, Rebuilt } from "../src/index.ts";
 import { MAX_WAIT_MS, QUIET_MS, SWEEP_MS, runFiles } from "../src/files/loop.ts";
+import { tempFolders } from "../../storage/test/space-helpers.ts";
+import { expectConverged, filesBelow, filesWorld, smallTree } from "./files-helpers.ts";
 
 interface Script {
   /** The space's last commit at a time. */
@@ -83,4 +88,56 @@ describe("[S3.files.loop] when a pass runs", () => {
     expect(times[1]).toBeGreaterThanOrEqual(15_000);
     expect(times[1]).toBeLessThanOrEqual(15_000 + SWEEP_MS + 200);
   });
+});
+
+const temp = tempFolders("files-loop");
+afterAll(temp.cleanup);
+
+describe("[S3.files.loop] a rebuild is a request to the loop", () => {
+  test.skipIf(!CAN_HOLD_FILES)(
+    "a rebuild that meets a held file is retried once the file is let go, with no commit and no second rebuild",
+    async () => {
+      const w = await filesWorld(temp.make());
+      const t = smallTree(w);
+      const path = join(w.view, "client-work", "website", `${t.menu}-fix-the-menu.md`);
+      let clock = 0;
+      let asked = false;
+      let held: { release(): void } | undefined;
+      const rebuilt: Rebuilt[] = [];
+      await runFiles(w.projector(), {
+        stopped: () => clock >= 20_000,
+        now: () => clock,
+        sleep: (ms) => {
+          clock += ms;
+          // At 1 s, after the first pass: the person edits the file, another program holds it,
+          // and a rebuild is asked for. At 3 s the program lets it go.
+          if (clock >= 1000 && held === undefined && rebuilt.length === 0) {
+            chmodSync(path, 0o600);
+            writeFileSync(path, "my own words");
+            held = holdFile(path);
+            asked = true;
+          }
+          if (clock >= 3000 && held !== undefined) {
+            held.release();
+            held = undefined;
+          }
+          return Promise.resolve();
+        },
+        takeRebuild: () => {
+          const taken = asked;
+          asked = false;
+          return taken;
+        },
+        onRebuilt: (r) => rebuilt.push(r),
+      });
+      expect(rebuilt).toHaveLength(1);
+      expect(rebuilt[0]).toMatchObject({ suspect: 1, report: { failed: 1, stamped: false } });
+      expect(readFileSync(path, "utf8")).toBe(
+        w.fresh().get(`client-work/website/${t.menu}-fix-the-menu.md`),
+      );
+      expect([...filesBelow(join(w.space, "rescued")).values()]).toEqual(["my own words"]);
+      expectConverged(w);
+      w.fx.close();
+    },
+  );
 });

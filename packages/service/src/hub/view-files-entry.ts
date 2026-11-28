@@ -1,6 +1,9 @@
-// The readable files' worker of a tree space (view-files.ts): it opens a reader of the space and keeps
-// the space's `view/` equal to a fresh render until it is asked to stop. It writes nothing to the
-// space. Counts and codes go back, never a path or a task's text.
+// The readable files' worker of a tree space (view-files.ts): it opens a reader of the space and
+// keeps the space's `view/` equal to a fresh render until it is asked to stop. It writes nothing to
+// the space. Counts and codes go back, never a path or a task's text.
+//
+// A rebuild is handed to the loop, which takes it after its start and runs it as its next pass, so
+// a rebuild shares the start's recovery, the order of passes and their retry.
 import { join } from "node:path";
 import { parentPort, workerData } from "node:worker_threads";
 import { codeOf, FilesProjector, runFiles } from "@ttasks/projection";
@@ -15,36 +18,11 @@ const send = (message: FilesMessage): void => {
 };
 
 let stopping = false;
-/** The projector, once its start settled what a kill left: no pass runs before that. */
-let ready: FilesProjector | undefined;
-/** A rebuild asked for before the start: it runs once the start is done. */
+/** A rebuild asked for and not yet taken by the loop. */
 let asked = false;
-
-/**
- * `ttasks view rebuild`: every file read, and a pass at once that writes again what is missing or
- * different. Between the loop's steps: both are synchronous, so no pass runs beside it.
- */
-function rebuild(p: FilesProjector): void {
-  const t0 = performance.now();
-  try {
-    const suspect = p.check();
-    const checked = p.size;
-    const report = p.pass();
-    send({ kind: "pass", report, ms: Math.round(performance.now() - t0) });
-    send({ kind: "rebuilt", checked, suspect });
-  } catch (error) {
-    send({ kind: "error", code: codeOf(error) });
-    send({ kind: "rebuilt", checked: 0, suspect: 0 });
-  }
-}
-
 port.on("message", (command: FilesCommand) => {
-  if (command.kind === "stop") {
-    stopping = true;
-    return;
-  }
-  if (ready === undefined) asked = true;
-  else rebuild(ready);
+  if (command.kind === "stop") stopping = true;
+  else asked = true;
 });
 
 try {
@@ -60,13 +38,20 @@ try {
     });
     await runFiles(projector, {
       stopped: () => stopping,
+      takeRebuild: () => {
+        const taken = asked;
+        asked = false;
+        return taken;
+      },
+      onRebuilt: ({ checked: files, suspect, error }) => {
+        send(
+          error === undefined
+            ? { kind: "rebuilt", checked: files, rewritten: suspect }
+            : { kind: "rebuilt", checked: files, rewritten: suspect, code: codeOf(error) },
+        );
+      },
       onStart: (report) => {
         send({ kind: "started", report });
-        ready = projector;
-        if (asked) {
-          asked = false;
-          rebuild(projector);
-        }
       },
       onPass: (report, ms) => {
         send({ kind: "pass", report, ms });

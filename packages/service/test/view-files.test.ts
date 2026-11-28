@@ -25,7 +25,7 @@ import {
   tempRoot,
   waitFor,
 } from "./harness.ts";
-import { classSession } from "./ops-helpers.ts";
+import { classSession, errorOf } from "./ops-helpers.ts";
 
 const running: RunningService[] = [];
 const cleanups: (() => void)[] = [];
@@ -39,7 +39,7 @@ afterEach(async () => {
 });
 
 describe("[S3.files.service] the service keeps a tree space's readable files, in the tree's layout", () => {
-  test("an open tree space gets the tree's files and their record; a new task shows; a rebuild puts back an edit", async () => {
+  test("an open tree space gets the tree's files and their record; a new task shows; a rebuild puts back an edit in files, and one that cannot run says so", async () => {
     const { root, cleanup } = tempRoot("view-files");
     cleanups.push(cleanup);
     const machine = newId("m");
@@ -121,7 +121,8 @@ describe("[S3.files.service] the service keeps a tree space's readable files, in
         { space: folder },
         { timeoutMs: 30_000 },
       )) as Record<string, unknown>;
-      expect(result).toMatchObject({ queued: 1, forgotten: 0 });
+      // Counted in files: every file read, and the one changed written again.
+      expect(result).toMatchObject({ rewritten: 1 });
       expect(Number(result["checked"])).toBeGreaterThanOrEqual(3);
     } finally {
       user.close();
