@@ -82,6 +82,7 @@ import {
   type FolderOs,
 } from "./folders.ts";
 import { brokenIn, groupBreaks, type GroupTouch } from "./groups.ts";
+import { appended, excerptOf, findPage, finishedBody, occurrences, PAGE_SQL } from "./pages.ts";
 import {
   newerOn,
   oppositeOf,
@@ -131,10 +132,10 @@ import {
 import { provenanceOf, rowState, versionOf, type RowState } from "./row-state.ts";
 import { EFFORT_HOLDERS_SQL, inTrashSql } from "./trash.ts";
 import {
+  checkBaseOf,
   checkRequest,
   FOLDER_OPERATIONS,
   formatAsOf,
-  incarnationTag,
   isHistoryOperation,
   LAUNCH_FAIL_REASONS,
   LAUNCH_UNKNOWN_REASONS,
@@ -144,7 +145,6 @@ import {
   SYSTEM_SCOPE,
   WRITE_LIMITS,
   type AsOf,
-  type Base,
   type CheckedRequest,
   type ConflictEntity,
   type Due,
@@ -157,6 +157,9 @@ import {
   type HistoryOperation,
   type OpResult,
   type Operation,
+  type PageEdit,
+  type PageOwner,
+  type TextNode,
   type PrefSet,
   type Placement,
   type SourceFields,
@@ -292,7 +295,9 @@ type Entity =
   | "preferences"
   | "areas"
   | "projects"
-  | "folders";
+  | "folders"
+  | "pages"
+  | "node_texts";
 
 /** A task row as the write path needs it, checked against its domain. */
 interface TaskRow extends RowState {
@@ -334,7 +339,9 @@ function columnsOf(entity: Entity, field: string): readonly string[] {
           entity === "preferences" ||
           entity === "areas" ||
           entity === "projects" ||
-          entity === "folders"
+          entity === "folders" ||
+          entity === "pages" ||
+          entity === "node_texts"
         ? CHILD_FIELDS[entity]
         : undefined;
   const columns = fields?.[field];
@@ -442,6 +449,15 @@ interface StagedOp {
   slug?: string;
   /** `project.move`: the project's new area. */
   area?: Id<"a"> | null;
+  /**
+   * A page's or a node's write: what holds the page after it, the fields a set changes with their
+   * new words, and the node whose texts it writes, with whether its row exists yet.
+   */
+  page?: {
+    owner?: { kind: PageOwner["kind"]; id: string };
+    set?: Record<string, string>;
+    node?: { kind: TextNode["kind"]; id: string; exists: boolean };
+  };
 }
 
 interface Plan {
@@ -859,6 +875,8 @@ function readRow(conn: Connection, entity: Entity, id: string): Row {
       areas: SQL.areaRow,
       projects: SQL.projectRow,
       folders: FOLDER_SQL.folder,
+      pages: PAGE_SQL.page,
+      node_texts: PAGE_SQL.text,
     }[entity];
     row = conn.prepare(sql).get({ id });
   }
@@ -898,6 +916,10 @@ function setVersions(
     conn.prepare(SQL.projectVersions).run({ ...maps, id: row.id });
   } else if (row.entity === "folders") {
     conn.prepare(SQL.folderVersions).run({ ...maps, id: row.id });
+  } else if (row.entity === "pages") {
+    conn.prepare(PAGE_SQL.versions).run({ ...maps, id: row.id });
+  } else if (row.entity === "node_texts") {
+    conn.prepare(PAGE_SQL.textVersions).run({ ...maps, id: row.id });
   } else throw misuse("No operation of this build changes that row after its create");
 }
 
@@ -1417,12 +1439,14 @@ export class SpaceWriter {
     wall: number,
   ): WriteResult {
     try {
-      if (request.base !== undefined) checkBase(request.base, asOf);
+      if (request.base !== undefined) checkBaseOf(request.base, asOf);
       // An undo or redo is a request of its own (request.ts), guarded by newer work (steps.ts).
       const [first] = request.ops;
       if (first !== undefined && isHistoryOperation(first)) {
         return this.#history(conn, request, first, space, asOf, at, wall);
       }
+      if (first?.kind === "page.edit")
+        return this.#edit(conn, request, first, space, asOf, at, wall);
       const plan = this.#stage(conn, request, space, at, wall);
       const conflicts = preconditions(conn, request, plan, space);
       if (conflicts.length > 0) {
@@ -1597,6 +1621,27 @@ export class SpaceWriter {
           starts.set(rowKey("tasks", found.id), found.row);
         }
         return found.id;
+      };
+      /** What holds a page, or whose texts a node row holds, by its kind and ID. */
+      const holderOf = (
+        owner: PageOwner,
+        field: string,
+      ): { kind: PageOwner["kind"]; id: string } => {
+        if (owner.kind === "space") return { kind: "space", id: space.spaceId };
+        if (owner.kind === "area") return { kind: "area", id: areaOf(owner.area) };
+        if (owner.kind === "project") return { kind: "project", id: projectOf(owner.project).id };
+        return { kind: "task", id: task(owner.task, `${field}.id`) };
+      };
+      /** A page that is shown; one in the Trash only for a restore. */
+      const pageOf = (given: string, restoring: boolean): Row => {
+        const row = findPage(conn, given, space.refPrefix);
+        if (row === undefined || row.shown !== 1) {
+          return problem("NOT_FOUND", "The space has no page there", i, "page");
+        }
+        if (row["deleted_at"] !== null && !restoring) {
+          problem("DELETED", "The page is in the Trash", i, "page");
+        }
+        return row;
       };
       const where = (
         placement: Placement,
@@ -2609,6 +2654,127 @@ export class SpaceWriter {
           draftProjects.set(id, project);
           return { i, op, target: id, task: null, touches: [], record, slug, area: areaId };
         }
+        case "page.create": {
+          const owner = holderOf(op.owner, "owner");
+          const id = newId("pg", random);
+          return {
+            i,
+            op,
+            target: id,
+            task: null,
+            touches: [],
+            record: { ...inputOf(op, "owner"), id, owner },
+            page: { owner },
+          };
+        }
+        case "page.edit":
+          throw misuse("page.edit runs as its own command");
+        case "page.trash":
+        case "page.restore": {
+          const restoring = op.kind === "page.restore";
+          const row = pageOf(op.page, restoring);
+          const id = new RowReader("pages", row).id("id", "pg");
+          const record = { ...inputOf(op, "page"), page: id };
+          // Already where it asks for: nothing to write.
+          const done = (row["deleted_at"] !== null) !== restoring;
+          return {
+            i,
+            op,
+            target: id,
+            task: null,
+            touches: [],
+            record,
+            ...(done ? { skip: true } : {}),
+          };
+        }
+        case "page.move": {
+          const row = pageOf(op.page, false);
+          const id = new RowReader("pages", row).id("id", "pg");
+          const owner = holderOf(op.owner, "owner");
+          const record = { ...inputOf(op, "page", "owner"), page: id, owner };
+          const same = row["owner_kind"] === owner.kind && row["owner_id"] === owner.id;
+          return {
+            i,
+            op,
+            target: id,
+            task: null,
+            touches: [],
+            record,
+            page: { owner },
+            ...(same ? { skip: true } : {}),
+          };
+        }
+        case "page.append": {
+          const id = new RowReader("pages", pageOf(op.page, false)).id("id", "pg");
+          const record = { ...inputOf(op, "page"), page: id };
+          return { i, op, target: id, task: null, touches: [], record };
+        }
+        case "page.set": {
+          const row = pageOf(op.page, false);
+          const id = new RowReader("pages", row).id("id", "pg");
+          let body = op.body;
+          if (op.from_seq !== undefined) {
+            const version = conn.prepare(PAGE_SQL.bodyAt).get({ id, seq: op.from_seq })?.["body"];
+            if (typeof version !== "string") {
+              problem("NOT_FOUND", "The page has no version made by this change", i, "from_seq");
+            }
+            body = version;
+          }
+          const given: [string, string][] = [];
+          if (op.title !== undefined) given.push(["title", op.title]);
+          if (op.brief !== undefined) given.push(["brief", op.brief]);
+          if (body !== undefined) given.push(["body", body]);
+          const set = Object.fromEntries(given.filter(([field, value]) => row[field] !== value));
+          starts.set(rowKey("pages", id), rowState("pages", row, CHILD_FIELDS.pages));
+          return {
+            i,
+            op,
+            target: id,
+            task: null,
+            touches: given.map(([field]): Touch => ({ entity: "pages", id, field, task: null })),
+            record: { ...inputOf(op, "page"), page: id },
+            page: { set },
+            ...(Object.keys(set).length === 0 ? { skip: true } : {}),
+          };
+        }
+        case "node.set":
+        case "node.instruct": {
+          if (op.kind === "node.instruct" && request.actor.actor_kind !== "human") {
+            problem("USER_ONLY", "Only a person writes the text for agents", i, "text");
+          }
+          const node = holderOf(op.node, "node") as { kind: TextNode["kind"]; id: string };
+          const row = conn.prepare(PAGE_SQL.text).get({ id: node.id });
+          const given: [string, string][] = [];
+          if (op.kind === "node.instruct") given.push(["for_agents", op.text]);
+          else {
+            if (op.brief !== undefined) given.push(["brief", op.brief]);
+            if (op.description !== undefined) given.push(["description", op.description]);
+          }
+          const set = Object.fromEntries(
+            given.filter(([field, value]) => (row?.[field] ?? "") !== value),
+          );
+          let touches: Touch[] = [];
+          if (row !== undefined) {
+            const key = rowKey("node_texts", node.id);
+            starts.set(key, rowState("node_texts", row, CHILD_FIELDS.node_texts));
+            touches = given.map(([field]): Touch => ({
+              entity: "node_texts",
+              id: node.id,
+              field,
+              task: null,
+            }));
+          }
+          return {
+            i,
+            op,
+            target: node.id,
+            task: null,
+            touches,
+            record: { ...inputOf(op, "node"), node },
+            page: { node: { ...node, exists: row !== undefined }, set },
+            ...(Object.keys(set).length === 0 ? { skip: true } : {}),
+          };
+        }
         case "area.patch": {
           const id = areaOf(op.area);
           return {
@@ -2833,6 +2999,8 @@ export class SpaceWriter {
     asOf: AsOf,
     at: number,
     history?: { kind: "undo" | "redo"; target: StackCommit },
+    /** A named command's statements, in place of the staged operations' own. */
+    body?: (run: Execution) => void,
   ): WriteResult {
     const seq = nextSeq(space);
     const run: Execution = {
@@ -2878,8 +3046,11 @@ export class SpaceWriter {
               redo_of: history.kind === "redo" ? history.target.seq : null,
             }),
       });
-      for (const staged of plan.ops) apply(conn, run, staged);
-      groupsKept(conn, run);
+      if (body !== undefined) body(run);
+      else {
+        for (const staged of plan.ops) apply(conn, run, staged);
+        groupsKept(conn, run);
+      }
       changes = coalesce(conn, run);
       if (changes.length > 0) {
         insertChanges(conn, seq, changes);
@@ -2942,6 +3113,67 @@ export class SpaceWriter {
       results: opResults(conn, run, changes),
       conflicts: run.conflicts,
     };
+  }
+
+  // ------------------------------------------------------------------------------------------
+  // The named command of page.edit
+
+  /**
+   * `page.edit`, a named command: its statements run in order in the request's transaction, each
+   * on what the one before left, with nothing staged from the request's start. The commit, its
+   * change rows and versions, the search index, the outbox and the receipt are the ones every
+   * request shares (#execute). Old words that are gone, or that stand more than once, write
+   * nothing: the answer says how often they stand, with the page's start as it is now.
+   */
+  #edit(
+    conn: Connection,
+    request: CheckedRequest,
+    op: PageEdit,
+    space: SpaceRow,
+    asOf: AsOf,
+    at: number,
+    wall: number,
+  ): WriteResult {
+    const row = findPage(conn, op.page, space.refPrefix);
+    if (row === undefined || row.shown !== 1) {
+      return problem("NOT_FOUND", "The space has no page there", 0, "page");
+    }
+    if (row["deleted_at"] !== null) problem("DELETED", "The page is in the Trash", 0, "page");
+    const r = new RowReader("pages", row);
+    const id = r.id("id", "pg");
+    const body = r.text("body", () => true);
+    const plan: Plan = {
+      ops: [{ i: 0, op, target: id, task: null, touches: [], record: { ...op, page: id } }],
+      tasks: new Map(),
+      starts: new Map(),
+      affected: 0,
+      statuses: [],
+      refPrefix: space.refPrefix,
+      wall,
+    };
+    const { count, first } = occurrences(body, op.old);
+    if (count !== 1) {
+      const result: OpResult = {
+        i: 0,
+        status: "unchanged",
+        id,
+        ref: formatTaskRef(space.refPrefix, r.int("ref", "taskRef")),
+        version: r.int("version", "seq"),
+        found: count,
+        excerpt: excerptOf(body),
+      };
+      return { ...accepted("unchanged", asOf), results: [result] };
+    }
+    return this.#execute(conn, request, space, plan, asOf, at, undefined, (run) => {
+      ensureStart(conn, run, "pages", id);
+      const edited = finishedBody(
+        body.slice(0, first) + op.new + body.slice(first + op.old.length),
+      );
+      if (edited === undefined)
+        problem("TOO_LARGE", "The page would be larger than a page may be", 0, "new");
+      conn.prepare(PAGE_SQL.body).run({ id, value: edited });
+      wrote(run, 0, "pages", id, pageTask(conn, id), ["body"]);
+    });
   }
 
   // ------------------------------------------------------------------------------------------
@@ -3115,6 +3347,33 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
     }
     const { op, i } = staged;
     switch (op.kind) {
+      case "page.create":
+      case "page.edit":
+      case "page.append":
+      case "page.set":
+      case "page.move":
+      case "page.trash":
+      case "page.restore": {
+        const r = new RowReader("pages", readRow(conn, "pages", staged.target));
+        return {
+          i,
+          status,
+          id: staged.target,
+          ref: formatTaskRef(run.plan.refPrefix, r.int("ref", "taskRef")),
+          version: r.int("version", "seq"),
+          owner: {
+            kind: r.oneOf("owner_kind", ["space", "area", "project", "task"]),
+            id: r.text("owner_id"),
+          },
+        };
+      }
+      case "node.set":
+      case "node.instruct": {
+        const row = conn.prepare(PAGE_SQL.text).get({ id: staged.target });
+        const version =
+          row === undefined ? 0 : new RowReader("node_texts", row).int("version", "seq");
+        return { i, status, id: staged.target, version };
+      }
       case "note.add":
       case "log.add": {
         const entity = op.kind === "note.add" ? "notes" : "log_entries";
@@ -3535,24 +3794,6 @@ function checkActor(conn: Connection, request: CheckedRequest): void {
       undefined,
       "actor.author_id",
     );
-  }
-}
-
-/** A1 3.5: a base from another epoch or incarnation, or from the future, is refused. */
-function checkBase(base: Base, asOf: AsOf): void {
-  const incarnation = isId(base.incarnation, "ai")
-    ? base.incarnation === asOf.incarnation
-    : base.incarnation === incarnationTag(asOf.incarnation);
-  if (base.epoch !== asOf.epoch || !incarnation) {
-    problem(
-      "EPOCH_CHANGED",
-      "The base is from another copy of the space, or from before it was restored: read again",
-      undefined,
-      "base",
-    );
-  }
-  if (base.seq > asOf.seq) {
-    problem("BASE_FROM_FUTURE", "The base is newer than the space", undefined, "base");
   }
 }
 
@@ -4643,6 +4884,105 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       wrote(run, i, "projects", staged.target, null, null);
       return;
     }
+    case "page.create": {
+      const owner = must(staged.page?.owner, "A new page has its holder");
+      conn.prepare(PAGE_SQL.insert).run({
+        id: staged.target,
+        ref: takeTaskRef(conn),
+        owner_kind: owner.kind,
+        owner_id: owner.id,
+        title: op.title,
+        brief: op.brief,
+        body: op.body,
+        at: run.at,
+        by: author,
+        seq: run.seq,
+      });
+      wrote(
+        run,
+        i,
+        "pages",
+        staged.target,
+        owner.kind === "task" ? (owner.id as Id<"t">) : null,
+        null,
+      );
+      return;
+    }
+    case "page.append": {
+      // The body as it is now, earlier operations of nothing else in between: a request of its own.
+      const body = String(readRow(conn, "pages", staged.target)["body"]);
+      ensureStart(conn, run, "pages", staged.target);
+      const value = finishedBody(appended(body, op.text));
+      if (value === undefined)
+        problem("TOO_LARGE", "The page would be larger than a page may be", i, "text");
+      conn.prepare(PAGE_SQL.body).run({ id: staged.target, value });
+      wrote(run, i, "pages", staged.target, pageTask(conn, staged.target), ["body"]);
+      return;
+    }
+    case "page.set": {
+      if (staged.skip === true) return;
+      const set = staged.page?.set ?? {};
+      ensureStart(conn, run, "pages", staged.target);
+      for (const [field, value] of Object.entries(set)) {
+        const sql =
+          field === "title" ? PAGE_SQL.title : field === "brief" ? PAGE_SQL.brief : PAGE_SQL.body;
+        conn.prepare(sql).run({ id: staged.target, value });
+      }
+      wrote(run, i, "pages", staged.target, pageTask(conn, staged.target), Object.keys(set));
+      return;
+    }
+    case "page.move": {
+      if (staged.skip === true) return;
+      const owner = must(staged.page?.owner, "A move has its holder");
+      ensureStart(conn, run, "pages", staged.target);
+      const left = pageTask(conn, staged.target);
+      conn.prepare(PAGE_SQL.owner).run({ id: staged.target, kind: owner.kind, owner: owner.id });
+      wrote(run, i, "pages", staged.target, pageTask(conn, staged.target) ?? left, ["owner"]);
+      return;
+    }
+    case "page.trash":
+    case "page.restore": {
+      if (staged.skip === true) return;
+      const trash = op.kind === "page.trash";
+      ensureStart(conn, run, "pages", staged.target);
+      conn
+        .prepare(PAGE_SQL.deleted)
+        .run({ id: staged.target, at: trash ? run.at : null, by: trash ? author : null });
+      wrote(run, i, "pages", staged.target, pageTask(conn, staged.target), ["deleted"]);
+      return;
+    }
+    case "node.set":
+    case "node.instruct": {
+      if (staged.skip === true) return;
+      const { node, set = {} } = must(staged.page, "A node's write has its node");
+      const id = staged.target;
+      if (node?.exists !== true) {
+        conn.prepare(PAGE_SQL.insertText).run({
+          id,
+          kind: must(node, "A node's write has its node").kind,
+          brief: set["brief"] ?? "",
+          description: set["description"] ?? "",
+          for_agents: set["for_agents"] ?? "",
+          seq: run.seq,
+        });
+        wrote(run, i, "node_texts", id, null, null);
+        return;
+      }
+      ensureStart(conn, run, "node_texts", id);
+      for (const [field, value] of Object.entries(set)) {
+        const sql =
+          field === "brief"
+            ? PAGE_SQL.textBrief
+            : field === "description"
+              ? PAGE_SQL.textDescription
+              : PAGE_SQL.textForAgents;
+        conn.prepare(sql).run({ id, value });
+      }
+      wrote(run, i, "node_texts", id, null, Object.keys(set));
+      return;
+    }
+    case "page.edit":
+      throw misuse("page.edit runs as its own command");
     case "area.patch":
     case "project.patch": {
       const entity = op.kind === "area.patch" ? "areas" : "projects";
@@ -4904,7 +5244,7 @@ function groupWrote(
 function ensureStart(
   conn: Connection,
   run: Execution,
-  entity: "tasks" | "areas" | "projects" | "folders",
+  entity: "tasks" | "areas" | "projects" | "folders" | "pages" | "node_texts",
   id: string,
 ): void {
   const key = rowKey(entity, id);
@@ -5067,4 +5407,13 @@ function insertChanges(conn: Connection, seq: number, changes: readonly ChangeRo
       after_prov: change.afterProv ?? seq,
     });
   });
+}
+
+/**
+ * The task a page is on, or null: its change rows carry it, so work on a page counts as work on
+ * its task, which Undo will not take out of sight unseen.
+ */
+function pageTask(conn: Connection, id: string): Id<"t"> | null {
+  const row = readRow(conn, "pages", id);
+  return row["owner_kind"] === "task" ? (String(row["owner_id"]) as Id<"t">) : null;
 }

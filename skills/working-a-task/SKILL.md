@@ -7,7 +7,7 @@ description: Use when you work on a task, in a session opened on it or when the 
 
 - Start with what the user asked for this launch, then their notes for agents. When they
   disagree, the newer one wins; ask when it matters.
-- Look for lessons from similar tasks before work that is not trivial.
+- Before you start, read the pages above the task that bear on the work.
 - Log a real milestone in one or two sentences: a finding, a decision, a fix or a blocker. Not
   every step.
 - Ask the user when a choice is theirs: scope, money, anything another person will see, anything

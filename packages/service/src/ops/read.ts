@@ -89,7 +89,7 @@ export interface SpaceFacts {
 
 const SPACE: Statement = { sql: "SELECT * FROM space WHERE one = 1", mode: "get" };
 
-function spaceFacts(row: unknown): SpaceFacts {
+export function spaceFacts(row: unknown): SpaceFacts {
   const space = decodeSpaceRow(row as Row);
   return {
     id: space.spaceId,
@@ -1006,6 +1006,69 @@ export async function readAgentSessions(
   return { space: facts, rows };
 }
 
+/** How many of a machine's newest T3 launches the space's list looks at, for the Agents page. */
+const T3_LOOKED_AT = 20;
+
+const T3_LAUNCHES =
+  "SELECT l.id, l.task_id, l.instance_id, l.detail, t.ref AS task_ref FROM launches l " +
+  "JOIN tasks t ON t.id = l.task_id " +
+  "JOIN space s ON s.one = 1 AND l.created_seq >= s.authority_since " +
+  "WHERE l.machine_id = $machine AND l.route = 't3-mcp' AND l.state = 'confirmed' " +
+  "AND json_extract(l.detail, '$.evidence.lost_at') IS NULL ";
+const T3_THREADS_OF_TASK: Statement = {
+  sql: `${T3_LAUNCHES}AND l.task_id = $task ORDER BY l.created_at DESC, l.id DESC`,
+  mode: "all",
+};
+const T3_THREADS_NEWEST: Statement = {
+  sql: `${T3_LAUNCHES}ORDER BY l.created_at DESC, l.id DESC LIMIT ${String(T3_LOOKED_AT)}`,
+  mode: "all",
+};
+
+/** A task's T3 Code thread: the newest Confirmed T3 launch of the task and instance. */
+export interface T3ThreadRow {
+  /** The `la_` ID. */
+  readonly launch: string;
+  readonly task: string;
+  readonly ref: string;
+  readonly instance: string;
+  readonly thread: string;
+}
+
+/**
+ * The T3 threads of `machine`'s launches, of one task (all of them) or among the space's newest
+ * launches: per task and instance the newest Confirmed launch, unless the service found its thread
+ * gone. A launch from before the space's last claim or restore is history and holds none.
+ */
+export async function readT3Threads(
+  reader: WorkerConnection,
+  query: { readonly machine: string; readonly task?: string },
+): Promise<T3ThreadRow[]> {
+  const [space, rows] = await snapshot(
+    reader,
+    [SPACE, query.task === undefined ? T3_THREADS_NEWEST : T3_THREADS_OF_TASK],
+    { machine: query.machine, task: query.task ?? null },
+  );
+  const facts = spaceFacts(space);
+  const seen = new Set<string>();
+  const out: T3ThreadRow[] = [];
+  for (const row of rows as Row[]) {
+    const thread = evidenceOf(row["detail"])["thread"];
+    const task = text(row["task_id"]);
+    const instance = text(row["instance_id"]);
+    const key = `${task}\n${instance}`;
+    if (typeof thread !== "string" || seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      launch: text(row["id"]),
+      task,
+      ref: formatTaskRef(facts.refPrefix, Number(row["task_ref"])),
+      instance,
+      thread,
+    });
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Runs
 
@@ -1633,6 +1696,24 @@ export async function hasFolderTable(reader: WorkerConnection): Promise<boolean>
   const [found] = await snapshot(reader, [HAS_FOLDERS]);
   if (Number((found as Row | null)?.["n"] ?? 0) === 0) return false;
   folderReaders.add(reader);
+  return true;
+}
+
+const HAS_PAGES: Statement = {
+  sql: "SELECT count(*) AS n FROM sqlite_schema WHERE type = 'table' AND name = 'pages'",
+  mode: "get",
+};
+const pageReaders = new WeakSet<WorkerConnection>();
+
+/**
+ * Whether the reader's space has pages and a node's texts: schema 0.6 on. A space served read-only
+ * at an older revision until its migration runs has none, and lists none.
+ */
+export async function hasPageTable(reader: WorkerConnection): Promise<boolean> {
+  if (pageReaders.has(reader)) return true;
+  const [found] = await snapshot(reader, [HAS_PAGES]);
+  if (Number((found as Row | null)?.["n"] ?? 0) === 0) return false;
+  pageReaders.add(reader);
   return true;
 }
 

@@ -23,7 +23,6 @@ const PROPOSALS = "M4.02 (autonomy and proposals)";
 const SET_PREFERENCES = "M3.11 (agents changing preferences)";
 
 export const LATER: readonly Later[] = [
-  { entry: "run.report", step: "M6.06 (run and routine bindings)" },
   {
     entry: "prefs.manage",
     field: "action",

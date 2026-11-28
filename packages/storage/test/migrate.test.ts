@@ -1,5 +1,5 @@
 // The migration runner behind its barrier backup, on spaces built at 0.1 as a released 0.1 build
-// built them (revisions.ts), with the real 0.2 to 0.5 and a stand-in 0.6 that lives in the
+// built them (revisions.ts), with the real 0.2 to 0.6 and a stand-in 0.7 that lives in the
 // test tree only, in the calling thread and on open in the storage worker, where the space's writer migrates it under its own claim before the write
 // path attaches.
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -22,7 +22,7 @@ import { readFacts, writeCommits } from "./backup-helpers.ts";
 import { createRequest, FIXTURE_MACHINE, ownerCredential } from "./fixture-requests.ts";
 import { openSpaceAt, STEPS_0_1 } from "./revisions.ts";
 import { checkedDriver, createFixtureSpace, tempFolders } from "./space-helpers.ts";
-import { STEP_SETS, STEPS_0_6 } from "./stand-in-steps.ts";
+import { STEP_SETS, STEPS_0_7 } from "./stand-in-steps.ts";
 import { rejection, workerWithSteps } from "./worker-helpers.ts";
 
 const folders = tempFolders("migrate");
@@ -144,7 +144,7 @@ describe("[A1.5.migration.barrier] a migration whose backup fails never starts",
     const error = await rejection(w.openSpaceWriter(folder, { machine: FIXTURE_MACHINE }));
     expect(error.code).toBe("BACKUP_FAILED");
     expect(error.message).toMatch(
-      /^The barrier backup before the migration to 0\.5 failed, so nothing was migrated\. The space stays at 0\.1\. The backup failed \([A-Z_]+\)$/,
+      /^The barrier backup before the migration to 0.6 failed, so nothing was migrated\. The space stays at 0\.1\. The backup failed \([A-Z_]+\)$/,
     );
     expect(error.message).not.toContain(folder);
     expect(await state(folder)).toEqual(before);
@@ -156,7 +156,7 @@ describe("[A1.5.migration.barrier] a migration whose backup fails never starts",
     // No barrier backup was taken, so the state it was tried on names none (A1 3.17).
     expect(error.attempt).toEqual({
       from: 1,
-      to: 5,
+      to: 6,
       epoch: info.authority.epoch,
       incarnation: info.authority.incarnation,
       lastSeq: before.lastSeq,
@@ -210,12 +210,12 @@ describe("[A1.5.migration.barrier] a migration whose backup fails never starts",
 
     // Now the newer build's writer opens it: migrated first, then the write path attaches.
     const migratedWriter = await newer.openSpaceWriter(folder, { machine: FIXTURE_MACHINE });
-    expect(migratedWriter.revision).toEqual({ major: 0, minor: 5 });
+    expect(migratedWriter.revision).toEqual({ major: 0, minor: 6 });
     expect(migratedWriter.readOnlyReasons).toEqual([]);
     expect(migratedWriter.migration).toMatchObject({
       from: { major: 0, minor: 1 },
-      to: { major: 0, minor: 5 },
-      seqs: [3, 4, 5, 6],
+      to: { major: 0, minor: 6 },
+      seqs: [3, 4, 5, 6, 7],
       manifestWritten: true,
     });
     expect(migratedWriter.migration?.backup.sidecar).toMatchObject({
@@ -234,9 +234,9 @@ describe("[A1.5.migration.barrier] a migration whose backup fails never starts",
       createRequest(facts.space.spaceId, ownerCredential(owner), "After the migration"),
     );
     expect(result.status).toBe("applied");
-    expect(result.seq).toBe(7);
+    expect(result.seq).toBe(8);
     await migratedWriter.close();
-    expect(await state(folder)).toMatchObject({ userVersion: 5, lastSeq: 7 });
+    expect(await state(folder)).toMatchObject({ userVersion: 6, lastSeq: 8 });
   });
 });
 
@@ -276,32 +276,34 @@ async function readOwner(folder: string) {
   }
 }
 
-describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0.2 to 0.5 and a stand-in 0.6", () => {
-  test("0.1 to 0.6: one system commit per step, user_version, format, undo floor, space.json, the search index filled", async () => {
+describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0.2 to 0.6 and a stand-in 0.7", () => {
+  test("0.1 to 0.7: one system commit per step, user_version, format, undo floor, space.json, the search index filled", async () => {
     const checked = await checkedDriver();
     const folder = await spaceAt01(3);
     const at = Date.UTC(2026, 10, 13, 9, 0, 0);
     const outcome = migrated(
-      await migrateSpaceWith(checked, folder, { now: () => at }, { steps: STEPS_0_6 }),
+      await migrateSpaceWith(checked, folder, { now: () => at }, { steps: STEPS_0_7 }),
     );
     expect(outcome.from).toEqual({ major: 0, minor: 1 });
-    expect(outcome.to).toEqual({ major: 0, minor: 6 });
-    expect(outcome.seqs).toEqual([4, 5, 6, 7, 8]);
+    expect(outcome.to).toEqual({ major: 0, minor: 7 });
+    expect(outcome.seqs).toEqual([4, 5, 6, 7, 8, 9]);
     expect(outcome.manifestWritten).toBe(true);
     // The barrier backup is of the revision the runner started from.
     expect(outcome.backup.sidecar).toMatchObject({ kind: "pre-migrate", user_version: 1, seq: 3 });
     expect(outcome.backup.name.startsWith("pre-migrate-")).toBe(true);
 
     const facts = await readFacts(folder);
-    expect(facts.userVersion).toBe(6);
-    expect(facts.space.format).toEqual({ major: 0, minor: 6 });
-    expect(facts.space.lastSeq).toBe(8);
-    expect(facts.space.undoFloorSeq).toBe(8);
+    expect(facts.userVersion).toBe(7);
+    expect(facts.space.format).toEqual({ major: 0, minor: 7 });
+    expect(facts.space.lastSeq).toBe(9);
+    expect(facts.space.undoFloorSeq).toBe(9);
     expect(facts.counts["test_labels"]).toBe(0);
     expect(facts.counts["runs"]).toBe(0);
     expect(facts.counts["sessions"]).toBe(0);
     expect(facts.counts["folders"]).toBe(0);
-    const conn = openSpaceWith(checked, folder, { role: "reader" }, { steps: STEPS_0_6 }).conn;
+    expect(facts.counts["pages"]).toBe(0);
+    expect(facts.counts["node_texts"]).toBe(0);
+    const conn = openSpaceWith(checked, folder, { role: "reader" }, { steps: STEPS_0_7 }).conn;
     try {
       const commits = conn
         .prepare(
@@ -309,7 +311,7 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
             "at, affected FROM commits WHERE seq > 3 ORDER BY seq",
         )
         .all();
-      expect(commits).toHaveLength(5);
+      expect(commits).toHaveLength(6);
       const { spaceId, authority } = facts.space;
       for (const [i, commit] of commits.entries()) {
         // The writer's own system commit (write/writer.ts writeSystemCommit), as machine.register.
@@ -363,13 +365,21 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
           v: 1,
           op: "schema.migrate",
           target: spaceId,
-          input: { step: 9006, from: "0.5", to: "0.6" },
+          input: { step: 6, from: "0.5", to: "0.6" },
+        },
+      ]);
+      expect(JSON.parse(String(commits[5]?.["ops"]))).toEqual([
+        {
+          v: 1,
+          op: "schema.migrate",
+          target: spaceId,
+          input: { step: 9007, from: "0.6", to: "0.7" },
         },
       ]);
       // The index holds the two tasks, filled after the last step on the final schema.
       expect(conn.prepare("SELECT kind, seq FROM search_docs ORDER BY entity_id").all()).toEqual([
-        { kind: "task", seq: 8 },
-        { kind: "task", seq: 8 },
+        { kind: "task", seq: 9 },
+        { kind: "task", seq: 9 },
       ]);
       // A migration changes no replicated row: no change rows, no outbox rows.
       expect(conn.prepare("SELECT count(*) AS n FROM changes WHERE seq > 3").get()?.["n"]).toBe(0);
@@ -381,16 +391,16 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
     } finally {
       conn.close();
     }
-    // space.json speaks for 0.6, and the space opens as the writer of a build with these steps.
+    // space.json speaks for 0.7, and the space opens as the writer of a build with these steps.
     const manifest = readManifest(folder);
     expect(manifest.state === "present" && manifest.manifest?.format).toEqual({
       major: 0,
-      minor: 6,
+      minor: 7,
     });
-    const writer = openSpaceWith(checked, folder, { role: "writer" }, { steps: STEPS_0_6 });
+    const writer = openSpaceWith(checked, folder, { role: "writer" }, { steps: STEPS_0_7 });
     expect(writer.manifestRebuilt).toBe(false);
     writer.conn.close();
-    // This build's real steps end at 0.5: a writer refuses the newer space, a reader reads it.
+    // This build's real steps end at 0.6: a writer refuses the newer space, a reader reads it.
     await expectCode(() => openSpace(checked, folder, { role: "writer" }), "SPACE_TOO_NEW");
     const reader = openSpace(checked, folder, { role: "reader" });
     expect(reader.readOnlyReasons).toEqual(["newer_revision"]);
@@ -405,20 +415,20 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
     expect(restored.space.lastSeq).toBe(3);
   });
 
-  test("one migration at a time: 0.1 to this build's 0.5, then 0.5 to 0.6; a current space is left alone", async () => {
+  test("one migration at a time: 0.1 to this build's 0.6, then 0.6 to 0.7; a current space is left alone", async () => {
     const checked = await checkedDriver();
     const folder = await spaceAt01(1);
-    expect(migrated(await migrateSpaceWith(checked, folder, {}, {})).seqs).toEqual([2, 3, 4, 5]);
+    expect(migrated(await migrateSpaceWith(checked, folder, {}, {})).seqs).toEqual([2, 3, 4, 5, 6]);
     expect(
-      migrated(await migrateSpaceWith(checked, folder, {}, { steps: STEPS_0_6 })).seqs,
-    ).toEqual([6]);
-    expect(await migrateSpaceWith(checked, folder, {}, { steps: STEPS_0_6 })).toEqual({
+      migrated(await migrateSpaceWith(checked, folder, {}, { steps: STEPS_0_7 })).seqs,
+    ).toEqual([7]);
+    expect(await migrateSpaceWith(checked, folder, {}, { steps: STEPS_0_7 })).toEqual({
       state: "current",
-      revision: { major: 0, minor: 6 },
+      revision: { major: 0, minor: 7 },
     });
     expect(
       listBackups(join(folder, "backups")).backups.map((b) => b.sidecar?.user_version),
-    ).toEqual([5, 1]);
+    ).toEqual([6, 1]);
   });
 
   const FAILING = [
@@ -441,16 +451,17 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
       expect(backup?.sidecar).toMatchObject({ kind: "pre-migrate", user_version: 1, seq: 3 });
       // A1 3.17's message: the revision, the cause, the data unchanged and the barrier backup.
       expect(error.message).toBe(
-        `Migration to 0.6 failed (${cause}). Your data is unchanged. The space stays at 0.1. ` +
+        `Migration to 0.7 failed (${cause}). Your data is unchanged. The space stays at 0.1. ` +
           `Backup: ${backup?.name ?? "?"}`,
       );
-      // Every step rolled back, the real 0.2 to 0.5 too: one transaction holds them all.
+      // Every step rolled back, the real 0.2 to 0.6 too: one transaction holds them all.
       expect(await state(folder)).toEqual(before);
       const counts = (await readFacts(folder)).counts;
       expect(counts["test_labels"]).toBeUndefined();
       expect(counts["labels"]).toBeUndefined();
       expect(counts["runs"]).toBeUndefined();
       expect(counts["folders"]).toBeUndefined();
+      expect(counts["pages"]).toBeUndefined();
       // Read-only, with the reason: the space is at 0.1.
       const { conn, info } = await w.openSpaceReader(folder);
       expect(info.readOnlyReasons).toEqual(["older_revision"]);
@@ -461,7 +472,7 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
       // can tell a later open on the same state (A1 3.17): the state the reader reads now.
       expect(error.attempt).toEqual({
         from: 1,
-        to: 6,
+        to: 7,
         epoch: info.authority.epoch,
         incarnation: info.authority.incarnation,
         lastSeq: 3,
@@ -472,7 +483,7 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
     },
   );
 
-  test("a crash inside the transaction leaves 0.1; after COMMIT, 0.6 with space.json repaired", async () => {
+  test("a crash inside the transaction leaves 0.1; after COMMIT, 0.7 with space.json repaired", async () => {
     const checked = await checkedDriver();
     const folder = await spaceAt01(2);
     const crashes = new Map<string, string>();
@@ -492,7 +503,7 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
         folder,
         {},
         {
-          steps: STEPS_0_6,
+          steps: STEPS_0_7,
           at: (point, step) => {
             points.push(point);
             crash(step === undefined ? point : `${point}:${String(step.id)}`);
@@ -507,6 +518,7 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
       "step-applied",
       "step-applied",
       "step-applied",
+      "step-applied",
       "checked",
       "committed",
     ]);
@@ -514,9 +526,9 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
       const facts = await readFacts(copy);
       expect(facts.integrity, label).toBe("ok");
       if (label === "committed") {
-        expect(facts.userVersion, label).toBe(6);
+        expect(facts.userVersion, label).toBe(7);
         // space.json is still 0.1's: the next writer rebuilds it from the database.
-        const writer = openSpaceWith(checked, copy, { role: "writer" }, { steps: STEPS_0_6 });
+        const writer = openSpaceWith(checked, copy, { role: "writer" }, { steps: STEPS_0_7 });
         expect(writer.manifestRebuilt).toBe(true);
         writer.conn.close();
       } else {

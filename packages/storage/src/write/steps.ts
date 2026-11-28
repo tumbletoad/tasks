@@ -1,7 +1,8 @@
 // Undo and redo (A1 3.10.1). A person's commit is a step on their undo stack when every row it
 // changed is of the few kinds Undo is for: a check-off or a reopen, the Trash and out of it, a
 // removed note, words, out of the Inbox or into it, a first filing or one into a group just made,
-// a dismissal of questions, a new group, or a group archived or unarchived (stepSql).
+// a dismissal of questions, a new group, or a group archived or unarchived, a page's words and its
+// Trash, and the words of a node's texts (stepSql).
 // Undo takes a step back with the ordinary operations that write what its change rows held
 // before (oppositeOf), and Redo does the same to the undo's own commit, so both change only what
 // the commit they answer changed. Neither writes over a change made since (newerOn): only where
@@ -15,7 +16,8 @@ import { isId, type Id } from "../ids.ts";
 import { formatTaskRef } from "../refs.ts";
 import { invalidValue, RowReader } from "../rows.ts";
 import { CHILD_FIELDS, columnsValue, fieldJson, TASK_FIELDS } from "./fields.ts";
-import type { NewerWork, Operation } from "./request.ts";
+import type { NewerWork, NodeSet, Operation, PageSet, TextNode } from "./request.ts";
+import { filedIntoNewGroup, undoRule, type KindRows } from "../undo-rule.ts";
 
 /** A change row of commit `c` whose task `c` also changed `field`. */
 const sameTask = (field: string): string =>
@@ -26,31 +28,45 @@ const sameTask = (field: string): string =>
  * A move of task row `c` into an area or project that the same person's commit right before made:
  * the page's new area or project, made and then filed into.
  */
-const INTO_NEW_GROUP =
-  "EXISTS (SELECT 1 FROM changes g WHERE g.action = 'create' AND g.entity IN ('areas', 'projects') " +
-  "AND g.entity_id IN (json_extract(c.after, '$.area_id'), json_extract(c.after, '$.project_id')) " +
-  "AND g.seq = (SELECT max(p.seq) FROM commits p JOIN commits me ON me.seq = c.seq " +
-  "WHERE p.principal_id = me.principal_id AND p.seq < c.seq))";
+const INTO_NEW_GROUP = filedIntoNewGroup(
+  "json_extract(c.after, '$.area_id'), json_extract(c.after, '$.project_id')",
+  "g.entity IN ('areas', 'projects')",
+);
 
-/** A change row `c` of a kind Undo is for, or one that comes with such a row in its commit. */
-const KEPT_ROW =
-  "(c.entity = 'tasks' AND c.field IN ('lifecycle', 'deleted', 'title', 'summary', 'context', " +
-  "'reviewed_at')) " +
-  `OR (c.entity = 'tasks' AND c.field = 'wrap' AND ${sameTask("lifecycle")}) ` +
-  "OR (c.entity = 'tasks' AND c.field = 'inbox') " +
-  `OR (c.entity = 'tasks' AND c.field = 'status' AND ${sameTask("inbox")}) ` +
-  "OR (c.entity = 'tasks' AND c.field = 'grouping' " +
-  "AND json_extract(c.before, '$.area_id') IS NULL AND json_extract(c.before, '$.project_id') IS NULL) " +
-  `OR (c.entity = 'tasks' AND c.field = 'grouping' AND ${INTO_NEW_GROUP}) ` +
-  "OR (c.entity IN ('tasks', 'task_sources') AND c.field IN ('grouping', 'inbox', 'removed') " +
-  `AND ${sameTask("deleted")}) ` +
-  "OR (c.entity = 'notes' AND c.field IN ('deleted', 'body')) " +
-  "OR (c.entity = 'log_entries' AND c.field = 'body') " +
-  "OR (c.entity IN ('areas', 'projects') " +
-  "AND (c.action = 'create' OR (c.field = 'lifecycle' " +
-  "AND '\"archived\"' IN (c.before, c.after)))) " +
-  "OR (c.entity IN ('folders', 'places') AND c.action = 'create' AND EXISTS (SELECT 1 FROM changes p " +
-  "WHERE p.seq = c.seq AND p.entity = 'projects' AND p.action = 'create'))";
+/** How this schema's change rows show each kind Undo is for (undo-rule.ts). */
+const KINDS: KindRows = {
+  finish:
+    "(c.entity = 'tasks' AND c.field = 'lifecycle') " +
+    `OR (c.entity = 'tasks' AND c.field = 'wrap' AND ${sameTask("lifecycle")})`,
+  trash:
+    "(c.entity = 'tasks' AND c.field = 'deleted') " +
+    "OR (c.entity = 'pages' AND c.field = 'deleted') " +
+    "OR (c.entity IN ('tasks', 'task_sources') AND c.field IN ('grouping', 'inbox', 'removed') " +
+    `AND ${sameTask("deleted")})`,
+  note: "c.entity = 'notes' AND c.field = 'deleted'",
+  words:
+    "(c.entity = 'tasks' AND c.field IN ('title', 'summary', 'context')) " +
+    "OR (c.entity IN ('notes', 'log_entries') AND c.field = 'body') " +
+    // A page's words; a node's texts, the words alone.
+    "OR (c.entity = 'pages' AND c.field IN ('title', 'brief', 'body')) " +
+    "OR (c.entity = 'node_texts')",
+  inbox:
+    "(c.entity = 'tasks' AND c.field = 'inbox') " +
+    `OR (c.entity = 'tasks' AND c.field = 'status' AND ${sameTask("inbox")})`,
+  filing:
+    "(c.entity = 'tasks' AND c.field = 'grouping' " +
+    "AND json_extract(c.before, '$.area_id') IS NULL AND json_extract(c.before, '$.project_id') IS NULL) " +
+    `OR (c.entity = 'tasks' AND c.field = 'grouping' AND ${INTO_NEW_GROUP})`,
+  group:
+    "(c.entity IN ('areas', 'projects') " +
+    "AND (c.action = 'create' OR (c.field = 'lifecycle' " +
+    "AND '\"archived\"' IN (c.before, c.after)))) " +
+    "OR (c.entity IN ('folders', 'places') AND c.action = 'create' AND EXISTS (SELECT 1 FROM changes p " +
+    "WHERE p.seq = c.seq AND p.entity = 'projects' AND p.action = 'create'))",
+  dismissal: "c.entity = 'tasks' AND c.field = 'reviewed_at'",
+};
+
+const RULE = undoRule(KINDS);
 
 /**
  * Whether commit `seq` (an SQL expression) is a step: it changed something, and every row it
@@ -58,9 +74,7 @@ const KEPT_ROW =
  * writer marks a person's commit by it, and Undo and Redo choose their target by it, so a step an
  * earlier version stored of a kind that has left Undo is passed over.
  */
-export const stepSql = (seq: string): string =>
-  `(EXISTS (SELECT 1 FROM changes c WHERE c.seq = ${seq}) AND NOT EXISTS (SELECT 1 FROM changes c ` +
-  `WHERE c.seq = ${seq} AND NOT coalesce(${KEPT_ROW}, 0)))`;
+export const stepSql = RULE.step;
 
 /**
  * When the person last applied commit `seq` before commit `before` (SQL expressions): its newest
@@ -73,25 +87,12 @@ export const appliedSql = (seq: string, before: string): string =>
 
 /**
  * The step an undo of principal `$principal` takes, with `applied`, the commit that last applied
- * it: of its `done` steps, the one applied last, by its newest redo or else by its own seq. The
- * writer and the service's question before an undo both read it here.
+ * it. The writer and the service's question before an undo both read it here.
  */
-export const UNDO_TARGET_SQL =
-  "WITH newest AS (SELECT seq, id, undo_status, undone_by, seq AS applied FROM commits k " +
-  `WHERE principal_id = $principal AND undo_status = 'done' AND ${stepSql("k.seq")} ` +
-  "ORDER BY seq DESC LIMIT 1) " +
-  "SELECT * FROM (SELECT t.seq AS seq, t.id AS id, t.undo_status AS undo_status, " +
-  "t.undone_by AS undone_by, r.seq AS applied FROM commits r JOIN commits t ON t.seq = r.redo_of " +
-  "WHERE r.seq > coalesce((SELECT seq FROM newest), 0) AND r.principal_id = $principal " +
-  `AND r.kind = 'redo' AND t.undo_status = 'done' AND ${stepSql("t.seq")} ` +
-  "ORDER BY r.seq DESC LIMIT 1) " +
-  "UNION ALL SELECT * FROM newest ORDER BY applied DESC LIMIT 1";
+export const UNDO_TARGET_SQL = RULE.undoTarget;
 
 /** The step a redo takes: the one the principal undid last. */
-const REDO_TARGET_SQL =
-  "SELECT seq, id, undo_status, undone_by, undone_by AS applied FROM commits k " +
-  `WHERE principal_id = $principal AND undo_status = 'undone' AND ${stepSql("k.seq")} ` +
-  "ORDER BY undone_by DESC LIMIT 1";
+const REDO_TARGET_SQL = RULE.redoTarget;
 
 /** A step on a principal's undo stack. */
 export interface StackCommit {
@@ -166,6 +167,15 @@ function hides(c: StoredChange): boolean {
 }
 
 const ENTRY = "SELECT task_id, ordinal FROM %s WHERE id = $id";
+
+/** The node a texts row is of, as an operation names it. */
+function nodeOf(conn: Connection, id: string): TextNode {
+  const row = conn.prepare("SELECT owner_kind FROM node_texts WHERE owner_id = $id").get({ id });
+  if (row === undefined) throw invalidValue("changes", "entity_id");
+  const kind = new RowReader("node_texts", row).oneOf("owner_kind", ["space", "area", "project"]);
+  if (kind === "space") return { kind };
+  return kind === "area" ? { kind, area: id } : { kind, project: id };
+}
 
 function entryOf(conn: Connection, table: "notes" | "log_entries", id: string) {
   const row = conn.prepare(ENTRY.replace("%s", table)).get({ id });
@@ -260,6 +270,40 @@ export function oppositeOf(conn: Connection, changes: readonly StoredChange[]): 
         }
         continue;
       }
+      case "pages": {
+        const deleted = of("deleted");
+        if (deleted !== undefined) {
+          const kind = tombstoned(deleted.before) ? "page.trash" : "page.restore";
+          ops.push({ kind, page: id });
+          continue;
+        }
+        const set: PageSet = { kind: "page.set", page: id };
+        for (const c of group) {
+          if (c.field === "title" || c.field === "brief" || c.field === "body") {
+            set[c.field] = String(parsed(c.before));
+          }
+        }
+        ops.push(set);
+        continue;
+      }
+      case "node_texts": {
+        // A create made the row with its first words: their opposite is the empty text.
+        const before = (field: string): string | undefined => {
+          if (first.action === "create") return columns(first.after)[field] === "" ? undefined : "";
+          const c = of(field);
+          return c === undefined ? undefined : String(parsed(c.before));
+        };
+        const node = nodeOf(conn, id);
+        const set: NodeSet = { kind: "node.set", node };
+        const brief = before("brief");
+        const description = before("description");
+        if (brief !== undefined) set.brief = brief;
+        if (description !== undefined) set.description = description;
+        if (brief !== undefined || description !== undefined) ops.push(set);
+        const forAgents = before("for_agents");
+        if (forAgents !== undefined) ops.push({ kind: "node.instruct", node, text: forAgents });
+        continue;
+      }
       case "areas":
       case "projects": {
         const area = first.entity === "areas";
@@ -318,6 +362,8 @@ const SQL = {
     log_entries: "SELECT * FROM log_entries WHERE id = $id",
     areas: "SELECT * FROM areas WHERE id = $id",
     projects: "SELECT * FROM projects WHERE id = $id",
+    pages: "SELECT * FROM pages WHERE id = $id",
+    node_texts: "SELECT * FROM node_texts WHERE owner_id = $id",
   },
 } as const;
 
@@ -349,6 +395,7 @@ function valueNow(conn: Connection, c: StoredChange): string | undefined {
   if (!isRowed(c.entity)) return undefined;
   const row = conn.prepare(SQL.row[c.entity]).get({ id: c.entityId });
   if (row === undefined) return undefined;
+  if (c.entity === "node_texts" && c.action === "create") return textsOf(row, created(c));
   // A new group's create is undone by its archive: what it wrote there is its lifecycle.
   const field = c.action === "create" ? "lifecycle" : (c.field ?? "");
   const fields: Readonly<Record<string, readonly string[]>> =
@@ -356,9 +403,24 @@ function valueNow(conn: Connection, c: StoredChange): string | undefined {
   return fieldJson(columnsValue(row, fields[field] ?? []));
 }
 
+/**
+ * The texts a node row's create wrote: the ones its undo empties, and the only ones it compares, so
+ * a description written since never keeps the first text for agents from being undone.
+ */
+const created = (c: StoredChange): string[] =>
+  ["brief", "description", "for_agents"].filter((field) => (columns(c.after)[field] ?? "") !== "");
+
+/** Those texts of a node row, together. */
+const textsOf = (row: Readonly<Record<string, unknown>>, fields: readonly string[]): string =>
+  fieldJson(fields.map((field) => row[field] ?? null));
+
 /** What `c` wrote, as valueNow gives it. */
 const wrote = (c: StoredChange): string =>
-  c.action === "create" ? fieldJson(columns(c.after)["lifecycle"] ?? null) : c.after;
+  c.action !== "create"
+    ? c.after
+    : c.entity === "node_texts"
+      ? textsOf(columns(c.after), created(c))
+      : fieldJson(columns(c.after)["lifecycle"] ?? null);
 
 /**
  * The state a value of `c`'s field stands for, as a person sees it: in the Trash or not; open,

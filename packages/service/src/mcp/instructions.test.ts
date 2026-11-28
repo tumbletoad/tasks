@@ -86,7 +86,8 @@ describe("[A3.3.6.mcp.instructions] the server instructions", () => {
       ["get_task", "task"],
       ["get_task", "launch"],
       ["get_task", "sections"],
-      ["search", "scope", "learnings"],
+      ["search", "scope", "library"],
+      ["complete_task", "library"],
       ["complete_task", "follow_ups"],
       ["update_task", "base"],
       ["update_task", "request_id"],
@@ -98,9 +99,7 @@ describe("[A3.3.6.mcp.instructions] the server instructions", () => {
   });
 
   test("search and add_tasks carry A3 3.6's lines for working and for small calls", () => {
-    expect(INSTRUCTIONS).toContain(
-      'call search with scope "learnings" for lessons from similar tasks.',
-    );
+    expect(INSTRUCTIONS).toContain('search scope "library" finds more.');
     expect(INSTRUCTIONS).toMatch(/Work left for later becomes a task \(add_tasks\b/);
     expect(INSTRUCTIONS).toContain("not a TODO in a file.");
     expect(INSTRUCTIONS).toContain("Give items from email, chat or tickets a source key.");

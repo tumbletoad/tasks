@@ -119,8 +119,6 @@ beforeEach(() => {
       entry: {
         add: record("entry.add", () => noted()),
       },
-    },
-    library: {
       page: {
         read: record("page.read", (input) =>
           Promise.resolve(input["target"] === PAGE.ref ? PAGE : nodeRead(input)),

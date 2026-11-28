@@ -51,7 +51,7 @@ export function TrashedPages({
   );
   useEffect(() => {
     let current = true;
-    api.library.page.trashed(q === "" ? {} : { q }).then(
+    api.client.page.trashed(q === "" ? {} : { q }).then(
       (answer) => {
         if (current) setRows({ list: answer.rows, cursor: answer.cursor });
       },
@@ -72,7 +72,7 @@ export function TrashedPages({
   const more = () => {
     const cursor = rows.cursor;
     if (cursor === undefined) return;
-    api.library.page.trashed({ ...(q === "" ? {} : { q }), cursor }).then(
+    api.client.page.trashed({ ...(q === "" ? {} : { q }), cursor }).then(
       (answer) => {
         setRows((now) => ({ list: [...(now?.list ?? []), ...answer.rows], cursor: answer.cursor }));
       },

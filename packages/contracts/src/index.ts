@@ -60,7 +60,6 @@ export {
   PrefsManageResult,
   PrefsReadResult,
 } from "./entries/prefs-manage.ts";
-export { runReport, RunReportInput, RunReportResult } from "./entries/run-report.ts";
 export {
   newerWorkJson,
   receiptGet,
@@ -136,11 +135,7 @@ export { taskUpdate, TaskUpdateInput, TaskUpdateResult } from "./entries/task-up
 // Step 1's pages: shapes and examples first; each entry joins the registry with its handler.
 export * from "./pages.ts";
 export { NodeInstructInput, NodeInstructResult, nodeInstruct } from "./entries/node-instruct.ts";
-export {
-  PAGE_CONFLICT_EXAMPLE,
-  PAGE_ENTRIES,
-  PAGE_FEED_EXAMPLES,
-} from "./entries/page-examples.ts";
+export { PAGE_CONFLICT_EXAMPLE, PAGE_FEED_EXAMPLES } from "./entries/page-examples.ts";
 export {
   HISTORY_CURSOR,
   PageHistoryInput,

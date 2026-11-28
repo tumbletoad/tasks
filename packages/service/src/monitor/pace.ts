@@ -16,13 +16,16 @@
 // Agents page opens or a tab showing one gets the focus back.
 //
 // Each answer is joined with the agent sessions TTasks holds, read after the answer came, so an
-// agent shows with the task TTasks started it for (links.ts).
+// agent shows with the task TTasks started it for (links.ts). The tasks' T3 Code threads are read
+// at every request too, also while the monitor is missing or failing: T3 Code tells their state,
+// and a thread that needs the person is never hidden for want of TTAM.
 //
 // Attention is read on the steady clock when a request is made, so a request that falls due late
 // (a machine that slept) asks for what the tabs' attention is then. Ages count on the same clock
 // from the moment a snapshot arrived, never from a time in it.
 import type {
   AgentsTask,
+  AgentsThread,
   AgentsView,
   AgentsWatch,
   MonitorProblem,
@@ -78,6 +81,8 @@ export interface PaceOptions {
   readonly now: () => number;
   /** The agent sessions TTasks holds now, in every open space. Default: none. */
   readonly held?: () => Promise<readonly HeldSession[]>;
+  /** The tasks' T3 Code threads now, in every open space. Default: none. */
+  readonly threads?: () => Promise<readonly AgentsThread[]>;
   /** Whose path rules join TTasks' agent homes to TTAM's. */
   readonly platform: NodeJS.Platform;
   /** How long a running agent must be missed before it is not seen. Default: UNSEEN_MS. */
@@ -96,6 +101,7 @@ export class MonitorPace {
   readonly #options: PaceOptions;
   readonly #watching = new Map<Watcher, Watching>();
   #newest: Newest | undefined;
+  #threads: readonly AgentsThread[] = [];
   readonly #unseen: Unseen;
   #problem: MonitorProblem | undefined;
   /** When the last answer came, of either kind: the rest counts from it. */
@@ -135,6 +141,8 @@ export class MonitorPace {
       this.#problem = undefined;
       this.#answeredAt = undefined;
       this.#options.monitor.recheck();
+      // An answer on its way was the old verdict's: the monitor is looked for right after it.
+      if (this.#asking) this.#again = true;
     }
     if (was === "none" && this.#attention(entry, now) !== "none") watcher.show(this.#view());
     this.#plan();
@@ -197,7 +205,12 @@ export class MonitorPace {
 
   /** The rest after the last answer at `level`; undefined: ask no more until something changes. */
   #rest(level: Attention): number | undefined {
-    if (level === "none" || verdict(this.#problem)) return undefined;
+    if (level === "none") return undefined;
+    // A missing monitor answers at once with what it knows: asked on, for the T3 threads.
+    if (verdict(this.#problem)) {
+      if (this.#options.threads === undefined) return undefined;
+      return level === "visible" ? PACE.visibleMs : PACE.restMaxMs;
+    }
     const snapshot = this.#newest?.answer.snapshot;
     if (snapshot?.settling === true && this.#settlingRun <= PACE.settlingRuns) {
       return PACE.settlingMs;
@@ -212,6 +225,7 @@ export class MonitorPace {
     this.#keep?.clear();
     this.#keep = undefined;
     this.#newest = undefined;
+    this.#threads = [];
     this.#answeredAt = undefined;
     this.#settlingRun = 0;
     this.#unseen.reset();
@@ -262,8 +276,11 @@ export class MonitorPace {
     this.#again = false;
     const usage = this.#level() === "looked" ? "live" : "cached";
     void this.#options.monitor.ask(usage).then(async (answer) => {
-      const held = answer.ok ? await this.#held() : [];
-      this.#answered(answer, held);
+      const [held, threads] = await Promise.all([
+        answer.ok ? this.#held() : Promise.resolve([]),
+        this.#readThreads(),
+      ]);
+      this.#answered(answer, held, threads);
     });
   }
 
@@ -276,12 +293,27 @@ export class MonitorPace {
     }
   }
 
-  #answered(answer: MonitorAnswer, held: readonly HeldSession[]): void {
+  /** The tasks' T3 threads; none when they cannot be read now. */
+  async #readThreads(): Promise<readonly AgentsThread[]> {
+    try {
+      return (await this.#options.threads?.()) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  #answered(
+    answer: MonitorAnswer,
+    held: readonly HeldSession[],
+    threads: readonly AgentsThread[],
+  ): void {
     this.#asking = false;
     if (this.#closed) return;
     const now = this.#options.now();
     this.#answeredAt = now;
     this.#slow = this.#options.monitor.status().slow;
+    // Read after the last tab stopped watching: not kept, as the picture is not.
+    if (this.#keepUntil === undefined || now < this.#keepUntil) this.#threads = threads;
     if (answer.ok) {
       this.#problem = undefined;
       this.#settlingRun = answer.snapshot.settling ? this.#settlingRun + 1 : 0;
@@ -318,7 +350,7 @@ export class MonitorPace {
             newest.unseen,
           );
     const trouble = this.#problem ?? (this.#slow ? { kind: "slow" as const } : null);
-    return { picture, trouble };
+    return { picture, trouble, threads: this.#threads };
   }
 
   /** Every tab that watches gets the view now. */

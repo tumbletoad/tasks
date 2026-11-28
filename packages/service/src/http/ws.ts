@@ -57,6 +57,7 @@ import {
   readHead,
   readSnapshot,
   sameAuthority,
+  type BatchMessage,
   type Cursor,
   type FeedHere,
   type SnapshotMessage,
@@ -111,6 +112,26 @@ export interface FeedOptions {
   readonly installed?: () => string | undefined;
   /** The Agent Monitor's pace, which each tab's watch message sets. None: watch is ignored. */
   readonly agents?: Pick<MonitorPace, "watch" | "leave">;
+}
+
+/**
+ * A paired phone's feed (link/): bound to its grant's one space, with rows of the space's own data
+ * only (its own `snapshot` and `batch`), no settings of this machine and no Agent Monitor, and its calls answered
+ * through the same bounded output as the feed.
+ */
+export interface PhoneFeed {
+  readonly space: string;
+  /** What the hello tells the phone of its pairing. */
+  readonly link: Readonly<Record<string, unknown>>;
+  call(message: Record<string, unknown>, reply: (message: unknown) => Promise<void>): void;
+  /** A snapshot as the phone sees it: its copy's name and whether it takes changes, no more. */
+  snapshot(
+    snapshot: SnapshotMessage,
+    copy: { readonly copy?: string; readonly read_only?: { readonly reason: string } },
+    reason?: string,
+  ): unknown;
+  /** A batch as the phone sees it. */
+  batch(batch: BatchMessage): unknown;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -219,12 +240,14 @@ class FeedSocket {
   #agentsNext: AgentsView | undefined;
   #agentsSending = false;
   readonly #ping: ServerTimer;
+  readonly #phone: PhoneFeed | undefined;
 
-  constructor(ws: WebSocket, hub: FeedHub, grant: string, conn: number) {
+  constructor(ws: WebSocket, hub: FeedHub, grant: string, conn: number, phone?: PhoneFeed) {
     this.#ws = ws;
     this.#hub = hub;
     this.grant = grant;
     this.#conn = conn;
+    this.#phone = phone;
     this.#opened = hub.options.now();
     this.#ping = this.#timer("ws_ping", hub.options.limits.wsPingMs, () => {
       this.#tick();
@@ -247,12 +270,19 @@ class FeedSocket {
       version,
       build,
       ...(this.#installed === undefined ? {} : { installed: this.#installed }),
+      ...(phone === undefined ? {} : { link: phone.link }),
     }).catch(() => undefined);
     this.machine();
   }
 
+  /** Where task rows look at folders: this machine for the page, nowhere for a phone. */
+  #here(): FeedHere | undefined {
+    return this.#phone === undefined ? this.#hub.here() : undefined;
+  }
+
   /** Sends this machine's settings of the page, when the service has them. */
   machine(): void {
+    if (this.#phone !== undefined) return;
     const preferences = this.#hub.options.machine?.();
     if (preferences === undefined || this.#closed) return;
     void this.#send({ type: "machine", preferences }).catch(() => undefined);
@@ -408,6 +438,14 @@ class FeedSocket {
       this.close(WS_CLOSE.badMessage, "bad_message");
       return;
     }
+    if (this.#phone !== undefined && message["type"] === "call") {
+      this.#phone.call(message, (reply) => this.#send(reply));
+      return;
+    }
+    if (this.#phone !== undefined && message["type"] === "watch") {
+      this.close(WS_CLOSE.badMessage, "bad_message");
+      return;
+    }
     if (message["type"] === "watch") {
       const { agents, visible, focused } = message;
       if (
@@ -444,10 +482,15 @@ class FeedSocket {
       this.close(WS_CLOSE.badMessage, "bad_message");
       return;
     }
+    const phone = this.#phone?.space;
+    if (phone !== undefined && space !== undefined && space !== phone) {
+      void this.#send({ type: "error", code: "forbidden" }).catch(() => undefined);
+      return;
+    }
     // The old subscription ends now (a read in progress for it sends nothing); the new one starts
     // when that read is over. Only the last of several that come meanwhile is read.
     this.#unsubscribe();
-    this.#wanted = { ref: space, cursor, copy };
+    this.#wanted = { ref: phone ?? space, cursor, copy };
     void this.#nextSubscription();
   }
 
@@ -499,6 +542,8 @@ class FeedSocket {
   #find(ref: string | undefined): ServedSpace | "ambiguous" | "not_served" | undefined {
     const host = this.#hub.options.host;
     const served = host.spaces().filter((s) => s.reader !== undefined && s.id !== undefined);
+    // A phone's space is its grant's, by ID alone: never another space that has that name.
+    if (this.#phone !== undefined) return ref === undefined ? undefined : copyOf(served, ref);
     const found =
       ref !== undefined
         ? findSpace(served, ref)
@@ -518,6 +563,15 @@ class FeedSocket {
     space: ServedSpace,
     reason?: "epoch" | "cursor_ahead" | "copy",
   ): Promise<void> {
+    if (this.#phone !== undefined) {
+      const facts = factsOf(space, this.#hub.options.host);
+      this.#facts = JSON.stringify(facts);
+      const copy = {
+        ...(facts.copy === undefined ? {} : { copy: facts.copy }),
+        ...(facts.read_only === undefined ? {} : { read_only: { reason: facts.read_only.reason } }),
+      };
+      return this.#send(this.#phone.snapshot(snapshot, copy, reason));
+    }
     const instances: readonly UiInstance[] =
       space.id === undefined ? [] : (this.#hub.options.instances?.(space.id) ?? []);
     const facts = factsOf(space, this.#hub.options.host);
@@ -573,7 +627,7 @@ class FeedSocket {
       let start: Cursor | undefined = cursor;
       if (cursor !== undefined && copy !== undefined && copy !== found.copy) {
         // The tab loaded another copy of the space: what it holds says nothing of this one.
-        const snapshot = await readSnapshot(reader, this.#hub.here(), this.#hub.options.now());
+        const snapshot = await readSnapshot(reader, this.#here(), this.#hub.options.now());
         if (generation !== this.#generation) return;
         await this.#sendSnapshot(snapshot, found, "copy");
         start = snapshot.cursor;
@@ -581,7 +635,7 @@ class FeedSocket {
         const head = await readHead(reader);
         if (!sameAuthority(cursor, head.cursor) || cursor.seq > head.cursor.seq) {
           start = undefined;
-          const snapshot = await readSnapshot(reader, this.#hub.here(), this.#hub.options.now());
+          const snapshot = await readSnapshot(reader, this.#here(), this.#hub.options.now());
           if (generation !== this.#generation) return;
           await this.#sendSnapshot(
             snapshot,
@@ -593,7 +647,7 @@ class FeedSocket {
           this.#facts = JSON.stringify(factsOf(found, this.#hub.options.host));
         }
       } else {
-        const snapshot = await readSnapshot(reader, this.#hub.here(), this.#hub.options.now());
+        const snapshot = await readSnapshot(reader, this.#here(), this.#hub.options.now());
         if (generation !== this.#generation) return;
         await this.#sendSnapshot(snapshot, found);
         start = snapshot.cursor;
@@ -691,7 +745,7 @@ class FeedSocket {
       }
       let read;
       try {
-        const here = this.#hub.here();
+        const here = this.#here();
         read = await readBatch(reader, cursor.seq, {
           ...(here === undefined ? {} : { here }),
           ...(this.#hub.options.visible === undefined
@@ -714,7 +768,7 @@ class FeedSocket {
       if (!sameAuthority(cursor, head.cursor) || facts !== this.#facts) {
         // An epoch or incarnation change always means a fresh snapshot (A1 3.7), and so does
         // another copy of the space, or another reason it takes no change.
-        const snapshot = await readSnapshot(reader, this.#hub.here(), this.#hub.options.now());
+        const snapshot = await readSnapshot(reader, this.#here(), this.#hub.options.now());
         if (generation !== this.#generation) return;
         await this.#sendSnapshot(
           snapshot,
@@ -725,7 +779,7 @@ class FeedSocket {
         continue;
       }
       if (batch.through === cursor.seq) return;
-      await this.#send(batch);
+      await this.#send(this.#phone === undefined ? batch : this.#phone.batch(batch));
       if (generation !== this.#generation) return;
       this.#cursor = { epoch: batch.epoch, incarnation: batch.incarnation, seq: batch.through };
       if (head.cursor.seq <= batch.through) return;
@@ -804,8 +858,8 @@ export class FeedHub {
   }
 
   /** Serves the feed on an upgraded connection of the grant `grant`. */
-  attach(ws: WebSocket, grant: string, conn: number): void {
-    const socket = new FeedSocket(ws, this, grant, conn);
+  attach(ws: WebSocket, grant: string, conn: number, phone?: PhoneFeed): void {
+    const socket = new FeedSocket(ws, this, grant, conn, phone);
     // A feed whose hello already closed it (a full queue, a token that just expired) is not kept.
     if (!socket.closed) this.#sockets.add(socket);
   }

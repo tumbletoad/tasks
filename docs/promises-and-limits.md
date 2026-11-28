@@ -23,10 +23,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   not what it says.
 - Undo and Redo take back what is a nuisance to put back by hand: checking off and reopening,
   moving to the Trash and restoring, a whole change from the Trash too, removing a note and putting
-  it back, the words of a title, a summary, a context, a note or a log entry, a move out of the
-  Inbox or into it, a task's first area, setting questions aside, a new project or area, and
-  archiving or unarchiving one. Anything else you change back by doing it again, and Undo passes
-  over it, in the page and at the command line alike.
+  it back, the words of a title, a summary, a context, a note or a log entry, the words of a page
+  and moving it to the Trash and back, a description, the space's brief and a text for agents, a
+  move out of the Inbox or into it, a task's first area, setting questions aside, a new project
+  or area, and archiving or unarchiving one. Anything else you change back by doing it again, and
+  Undo passes over it, in the page and at the command line alike.
 - Undo and Redo never write over a change made since: not where what your change wrote was changed
   again, by anyone, you included, not where a wrap-up was written since a finish, and never by
   taking a task or a note out of sight that someone else worked on since. What counts is what a
@@ -36,6 +37,14 @@ the behaviour it describes, and keep each one to a sentence or two.
   queued or stopped and a session you opened are yours; what a run did since, from its start on, is
   the run's work.
 - Your undo history survives a restart and is shared by your windows and the command line.
+- Every version of a page and of a description is kept, also of a page in the Trash; bringing back
+  an earlier one is a new change of its own. A page's reference, such as M-180, is never given to a
+  task or another page.
+- An agent's edit of a page changes only the words it names, and only while they stand once in the
+  page: two agents editing different passages both keep their words, and words that are gone
+  change nothing. A page whose task or project is in the Trash goes with it, unchanged, and comes
+  back with it.
+- Only you write a text for agents on the space, an area or a project: an agent is refused.
 - In the page, a change Undo is not for saves without Undo, and from then on that tab offers no
   Undo or Redo of what came before it, so Undo never takes back something you did not expect. An
   Undo or Redo that got no answer keeps its step to try again. Limit: the page offers only what
@@ -218,6 +227,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 
 - An agent that uses TTasks cannot start other agents, raise its own permissions or change your
   settings for what agents may do.
+- An agent that loads a task is shown what is known above it: the pages of its project, its area
+  and the space, with who changed each and when, and your texts for agents there, which are the
+  only words of the library it takes as instructions. Pages and descriptions are read as data.
 - An agent that TTasks opened in a terminal, and a background run, works on its task without naming
   it. What it changes through its tools and through `ttasks` in its shell is that task's session,
   also across a restart of TTasks.
@@ -305,6 +317,13 @@ the behaviour it describes, and keep each one to a sentence or two.
   instance's environment. Not protected: a federation profile shared by all homes can still
   outrank a home's own sign-in, and a cloud provider's own credentials (`AWS_*`, `GOOGLE_*`) stay,
   so an instance that selects that provider can use them.
+- What doctor, `ttasks setup agents` and Settings say about a Claude Code or Codex login is what
+  the app's own status command (`claude auth status`, `codex login status`) reported for that home,
+  run as a launch would run it: TTasks keeps only its exit code, and never opens, copies or shows
+  a sign-in file or what the command prints. It only informs: Open and a background run start the
+  app either way. Not protected: "a login was found" does not mean it works (a placeholder key
+  counts), and "no confirmed login" does not mean it fails (a key in the environment or a gateway
+  works without one).
 - Open puts the brief in the agent's prompt box and waits for you to send it, so you can switch
   the model or add a word first: Claude Code, T3 Code, Claude Desktop and the Codex app. Codex has
   no way to wait, so Open sends the brief there as its first turn. So does a Claude Code older than
@@ -321,6 +340,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   profile and model, which you change in T3 Code. A folder that is no T3
   project's root or worktree is added to T3 Code's projects as it is, never opened in a project
   that only contains it, and removing it there is yours to do.
+- That thread is the task's: Open again brings it forward, and the words you typed stay on the
+  task as your note. The task's entry and the Agents page say whether its agent works, needs you
+  or is idle, as T3 Code tells, with or without the Agent Monitor. A thread you delete or archive
+  in T3 Code is noticed at the next Open, which makes a new one, and its entry says it ended. Not
+  protected: a thread made in T3 Code itself is not the task's.
 - A pairing with T3 Code is approved on T3 Code's own page and lasts the 30 days T3 Code gives it;
   then Open asks to pair again. TTasks keeps the pairing's token in its own state and never reads
   T3 Code's.
@@ -386,8 +410,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   with what was asked and what it would act on. That permission uses Claude Code's own modes with
   your own tools and settings, so a tool you approved there stays approved. TTasks's own tools are
   allowed in every mode: the run reads its task and reports through them.
-- A Codex run answers nothing for you either: a question, or an approval Codex asks for that its
-  `run_permission` does not give, ends the run as needing you, with what was asked.
+- A Codex run answers nothing for you either: a question ends the run as needing you, with what
+  was asked. Codex is never asked for an approval: under a narrower `run_permission` its own
+  sandbox refuses what that mode does not allow, the agent goes on without it, and the run says
+  how many of its requests were refused.
 - A run is done when its work is: work the agent left running in the background holds it until
   the agent reported on it, and a server it left running holds it until you stop it.
 - No time limit ends a run unless you set one (`max_minutes`, `max_quiet_minutes` under `[runs]`
@@ -436,6 +462,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   link and the browser's history list hold the search page but not your words. A reload, Back and
   Forward bring the search back in that tab; the search's link opened in another tab is an empty
   search.
+- A paste into the top field that is more than a title loses no word: its first line becomes the
+  title, and the rest is shown under the field and goes in the new task's context, also after a
+  reload. A search keeps the first 500 characters and says so.
 - The generated folder of readable files is not where tasks are stored. A file you edit or add
   there is kept or moved to a rescue folder, never deleted. A generated file that goes missing,
   removed by hand or by a sync, is written again within seconds while TTasks runs.
@@ -489,6 +518,12 @@ the behaviour it describes, and keep each one to a sentence or two.
   their answers so far.
 - The updater leaves your spaces and settings alone. A new version may upgrade a space when it
   opens it, and rolling back the app does not undo that upgrade.
+- After an update, a rollback or an install, TTasks deletes the older versions it installed. It
+  keeps the version that runs, the one `ttasks update --rollback` goes back to, and any newer one.
+  It never deletes a version a program still runs from: that one goes at a later start. A version
+  folder that holds anything TTasks did not put there stays whole, and `ttasks doctor` names it.
+- A version of TTasks from before old versions were removed forgets a removal that was cut off:
+  after a rollback to such a version, that half-removed folder stays until you delete it.
 
 ## Where the protection stops
 

@@ -640,6 +640,53 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     expect(await violations(page)).toEqual([]);
   });
 
+  test("Enter takes the highlighted choice when Down follows the last letter at once", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    // Names no other test uses: the space is shared, and the test above makes and archives areas
+    // close to its own. The new name minus its last letter is not close to the existing area.
+    const existing = `Sapplings ${tag}`;
+    const garden = `Sapling ${tag}`;
+    await world.op(world.mira.id, "group.manage", { action: "create", path: existing });
+    const [ref] = await addTasks(world, [{ title: `Stake the damson (${tag})`, area: "home" }]);
+    if (ref === undefined) throw new Error("the task was not added");
+    const areaOf = async () =>
+      ((await world.op(world.mira.id, "task.get", { task: ref })) as { task: { area?: string } })
+        .task.area;
+    const sent: unknown[] = [];
+    page.on("request", (request) => {
+      if (request.url().endsWith("/api/v1/op/group.manage")) sent.push(request.postDataJSON());
+    });
+    // React Aria publishes the option reached by typing up to 500 ms later; the page's clock decides
+    // when, so the keys below always fall inside that wait.
+    await page.clock.install();
+    await openArea(page, world, "Home");
+    const title = rowOf(page, ref).locator('[data-part="title"]');
+    await title.focus();
+    await page.keyboard.press("Enter");
+    await expect(title).toHaveAttribute("aria-expanded", "true");
+    await rowOf(page, ref).locator('[data-part="area"]').click();
+    await expect(page.getByRole("searchbox", { name: "Find an area or project" })).toBeFocused();
+    await stopClock(page);
+    const options = page.getByRole("option");
+    await page.keyboard.type(garden.slice(0, -1));
+    await page.clock.runFor(1_000);
+    await expect(options.first()).toHaveText(`New area “${garden.slice(0, -1)}”`);
+    await expect(options.first()).toHaveAttribute("data-focused", "true");
+    await page.keyboard.type(garden.slice(-1));
+    await expect(options.first()).toHaveText(existing);
+    await page.keyboard.press("ArrowDown");
+    await expect(options.nth(1)).toHaveText(`New area “${garden}”`);
+    await expect(options.nth(1)).toHaveAttribute("data-focused", "true");
+    await expect(page.locator('[role="option"][data-focused="true"]')).toHaveCount(1);
+    await page.keyboard.press("Enter");
+    await page.clock.resume();
+    await expect.poll(() => areaOf()).toBe(garden);
+    expect(sent).toEqual([expect.objectContaining({ action: "create", path: garden })]);
+  });
+
   test("a filing made elsewhere while the area is being made stays: the area is added, the task is not moved, and the toast says both", async ({
     page,
     world,
@@ -774,7 +821,7 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
         await context.close();
       }
     }
-    // The tests of a worker share its service: the theme goes back to its default.
+    // The tests of a file share its service: the theme goes back to its default.
     await world.machine("ui.theme", null);
   });
 });

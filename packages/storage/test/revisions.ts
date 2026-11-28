@@ -10,6 +10,7 @@ import { step0002 } from "../migrations/0002-schema-0.2.ts";
 import { step0003 } from "../migrations/0003-schema-0.3.ts";
 import { step0004 } from "../migrations/0004-schema-0.4.ts";
 import { step0005 } from "../migrations/0005-schema-0.5.ts";
+import { step0006 } from "../migrations/0006-schema-0.6.ts";
 import { SCHEMA_STEPS } from "../migrations/index.ts";
 import type { SchemaStep } from "../src/schema.ts";
 import {
@@ -36,6 +37,16 @@ export const STEPS_0_4: readonly SchemaStep[] = [step0001, step0002, step0003, s
 
 /** The chain of steps of the 0.5 builds: folders. Frozen once it is released. */
 export const STEPS_0_5: readonly SchemaStep[] = [step0001, step0002, step0003, step0004, step0005];
+
+/** The chain of steps of the 0.6 builds: pages and the texts of a node. Frozen once it is released. */
+export const STEPS_0_6: readonly SchemaStep[] = [
+  step0001,
+  step0002,
+  step0003,
+  step0004,
+  step0005,
+  step0006,
+];
 
 /** This build's chain, for symmetry with the released ones. */
 export const STEPS_LATEST: readonly SchemaStep[] = SCHEMA_STEPS;

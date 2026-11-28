@@ -10,7 +10,6 @@
 // Stop, have routes of their own (`/api/v1/launch/…`).
 import { httpHeader } from "@ttasks/brand";
 import { createClient, type Client } from "@ttasks/contracts/generated/client.ts";
-import { libraryCalls, type LibraryCalls } from "./library/calls.ts";
 import { TOKEN_SHAPE } from "./stored.ts";
 
 /** The headers the service reads (its http/app.ts): names from the identifier, never a display name. */
@@ -123,6 +122,8 @@ export interface Receipt {
    * page never shows as running.
    */
   readonly session?: "running" | "ended" | "restored";
+  /** The task's T3 Code thread: what its agent does, as T3 Code tells. */
+  readonly activity?: "working" | "waiting" | "idle";
   /** How long its agent ran, when its end was reported with it. */
   readonly ran_ms?: number;
 }
@@ -315,6 +316,9 @@ export async function redeem(code: string): Promise<string | null> {
 /** The entries that only read: a tab that saves nothing more may still send these. */
 export const READ_ENTRIES: ReadonlySet<string> = new Set([
   "activity.list",
+  "page.history",
+  "page.read",
+  "page.trashed",
   "receipt.get",
   "space.status",
   "task.finished",
@@ -338,8 +342,6 @@ export class Api {
   readonly #copy: () => string | undefined;
   readonly #ended: () => boolean;
   readonly client: Client;
-  /** The library's calls, until their entries join the generated client. */
-  readonly library: LibraryCalls;
 
   /**
    * `ended`: the tab says nothing more is saved from it (its copy of the space is gone). From then
@@ -358,7 +360,6 @@ export class Api {
     this.#copy = copy;
     this.#ended = ended;
     this.client = createClient({ post: (path, body) => this.post(path, body) });
-    this.library = libraryCalls((name, input) => this.#result(`/api/v1/op/${name}`, input));
   }
 
   async post(path: string, body: string): Promise<{ status: number; body: string }> {

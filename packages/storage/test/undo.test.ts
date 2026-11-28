@@ -290,119 +290,6 @@ describe("[A1.5.history.undo-redo] undo and redo of the steps a person takes bac
     expect(redo().error?.code).toBe("NOTHING_TO_REDO");
   });
 
-  /** A task's state as a person sees it, and a note's: never when it was written. */
-  const seen = (id: string): unknown => {
-    const t = row("tasks", id);
-    const note = fx.reader
-      .prepare("SELECT body, deleted_at FROM notes WHERE task_id = $id AND ordinal = 1")
-      .get({ id });
-    return {
-      lifecycle: t["lifecycle"],
-      trash: t["deleted_at"] !== null,
-      wrap: t["wrap_state"],
-      outcome: t["outcome"],
-      title: t["title"],
-      inbox: t["inbox"],
-      status: t["status"],
-      reviewed: t["reviewed_at"],
-      note: note === undefined ? null : { body: note["body"], gone: note["deleted_at"] !== null },
-    };
-  };
-  const walks: [
-    string,
-    (id: Id<"t">) => Operation[],
-    (id: Id<"t">) => Operation[],
-    Operation[]?,
-  ][] = [
-    [
-      "a check-off",
-      (task) => [{ kind: "task.complete", task }],
-      (task) => [{ kind: "task.reopen", task }],
-    ],
-    [
-      "a drop",
-      (task) => [{ kind: "task.archive", task, reason: "Not needed" }],
-      (task) => [{ kind: "task.reopen", task }],
-    ],
-    [
-      "a reopen",
-      (task) => [{ kind: "task.reopen", task }],
-      (task) => [{ kind: "task.complete", task }],
-      [{ kind: "task.complete", task: "$", outcome: "Sent the form" }],
-    ],
-    [
-      "the Trash",
-      (task) => [{ kind: "task.delete", task }],
-      (task) => [{ kind: "task.restore", task }],
-    ],
-    [
-      "a restore",
-      (task) => [{ kind: "task.restore", task }],
-      (task) => [{ kind: "task.delete", task }],
-      [{ kind: "task.delete", task: "$" }],
-    ],
-    [
-      "a removed note",
-      (task) => [{ kind: "note.delete", task, ordinal: 1 }],
-      (task) => [{ kind: "note.restore", task, ordinal: 1 }],
-      [{ kind: "note.add", task: "$", body: "Ask for the old one back" }],
-    ],
-    [
-      "a note put back",
-      (task) => [{ kind: "note.restore", task, ordinal: 1 }],
-      (task) => [{ kind: "note.delete", task, ordinal: 1 }],
-      [
-        { kind: "note.add", task: "$", body: "Ask for the old one back" },
-        { kind: "note.delete", task: "$", ordinal: 1 },
-      ],
-    ],
-    [
-      "a title edited twice",
-      (task) => [{ kind: "task.patch", task, set: { title: "Renew both passports" } }],
-      (task) => [{ kind: "task.patch", task, set: { title: "Renew the passports" } }],
-    ],
-    [
-      "a note's words edited twice",
-      (task) => [{ kind: "note.patch", task, ordinal: 1, body: "Ask for both back" }],
-      (task) => [{ kind: "note.patch", task, ordinal: 1, body: "Ask for all of them back" }],
-      [{ kind: "note.add", task: "$", body: "Ask for the old one back" }],
-    ],
-    [
-      "out of the Inbox",
-      (task) => [{ kind: "task.patch", task, set: { inbox: false, status: "open" } }],
-      (task) => [{ kind: "task.patch", task, set: { inbox: true } }],
-      [{ kind: "task.patch", task: "$", set: { inbox: true, status: "waiting" } }],
-    ],
-    [
-      "a dismissal",
-      (task) => [{ kind: "task.patch", task, set: { reviewed_at: 1_794_470_500_000 } }],
-      (task) => [{ kind: "task.patch", task, set: { reviewed_at: 1_794_470_400_000 } }],
-      [{ kind: "task.patch", task: "$", set: { reviewed_at: 1_794_470_400_000 } }],
-    ],
-  ];
-
-  test.each(walks)(
-    "%s, its opposite by hand, two Undos and two Redos walk the state back and forth exactly",
-    (_, action, opposite, setup = []) => {
-      const id = task();
-      const ops = (list: Operation[]) => list.map((op) => ({ ...op, task: id }) as Operation);
-      for (const op of ops(setup)) send([op]);
-      const states = [seen(id)];
-      send(action(id));
-      states.push(seen(id));
-      send(opposite(id));
-      states.push(seen(id));
-      for (const at of [1, 0]) {
-        applied(undo());
-        expect(seen(id)).toEqual(states[at]);
-      }
-      for (const at of [1, 2]) {
-        applied(redo());
-        expect(seen(id)).toEqual(states[at]);
-      }
-    },
-  );
-
   test("a new project, archived by hand, walks back to archived and forth to archived", () => {
     const project = newId("p");
     const lifecycle = () => row("projects", project)["lifecycle"];
@@ -440,5 +327,128 @@ describe("[A1.5.history.undo-redo] undo and redo of the steps a person takes bac
     send([{ kind: "task.reopen", task: id }]);
     applied(undo());
     expect(row("tasks", id)).toMatchObject({ lifecycle: "completed", wrap_state: "wrapped" });
+  });
+
+  /** A page as a person sees it: its words, and whether it is in the Trash. */
+  const seenPage = (ref: string): unknown => {
+    const p =
+      fx.reader
+        .prepare("SELECT * FROM pages WHERE ref = $ref")
+        .get({ ref: Number(ref.slice(2)) }) ?? {};
+    return {
+      title: p["title"],
+      brief: p["brief"],
+      body: p["body"],
+      trash: p["deleted_at"] !== null,
+    };
+  };
+  /** The space's texts as a person sees them: empty while it has none. */
+  const seenTexts = (): unknown => {
+    const t = fx.reader
+      .prepare("SELECT * FROM node_texts WHERE owner_id = $id")
+      .get({ id: fx.spaceId });
+    return {
+      brief: t?.["brief"] ?? "",
+      description: t?.["description"] ?? "",
+      forAgents: t?.["for_agents"] ?? "",
+    };
+  };
+  const space = { kind: "space" } as const;
+  const newPage = (): string =>
+    send([
+      { kind: "page.create", owner: space, title: "Passport", brief: "", body: "Bring a photo." },
+    ]).results[0]?.ref ?? "";
+  const pageWalks: [
+    string,
+    (page: string) => Operation[],
+    (page: string) => Operation[],
+    ((page: string) => Operation[])?,
+  ][] = [
+    [
+      "a page's body set twice",
+      (page) => [{ kind: "page.set", page, body: "Bring two photos." }],
+      (page) => [{ kind: "page.set", page, body: "Bring two photos and the old passport." }],
+    ],
+    [
+      "a page's title and brief",
+      (page) => [{ kind: "page.set", page, title: "Passport renewal", brief: "What to bring" }],
+      (page) => [{ kind: "page.set", page, brief: "What to bring, and when" }],
+    ],
+    [
+      "a page to the Trash",
+      (page) => [{ kind: "page.trash", page }],
+      (page) => [{ kind: "page.restore", page }],
+    ],
+    [
+      "a page out of the Trash",
+      (page) => [{ kind: "page.restore", page }],
+      (page) => [{ kind: "page.trash", page }],
+      (page) => [{ kind: "page.trash", page }],
+    ],
+  ];
+
+  test.each(pageWalks)(
+    "%s, its opposite by hand, two Undos and two Redos walk the page back and forth exactly",
+    (_, action, opposite, setup) => {
+      const page = newPage();
+      for (const op of setup?.(page) ?? []) send([op]);
+      const states = [seenPage(page)];
+      send(action(page));
+      states.push(seenPage(page));
+      send(opposite(page));
+      states.push(seenPage(page));
+      for (const at of [1, 0]) {
+        applied(undo());
+        expect(seenPage(page)).toEqual(states[at]);
+      }
+      for (const at of [1, 2]) {
+        applied(redo());
+        expect(seenPage(page)).toEqual(states[at]);
+      }
+    },
+  );
+
+  const textWalks: [string, Operation, Operation][] = [
+    [
+      "the space's first description, then another",
+      { kind: "node.set", node: space, description: "Home and paperwork." },
+      { kind: "node.set", node: space, description: "Home, paperwork and travel." },
+    ],
+    [
+      "the space's brief",
+      { kind: "node.set", node: space, brief: "Home" },
+      { kind: "node.set", node: space, brief: "Home and travel" },
+    ],
+    [
+      "the text for agents",
+      { kind: "node.instruct", node: space, text: "Ask before you book anything." },
+      { kind: "node.instruct", node: space, text: "Ask before you pay for anything." },
+    ],
+  ];
+
+  test.each(textWalks)(
+    "%s, its opposite by hand, two Undos and two Redos walk the texts back and forth exactly",
+    (_, action, opposite) => {
+      const states = [seenTexts()];
+      send([action]);
+      states.push(seenTexts());
+      send([opposite]);
+      states.push(seenTexts());
+      for (const at of [1, 0]) {
+        applied(undo());
+        expect(seenTexts()).toEqual(states[at]);
+      }
+      for (const at of [1, 2]) {
+        applied(redo());
+        expect(seenTexts()).toEqual(states[at]);
+      }
+    },
+  );
+
+  test("an agent's page writes and a person's new page are no steps: Undo has nothing", () => {
+    const page = newPage();
+    send([{ kind: "page.set", page, body: "Bring two photos." }], fx.codex);
+    send([{ kind: "page.trash", page }], fx.codex);
+    expect(undo().error?.code).toBe("NOTHING_TO_UNDO");
   });
 });

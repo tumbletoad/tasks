@@ -26,31 +26,35 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 0.5 | The general inversion engine and `partial` removed from the service, the contract, the command line and the app | doing (#225) |
 | 1b | The Activity log (#224) | done |
 | 1.1 | The contract for pages, the trail, `read` and `write_page` | done (#229, #231) |
-| 1.2 | Storage: the migration step for pages and the new fields, the search tables rebuilt, an older backup's index rebuilt by its own version | todo: 1.1 |
-| 1.3 | The page edit as the first named command of the new write path | todo: 1.2 |
-| 1.4 | Agent tools: `read`, `write_page`, the trail in `get_task` within one budget, search over pages, `complete_task` asking for pages updated | todo: 1.3 |
-| 1.5 | The skill `keeping-the-library`, and a brief explained as "what this is" | todo: 1.1 |
+| 1.2 | Storage: the migration step for pages and the new fields, the search tables rebuilt, an older backup's index rebuilt by its own version | done (#240) |
+| 1.3 | The page edit as the first named command of the new write path | done (#240) |
+| 1.4 | Agent tools: `read`, `write_page`, the trail in `get_task` within one budget, search over pages, `complete_task` asking for pages updated | done (#251) |
+| 1.5 | The skill `keeping-the-library`, and a brief explained as "what this is" | done (#251) |
 | 1.6 | The app: the project screen with its Library, the page screen with History and Restore, page edits under Changes | todo: 1.1 |
 | 1.7 | The trial: twenty scripted tasks with Claude Code and Codex, and the bytes of history per page edit | todo: 1.4, 1.5 |
 | 1.8 | The harvest of one real project, and a walk through it as a person | todo: 1.6, 1.7 |
-| 2.1 | The short design for one tree, reviewed before code | todo: 1.7 |
-| 2.2 | Every writer moved to named commands, the old write path deleted, the crash harness on the new path | todo: 2.1 (its design sets their order, in one lane) |
-| 2.3 | The tables of the tree, with the reads ported | todo: 2.1 (its design sets their order, in one lane) |
-| 2.4 | Nested projects, subtasks and the finishing dialog, notes on projects and the space, page comments, links, sources on any node | todo: 2.3 |
-| 2.5 | The app: the sidebar tree, the derived status line, the expanded task's Brief, Description, Knowledge and subtasks | todo: 2.3 |
-| 2.6 | Folders on any node, places retired, folders after a restore, Settings > Folders, a project's rename and archive in the app | todo: 2.3 |
-| 2b.1 | The short design for routines | todo: 2.2 |
+| 2.1 | The short design for one tree, reviewed before code (#237) | done |
+| 2.2 | (i) The feed sends a tree, today's areas and projects as parent rows at its edge, and the page's store reads it | todo: step 1's page work |
+| 2.3 | (ii) The tree's schema and command core beside today's storage, used by nothing yet: add, read and finish in a disposable tree space, Undo's walk, the crash test | review |
+| 2.4 | (iii) The remaining commands in families (tasks, notes and pages, projects, folders, preferences, Open and Run), each tried through its real caller and through both backends; ordinary spaces stay on today's writer | todo: 2.3 |
+| 2.5 | (iv) The projector on the tree, the finishing dialog, the new tool shapes with the skills, instructions and hints, behind the tree backend | todo: 2.4, 3.1 |
+| 2.6 | (v) The switch: new spaces are trees, old formats are named before anything changes, the owner's carry-over on a trial copy first | todo: 2.5 |
+| 2.7 | (vi) Deletion: the feed's adapter, today's writer, the old migration chain, the old projector and places | todo: 2.6 |
+| 2.8 | The app: the sidebar tree, the project screen, breadcrumbs, the derived status line, the expanded task's Brief, Description, Knowledge and subtasks | todo: 2.5 |
+| 2.9 | Folders on any node in the app, Settings > Folders, a project's rename and archive | todo: 2.6 |
+| 2b.1 | The short design for routines | review (#235) |
+| 2b.4 | The schedule calculator: the stored form, the next date and due time through daylight saving, the claim after an absence, and a schedule's words | doing |
 | 2b.2 | Tasks that come back on a schedule | todo: 2b.1 |
 | 2b.3 | Agent runs on a schedule (Refresh, tidying), Refresh in the top bar, Continue interactively | todo: 2b.1 |
-| 3.1 | The projector for the tree on disk, built beside step 2 and live with the tree's migration | todo: 2.1 |
-| 3.2 | Inherited default folders, other folders as hints, Open says when a folder is set only on another machine | todo: 2.6 |
+| 3.1 | The projector for the tree on disk, written on the tree schema of 2.3 and switched on in 2.5 | todo: 2.3 |
+| 3.2 | Inherited default folders, other folders as hints, Open says when a folder is set only on another machine | todo: 2.9 |
 | 3.3 | The trial's tasks again, tools only against tools with the tree, and a rename's rebuild timed on Windows | todo: 3.1 |
 | 4.1 | Budgets that speak in a write's answer, and tidying a project's library | todo: 1.4 |
 | 4.2 | Ingestion: a run makes tasks and sources from the person's sources by itself | todo: 2b.3 |
 | 4.3 | The library skill's later versions, from the trial | todo: 1.7 |
-| 5.1 | The space service apart from the device service | todo: step 1 |
-| 5.2 | An endpoint for paired devices, with rights per phone, and pairing by a QR code | todo: 5.1 |
-| 5.3 | The phone app as a development build, and its first proof | todo: 5.2 |
+| 5.1 | The phone's listener apart from the page's, in the same process: it reaches only the operations, the feed and a task's runs | review: the listener in this pull request |
+| 5.2 | An endpoint for paired phones over pinned TLS, with rights per phone and space, and pairing by a QR code from Settings > Phones | review: the listener, rights and pairing in this pull request; Settings > Phones in the next |
+| 5.3 | The phone app as a development build in the workspace, and its first proof; Today and capture shared with the page once step 1's page work has merged | todo: 5.2, 1.6 |
 | 5.4 | The stores' test tracks, the relay for use away from home, push messages | todo: 5.3 |
 | 6.1 | Differences between versions of a page and of a description | todo: 1.6 |
 
@@ -60,8 +64,9 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 |---|---|
 | Scale on Windows and Linux, on the new model | todo: steps 2 and 3 |
 | A quality pass over the app, on the new screens | todo: steps 2 and 3 |
-| `run_report` on a run's connection, and asking the person about an approval in Codex's narrower modes | ready |
-| Retiring old versions after an update | ready |
+| A run reports through its answer and what it logs, and logs a decision it leaves the person as a question | done |
+| A run that stopped at a permission prompt goes on with Continue, in the agent app, on the run's own conversation | todo: 2b.3 |
+| Retiring old versions after an update | done |
 
 ## Checks on real machines
 

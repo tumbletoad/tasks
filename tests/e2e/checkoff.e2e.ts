@@ -63,7 +63,7 @@ test.describe("[A5.3.12.e2e.checkoff-leaves] A checked-off task leaves at once a
     test.setTimeout(300_000);
     const ui = process.env["E2E_UI_BUILD"];
     if (ui === undefined) throw new Error("global-setup.ts did not build the page");
-    // A world of its own: the worker's shared one keeps the size the other tests count on.
+    // A world of its own: the file's shared one keeps the size the other tests count on.
     const world = await startWorld(ui);
     try {
       await checkOffAndTrash(page, world);
@@ -78,7 +78,7 @@ test.describe("[A5.3.12.e2e.checkoff-pending] A task checked off in its card or 
     page,
     world,
   }) => {
-    const word = `marigold${test.info().project.name}${String(test.info().workerIndex)}`;
+    const word = "marigold";
     const added = (await world.op(world.mira.id, "task.add", {
       tasks: [
         { title: `Water the ${word} bed`, area: "home" },

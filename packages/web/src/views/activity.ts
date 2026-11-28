@@ -126,7 +126,6 @@ const OPS: Readonly<Record<string, Words>> = {
   "place.clear": said("activity.folderCleared"),
   "task.folder_clear": said("activity.folderCleared"),
   "project.folder_clear": said("activity.folderCleared"),
-  "run.report": said("activity.reported"),
   "pref.set": said("activity.setting"),
   "page.create": added,
   "page.edit": said("activity.pageText"),

@@ -1,7 +1,7 @@
 // The person's writes to the library: a page's title, brief or body, a version written back, the
 // Trash and back, and a node's brief, description and text for agents. Each goes in turn with the
-// page's other edits, from the base the screen read. A page's words and its Trash are Undo's kinds,
-// as a task's are: their toasts offer Undo. A node's texts and a new page offer none.
+// page's other edits, from the base the screen read. A page's words, its Trash and a node's texts
+// are Undo's kinds, as a task's words are: their toasts offer Undo. A new page offers none.
 import { useContext, useMemo } from "react";
 import { Session } from "../context.ts";
 import { useEdits } from "../edit/useEdits.ts";
@@ -37,13 +37,12 @@ export function useLibraryWrites(): LibraryWrites {
   const { api } = useContext(Session);
   const edits = useEdits();
   return useMemo(() => {
-    const calls = api.library;
+    const calls = api.client;
     const write = <T extends { as_of?: string; result?: unknown }>(
       send: (request: string, base: string | undefined) => Promise<T>,
       msg: Msg,
       base?: string,
-      undo = true,
-    ) => edits.write(send, () => msg, { base, undo });
+    ) => edits.write(send, () => msg, { base, undo: true });
     return {
       create: (on, title) =>
         edits
@@ -103,7 +102,6 @@ export function useLibraryWrites(): LibraryWrites {
             }),
           { id: set.brief === undefined ? "toast.description" : "toast.brief" },
           base,
-          false,
         ),
       instruct: (target, text, base) =>
         write(
@@ -111,7 +109,6 @@ export function useLibraryWrites(): LibraryWrites {
             calls.node.instruct({ target, text, base: sent ?? base ?? "", request_id: request }),
           { id: "toast.forAgents" },
           base,
-          false,
         ),
     } satisfies LibraryWrites;
   }, [api, edits]);

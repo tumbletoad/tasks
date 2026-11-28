@@ -146,6 +146,13 @@ export type HttpEvent =
   /** A sighting (A2 3.8.2 step 3) or a first start's port could not be written. */
   | { readonly ev: "http.port_write_failed"; readonly stage: "sighting" | "persist" }
   /** A launch's dispatch ended with an error the machine did not record (launches.ts). */
-  | { readonly ev: "http.launch_failed"; readonly stage: "dispatch" };
+  | { readonly ev: "http.launch_failed"; readonly stage: "dispatch" }
+  /** The phone's link (link/service.ts). */
+  | { readonly ev: "http.link_listen"; readonly outcome: "listening" | "stopped" | "failed" }
+  | {
+      readonly ev: "http.link_refused";
+      readonly reason: "peer" | "request" | "certificate" | "code" | "removed" | "not_paired";
+    }
+  | { readonly ev: "http.link_paired" };
 
 export type HttpLog = (event: HttpEvent) => void;
