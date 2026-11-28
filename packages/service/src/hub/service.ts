@@ -405,13 +405,6 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       `${PRODUCT_NAME}'s service does not run as root or as an elevated administrator: the agents it starts would inherit those rights.`,
     );
   }
-  if (identity.elevated === undefined) {
-    throw refuse(
-      say,
-      "elevation_unknown",
-      `${PRODUCT_NAME}'s service could not check whether it runs elevated, so it does not start.`,
-    );
-  }
   // A umask that takes away the person's own bits, or one that cannot be read: refused before any
   // folder is made (umask.ts).
   const umaskLine = umaskRefusal(
@@ -489,6 +482,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     build: BUILD.build,
     separate: layout.home !== undefined,
   });
+  if (identity.elevated === undefined) log.log("service.elevation_unknown");
   if (identity.package !== null) {
     log.log("service.refused", { reason: "packaged" });
     throw refuse(
