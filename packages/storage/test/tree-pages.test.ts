@@ -38,7 +38,7 @@ describe("[S2.tree.pages] notes, pages and a node's texts on the tree", () => {
       }
     ).tasks[0]?.ref ?? "";
   const project = (title: string): string =>
-    String((ok(fx.send("project.create", { title })) as { project: { id: string } }).project.id);
+    (ok(fx.send("project.create", { title })) as { project: { id: string } }).project.id;
   const page = (on: string, body = BODY): { id: string; ref: string } =>
     (
       ok(fx.send("page.create", { on, title: "Passport", brief: "What to bring", body })) as {
@@ -223,6 +223,6 @@ describe("[S2.tree.pages] notes, pages and a node's texts on the tree", () => {
     expect(
       fx.send("page.create", { on: "space", title: "Huge", body: `${big}0123456789ab` }).error
         ?.code,
-    ).toBe("VALIDATION_FAILED");
+    ).toBe("TOO_LARGE");
   });
 });

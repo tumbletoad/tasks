@@ -21,6 +21,7 @@
 // "Routines" and the full history with Revert wait for the service's read of sessions and routines.
 import { useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { Client } from "@ttasks/contracts/generated/client.ts";
+import type { AgentsThread } from "@ttasks/contracts/monitor";
 import type { Instance } from "../api.ts";
 import { changeLogOf } from "../app/changes.ts";
 import { classes } from "../app/css.ts";
@@ -137,6 +138,8 @@ function useTrashedWork(named: readonly string[]): ReadonlyMap<string, TaskRow> 
   return rows;
 }
 
+const NO_THREADS: readonly AgentsThread[] = [];
+
 export interface AgentsProps {
   readonly task?: string | undefined;
   readonly onExpand: (task: TaskRow | undefined, gone?: boolean) => void;
@@ -152,14 +155,16 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
   const { tasks: open, asking, instances } = useLive();
   const agents = useSyncExternalStore(live.agents.subscribe, live.agents.getState);
   const picture = agents.view?.picture ?? null;
+  const threads = agents.view?.threads ?? NO_THREADS;
   const named = useMemo(
     () =>
       linkedOutside(
         picture,
+        threads,
         live.spaceId,
         asking.size === 0 ? open : new Map([...asking, ...open]),
       ),
-    [picture, live.spaceId, open, asking],
+    [picture, threads, live.spaceId, open, asking],
   );
   const trashed = useTrashedWork(named);
   // A finished task a question waits on is placed as an open one is, and so is a task in the
@@ -173,8 +178,8 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
     [open, outside],
   );
   const merged = useMemo(
-    () => mergeAgents(picture, live.spaceId, rows),
-    [picture, live.spaceId, rows],
+    () => mergeAgents(picture, threads, live.spaceId, rows),
+    [picture, threads, live.spaceId, rows],
   );
   // What the monitor put in a group is as old as its picture: muted while that is not current.
   const muted = useMemo(

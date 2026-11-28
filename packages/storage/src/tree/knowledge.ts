@@ -1,7 +1,7 @@
-// The tree's commands for what is known on a node: notes (log entries and learnings in the same
-// thread, and a page's comments), pages, and a node's brief, description and text for agents. A
-// page sits on one node; one whose task went to the Trash is not found, and comes back with it
-// without being written. A page's earlier versions are its change rows.
+// The tree's commands for what is known on a node beside its notes: pages, and a node's brief,
+// description and text for agents. A page sits on one node; one whose task went to the Trash is not
+// found, and comes back with it without being written. A page's earlier versions are its change
+// rows.
 //
 // An edit replaces old words with new words, by step 1's rule (write/pages.ts): it applies while
 // the old words stand once in the page, overlapping matches counted, whatever else changed since,
@@ -10,37 +10,27 @@
 // with the page's start as it is now. An edit or an append finishes the body as a body sent whole
 // is stored, within the same size.
 import type { Row } from "../driver.ts";
-import { isId } from "../ids.ts";
 import { appended, excerptOf, finishedBody, occurrences } from "../write/pages.ts";
-import { normaliseStored, WRITE_LIMITS } from "../write/request.ts";
+import type { Fields } from "../write/request.ts";
 import {
-  addNote,
+  BRIEF,
   findNode,
   findPage,
-  givenId,
-  liveNode,
+  KEY,
+  NOTE,
   problem,
+  read,
   refText,
-  text,
-  title,
-  type Input,
-} from "./inputs.ts";
+  required,
+  str,
+  TITLE,
+  type Check,
+} from "./commands.ts";
 import type { Command, Tx } from "./tx.ts";
 
-const NOTE_KINDS = [
-  "note",
-  "progress",
-  "evidence",
-  "blocker",
-  "decision",
-  "question",
-  "handoff",
-  "learning",
-];
+type Run = Command["run"];
 
 const SQL = {
-  note: "SELECT * FROM notes WHERE id = $id",
-  noteAt: "SELECT * FROM notes WHERE owner_id = $owner AND ordinal = $ordinal",
   /** The body a change left on a page: its create's, or the one its set wrote. */
   bodyAt:
     "SELECT CASE action WHEN 'create' THEN json_extract(after, '$.body') " +
@@ -48,16 +38,13 @@ const SQL = {
     "WHERE entity = 'pages' AND entity_id = $id AND seq = $seq AND (action = 'create' OR field = 'body')",
 } as const;
 
-/** A body: a note's, a page's, a description or a text for agents, stored as today's writer does. */
-const body = (input: Input, field: string, required = false): string | undefined => {
-  const given = input[field];
-  if (given === undefined && !required) return undefined;
-  const value = typeof given === "string" ? normaliseStored(given) : undefined;
-  if (value === undefined || Buffer.byteLength(value, "utf8") > WRITE_LIMITS.note) {
-    return problem("VALIDATION_FAILED", `Expected ${field} as text of at most 64 KiB`, field);
-  }
-  return value;
-};
+/** A live node to hold a page, or whose texts change: a project, a task or the space. */
+function liveNode(tx: Tx, key: unknown, field: string): Row {
+  const found = findNode(tx, key);
+  if (found === undefined) return problem("NOT_FOUND", "The space has nothing of that name", field);
+  if (found["deleted_at"] !== null) problem("DELETED", "That task is in the Trash", field);
+  return found;
+}
 
 /** A page that is shown; one in the Trash only when `trashed`. */
 function livePage(tx: Tx, key: unknown, trashed = false): Row {
@@ -77,71 +64,9 @@ const pageAnswer = (tx: Tx, page: Row, extra: Record<string, unknown> = {}) => (
   ...extra,
 });
 
-/** What a note is on, and the node its change rows belong to: a node, or a page and its node. */
-function noteOwner(tx: Tx, key: unknown): { owner: string; node: string } {
-  const page = findPage(tx, key);
-  if (page !== undefined) {
-    if (page["deleted_at"] !== null) problem("DELETED", "The page is in the Trash", "on");
-    return { owner: String(page["id"]), node: String(page["owner_id"]) };
-  }
-  const node = liveNode(tx, key, "on");
-  return { owner: String(node["id"]), node: String(node["id"]) };
-}
-
-/**
- * A note by ID, or by its owner and ordinal, with the node its change rows belong to. A note's
- * words and its removal are the person's to correct: an agent writes a new note instead.
- */
-function personsNote(tx: Tx, input: Input): { note: Row; node: string } {
-  if (tx.request.actor.actor_kind !== "human") {
-    problem("USER_ONLY", "Only a person corrects or removes a note", "note");
-  }
-  const on = input["on"];
-  const note =
-    typeof input["note"] === "string"
-      ? tx.get(SQL.note, { id: input["note"] })
-      : tx.get(SQL.noteAt, {
-          owner: String(findPage(tx, on)?.["id"] ?? findNode(tx, on)?.["id"]),
-          ordinal: Number(input["ordinal"]),
-        });
-  if (note === undefined) return problem("NOT_FOUND", "The space has no such note", "note");
-  const owner = String(note["owner_id"]);
-  const node = isId(owner, "pg") ? String(findPage(tx, owner)?.["owner_id"] ?? owner) : owner;
-  return { note, node };
-}
-
-const noteAdd: Command = (tx, input) => {
-  const { owner, node } = noteOwner(tx, input["on"]);
-  const kind = input["kind"] ?? "note";
-  if (typeof kind !== "string" || !NOTE_KINDS.includes(kind)) {
-    problem("VALIDATION_FAILED", "Not a kind of note", "kind");
-  }
-  const words = body(input, "body", true) ?? "";
-  if (words.trim() === "") problem("VALIDATION_FAILED", "A note needs words", "body");
-  return { note: addNote(tx, owner, node, words, kind as string, input["for_agents"] === true) };
-};
-
-const noteEdit: Command = (tx, input) => {
-  const { note, node } = personsNote(tx, input);
-  const words = body(input, "body", true) ?? "";
-  if (words.trim() === "") problem("VALIDATION_FAILED", "A note needs words", "body");
-  if (note["body"] !== words) {
-    tx.set("notes", String(note["id"]), node, { body: { body: words, edited_at: tx.at } });
-  }
-  return { note: { id: note["id"], ordinal: note["ordinal"] } };
-};
-
-const noteGone =
-  (gone: boolean): Command =>
-  (tx, input) => {
-    const { note, node } = personsNote(tx, input);
-    tx.set("notes", String(note["id"]), node, { deleted: gone ? tx.at : null });
-    return { note: { id: note["id"], ordinal: note["ordinal"] } };
-  };
-
-const pageCreate: Command = (tx, input) => {
+const pageCreate: Run = (tx, input) => {
   const owner = String(liveNode(tx, input["on"], "on")["id"]);
-  const id = givenId(input["id"], "pg", "id") ?? tx.newId("pg");
+  const id = str(input, "id") ?? tx.newId("pg");
   const ref = tx.ref();
   tx.create(
     "pages",
@@ -149,9 +74,9 @@ const pageCreate: Command = (tx, input) => {
       id,
       ref,
       owner_id: owner,
-      title: title(input),
-      brief: text(input, "brief", 400) ?? "",
-      body: body(input, "body") ?? "",
+      title: str(input, "title") ?? "",
+      brief: str(input, "brief") ?? "",
+      body: str(input, "body") ?? "",
       created_at: tx.at,
       created_by: tx.author,
     },
@@ -160,47 +85,49 @@ const pageCreate: Command = (tx, input) => {
   return { page: { id, ref: refText(tx, ref) } };
 };
 
-const pageEdit: Command = (tx, input) => {
+const pageEdit: Run = (tx, input) => {
   const page = livePage(tx, input["page"]);
-  const old = body(input, "old", true) ?? "";
-  const now = body(input, "new", true) ?? "";
-  if (old === "") problem("VALIDATION_FAILED", "Name the words to replace", "old");
+  const old = str(input, "old") ?? "";
   const words = String(page["body"]);
   const { count, first } = occurrences(words, old);
   if (count !== 1) return pageAnswer(tx, page, { found: count, excerpt: excerptOf(words) });
-  const edited = finishedBody(words.slice(0, first) + now + words.slice(first + old.length));
-  if (edited === undefined)
-    problem("TOO_LARGE", "The page would be larger than a page may be", "new");
-  tx.set("pages", String(page["id"]), String(page["owner_id"]), { body: edited ?? "" }, false);
+  const edited = finishedBody(
+    words.slice(0, first) + (str(input, "new") ?? "") + words.slice(first + old.length),
+  );
+  if (edited === undefined) {
+    return problem("TOO_LARGE", "The page would be larger than a page may be", "new");
+  }
+  tx.set("pages", String(page["id"]), String(page["owner_id"]), { body: edited }, false);
   return pageAnswer(tx, page, { found: 1 });
 };
 
-const pageAppend: Command = (tx, input) => {
+const pageAppend: Run = (tx, input) => {
   const page = livePage(tx, input["page"]);
-  const more = body(input, "text", true) ?? "";
-  if (more.trim() === "") problem("VALIDATION_FAILED", "Give the text to add", "text");
-  const words = finishedBody(appended(String(page["body"]), more));
-  if (words === undefined)
-    problem("TOO_LARGE", "The page would be larger than a page may be", "text");
-  tx.set("pages", String(page["id"]), String(page["owner_id"]), { body: words ?? "" }, false);
+  const words = finishedBody(appended(String(page["body"]), str(input, "text") ?? ""));
+  if (words === undefined) {
+    return problem("TOO_LARGE", "The page would be larger than a page may be", "text");
+  }
+  tx.set("pages", String(page["id"]), String(page["owner_id"]), { body: words }, false);
   return pageAnswer(tx, page);
 };
 
 /** A page's title, brief or body, or its body as an earlier version left it: Restore. */
-const pageSet: Command = (tx, input) => {
+const pageSet: Run = (tx, input) => {
   const page = livePage(tx, input["page"]);
   const id = String(page["id"]);
-  let words = body(input, "body");
+  let words = str(input, "body");
   if (input["from_seq"] !== undefined) {
     const version = tx.get(SQL.bodyAt, { id, seq: Number(input["from_seq"]) })?.["body"];
     if (typeof version !== "string") {
-      problem("NOT_FOUND", "The page has no version made by this change", "from_seq");
+      return problem("NOT_FOUND", "The page has no version made by this change", "from_seq");
     }
-    words = version as string;
+    words = version;
   }
   const set: Record<string, string> = {};
-  if (input["title"] !== undefined) set["title"] = title(input);
-  if (input["brief"] !== undefined) set["brief"] = text(input, "brief", 400) ?? "";
+  for (const field of ["title", "brief"]) {
+    const value = str(input, field);
+    if (value !== undefined) set[field] = value;
+  }
   if (words !== undefined) set["body"] = words;
   const changed = Object.fromEntries(Object.entries(set).filter(([f, v]) => page[f] !== v));
   if (Object.keys(changed).length > 0) tx.set("pages", id, String(page["owner_id"]), changed);
@@ -208,7 +135,7 @@ const pageSet: Command = (tx, input) => {
 };
 
 /** A page moves to another node; its change rows belong to where it goes. */
-const pageMove: Command = (tx, input) => {
+const pageMove: Run = (tx, input) => {
   const page = livePage(tx, input["page"]);
   const to = String(liveNode(tx, input["on"], "on")["id"]);
   if (page["owner_id"] !== to) tx.set("pages", String(page["id"]), to, { owner: to });
@@ -216,7 +143,7 @@ const pageMove: Command = (tx, input) => {
 };
 
 const pageTrashed =
-  (trash: boolean): Command =>
+  (trash: boolean): Run =>
   (tx, input) => {
     const page = livePage(tx, input["page"], !trash);
     tx.set("pages", String(page["id"]), String(page["owner_id"]), {
@@ -226,19 +153,20 @@ const pageTrashed =
   };
 
 /** A node's brief and description: the words a person or an agent reads first about it. */
-const nodeSet: Command = (tx, input) => {
+const nodeSet: Run = (tx, input) => {
   const node = liveNode(tx, input["node"], "node");
   const id = String(node["id"]);
   const set: Record<string, string> = {};
-  if (input["brief"] !== undefined) set["brief"] = text(input, "brief", 400) ?? "";
-  if (input["description"] !== undefined) set["description"] = body(input, "description") ?? "";
-  const changed = Object.fromEntries(Object.entries(set).filter(([f, v]) => node[f] !== v));
-  if (Object.keys(changed).length > 0) tx.set("nodes", id, id, changed);
+  for (const field of ["brief", "description"]) {
+    const value = str(input, field);
+    if (value !== undefined && node[field] !== value) set[field] = value;
+  }
+  if (Object.keys(set).length > 0) tx.set("nodes", id, id, set);
   return { node: { id } };
 };
 
 /** The text for agents on the space or a project: instructions, so only a person writes it. */
-const nodeInstruct: Command = (tx, input) => {
+const nodeInstruct: Run = (tx, input) => {
   if (tx.request.actor.actor_kind !== "human") {
     problem("USER_ONLY", "Only a person writes the text for agents", "text");
   }
@@ -247,23 +175,87 @@ const nodeInstruct: Command = (tx, input) => {
     problem("VALIDATION_FAILED", "A task's instructions are its notes for agents", "node");
   }
   const id = String(node["id"]);
-  const words = body(input, "text", true) ?? "";
+  const words = str(input, "text") ?? "";
   if (node["for_agents"] !== words) tx.set("nodes", id, id, { for_agents: words });
   return { node: { id } };
 };
 
+// The checks, through the one `Fields` today's writer reads with.
+
+const onePage: Check = (f) => {
+  required(f, "page");
+  return read(f, { page: (k) => f.text(k, KEY) });
+};
+
+const checkCreate: Check = (f) => {
+  required(f, "on");
+  required(f, "title");
+  return read(f, {
+    id: (k) => f.id(k, "pg"),
+    on: (k) => f.text(k, KEY),
+    title: (k) => f.text(k, TITLE),
+    brief: (k) => f.text(k, BRIEF),
+    body: (k) => f.text(k, { ...NOTE, empty: true }),
+  });
+};
+
+const checkEdit: Check = (f) => {
+  for (const key of ["page", "old", "new"]) required(f, key);
+  return read(f, {
+    page: (k) => f.text(k, KEY),
+    old: (k) => f.text(k, NOTE),
+    new: (k) => f.text(k, { ...NOTE, empty: true }),
+  });
+};
+
+const checkAppend: Check = (f) => {
+  required(f, "page");
+  required(f, "text");
+  return read(f, { page: (k) => f.text(k, KEY), text: (k) => f.text(k, NOTE) });
+};
+
+const checkSet: Check = (f) => {
+  required(f, "page");
+  return read(f, {
+    page: (k) => f.text(k, KEY),
+    title: (k) => f.text(k, TITLE),
+    brief: (k) => f.text(k, BRIEF),
+    body: (k) => f.text(k, { ...NOTE, empty: true }),
+    from_seq: (k) => f.int(k, 1, Number.MAX_SAFE_INTEGER),
+  });
+};
+
+const checkMove: Check = (f) => {
+  required(f, "page");
+  required(f, "on");
+  return read(f, { page: (k) => f.text(k, KEY), on: (k) => f.text(k, KEY) });
+};
+
+const nodeKey = (f: Fields) => (k: string) => f.text(k, KEY);
+
+const checkNodeSet: Check = (f) => {
+  required(f, "node");
+  return read(f, {
+    node: nodeKey(f),
+    brief: (k) => f.text(k, BRIEF),
+    description: (k) => f.text(k, { ...NOTE, empty: true }),
+  });
+};
+
+const checkInstruct: Check = (f) => {
+  required(f, "node");
+  required(f, "text");
+  return read(f, { node: nodeKey(f), text: (k) => f.text(k, { ...NOTE, empty: true }) });
+};
+
 export const KNOWLEDGE: Readonly<Record<string, Command>> = {
-  "note.add": noteAdd,
-  "note.edit": noteEdit,
-  "note.remove": noteGone(true),
-  "note.put_back": noteGone(false),
-  "page.create": pageCreate,
-  "page.edit": pageEdit,
-  "page.append": pageAppend,
-  "page.set": pageSet,
-  "page.move": pageMove,
-  "page.trash": pageTrashed(true),
-  "page.restore": pageTrashed(false),
-  "node.set": nodeSet,
-  "node.instruct": nodeInstruct,
+  "page.create": { check: checkCreate, run: pageCreate },
+  "page.edit": { check: checkEdit, run: pageEdit },
+  "page.append": { check: checkAppend, run: pageAppend },
+  "page.set": { check: checkSet, run: pageSet },
+  "page.move": { check: checkMove, run: pageMove },
+  "page.trash": { check: onePage, run: pageTrashed(true) },
+  "page.restore": { check: onePage, run: pageTrashed(false) },
+  "node.set": { check: checkNodeSet, run: nodeSet },
+  "node.instruct": { check: checkInstruct, run: nodeInstruct },
 };

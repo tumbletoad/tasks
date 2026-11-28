@@ -5,34 +5,26 @@
 // before the request, so a request's second write to a field never conflicts with its first.
 import type { Connection, Row, SqlValue } from "../driver.ts";
 import { misuse } from "../errors.ts";
-import { newId, type Id, type RandomSource } from "../ids.ts";
+import { isId, newId, type Id, type RandomSource } from "../ids.ts";
 import { takeTaskRef } from "../refs.ts";
 import { columnsValue, fieldJson } from "../write/fields.ts";
+import { Fields, type Credential, type Envelope } from "../write/request.ts";
 import { provenanceOf, rowState, versionOf, type RowState } from "../write/row-state.ts";
 import { columnsOf, FIELDS, KEYS, TreeProblem, type Entity, type FieldOf } from "./fields.ts";
 import { DERIVED } from "./schema.ts";
 
 const SQL = {
+  lifecycle: "SELECT lifecycle FROM tasks WHERE id = $id",
   affected: "UPDATE commits SET affected = $n WHERE seq = $seq",
   touched: "UPDATE nodes SET touched = $seq WHERE id = $id",
 } as const;
 
 const rowSql = (entity: Entity): string => `SELECT * FROM ${entity} WHERE id = $id`;
 
-export type ActorKind = "human" | "agent" | "routine" | "system" | "import";
+/** Who asks, as today's writer reads a credential. */
+export type TreeActor = Credential;
 
-export interface TreeActor {
-  scope_id: string;
-  principal_id: Id<"ac">;
-  /** Who wrote it, when another than the principal: an agent acting on the person's authority. */
-  author_id?: Id<"ac">;
-  actor_kind: ActorKind;
-  machine_id: string;
-  origin: "ui" | "cli" | "mcp" | "http" | "import" | "system";
-  session_id?: string;
-  run_id?: string;
-}
-
+/** A tree request as a caller sends it; `checkTreeRequest` (core.ts) checks it. */
 export interface TreeRequest {
   space_id: string;
   request_id: string;
@@ -43,15 +35,35 @@ export interface TreeRequest {
   reason?: string;
   /** The tool entry the request comes from: its refusals store no receipt. */
   entry?: string;
+  /** What the caller found and decided before the writer: kept with an accepted result. */
+  warnings?: string[];
+  answer?: Record<string, unknown>;
   command: string;
   input: Record<string, unknown>;
 }
 
+/** A tree request as `checkTreeRequest` leaves it: today's envelope, the command and its input. */
+export interface CheckedTreeRequest extends Envelope {
+  command: string;
+  /** The tool entry the request comes from: its refusals store no receipt. */
+  entry?: string;
+  input: Record<string, unknown>;
+}
+
+/**
+ * A field that changed after the base: the row, the task it belongs to with its reference, the
+ * value now, its version, and who changed it and when. A receipt keeps all but the value.
+ */
 export interface TreeConflict {
   entity: Entity;
   id: string;
+  task?: string;
+  ref?: string;
   field: string;
+  value?: unknown;
   version: number;
+  by?: { actor: string; kind: string; label: string; origin: string };
+  at?: number;
 }
 
 /** The rows a request wrote, in order, with what they were before it. */
@@ -79,7 +91,7 @@ export class Tx {
   readonly conn: Connection;
   readonly seq: number;
   readonly at: number;
-  readonly request: TreeRequest;
+  readonly request: CheckedTreeRequest;
   readonly space: SpaceState;
   readonly random: RandomSource;
   readonly #commands: Readonly<Record<string, Command>>;
@@ -92,7 +104,7 @@ export class Tx {
     conn: Connection,
     seq: number,
     at: number,
-    request: TreeRequest,
+    request: CheckedTreeRequest,
     space: SpaceState,
     base: number | "history" | undefined,
     random: RandomSource,
@@ -132,9 +144,10 @@ export class Tx {
 
   /** Runs another command in this request: its writes are this commit's. */
   call(command: string, input: Record<string, unknown>): unknown {
-    const run = this.#commands[command];
-    if (run === undefined) throw misuse("No command of that name");
-    return run(this, input);
+    const named = this.#commands[command];
+    if (named === undefined) throw misuse("No command of that name");
+    // Its input is checked as a request's is: an opposite or a follow-up is held to the same rules.
+    return named.run(this, named.check(new Fields(input, "")));
   }
 
   /** Inserts a new row. `node` is the node it belongs to. */
@@ -204,7 +217,10 @@ export class Tx {
       const seen = this.conflicts.some(
         (c) => c.entity === row.entity && c.id === row.id && c.field === field,
       );
-      if (!seen) this.conflicts.push({ entity: row.entity, id: row.id, field, version });
+      if (seen) continue;
+      const value = columnsValue(row.start.raw, columnsOf(row.entity, field));
+      const task = isId(row.node, "t") ? { task: row.node } : {};
+      this.conflicts.push({ entity: row.entity, id: row.id, ...task, field, value, version });
     }
     return newer;
   }
@@ -232,6 +248,12 @@ export class Tx {
     based = true,
   ): void {
     const row = this.#touch(entity, id, node);
+    // A request marked active changes active tasks only, decided as it finds them.
+    if (this.request.active === true && row.start !== undefined && isId(row.node, "t")) {
+      const life = this.conn.prepare(SQL.lifecycle).get({ id: row.node })?.["lifecycle"];
+      if (life !== "active")
+        throw new TreeProblem("TASK_NOT_ACTIVE", "The task is not active", "task");
+    }
     if (based && this.#newer(row, Object.keys(fields)).length > 0) return;
     const assign: string[] = [];
     const params: Record<string, SqlValue> = { id };
@@ -327,8 +349,15 @@ export interface ChangeRow {
 
 const head = (row: Written) => ({ entity: row.entity, entityId: row.id, node: row.node });
 
-/** A command: it reads and writes through its Tx and returns what it did. */
-export type Command = (tx: Tx, input: Record<string, unknown>) => unknown;
+/**
+ * A command. `check` reads its input from the request alone, normalised, and refuses what is not
+ * valid whatever the space holds, so such a request is decided by nothing and stores nothing. `run`
+ * reads and writes through its Tx and returns what it did.
+ */
+export interface Command {
+  check: (input: Fields) => Record<string, unknown>;
+  run: (tx: Tx, input: Record<string, unknown>) => unknown;
+}
 
 /** What Undo and Redo ask the core for: the commit they answer, and what to run. */
 export interface HistoryRun {

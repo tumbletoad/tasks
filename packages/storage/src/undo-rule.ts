@@ -59,3 +59,15 @@ export function undoRule(kinds: KindRows): UndoRule {
     "ORDER BY undone_by DESC LIMIT 1";
   return { step, undoTarget, redoTarget };
 }
+
+/**
+ * Whether change row `c` files into a group the same person's commit right before made: the
+ * page's new group, made and then filed into. `into` is an SQL list of the IDs `c` files into, and
+ * `group` a condition on the create row `g` that holds only for a group (an area or a project),
+ * never for a task made just before.
+ */
+export const filedIntoNewGroup = (into: string, group: string): string =>
+  `EXISTS (SELECT 1 FROM changes g WHERE g.action = 'create' AND (${group}) ` +
+  `AND g.entity_id IN (${into}) ` +
+  "AND g.seq = (SELECT max(p.seq) FROM commits p JOIN commits me ON me.seq = c.seq " +
+  "WHERE p.principal_id = me.principal_id AND p.seq < c.seq))";

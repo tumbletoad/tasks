@@ -2120,14 +2120,21 @@
     },
     {
       "id": "S2.tree.boundary",
-      "title": "The tree writer keeps today's guarantees at the request boundary: a write to what exists needs a base from no later than the space; fields written together stay together when one conflicts, so a stale reopen after an agent's outcome changes nothing; a task goes to the Trash only as the person saw it, the tasks below included, and is counted; Undo never hides a task someone else added below what it hides; the principal is an actor of the kind it claims and the author one of the space; only a person corrects or removes a note; all finishes every open task below, also after the task was finished alone; a second Trash and a restore of a live task are no change, and a task in the Trash takes no other change; a writer that is not the authority, or a request for another space, decides and stores nothing; a new step ends what could be redone, and a named Undo of another step leaves the stack; a commit's time never goes back; the history check sees a row that went missing",
+      "title": "The tree writer keeps today's guarantees at the request boundary: a write to what exists needs a base from no later than the space; fields written together stay together when one conflicts, so a stale reopen after an agent's outcome changes nothing; a task goes to the Trash only as the person saw it, the tasks below included, and is counted; Undo never hides a task someone else added below what it hides; the principal is an actor of the kind it claims and the author one of the space; only a person corrects or removes a note; all finishes every open task below, also after the task was finished alone; a second Trash and a restore of a live task are no change, and a task in the Trash takes no other change; a writer that is not the authority, or a request for another space, decides and stores nothing; a new step ends what could be redone, and a named Undo of another step leaves the stack; a commit's time never goes back; a request that fails its checks stores nothing, so the corrected request goes through under the same ID; text is normalised before the fingerprint and the write; the request ID, the writer's own scope, the size and a key no command knows are refused as today, without the key's text; a conflict names the task, the value now, and who changed it when, and its receipt keeps all but the value; a move under a task made just before is no step; retries are kept apart by scope, a reused ID says when it was first used, and warnings and the caller's answer replay; only a person undoes, never on a base; a request marked active changes active tasks only; a task is found by its legacy alias; a base from another copy of the space is refused, and a kept Undo's answer replays on a resend; the history check sees a row that went missing",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "S2.undo.walk",
-      "title": "One walk of Undo's kinds against today's writer and the tree's: for a check-off, a drop, a reopen, the Trash, a restore, a removed note, a note put back, a title and a note's words edited twice, out of the Inbox and a dismissal, the action, its opposite by hand, two Undos and two Redos walk the state back and forth exactly; a first filing, and a filing into a project made just before, walk back and forth",
+      "title": "One walk of Undo's kinds against today's writer and the tree's: for a check-off, a drop, a reopen, the Trash, a restore, a removed note, a note put back, a title and a note's words edited twice, out of the Inbox and a dismissal, the action, its opposite by hand, two Undos and two Redos walk the state back and forth exactly; a first filing, and a filing into a project made just before, walk back and forth; a page's body, its title and brief, the Trash and out of it, and the space's description, brief and text for agents walk back and forth exactly",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.tree.pages",
+      "title": "Notes, pages and a node's texts on the tree writer: notes on a task, a project, the space and a page, one thread per owner of any kind, a page's comments belonging to its node; a page takes the space's next reference on any node, and edits of different passages from one read both stand; old words gone or standing twice write nothing and the answer holds the page's start; an append, a set and a Restore that meets newer words as a conflict; a page under a task in the Trash is not found and comes back unwritten; a node's brief and description, and a text for agents that only a person writes and never on a task; text stored as today's writer stores it; a page's change rows belong to the node that holds it; a page larger than a page may be is refused, also when an append or an edit would make it so",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -3536,15 +3543,23 @@
     },
     {
       "id": "A4.3.4.1.t3.open",
-      "title": "Open in T3 Code through the service against a fake T3: one click makes one thread at a project root or a nested folder registered as its own project, with the brief in its composer and the typed words only in the launch's request; a double click and a lost answer give the same thread; a link that did not come up opens again with its brief, then bare; T3 not paired or not running refuses with its reason",
+      "title": "Open in T3 Code through the service against a fake T3: one click makes one thread at a project root or a nested folder registered as its own project, with the brief in its composer and the typed words only in the launch's request; a double click and a lost answer give the same thread; a link that did not come up opens again with its brief, then bare; a second Open brings the task's thread forward with the words as a note, a thread T3 no longer has is noticed and made again, and T3 that does not say refuses with nothing made; T3 not paired or not running refuses with its reason",
       "source": "A4 3.4.1, A7 M2.10t",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.4.1.t3.thread",
+      "title": "A task's T3 Code thread as T3 Code tells it: its entry shows it running with what its agent does (working, needs you, idle) while T3 has it and ended once T3 no longer has it; the Agents page shows it as an agent of its task in that state, also while the Agent Monitor is missing; a card opened while T3 Code did not answer shows the state once it does; a thread recorded lost reads ended and offers no link",
+      "source": "A4 3.4.1, A5 3.9",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.4.1.t3.e2e",
-      "title": "Against the real service in Chromium and Firefox with a fake T3: T3 not running offers Start, which opens its link; not paired offers Pair, which opens T3's approval page; a read-only pairing fails one press at once with Pair again and no thread; then Open makes one thread at a project root with the brief in its composer and the typed words only in the request, Open in T3 on its entry brings it up without the brief, and a folder inside the project opens as a project of its own (screenshots in Chromium only)",
+      "title": "Against the real service in Chromium and Firefox with a fake T3: T3 not running offers Start, which opens its link; not paired offers Pair, which opens T3's approval page; a read-only pairing fails one press at once with Pair again and no thread; then Open makes one thread at a project root with the brief in its composer and the typed words only in the request, Open in T3 on its entry brings it up without the brief, Open again brings the same thread forward, its entry and the Agents page say that its agent needs the person as T3 tells, a thread deleted in T3 is made again at the next Open, and a folder inside the project opens as a project of its own (screenshots in Chromium only)",
       "source": "A4 3.4.1, A5 3.8, A5 3.9, A7 M2.10t",
       "owner": "M2",
       "kind": "ci",

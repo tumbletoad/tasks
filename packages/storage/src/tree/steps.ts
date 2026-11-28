@@ -14,7 +14,7 @@ import { formatTaskRef } from "../refs.ts";
 import { columnsValue, fieldJson } from "../write/fields.ts";
 import type { HistoryRun, Tx } from "./tx.ts";
 import { columnsOf, isEntity, TreeProblem } from "./fields.ts";
-import { undoRule, type KindRows } from "../undo-rule.ts";
+import { filedIntoNewGroup, undoRule, type KindRows } from "../undo-rule.ts";
 
 /** A change row `c` of commit `c.seq` whose node the same commit also changed `field` of. */
 const sameNode = (field: string): string =>
@@ -25,11 +25,10 @@ const IS_TASK = "EXISTS (SELECT 1 FROM tasks k WHERE k.id = c.entity_id)";
 const IS_PROJECT = "EXISTS (SELECT 1 FROM nodes p WHERE p.id = c.entity_id AND p.kind = 'project')";
 
 /** A move of node row `c` into a project the same person's commit right before made. */
-const INTO_NEW_PROJECT =
-  "EXISTS (SELECT 1 FROM changes g WHERE g.action = 'create' AND g.entity = 'nodes' " +
-  "AND g.entity_id = json_extract(c.after, '$.parent_id') " +
-  "AND g.seq = (SELECT max(p.seq) FROM commits p JOIN commits me ON me.seq = c.seq " +
-  "WHERE p.principal_id = me.principal_id AND p.seq < c.seq))";
+const INTO_NEW_PROJECT = filedIntoNewGroup(
+  "json_extract(c.after, '$.parent_id')",
+  "g.entity = 'nodes' AND json_extract(g.after, '$.kind') = 'project'",
+);
 
 /** How the tree's change rows show each kind Undo is for (undo-rule.ts). */
 const KINDS: KindRows = {
@@ -170,7 +169,7 @@ function oppositeOf(conn: Connection, changes: readonly Stored[]): Call[] {
       }
       const deleted = of("deleted");
       if (deleted !== undefined) {
-        if (!trashed.has(String(node?.["parent_id"]))) {
+        if (!trashed.has(String(node["parent_id"]))) {
           const command = tombstoned(deleted.before) ? "nodes.trash" : "nodes.restore";
           calls.push({ command, input: { task: id } });
         }

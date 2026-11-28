@@ -30,6 +30,8 @@ interface Send {
   base: string | null;
   request_id: string;
   entry: string;
+  /** More of the request as sent: its scope, `active`, warnings or the caller's answer. */
+  extra: Record<string, unknown>;
 }
 
 const actor = (id: Id<"ac">, kind: "human" | "agent", scope: string): TreeActor => ({
@@ -97,8 +99,12 @@ export function openTree(
         actor: more.who ?? human,
         command,
         input,
-        ...(more.base === null ? {} : { base: more.base ?? asOf() }),
+        // An undo or a redo is guarded by newer work, never a base.
+        ...(more.base === null || command === "undo" || command === "redo"
+          ? {}
+          : { base: more.base ?? asOf() }),
         ...(more.entry === undefined ? {} : { entry: more.entry }),
+        ...more.extra,
       }),
     close: () => {
       conn.close();

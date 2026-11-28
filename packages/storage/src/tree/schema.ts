@@ -117,6 +117,12 @@ export const TREE_STATEMENTS: readonly string[] = [
   ${VERSIONS}
 ) STRICT`,
   "CREATE INDEX pages_owner ON pages(owner_id) WHERE deleted_at IS NULL",
+  // The prototype import's task IDs, which text written before may hold: a task is found by them.
+  `CREATE TABLE aliases (
+  namespace TEXT NOT NULL CHECK (namespace IN ('planning')), alias TEXT NOT NULL,
+  entity_id TEXT NOT NULL REFERENCES nodes(id), created_at INTEGER NOT NULL,
+  PRIMARY KEY (namespace, alias)
+) STRICT, WITHOUT ROWID`,
   // Notes, log entries and learnings in one thread on a node, and a page's comments; numbered per
   // owner.
   `CREATE TABLE notes (

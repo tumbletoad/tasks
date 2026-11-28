@@ -598,7 +598,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
     for (const { held, cleanup } of cases) {
       for (const said of ["Half done.", null]) {
         const { id, machine, files } = await bareHost({ groups: refusing });
-        await machine.begin(id, held === undefined ? {} : { container: held });
+        await machine.begin(id, held === undefined ? {} : { process_group: held });
         await machine.started(id, 4242, Date.UTC(2026, 10, 16));
         await machine.cancel(id);
         if (said !== null) files.saveAnswer(id, { text: said, final: false, cut: false });
@@ -628,7 +628,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
       },
     };
     const { id, machine, files } = await bareHost({ groups: refusing });
-    await machine.begin(id, { container: "job" });
+    await machine.begin(id, { process_group: "job" });
     await machine.started(id, 4242, Date.UTC(2026, 10, 16));
     await machine.cancel(id);
     const host = new RunHost({ machine, groups: group, files });
@@ -656,7 +656,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
     const { host, id, machine } = await bareHost({ groups });
     let recorded: unknown;
     await host.start(id, async () => {
-      recorded = (await machine.read(id))?.evidence.container;
+      recorded = (await machine.read(id))?.evidence.process_group;
       return { command: "agent", args: [], cwd: ".", env: {} };
     });
     await host.ended(id);

@@ -2,10 +2,12 @@
 //
 // An expanded task's thread waits for its sessions and runs to be read, so they never slot in
 // between its notes later; a read that fails counts as read, and the thread is drawn all the same.
+// An open card whose task has a T3 Code thread reads it again each minute, also while T3 Code said
+// nothing, so its state shows once T3 Code answers.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { Api } from "../api.ts";
+import type { Api, Receipt } from "../api.ts";
 import { ToastContext } from "../app/frame.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
@@ -94,8 +96,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** Opens the task's card against a service whose sessions or runs read fails. */
-async function open(fails: "receipts" | "runs"): Promise<HTMLElement> {
+/** Opens the task's card against a service whose sessions or runs read fails, or gives these. */
+async function open(
+  fails: "receipts" | "runs" | undefined,
+  receipts: () => readonly Receipt[] = () => [],
+): Promise<HTMLElement> {
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
     this: HTMLElement,
   ) {
@@ -120,7 +125,7 @@ async function open(fails: "receipts" | "runs"): Promise<HTMLElement> {
       },
     },
     busy: () => Promise.resolve({ busy: [], last: {} }),
-    receipts: () => (fails === "receipts" ? lost() : Promise.resolve([])),
+    receipts: () => (fails === "receipts" ? lost() : Promise.resolve(receipts())),
     runs: () => (fails === "runs" ? lost() : Promise.resolve([])),
   } as unknown as Api;
   live = new Live({
@@ -172,5 +177,35 @@ describe("[A5.3.7.web.detail] a failed read of the sessions or the runs still le
 
   test("the sessions cannot be read: the card's notes are drawn", async () => {
     expect(noteText(await open("receipts"))).toEqual(["Measured the spot: level."]);
+  });
+});
+
+describe("[A4.3.4.1.t3.thread] an open card reads its T3 Code thread again each minute", () => {
+  test("opened while T3 Code did not answer, it shows the thread's state once T3 Code does", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const thread: Receipt = {
+        id: "la_00r5mfcw5rfzxb9enb2vg50z3g",
+        reference: "L7KQ21",
+        instance: "t3",
+        route: "t3-mcp",
+        state: "confirmed",
+        reason: null,
+        at: { prepared: Date.UTC(2026, 10, 10, 9), confirmed: Date.UTC(2026, 10, 10, 9) },
+      };
+      let told: Receipt = thread;
+      const shown = await open(undefined, () => [told]);
+      const entry = () => shown.querySelector('[data-entry="session"]')?.textContent ?? "";
+      expect(entry()).toContain("Opened in");
+      expect(entry()).not.toContain("working");
+      told = { ...thread, session: "running", activity: "working" };
+      await act(async () => {
+        vi.advanceTimersByTime(60_000);
+        for (let i = 0; i < 20; i += 1) await Promise.resolve();
+      });
+      expect(entry()).toContain("· working");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -55,7 +55,7 @@ async function round(plan: TreePlan, afterMs?: number): Promise<RoundEnd> {
  * Undo, a page with an edit of its words, and a note on the page.
  */
 function requests(n: number): TreePlanned[] {
-  const id = (k: number) => `r${String(n)}-${String(k)}`;
+  const id = (k: number) => `round-${String(n)}-request-${String(k)}`;
   const parent = `t_${String(n + 1).padStart(26, "0")}`;
   const page = `pg_${String(n + 1).padStart(26, "0")}`;
   return [

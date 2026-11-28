@@ -200,6 +200,7 @@ export interface AgentsNested {
 /**
  * The task TTasks started an agent for, in any open space. `run`: a background run, whose state
  * TTasks knows and its row shows. `terminal`: an agent in a terminal, whose state TTAM knows.
+ * `t3`: a T3 Code thread, whose state T3 Code tells.
  */
 export interface AgentsTask {
   /** The space's ID. */
@@ -209,7 +210,7 @@ export interface AgentsTask {
   readonly id: string;
   /** The task's reference, such as `MIRA-12`. */
   readonly ref: string;
-  readonly started: "run" | "terminal";
+  readonly started: "run" | "terminal" | "t3";
   /**
    * The ID of the terminal launch or background run the agent was matched to: an agent of an
    * earlier run of the task is not its current run.
@@ -234,6 +235,13 @@ export interface AgentsSession {
   /** Since its latest activity. */
   readonly quietMs: number | null;
   readonly nested: readonly AgentsNested[];
+}
+
+/** A task's T3 Code thread, as T3 Code tells what its agent does. */
+export interface AgentsThread {
+  readonly task: AgentsTask;
+  /** `waiting`: an approval or a question waits for the person. */
+  readonly activity: "working" | "waiting" | "idle";
 }
 
 /** One account's plan usage. */
@@ -270,11 +278,13 @@ export interface AgentsPicture {
 
 /**
  * The Agents page's part from the monitor. `picture` null: none yet, or the monitor is missing or
- * does not fit. `trouble`: why the picture is not updating, null while it updates.
+ * does not fit. `trouble`: why the picture is not updating, null while it updates. `threads`: the
+ * tasks' T3 Code threads as T3 Code tells them, whatever the monitor says.
  */
 export interface AgentsView {
   readonly picture: AgentsPicture | null;
   readonly trouble: { readonly kind: "slow" } | MonitorProblem | null;
+  readonly threads: readonly AgentsThread[];
 }
 
 /** What a tab tells the service about itself, on every change and after every reconnect. */

@@ -121,7 +121,8 @@ export const test = base.extend<
       const folder = mkdtempSync(join(tmpdir(), "ttasks-e2e-t3-"));
       const fake = await FakeT3.start(join(folder, "t3home"));
       try {
-        const world = await startWorld(built(), { t3: fake.home });
+        // The monitor too: the Agents page shows a task's T3 thread with its picture.
+        const world = await startWorld(built(), { t3: fake.home, monitor: true });
         try {
           await use({ world, fake });
         } finally {

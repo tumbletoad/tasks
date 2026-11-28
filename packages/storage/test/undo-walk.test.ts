@@ -62,6 +62,10 @@ type PageAct =
 
 type TextAct = { brief?: string; description?: string } | { forAgents: string };
 
+/** A page action's words, without its `do`. */
+const words = (act: PageAct): Record<string, string> =>
+  Object.fromEntries(Object.entries(act).filter(([key]) => key !== "do"));
+
 const pageSeen = (p: Record<string, unknown>) => ({
   title: p["title"],
   brief: p["brief"],
@@ -182,7 +186,7 @@ async function today(): Promise<Walker> {
     },
     pageAct: (page, act) => {
       if (act.do === "set") {
-        const { do: _, ...set } = act;
+        const set = words(act);
         send([{ kind: "page.set", page, ...set }]);
       } else send([{ kind: act.do === "trash" ? "page.trash" : "page.restore", page }]);
     },
@@ -312,19 +316,17 @@ async function tree(): Promise<Walker> {
         "archived_at"
       ] !== null,
     page: () =>
-      String(
-        (
-          send("page.create", {
-            on: "space",
-            title: "Passport",
-            brief: "",
-            body: "Bring a photo.",
-          }) as { page: { id: string } }
-        ).page.id,
-      ),
+      (
+        send("page.create", {
+          on: "space",
+          title: "Passport",
+          brief: "",
+          body: "Bring a photo.",
+        }) as { page: { id: string } }
+      ).page.id,
     pageAct: (page, act) => {
       if (act.do === "set") {
-        const { do: _, ...set } = act;
+        const set = words(act);
         send("page.set", { page, ...set });
       } else send(act.do === "trash" ? "page.trash" : "page.restore", { page });
     },
