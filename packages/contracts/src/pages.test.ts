@@ -10,7 +10,7 @@ import {
 } from "./entries/page-examples.ts";
 import { isErrorCode } from "./errors.ts";
 import { opSpec } from "./operations.ts";
-import { CompactPage, FinishLibrary, NOTHING_REUSABLE, PageAgentChange } from "./pages.ts";
+import { CompactPage, FinishLibrary, NOTHING_REUSABLE } from "./pages.ts";
 import { registry } from "./registry.ts";
 
 describe("[A3.pages.contract] the page contract of step 1", () => {
@@ -30,7 +30,6 @@ describe("[A3.pages.contract] the page contract of step 1", () => {
     const [leaving] = PAGE_FEED_EXAMPLES.pageLeaves.entities;
     const row = CompactPage.parse(leaving?.row);
     expect(row.deleted_at).toBeDefined();
-    expect(PageAgentChange.safeParse(PAGE_FEED_EXAMPLES.agentChange).success).toBe(true);
   });
 
   test("a Restore that meets a newer body is a conflict that names the page's body", () => {

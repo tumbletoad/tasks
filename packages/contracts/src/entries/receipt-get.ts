@@ -87,6 +87,8 @@ const ReceiptConflict = z.strictObject({
       "areas",
       "projects",
       "folders",
+      "pages",
+      "node_texts",
     ])
     .describe("Table of the row"),
   id: z
