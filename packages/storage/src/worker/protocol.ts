@@ -34,7 +34,6 @@ import type { DriverReport } from "../startup-check.ts";
 import type { LaunchRecord } from "../write/launches.ts";
 import type { ProjectedBatch } from "../write/outbox.ts";
 import type { RunRow } from "../write/runs.ts";
-import type { TreeResult } from "../tree/core.ts";
 import type { Receipt, ReceiptLookup } from "../write/receipts.ts";
 import type { WriteResult } from "../write/request.ts";
 import type { MachineInfo } from "../write/writer.ts";
@@ -74,7 +73,7 @@ export interface OpenedSpaceInfo {
   searchIndex?: "remade" | "damaged";
   /** A claim's result. The worker closed the connection after the claim. */
   claim?: Claim;
-  /** A tree space's writer, which the service sends the tree's commands (`backendOf`). */
+  /** A tree space, opened to read or to write: its reads name the tree's tables. */
   backend?: "tree";
   /** The space's authority (A1 3.1, A6 3.5): only this machine's writer writes. */
   authority: { machineId: Id<"m">; epoch: number; incarnation: Id<"ai"> };
@@ -201,9 +200,6 @@ export interface Calls {
   };
   /** One write request to a space's writer (A1 3.7). */
   submit: { args: { handle: number; request: unknown }; result: WriteResult };
-  /** One named command of a tree space (tree/core.ts), and the answer its receipt keeps. */
-  submitTree: { args: { handle: number; request: unknown }; result: TreeResult };
-  treeReceipt: { args: { handle: number; lookup: ReceiptLookup }; result: TreeResult | null };
   /** A request's receipt in a writer scope (A1 3.8, A3 3.2.3's `receipt.get`), or null. */
   receipt: { args: { handle: number; lookup: ReceiptLookup }; result: Receipt | null };
   /** A launch record (A4 3.16.1), or null. (`id` names the request itself.) */

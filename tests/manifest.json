@@ -2264,7 +2264,7 @@
     },
     {
       "id": "S2.replay.tasks",
-      "title": "Today's service requests through both backends, one service serving a space on today's writer and a tree space, answers and what task.get then shows compared step by step: the tasks family's add, a lost reply sent again, update, finish, reopen and the Trash; captures by source with their log, a request ID reused, a stale base, an update that changes nothing, a finish and a Trash sent twice, and a task the space does not have; a retry after a rename differs by design, the tree answering with what the write did",
+      "title": "Today's service requests through both backends, one service serving a space on today's writer and a tree space, answers and what task.get then shows compared step by step: the tasks family's add, a lost reply sent again, update, finish, reopen and the Trash; captures by source with their log, a request ID reused, a stale base, an update that changes nothing, a finish and a Trash sent twice, and a task the space does not have; one handler per entry serving both, whole answers compared with IDs, references, as_of and versions by their relations and a retry held to its first as_of in each space; a finish as dropped and its ID reused as done, a finished task's edit, a finish dated in the future, the Trash with arguments that do not go together, a refused batch and its ID then taken by the corrected one, a duplicate title in one batch, a dated source, an update without its base, an accepted ID reused on other tools, and a person's edit between a write and its retry",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]

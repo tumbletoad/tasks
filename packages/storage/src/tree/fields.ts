@@ -155,6 +155,8 @@ export class TreeProblem extends Error {
   readonly code: string;
   readonly field: string | undefined;
   readonly data: unknown;
+  /** The operation of today's plan that met it (plan.ts). */
+  op: number | undefined;
   constructor(code: string, message: string, field?: string, data?: unknown) {
     super(message);
     this.code = code;

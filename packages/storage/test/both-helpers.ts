@@ -1,8 +1,8 @@
 // Runs one sequence of ordinary steps through today's writer and the tree's, and compares what
 // each answered and what a reader then saw, step by step. A part of the tree says each step in
 // both writers' words once (a `Side`); a sequence is then a list of steps. Where the writers may
-// differ, the step says why in one line, and only that step's answer and view are left out of the
-// comparison. Fixture text only.
+// differ, the step names the one field that may (`answer.said.title`) and says why in one line;
+// everything else of that step is compared. Fixture text only.
 import { expect } from "vitest";
 import type { Id } from "../src/ids.ts";
 import type { Operation, WriteResult } from "../src/write/request.ts";
@@ -21,8 +21,8 @@ export interface Answer {
 export type Base = "now" | "none" | "marked";
 export type Who = "person" | "agent";
 
-/** A step, and the line that says why the writers may differ at it. */
-export type Sequence<Step> = readonly (Step | { readonly step: Step; readonly differs: string })[];
+/** A step, or a step with the one field where the writers may differ, and why. */
+export type Sequence<Step> = readonly (Step | Marked<Step>)[];
 
 /** One writer, or one backend of the service: each step said in its words, and its reader's view. */
 export interface Side<Step, S> {
@@ -32,7 +32,29 @@ export interface Side<Step, S> {
   close(session: S): void;
 }
 
-type Marked<Step> = { readonly step: Step; readonly differs: string };
+/**
+ * `field` is a path into what the step compares, `{answer, seen}`, its parts joined by dots:
+ * `answer.said.title`, or `seen.passport.task.title`.
+ */
+export interface Marked<Step> {
+  readonly step: Step;
+  readonly field: string;
+  readonly differs: string;
+}
+
+/** `value` without the field at `path`. */
+function without(value: unknown, path: readonly string[]): unknown {
+  if (path.length === 0 || typeof value !== "object" || value === null) return value;
+  const [head, ...rest] = path as [string, ...string[]];
+  if (Array.isArray(value)) {
+    return (value as unknown[]).map((v, i) => (String(i) === head ? without(v, rest) : v));
+  }
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([k, v]) =>
+      k !== head ? [[k, v]] : rest.length === 0 ? [] : [[k, without(v, rest)]],
+    ),
+  );
+}
 
 const isMarked = <Step>(s: Step | Marked<Step>): s is Marked<Step> =>
   typeof s === "object" && s !== null && "differs" in s && "step" in s;
@@ -61,10 +83,14 @@ export async function both<Step, T, R>(
   const today = await run(sides.today);
   const tree = await run(sides.tree);
   sequence.forEach((s, i) => {
-    if (isMarked(s)) return;
-    const at = `step ${String(i + 1)}: ${JSON.stringify(s).slice(0, 200)}`;
-    expect(tree[i]?.answer, `${at}, the answer`).toEqual(today[i]?.answer);
-    expect(tree[i]?.seen, `${at}, what a reader sees`).toEqual(today[i]?.seen);
+    const at = `step ${String(i + 1)}: ${JSON.stringify(stepOf(s)).slice(0, 200)}`;
+    const path = isMarked(s) ? s.field.split(".") : [];
+    const compared = (side: { answer: Answer; seen: unknown } | undefined) =>
+      without({ answer: side?.answer, seen: side?.seen }, path) as Record<string, unknown>;
+    const mine = compared(tree[i]);
+    const theirs = compared(today[i]);
+    expect(mine["answer"], `${at}, the answer`).toEqual(theirs["answer"]);
+    expect(mine["seen"], `${at}, what a reader sees`).toEqual(theirs["seen"]);
   });
 }
 

@@ -215,8 +215,8 @@ import { readFinished } from "./task-rows.ts";
 import { readChangeTasks, readTrash } from "./trash.ts";
 import { readActivity } from "./activity.ts";
 import { digestFolderOf } from "./digest-folder.ts";
-import { isTree, type TreeCall } from "./tree.ts";
-import { treeEntry } from "./tree-entries.ts";
+import { checkOnTree, checkPlan, isTree } from "./tree.ts";
+import { readTreeTask, treeTrail } from "./tree-read.ts";
 import { trailOff } from "../trial.ts";
 import {
   holderName,
@@ -492,10 +492,7 @@ async function callWith(
     if (space === undefined) throw unpicked;
     return space;
   };
-  // A tree space's call is one named command, whose writer answers a retry from its receipt.
-  if (space !== undefined && isTree(space)) {
-    return treeCall(host, caller, entry, principal, space, input);
-  }
+  if (space !== undefined && isTree(space)) checkOnTree(entry, input);
   const requestId = input["request_id"];
   // A launch is the user's record of its own, which answers a repeated click itself.
   if (
@@ -525,29 +522,6 @@ async function callWith(
   }
   // Another request under this ID: the writer refuses it (REQUEST_ID_REUSED).
   return decideCall(host, caller, entry, principal, picked, input);
-}
-
-/** A call on a tree space: the input's rules, then the entry's tree handler (tree.ts). */
-async function treeCall(
-  host: OpsHost,
-  caller: Caller,
-  entry: AnyEntry,
-  principal: Principal,
-  space: UsableSpace,
-  input: Record<string, unknown>,
-): Promise<unknown> {
-  const parsed = checkedInput(entry, principal, input);
-  const now = (host.now ?? Date.now)();
-  const call: TreeCall = {
-    host,
-    caller,
-    principal,
-    entry,
-    space,
-    input: parsed,
-    today: localDate(now, (host.timeZone ?? localTimeZone)()),
-  };
-  return checked(host, entry, await treeEntry(entry.name)(call));
 }
 
 /**
@@ -1046,6 +1020,7 @@ async function submit(
       message: "The service built an operation its entry does not declare.",
     });
   }
+  if (isTree(call.space)) checkPlan(call.entry, ops);
   let result: WriteResult;
   try {
     // The grant again before anything reaches the space (A3 3.7.8): a row revoked while this call
@@ -3250,7 +3225,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       ? (input["notes"] as string[]).map((ref) => Number(ref.slice(1)))
       : undefined;
     // A task in the Trash reads as it is, marked so: an agent that gets not_found would add it again.
-    const read = await readTask(reader, task, {
+    const read = await (isTree(call.space) ? readTreeTask : readTask)(reader, task, {
       machine,
       ...ranges,
       ...(named === undefined ? {} : { named }),
@@ -3280,7 +3255,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (sections.length === 0) {
       const digest = digestOf(read, call.today, await digestFolder(call, read.folder));
       // What is known above the task, and its own pages, in the digest's one budget.
-      const library = trailOff() ? undefined : await trailOf(reader, read.space, read.row);
+      const trail = isTree(call.space) ? treeTrail : trailOf;
+      const library = trailOff() ? undefined : await trail(reader, read.space, read.row);
       const more = digest["more"] as Record<string, unknown>;
       answer = {
         view: "digest",

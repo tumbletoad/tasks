@@ -309,11 +309,14 @@ const taskUpdate: Run = (tx, input) => {
   if (set["brief"] !== undefined) node["brief"] = str(set, "brief") ?? "";
   if (set["description"] !== undefined) node["description"] = str(set, "description") ?? "";
   const fields: Record<string, SqlValue> = {};
-  if (set["status"] !== undefined)
-    fields["status"] = known(tx, "tasks.statuses", set["status"], "set.status");
+  // As today's writer: a stale save is a conflict first, whatever the space's list holds now.
+  const listed = (list: ScaleKey, field: "status" | "effort") =>
+    tx.held("tasks", id, id, [field])
+      ? (set[field] as SqlValue)
+      : known(tx, list, set[field], `set.${field}`);
+  if (set["status"] !== undefined) fields["status"] = listed("tasks.statuses", "status");
   if (set["effort"] !== undefined) {
-    fields["effort"] =
-      set["effort"] === null ? null : known(tx, "tasks.effort_scale", set["effort"], "set.effort");
+    fields["effort"] = set["effort"] === null ? null : listed("tasks.effort_scale", "effort");
   }
   if (set["inbox"] !== undefined) fields["inbox"] = set["inbox"] === true ? 1 : 0;
   if (set["priority"] !== undefined) fields["priority"] = Number(set["priority"]);

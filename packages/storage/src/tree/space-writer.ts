@@ -4,13 +4,10 @@
 import type { Connection } from "../driver.ts";
 import { StorageError } from "../errors.ts";
 import type { Id, RandomSource } from "../ids.ts";
-import type { ReceiptLookup } from "../write/receipts.ts";
+import { readReceipt, type Receipt, type ReceiptLookup } from "../write/receipts.ts";
+import type { WriteResult } from "../write/request.ts";
 import type { MachineInfo } from "../write/writer.ts";
-import { TreeWriter, type TreeResult } from "./core.ts";
-
-const SQL = {
-  receipt: "SELECT result FROM receipts WHERE scope_id = $scope AND request_id = $request",
-} as const;
+import { TreeWriter } from "./core.ts";
 
 export class TreeSpaceWriter {
   readonly backend = "tree";
@@ -40,16 +37,14 @@ export class TreeSpaceWriter {
     return this.#writer.actor(kind, label);
   }
 
-  submit(request: unknown): TreeResult {
-    return this.#writer.submit(request);
+  /** Today's request, its operations run as the tree's commands (plan.ts). */
+  submit(request: unknown): WriteResult {
+    return this.#writer.submitPlan(request);
   }
 
-  /** The answer a request decided, as its receipt keeps it; undefined when none was decided. */
-  receipt(lookup: ReceiptLookup): TreeResult | undefined {
-    const row = this.#conn.transaction("deferred", () =>
-      this.#conn.prepare(SQL.receipt).get({ scope: lookup.scope_id, request: lookup.request_id }),
-    );
-    return row === undefined ? undefined : (JSON.parse(String(row["result"])) as TreeResult);
+  /** A request's receipt, as today's writer keeps one; undefined when none was decided. */
+  receipt(lookup: ReceiptLookup): Receipt | undefined {
+    return this.#conn.transaction("deferred", () => readReceipt(this.#conn, lookup));
   }
 
   /** What Open and Run, the projector and today's index ask of a space: not on a tree yet. */

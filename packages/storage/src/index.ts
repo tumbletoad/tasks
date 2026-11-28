@@ -448,3 +448,4 @@ export { provenBackup } from "./backup/barrier.ts";
 // The tree: only test and trial spaces are trees until the switch (piece v).
 export type { TreeConflict, TreeRequest } from "./tree/tx.ts";
 export type { TreeResult } from "./tree/core.ts";
+export { planGap } from "./tree/plan.ts";

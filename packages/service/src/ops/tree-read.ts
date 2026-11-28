@@ -4,6 +4,7 @@
 // project as its area; under a project inside one, in both. Deeper levels show the nearest two.
 import type { Row, WorkerConnection } from "@ttasks/storage";
 import { pageRow } from "./library.ts";
+import { treeTables } from "./tree.ts";
 import {
   notFound,
   snapshot,
@@ -125,7 +126,7 @@ const TREE: Record<string, Statement> = {
  * unless `trash` asks for one.
  */
 export async function readTreeTask(
-  reader: WorkerConnection,
+  served: WorkerConnection,
   ref: string,
   options: {
     readonly machine: string;
@@ -135,6 +136,7 @@ export async function readTreeTask(
     readonly trash?: boolean;
   },
 ): Promise<TaskRead> {
+  const reader = treeTables(served);
   const key = taskKey(ref);
   const params = {
     id: key.id,
@@ -219,10 +221,11 @@ const LIST = 25;
  * nearest first, each with its texts and first pages, and the task's own pages.
  */
 export async function treeTrail(
-  reader: WorkerConnection,
+  served: WorkerConnection,
   space: SpaceFacts,
   task: Row,
 ): Promise<{ trail: Record<string, unknown>[]; pages: unknown[]; count: number }> {
+  const reader = treeTables(served);
   const id = text(task["id"]);
   const [levels, pages, count] = await reader.transaction("deferred", [
     { sql: LEVELS.above, mode: "all", params: { id } },

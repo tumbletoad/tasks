@@ -200,6 +200,8 @@ const spaceInfo = (handle: number, opened: OpenedSpace): OpenedSpaceInfo => ({
     incarnation: opened.space.authority.incarnation,
   },
   lastSeq: opened.space.lastSeq,
+  // A tree space, read or written: its reads name the tree's tables (`backend`).
+  ...(encodeRevision(opened.revision) === TREE_USER_VERSION ? { backend: "tree" as const } : {}),
 });
 
 /**
@@ -274,11 +276,6 @@ export function serve(
   const writer = (handle: number): SpaceWriter | TreeSpaceWriter => {
     const found = writers.get(handle);
     if (found === undefined) throw misuse("No space writer has this handle");
-    return found;
-  };
-  const tree = (handle: number): TreeSpaceWriter => {
-    const found = writer(handle);
-    if (!(found instanceof TreeSpaceWriter)) throw misuse("This space's writer is not a tree's");
     return found;
   };
   /** Today's writer of a space: what only it does yet is refused on a tree space. */
@@ -396,7 +393,7 @@ export function serve(
         if (encodeRevision(ready.revision) === TREE_USER_VERSION) {
           // A tree space keeps its index in every commit: nothing to repair on open.
           writers.set(handle, new TreeSpaceWriter(ready.conn, machine));
-          return { ...spaceInfo(handle, ready), backend: "tree" };
+          return spaceInfo(handle, ready);
         }
         // A migration made the index just now. Otherwise the owner's open repairs or refreshes it
         // here, so search works without the person doing anything: the tasks are the truth.
@@ -618,10 +615,8 @@ export function serve(
         registerMachine: ({ handle }) => writer(handle).registerMachine(),
         storeDefaults: ({ handle }) => writer(handle).storeDefaults(),
         actor: ({ handle, actorKind, label }) => writer(handle).actor(actorKind, label),
-        submit: ({ handle, request }) => today(handle).submit(request),
-        receipt: ({ handle, lookup }) => today(handle).receipt(lookup) ?? null,
-        submitTree: ({ handle, request }) => tree(handle).submit(request),
-        treeReceipt: ({ handle, lookup }) => tree(handle).receipt(lookup) ?? null,
+        submit: ({ handle, request }) => writer(handle).submit(request),
+        receipt: ({ handle, lookup }) => writer(handle).receipt(lookup) ?? null,
         launch: ({ handle, launch }) => today(handle).launch(launch) ?? null,
         openLaunches: ({ handle, machine }) => today(handle).openLaunches(machine),
         projected: ({ handle, batch }) => today(handle).projected(batch),

@@ -150,6 +150,22 @@ export interface WriteProblem {
   holders?: (EffortCount & { effort: string })[];
 }
 
+/** Both writers' refusal of a task reference the space does not hold, and of another space's. */
+export const NO_SUCH_TASK = "No task has this reference";
+export const OTHER_SPACE_TASK = "The reference has another space's prefix";
+
+/**
+ * A request marked `active` changes active tasks only (A3 3.4.6), decided on the task as the
+ * request finds it: the refusal both writers give, or undefined when the change may go on.
+ */
+export function notActive(
+  active: boolean | undefined,
+  lifecycle: unknown,
+): (WriteProblem & { field: string }) | undefined {
+  if (active !== true || lifecycle === "active") return undefined;
+  return { code: "TASK_NOT_ACTIVE", message: "Only an active task changes here", field: "task" };
+}
+
 /** A1 3.5: an `as_of` is the triple (epoch, incarnation, last_seq) of one read. */
 export interface AsOf {
   epoch: number;

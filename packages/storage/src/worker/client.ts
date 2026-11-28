@@ -57,7 +57,6 @@ import type { DriverReport } from "../startup-check.ts";
 import type { LaunchRecord } from "../write/launches.ts";
 import type { ProjectedBatch } from "../write/outbox.ts";
 import type { RunRow } from "../write/runs.ts";
-import type { TreeResult } from "../tree/core.ts";
 import type { Receipt, ReceiptLookup } from "../write/receipts.ts";
 import type { WriteResult } from "../write/request.ts";
 import type { MachineInfo } from "../write/writer.ts";
@@ -706,7 +705,10 @@ export class StorageWorker {
     options: { appVersion?: string; busyTimeoutMs?: number } = {},
   ): Promise<{ conn: WorkerConnection; info: OpenedSpaceInfo }> {
     const info = await this.call("openSpace", { folder, ...options });
-    return { conn: new WorkerConnection(this, info.handle), info };
+    return {
+      conn: new WorkerConnection(this, info.handle, undefined, info.backend ?? "today"),
+      info,
+    };
   }
 
   /**
@@ -735,7 +737,16 @@ export class WorkerConnection {
   readonly #onClose: (() => void) | undefined;
   readonly handle: number;
 
-  constructor(worker: StorageWorker, handle: number, onClose?: () => void) {
+  /** A space's reader of a tree space reads the tree's tables (`OpenedSpaceInfo.backend`). */
+  readonly backend: "today" | "tree";
+
+  constructor(
+    worker: StorageWorker,
+    handle: number,
+    onClose?: () => void,
+    backend: "today" | "tree" = "today",
+  ) {
+    this.backend = backend;
     this.#worker = worker;
     this.handle = handle;
     this.#onClose = onClose;
@@ -822,7 +833,7 @@ export class SpaceWriterHandle {
   readonly handle: number;
   readonly spaceId: Id<"sp">;
   readonly revision: Revision;
-  /** Which writer the space has: today's, or a tree's that takes named commands (`submitTree`). */
+  /** Which writer the space has: today's, or a tree's that runs today's requests as its commands. */
   readonly backend: "today" | "tree";
   readonly manifestRebuilt: boolean;
   readonly readOnlyReasons: readonly ReadOnlyReason[];
@@ -882,22 +893,6 @@ export class SpaceWriterHandle {
       () => this.#worker.call("submit", { handle: this.handle, request }),
       options.timeoutMs,
     );
-  }
-
-  /** One named command of a tree space, in the writer's queue (tree/core.ts `submit`). */
-  submitTree(request: unknown, options: { timeoutMs?: number } = {}): Promise<TreeResult> {
-    return this.#queued(
-      () => this.#worker.call("submitTree", { handle: this.handle, request }),
-      options.timeoutMs,
-    );
-  }
-
-  /** The answer a tree space's request decided, as its receipt keeps it, or undefined. */
-  async treeReceipt(lookup: ReceiptLookup): Promise<TreeResult | undefined> {
-    const found = await this.#queued(() =>
-      this.#worker.call("treeReceipt", { handle: this.handle, lookup }),
-    );
-    return found ?? undefined;
   }
 
   /**

@@ -148,6 +148,7 @@ import { OtherCopyOpen, restoredOf, type Restored } from "./restored.ts";
 import { wayOutOf } from "./space-ways.ts";
 import { realSyncHost } from "./sync-host.ts";
 import { readOnly, type ServedSpace } from "../ops/index.ts";
+import { servedReader } from "../ops/tree.ts";
 import { bounded, Timeout, within } from "./wait.ts";
 
 export {
@@ -754,7 +755,10 @@ export class SpaceManager {
           ...(message === undefined ? {} : { message }),
           ...(backup === undefined ? {} : { backup: backup.why }),
           writer: space.state === "open" ? space.writer : undefined,
-          reader: space.state === "open" || space.state === "read_only" ? space.reader : undefined,
+          reader:
+            (space.state === "open" || space.state === "read_only") && space.reader !== undefined
+              ? servedReader(space.reader)
+              : undefined,
           folder: space.folder,
           ...(space.restored === undefined ? {} : { restored: space.restored }),
           ...(space.copy === undefined ? {} : { copy: space.copy }),
