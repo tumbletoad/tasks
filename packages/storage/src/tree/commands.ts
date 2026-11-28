@@ -281,10 +281,9 @@ const taskFinish: Command = (tx, input) => {
   }
   // A task finished already, by the person first or by a resend, is left as it is.
   const finishing = task["lifecycle"] === "active";
-  if (finishing) {
-    finishOne(tx, id, dropped, at, reason);
-    if (choice === "all") for (const t of open) finishOne(tx, String(t["id"]), dropped, at, null);
-  }
+  if (finishing) finishOne(tx, id, dropped, at, reason);
+  // "All" finishes every open task below, whether or not the task itself was still open.
+  if (choice === "all") for (const t of open) finishOne(tx, String(t["id"]), dropped, at, null);
   if (outcome !== undefined) {
     const wrapped = task["wrap_state"] === "wrapped" && !finishing;
     if (wrapped && task["outcome"] !== outcome) {
@@ -334,8 +333,13 @@ const nodesTrash: Command = (tx, input) => {
     String(task["id"]),
     ...tx.all(SQL.subtree, { id: String(task["id"]) }).map((t) => String(t["id"])),
   ];
-  for (const id of ids)
+  // A task goes to the Trash as the person saw it: any field of it, or of a task below it, changed
+  // since the base makes the request a conflict, so work someone did meanwhile never leaves unseen.
+  for (const id of ids) {
+    tx.guard("nodes", id, id);
+    tx.guard("tasks", id, id);
     tx.set("nodes", id, id, { deleted: { deleted_at: tx.at, deleted_by: tx.author } });
+  }
   return { task: { id: ids[0], ref: refText(tx, task["ref"]) }, tasks: ids.length };
 };
 
@@ -380,8 +384,16 @@ const noteAdd: Command = (tx, input) => {
   return { note: addNote(tx, id, id, body, kind as string, input["for_agents"] === true) };
 };
 
+/** A note's words, and its removal, are the person's to correct: an agent writes a new note. */
+function personsNote(tx: Tx, input: Input): Row {
+  if (tx.request.actor.actor_kind !== "human") {
+    problem("USER_ONLY", "Only a person corrects or removes a note", "note");
+  }
+  return findNote(tx, input);
+}
+
 const noteEdit: Command = (tx, input) => {
-  const note = findNote(tx, input);
+  const note = personsNote(tx, input);
   const body = text(input, "body", 16_000, false);
   if (body === undefined || body.trim() === "")
     return problem("VALIDATION_FAILED", "A note needs words", "body");
@@ -396,7 +408,7 @@ const noteEdit: Command = (tx, input) => {
 const noteGone =
   (gone: boolean): Command =>
   (tx, input) => {
-    const note = findNote(tx, input);
+    const note = personsNote(tx, input);
     tx.set("notes", String(note["id"]), String(note["owner_id"]), { deleted: gone ? tx.at : null });
     return { note: { id: note["id"], ordinal: note["ordinal"] } };
   };

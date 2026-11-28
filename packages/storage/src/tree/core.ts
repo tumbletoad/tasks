@@ -136,14 +136,18 @@ export class TreeWriter {
         error: { code: "SPACE_READ_ONLY", message: "This machine is not the space's authority" },
       });
     }
-    if (this.#conn.prepare(SQL.actor).get({ id: request.actor.principal_id }) === undefined) {
-      return now("rejected", {
-        error: {
-          code: "ACTOR_UNKNOWN",
-          message: "The space does not know this actor",
-          field: "actor.principal_id",
-        },
-      });
+    // Who asks: a principal of the kind the request says, and an author the space knows.
+    const { principal_id, actor_kind, author_id } = request.actor;
+    const refuse = (message: string, field: string) =>
+      now("rejected", { error: { code: "VALIDATION_FAILED", message, field } });
+    if (this.#conn.prepare(SQL.actor).get({ id: principal_id })?.["kind"] !== actor_kind) {
+      return refuse("The principal is not an actor of that kind", "actor.principal_id");
+    }
+    if (
+      author_id !== undefined &&
+      this.#conn.prepare(SQL.actor).get({ id: author_id }) === undefined
+    ) {
+      return refuse("The author is not an actor of this space", "actor.author_id");
     }
     const lookup = { scope: request.actor.scope_id, request: request.request_id };
     const fingerprint = intentFingerprint({
@@ -216,6 +220,15 @@ export class TreeWriter {
           },
         });
       }
+      if (parsed.seq > space.lastSeq) {
+        return now("rejected", {
+          error: {
+            code: "BASE_FROM_FUTURE",
+            message: "The base is newer than the space",
+            field: "base",
+          },
+        });
+      }
       base = parsed.seq;
     }
     const history = request.command === "undo" || request.command === "redo";
@@ -230,8 +243,10 @@ export class TreeWriter {
     const commit = newId("op", this.#random);
     this.#conn.exec("SAVEPOINT tree");
     let plan: HistoryRun | undefined;
+    // Undo and Redo are guarded by newer work (steps.ts), not by a base.
+    const guard = history ? "history" : base;
+    const tx = new Tx(this.#conn, seq, at, request, space, guard, this.#random, COMMANDS);
     try {
-      const tx = new Tx(this.#conn, seq, at, request, space, base, this.#random, COMMANDS);
       let said: unknown;
       if (history) {
         plan = planHistory(tx, request.command as "undo" | "redo", request.input);
@@ -294,11 +309,14 @@ export class TreeWriter {
     } catch (error) {
       this.#conn.exec("ROLLBACK TO tree");
       this.#conn.exec("RELEASE tree");
-      if (!(error instanceof TreeProblem)) throw error;
-      if (error.code === "VERSION_CONFLICT") {
-        const conflicts = error.data as TreeConflict[];
-        return now("conflict", { error: { code: error.code, message: error.message }, conflicts });
+      // A write a conflict held back can leave a later statement nothing valid to do: the request
+      // was a conflict, and that is its answer, rolled back with everything else.
+      if (tx.conflicts.length > 0) {
+        const message = "A field changed after the base: read again";
+        const conflicts: TreeConflict[] = tx.conflicts;
+        return now("conflict", { error: { code: "VERSION_CONFLICT", message }, conflicts });
       }
+      if (!(error instanceof TreeProblem)) throw error;
       // Newer work stands in the way, or the opposite cannot be applied now (a task in the Trash):
       // the step leaves the stack, and the answer says whose work or why.
       const kept =

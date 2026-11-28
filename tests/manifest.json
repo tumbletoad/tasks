@@ -2082,7 +2082,7 @@
     },
     {
       "id": "A1.5.history.undo-redo",
-      "title": "Undo and redo through the write path: a check-off and a reopen (its undo keeps the completion time and the outcome, a dropped task's too, and a wrap-up with a learning alone), the Trash and a restore of a whole change (its undo trashes only what it restored), a removed note, a title, a note's and a log entry's words, out of the Inbox with its status, a first filing, a filing into an area the person's change right before made, a dismissal of questions, a new area and an unarchive are each undone and redone by the ordinary operation that writes back what the commit changed; a priority, an ordinary move, a wrap-up of a finished task, a mixed request and an agent's change are no step, and a step an earlier version stored of such a kind is passed over; a field changed again since, by the person too (a filing moved on, a title changed with a priority), keeps the step, as does someone else's newer work, and a step whose task an agent moved to the Trash is kept with why and who; a kept step leaves the stack, names who, replays on a resend, and the next undo reaches the step below; an outcome an agent wrote since a drop or a check-off keeps the finish; for every kept action, the action, its opposite by hand, two Undos and two Redos walk the state back and forth exactly, a new project to archived; a check-off is not redone over an agent's log entry, nor a note's removal over words edited since; a named commit that is not the newest leaves the stack alone",
+      "title": "Undo and redo through the write path: a check-off and a reopen (its undo keeps the completion time and the outcome, a dropped task's too, and a wrap-up with a learning alone), the Trash and a restore of a whole change (its undo trashes only what it restored), a removed note, a title, a note's and a log entry's words, out of the Inbox with its status, a first filing, a filing into an area the person's change right before made, a dismissal of questions, a new area and an unarchive are each undone and redone by the ordinary operation that writes back what the commit changed; a priority, an ordinary move, a wrap-up of a finished task, a mixed request and an agent's change are no step, and a step an earlier version stored of such a kind is passed over; a field changed again since, by the person too (a filing moved on, a title changed with a priority), keeps the step, as does someone else's newer work, and a step whose task an agent moved to the Trash is kept with why and who; a kept step leaves the stack, names who, replays on a resend, and the next undo reaches the step below; an outcome an agent wrote since a drop or a check-off keeps the finish; a new project walks back to archived and forth; a check-off is not redone over an agent's log entry, nor a note's removal over words edited since; a named commit that is not the newest leaves the stack alone",
       "source": "A1 3.5, A1 3.10, A1 3.10.1, A1 3.10.4, A1 5, A7 3.10 M3.02",
       "owner": "M3",
       "kind": "ci",
@@ -2097,7 +2097,21 @@
     },
     {
       "id": "S2.tree.undo",
-      "title": "Undo and Redo on the tree writer: for a check-off, a drop, a reopen, the Trash, a restore, a removed note, a note put back, a title and a note's words edited twice, out of the Inbox and a dismissal, the action, its opposite by hand, two Undos and two Redos walk the state back and forth exactly; a new project walks back to archived and forth; a change of another kind is passed over; someone else's newer work keeps the step and names them; one Undo takes back a finish of a task and all its subtasks",
+      "title": "Undo and Redo on the tree writer: a new project walks back to archived and forth; a change of another kind is passed over; someone else's newer work keeps the step and names them; one Undo takes back a finish of a task and all its subtasks",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.tree.boundary",
+      "title": "The tree writer keeps today's guarantees at the request boundary: a write to what exists needs a base from no later than the space; fields written together stay together when one conflicts, so a stale reopen after an agent's outcome changes nothing; a task goes to the Trash only as the person saw it, the tasks below included, and is counted; Undo never hides a task someone else added below what it hides; the principal is an actor of the kind it claims and the author one of the space; only a person corrects or removes a note; all finishes every open task below, also after the task was finished alone; the history check sees a row that went missing",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.undo.walk",
+      "title": "One walk of Undo's kinds against today's writer and the tree's: for a check-off, a drop, a reopen, the Trash, a restore, a removed note, a note put back, a title and a note's words edited twice, out of the Inbox and a dismissal, the action, its opposite by hand, two Undos and two Redos walk the state back and forth exactly; a first filing, and a filing into a project made just before, walk back and forth",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]

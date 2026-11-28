@@ -111,6 +111,8 @@ describe("[S2.tree.crash] the tree writer survives a kill at each write point an
       const acked = new Map<string, { seq: number; commit?: string }>();
       let resend: TreePlanned | undefined;
       let resent = 0;
+      let previous: Extract<TreeMessage, { t: "at" }> | undefined;
+      const replays = { fresh: 0, stored: 0 };
       for (const [n, kill] of kills.entries()) {
         const planned = [...(resend === undefined ? [] : [resend]), ...requests(n)];
         if (resend !== undefined) resent += 1;
@@ -121,6 +123,23 @@ describe("[S2.tree.crash] the tree writer survives a kill at each write point an
         );
         expect(end.messages.filter((m) => m.t === "error")).toEqual([]);
         const at = end.messages.find((m) => m.t === "at");
+        // The resend of the request a kill left unanswered: one killed before its COMMIT is decided
+        // again and applies once; one killed after its COMMIT replays the stored answer.
+        if (resend !== undefined && previous !== undefined) {
+          const again = end.messages.find(
+            (m) => m.t === "ack" && m.request_id === resend?.request_id,
+          ) as Extract<TreeMessage, { t: "ack" }> | undefined;
+          if (previous.point === "before-commit") {
+            expect(again).toMatchObject({ status: "applied" });
+            expect(again?.replayed).toBeUndefined();
+            replays.fresh += 1;
+          } else if (previous.point === "after-commit") {
+            expect(again).toMatchObject({ status: previous.status, replayed: true });
+            replays.stored += 1;
+          }
+        }
+        previous = at?.t === "at" ? at : undefined;
+        if (arm !== null) expect(at).toMatchObject({ point: arm.point, status: "applied" });
         for (const m of end.messages) {
           if (m.t === "ack" && m.status === "applied" && m.commit !== undefined) {
             acked.set(m.request_id, { seq: m.seq, commit: m.commit });
@@ -135,7 +154,13 @@ describe("[S2.tree.crash] the tree writer survives a kill at each write point an
             .map((m) => (m as { request_id: string }).request_id),
         );
         const lost = sent.find((r) => !answered.has(r));
-        resend = lost === undefined ? undefined : planned.find((p) => p.request_id === lost);
+        const first = planned.find((p) => p.request_id === lost);
+        const based = end.messages.find((m) => m.t === "send" && m.request_id === lost);
+        const as_of = based?.t === "send" ? based.base : undefined;
+        resend =
+          first === undefined
+            ? undefined
+            : { ...first, base: as_of === undefined ? "none" : { as_of } };
 
         const fx = openTree(checked, folder, false);
         const problems = treeHistoryProblems(fx.conn);
@@ -170,6 +195,7 @@ describe("[S2.tree.crash] the tree writer survives a kill at each write point an
       }
       expect(acked.size).toBeGreaterThan(10);
       expect(resent).toBeGreaterThanOrEqual(2);
+      expect(replays).toEqual({ fresh: 1, stored: 1 });
     },
   );
 });

@@ -1,4 +1,4 @@
-// Undo and Redo on the tree, by the rule of write/steps.ts: a person's commit is a step when every
+// Undo and Redo on the tree, by the one rule of undo-rule.ts: a person's commit is a step when every
 // row it changed is of the few kinds Undo is for (a check-off or a reopen, the Trash and out of it,
 // a removed note, words, out of the Inbox, a first filing or one into a project just made, a
 // dismissal, a new project, an archive or unarchive). Undo takes a step back with the ordinary
@@ -14,6 +14,7 @@ import { formatTaskRef } from "../refs.ts";
 import { columnsValue, fieldJson } from "../write/fields.ts";
 import type { HistoryRun, Tx } from "./tx.ts";
 import { columnsOf, isEntity, TreeProblem } from "./fields.ts";
+import { undoRule, type KindRows } from "../undo-rule.ts";
 
 /** A change row `c` of commit `c.seq` whose node the same commit also changed `field` of. */
 const sameNode = (field: string): string =>
@@ -30,43 +31,41 @@ const INTO_NEW_PROJECT =
   "AND g.seq = (SELECT max(p.seq) FROM commits p JOIN commits me ON me.seq = c.seq " +
   "WHERE p.principal_id = me.principal_id AND p.seq < c.seq))";
 
-/** A change row `c` of a kind Undo is for, or one that comes with such a row in its commit. */
-const KEPT_ROW =
-  "(c.entity = 'tasks' AND c.field IN ('lifecycle', 'reviewed_at', 'inbox')) " +
-  `OR (c.entity = 'tasks' AND c.field = 'wrap' AND ${sameNode("lifecycle")}) ` +
-  `OR (c.entity = 'tasks' AND c.field = 'status' AND ${sameNode("inbox")}) ` +
-  `OR (c.entity = 'nodes' AND c.field IN ('deleted', 'title', 'brief', 'description') AND ${IS_TASK}) ` +
-  `OR (c.entity = 'nodes' AND c.field = 'place' AND ${IS_TASK} ` +
-  "AND json_extract(c.before, '$.parent_id') = (SELECT space_id FROM space)) " +
-  `OR (c.entity = 'nodes' AND c.field = 'place' AND ${IS_TASK} AND ${INTO_NEW_PROJECT}) ` +
-  "OR (c.entity = 'notes' AND c.field IN ('deleted', 'body')) " +
-  `OR (c.entity = 'nodes' AND ${IS_PROJECT} AND (c.action = 'create' OR c.field = 'archived'))`;
+/** How the tree's change rows show each kind Undo is for (undo-rule.ts). */
+const KINDS: KindRows = {
+  finish:
+    "(c.entity = 'tasks' AND c.field = 'lifecycle') " +
+    `OR (c.entity = 'tasks' AND c.field = 'wrap' AND ${sameNode("lifecycle")})`,
+  trash: `c.entity = 'nodes' AND c.field = 'deleted' AND ${IS_TASK}`,
+  note: "c.entity = 'notes' AND c.field = 'deleted'",
+  words:
+    `(c.entity = 'nodes' AND c.field IN ('title', 'brief', 'description') AND ${IS_TASK}) ` +
+    "OR (c.entity = 'notes' AND c.field = 'body')",
+  inbox:
+    "(c.entity = 'tasks' AND c.field = 'inbox') " +
+    `OR (c.entity = 'tasks' AND c.field = 'status' AND ${sameNode("inbox")})`,
+  filing:
+    `(c.entity = 'nodes' AND c.field = 'place' AND ${IS_TASK} ` +
+    "AND json_extract(c.before, '$.parent_id') = (SELECT space_id FROM space)) " +
+    `OR (c.entity = 'nodes' AND c.field = 'place' AND ${IS_TASK} AND ${INTO_NEW_PROJECT})`,
+  group: `c.entity = 'nodes' AND ${IS_PROJECT} AND (c.action = 'create' OR c.field = 'archived')`,
+  dismissal: "c.entity = 'tasks' AND c.field = 'reviewed_at'",
+};
 
-/** Whether commit `seq` (an SQL expression) is a step: it changed something, all of a kept kind. */
-export const STEP_SQL = (seq: string): string =>
-  `(EXISTS (SELECT 1 FROM changes c WHERE c.seq = ${seq}) AND NOT EXISTS (SELECT 1 FROM changes c ` +
-  `WHERE c.seq = ${seq} AND NOT coalesce(${KEPT_ROW}, 0)))`;
+const RULE = undoRule(KINDS);
 
-/** The step an undo takes, with `applied`, the commit that last applied it (its newest redo). */
-const UNDO_TARGET =
-  "WITH newest AS (SELECT seq, id, seq AS applied FROM commits k " +
-  `WHERE principal_id = $principal AND undo_status = 'done' AND ${STEP_SQL("k.seq")} ` +
-  "ORDER BY seq DESC LIMIT 1) " +
-  "SELECT * FROM (SELECT t.seq AS seq, t.id AS id, r.seq AS applied FROM commits r " +
-  "JOIN commits t ON t.seq = r.redo_of WHERE r.seq > coalesce((SELECT seq FROM newest), 0) " +
-  "AND r.principal_id = $principal AND r.kind = 'redo' AND t.undo_status = 'done' " +
-  `AND ${STEP_SQL("t.seq")} ORDER BY r.seq DESC LIMIT 1) ` +
-  "UNION ALL SELECT * FROM newest ORDER BY applied DESC LIMIT 1";
-
-/** The step a redo takes: the one the principal undid last, answered through its undo. */
-const REDO_TARGET =
-  "SELECT seq, id, undone_by AS applied FROM commits k WHERE principal_id = $principal " +
-  `AND undo_status = 'undone' AND ${STEP_SQL("k.seq")} ORDER BY undone_by DESC LIMIT 1`;
+/** Whether commit `seq` (an SQL expression) is a step. */
+export const STEP_SQL = RULE.step;
 
 const SQL = {
   commit: "SELECT seq FROM commits WHERE id = $id",
   changes: "SELECT * FROM changes WHERE seq = $seq ORDER BY n",
   node: "SELECT kind, parent_id FROM nodes WHERE id = $id",
+  /** The live tasks below `$id`, at any depth. */
+  below:
+    "WITH RECURSIVE down(id) AS (SELECT id FROM nodes WHERE parent_id = $id AND kind = 'task' " +
+    "AND deleted_at IS NULL UNION ALL SELECT n.id FROM nodes n JOIN down ON n.parent_id = down.id " +
+    "WHERE n.kind = 'task' AND n.deleted_at IS NULL) SELECT id FROM down",
   ref: "SELECT ref FROM tasks WHERE id = $id",
   /** Who changed, after `$since`, field `$field` of row `$entity` `$id` (every field when null), or anything of node `$task`. */
   newer:
@@ -384,18 +383,25 @@ function newerOn(
     });
   }
   let hidden = false;
+  const stepRows = new Set(changes.map((c) => c.id));
   for (const c of changes.filter(hides)) {
-    const task = c.entity === "notes" ? null : c.id;
-    if (
-      work.add({ since, principal, anyone: false, entity: c.entity, id: c.id, field: null, task })
-    )
-      hidden = true;
+    const task = c.entity === "nodes" || c.entity === "tasks" ? c.id : null;
+    const own = { since, principal, anyone: false, field: null };
+    if (work.add({ ...own, entity: c.entity, id: c.id, task })) hidden = true;
+    // A task put back in the Trash takes the tasks below it along: one someone else made or
+    // changed since, outside what the step wrote, keeps the step.
+    if (c.entity !== "nodes" || c.field !== "deleted") continue;
+    for (const below of conn.prepare(SQL.below).all({ id: c.id })) {
+      const id = String(below["id"]);
+      if (stepRows.has(id)) continue;
+      if (work.add({ ...own, entity: "nodes", id, task: id })) hidden = true;
+    }
   }
   return moved || hidden ? work.list : undefined;
 }
 
 function target(conn: Connection, kind: "undo" | "redo", principal: string): Row | undefined {
-  return conn.prepare(kind === "undo" ? UNDO_TARGET : REDO_TARGET).get({ principal });
+  return conn.prepare(kind === "undo" ? RULE.undoTarget : RULE.redoTarget).get({ principal });
 }
 
 /** What an undo or a redo runs, or why it runs nothing. */

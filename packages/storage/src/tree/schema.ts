@@ -78,7 +78,8 @@ export const TREE_STATEMENTS: readonly string[] = [
   CHECK (kind = 'task' OR deleted_at IS NULL),
   CHECK (kind <> 'task' OR for_agents = '')
 ) STRICT`,
-  "CREATE INDEX nodes_children ON nodes(parent_id, kind, position) WHERE deleted_at IS NULL",
+  // Every child, live or in the Trash: the end of a parent's list counts them all.
+  "CREATE INDEX nodes_children ON nodes(parent_id, kind, position)",
   "CREATE UNIQUE INDEX nodes_slug ON nodes(parent_id, slug) WHERE kind = 'project'",
   `CREATE TABLE tasks (
   id TEXT PRIMARY KEY REFERENCES nodes(id), ref INTEGER NOT NULL UNIQUE,

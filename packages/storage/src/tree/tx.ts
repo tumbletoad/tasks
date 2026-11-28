@@ -9,7 +9,7 @@ import { newId, type Id, type RandomSource } from "../ids.ts";
 import { takeTaskRef } from "../refs.ts";
 import { columnsValue, fieldJson } from "../write/fields.ts";
 import { provenanceOf, rowState, versionOf, type RowState } from "../write/row-state.ts";
-import { columnsOf, FIELDS, KEYS, type Entity, type FieldOf } from "./fields.ts";
+import { columnsOf, FIELDS, KEYS, TreeProblem, type Entity, type FieldOf } from "./fields.ts";
 
 /** Columns a create change leaves out: each follows from the change's seq. */
 const DERIVED = new Set(["created_seq", "version", "touched", "fv", "fp"]);
@@ -85,7 +85,8 @@ export class Tx {
   readonly space: SpaceState;
   readonly random: RandomSource;
   readonly #commands: Readonly<Record<string, Command>>;
-  readonly #base: number | undefined;
+  /** The request's base, none, or `history`: an Undo or Redo, guarded by newer work instead. */
+  readonly #base: number | "history" | undefined;
   readonly #rows = new Map<string, Written>();
   readonly conflicts: TreeConflict[] = [];
 
@@ -95,7 +96,7 @@ export class Tx {
     at: number,
     request: TreeRequest,
     space: SpaceState,
-    base: number | undefined,
+    base: number | "history" | undefined,
     random: RandomSource,
     commands: Readonly<Record<string, Command>>,
   ) {
@@ -163,17 +164,8 @@ export class Tx {
     });
   }
 
-  /**
-   * Sets fields of an existing row, each as an object of its columns (a one-column field may be
-   * given as its value). A field whose version before the request is newer than the base is a
-   * conflict: it is collected and not written, and the request writes nothing.
-   */
-  set<E extends Entity>(
-    entity: E,
-    id: string,
-    node: string | null,
-    fields: Partial<Record<FieldOf<E>, SqlValue | Record<string, SqlValue>>>,
-  ): void {
+  /** The row as the request first touched it: its start, read once. */
+  #touch(entity: Entity, id: string, node: string | null): Written {
     const key = `${entity}|${id}`;
     let row = this.#rows.get(key);
     if (row === undefined) {
@@ -190,21 +182,63 @@ export class Tx {
       };
       this.#rows.set(key, row);
     }
+    return row;
+  }
+
+  /**
+   * The fields of `fields` that changed since the base, each collected once as a conflict. A write
+   * to a row that exists needs a base; an Undo or Redo is guarded by newer work instead.
+   */
+  #newer(row: Written, fields: Iterable<string>): string[] {
+    if (row.start === undefined || this.#base === "history") return [];
+    if (this.#base === undefined) {
+      throw new TreeProblem(
+        "BASE_REQUIRED",
+        "This change needs the as_of of a read as its base",
+        "base",
+      );
+    }
+    const newer: string[] = [];
+    for (const field of fields) {
+      const version = versionOf(row.start, field);
+      if (version <= this.#base) continue;
+      newer.push(field);
+      const seen = this.conflicts.some(
+        (c) => c.entity === row.entity && c.id === row.id && c.field === field,
+      );
+      if (!seen) this.conflicts.push({ entity: row.entity, id: row.id, field, version });
+    }
+    return newer;
+  }
+
+  /**
+   * Holds the request to every field of a row as it stood at the base, also those it does not
+   * write: a task goes to the Trash only as the person saw it, never after someone changed it.
+   */
+  guard(entity: Entity, id: string, node: string | null): void {
+    this.#newer(this.#touch(entity, id, node), Object.keys(FIELDS[entity]));
+  }
+
+  /**
+   * Sets fields of an existing row, each as an object of its columns (a one-column field may be
+   * given as its value). The fields of one call change together: when any of them changed after
+   * the base, the call writes none of them, the conflicts are collected, and the request writes
+   * nothing. `based` false is for a write that holds whatever else changed, such as an edit of old
+   * words to new words.
+   */
+  set<E extends Entity>(
+    entity: E,
+    id: string,
+    node: string | null,
+    fields: Partial<Record<FieldOf<E>, SqlValue | Record<string, SqlValue>>>,
+    based = true,
+  ): void {
+    const row = this.#touch(entity, id, node);
+    if (based && this.#newer(row, Object.keys(fields)).length > 0) return;
     const assign: string[] = [];
     const params: Record<string, SqlValue> = { id };
     for (const [field, given] of Object.entries<unknown>(fields)) {
       const columns = columnsOf(entity, field);
-      if (row.start !== undefined && this.#base !== undefined) {
-        const version = versionOf(row.start, field);
-        if (version > this.#base) {
-          if (
-            !this.conflicts.some((c) => c.entity === entity && c.id === id && c.field === field)
-          ) {
-            this.conflicts.push({ entity, id, field, version });
-          }
-          continue;
-        }
-      }
       const value =
         columns.length === 1 && (typeof given !== "object" || given === null)
           ? { [columns[0] ?? ""]: given as SqlValue }
@@ -225,7 +259,8 @@ export class Tx {
   finish(): ChangeRow[] {
     const changes: ChangeRow[] = [];
     const nodes = new Set<string>();
-    const tasks = new Set<string>();
+    /** The tasks the commit finished, reopened, put in the Trash or brought back. */
+    const affected = new Set<string>();
     for (const row of [...this.#rows.values()].sort((a, b) => a.order - b.order)) {
       const final = this.conn.prepare(rowSql(row.entity)).get({ id: row.id });
       if (final === undefined) throw misuse("A written row is gone");
@@ -245,6 +280,7 @@ export class Tx {
         if (start === undefined) throw misuse("A written row has no start");
         const fv = { ...start.fv };
         const fp = { ...start.fp };
+        let changed = false;
         for (const field of row.fields) {
           const columns = columnsOf(row.entity, field);
           const before = fieldJson(columnsValue(start.raw, columns));
@@ -261,17 +297,20 @@ export class Tx {
           });
           fv[field] = this.seq;
           fp[field] = this.seq;
+          changed = true;
+          if (field === "lifecycle" || (row.entity === "nodes" && field === "deleted")) {
+            affected.add(row.id);
+          }
         }
-        if (!changes.some((c) => c.entity === row.entity && c.entityId === row.id)) continue;
+        if (!changed) continue;
         this.conn
           .prepare(`UPDATE ${row.entity} SET version = $seq, fv = $fv, fp = $fp WHERE id = $id`)
           .run({ seq: this.seq, fv: JSON.stringify(fv), fp: JSON.stringify(fp), id: row.id });
       }
       if (row.node !== null) nodes.add(row.node);
-      if (row.entity === "tasks") tasks.add(row.id);
     }
     for (const id of nodes) this.conn.prepare(SQL.touched).run({ id, seq: this.seq });
-    this.conn.prepare(SQL.affected).run({ n: tasks.size, seq: this.seq });
+    this.conn.prepare(SQL.affected).run({ n: affected.size, seq: this.seq });
     return changes;
   }
 }

@@ -1,6 +1,6 @@
-// Undo and Redo on the tree writer, by the rule of write/steps.ts: for every kind Undo is for, the
-// action, its opposite by hand, two Undos and two Redos walk the state back and forth exactly; any
-// other change is no step and Undo passes over it; someone else's newer work keeps the step and
+// Undo and Redo on the tree writer, by the one rule of undo-rule.ts (its walk of every kind runs
+// against both writers in undo-walk.test.ts): a new project walks back to archived; any other
+// change is no step and Undo passes over it; someone else's newer work keeps the step and
 // says whose; one Undo takes back a finish of a task and all its subtasks. Fixture text only.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { TreeResult } from "../src/tree/core.ts";
@@ -58,86 +58,6 @@ describe("[S2.tree.undo] Undo and Redo of the steps a person takes back, on the 
     const made = send(["tasks.add", { tasks: [{ title: "Renew the passport" }] }]);
     return (made.result as { tasks: { id: string }[] }).tasks[0]?.id ?? "";
   };
-  const note = (id: string): Call => ["note.add", { on: id, body: "Ask for the old one back" }];
-
-  const walks: [string, (id: string) => Call, (id: string) => Call, ((id: string) => Call[])?][] = [
-    ["a check-off", (id) => ["task.finish", { task: id }], (id) => ["task.reopen", { task: id }]],
-    [
-      "a drop",
-      (id) => ["task.finish", { task: id, status: "dropped", reason: "Not needed" }],
-      (id) => ["task.reopen", { task: id }],
-    ],
-    [
-      "a reopen",
-      (id) => ["task.reopen", { task: id }],
-      (id) => ["task.finish", { task: id }],
-      (id) => [["task.finish", { task: id, outcome: "Sent the form" }]],
-    ],
-    ["the Trash", (id) => ["nodes.trash", { task: id }], (id) => ["nodes.restore", { task: id }]],
-    [
-      "a restore",
-      (id) => ["nodes.restore", { task: id }],
-      (id) => ["nodes.trash", { task: id }],
-      (id) => [["nodes.trash", { task: id }]],
-    ],
-    [
-      "a removed note",
-      (id) => ["note.remove", { on: id, ordinal: 1 }],
-      (id) => ["note.put_back", { on: id, ordinal: 1 }],
-      (id) => [note(id)],
-    ],
-    [
-      "a note put back",
-      (id) => ["note.put_back", { on: id, ordinal: 1 }],
-      (id) => ["note.remove", { on: id, ordinal: 1 }],
-      (id) => [note(id), ["note.remove", { on: id, ordinal: 1 }]],
-    ],
-    [
-      "a title edited twice",
-      (id) => ["task.update", { task: id, set: { title: "Renew both passports" } }],
-      (id) => ["task.update", { task: id, set: { title: "Renew the passports" } }],
-    ],
-    [
-      "a note's words edited twice",
-      (id) => ["note.edit", { on: id, ordinal: 1, body: "Ask for both back" }],
-      (id) => ["note.edit", { on: id, ordinal: 1, body: "Ask for all of them back" }],
-      (id) => [note(id)],
-    ],
-    [
-      "out of the Inbox",
-      (id) => ["task.update", { task: id, set: { inbox: false, status: "open" } }],
-      (id) => ["task.update", { task: id, set: { inbox: true } }],
-      (id) => [["task.update", { task: id, set: { inbox: true, status: "waiting" } }]],
-    ],
-    [
-      "a dismissal",
-      (id) => ["task.update", { task: id, set: { reviewed_at: 1_794_470_500_000 } }],
-      (id) => ["task.update", { task: id, set: { reviewed_at: 1_794_470_400_000 } }],
-      (id) => [["task.update", { task: id, set: { reviewed_at: 1_794_470_400_000 } }]],
-    ],
-  ];
-
-  test.each(walks)(
-    "%s, its opposite by hand, two Undos and two Redos walk the state back and forth exactly",
-    (_, action, opposite, setup) => {
-      const id = task();
-      for (const call of setup?.(id) ?? []) send(call);
-      const states = [seen(id)];
-      send(action(id));
-      states.push(seen(id));
-      send(opposite(id));
-      states.push(seen(id));
-      for (const at of [1, 0]) {
-        applied(undo());
-        expect(seen(id)).toEqual(states[at]);
-      }
-      for (const at of [1, 2]) {
-        applied(redo());
-        expect(seen(id)).toEqual(states[at]);
-      }
-    },
-  );
-
   test("a new project, archived by hand, walks back to archived and forth to archived", () => {
     const made = send(["project.create", { title: "Garden" }]);
     const id = (made.result as { project: { id: string } }).project.id;

@@ -2,6 +2,7 @@
 // plan names, sends the plan's requests one by one through an in-thread TreeWriter, and reports
 // each result reduced to statuses, sequence numbers and IDs. At the armed write point it reports
 // the request it is deciding and waits to be killed. No message carries task text.
+import "../../packages/bridge/src/safe-exit.ts";
 import { nodeSqliteDriver } from "../../packages/storage/src/node-sqlite.ts";
 import { CheckedDriver } from "../../packages/storage/src/startup-check.ts";
 import type { TreeResult } from "../../packages/storage/src/tree/core.ts";
@@ -12,8 +13,11 @@ import { KILL_WAIT_MS } from "./protocol.ts";
 export interface TreePlanned {
   request_id: string;
   agent: boolean;
-  /** `fresh`: the newest as_of this child saw. `stale`: the first one it saw. */
-  base: "none" | "fresh" | "stale";
+  /**
+   * `fresh`: the newest as_of this child saw. `stale`: the first one it saw. An as_of: the one the
+   * request was first sent with, as a client resends it.
+   */
+  base: "none" | "fresh" | "stale" | { as_of: string };
   command: string;
   input: Record<string, unknown>;
 }
@@ -26,7 +30,7 @@ export interface TreePlan {
 
 export type TreeMessage =
   | { t: "ready" }
-  | { t: "send"; request_id: string }
+  | { t: "send"; request_id: string; base?: string }
   | { t: "ack"; request_id: string; status: string; seq: number; commit?: string; replayed?: true }
   | { t: "at"; point: string; request_id: string; status: string }
   | { t: "done" }
@@ -68,12 +72,18 @@ async function main(): Promise<void> {
   for (const planned of plan.requests) {
     current = planned.request_id;
     const base =
-      planned.base === "fresh" ? seen.at(-1) : planned.base === "stale" ? seen[0] : undefined;
-    emit({ t: "send", request_id: planned.request_id });
+      typeof planned.base === "object"
+        ? planned.base.as_of
+        : planned.base === "fresh"
+          ? seen.at(-1)
+          : planned.base === "stale"
+            ? seen[0]
+            : undefined;
+    emit({ t: "send", request_id: planned.request_id, ...(base === undefined ? {} : { base }) });
     const result = fx.send(planned.command, planned.input, {
       request_id: planned.request_id,
       who: planned.agent ? fx.agent : fx.human,
-      ...(base === undefined ? {} : { base }),
+      base: base ?? null,
     });
     seen.push(result.as_of);
     emit(reduce(planned.request_id, result));

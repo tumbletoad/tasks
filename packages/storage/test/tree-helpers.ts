@@ -6,6 +6,7 @@ import { newId, type Id } from "../src/ids.ts";
 import { openSpaceConnection } from "../src/open.ts";
 import type { CheckedDriver } from "../src/startup-check.ts";
 import { TreeWriter, type TreeActor, type TreeResult } from "../src/tree/core.ts";
+import { formatAsOf } from "../src/write/request.ts";
 import { columnsOf, FIELDS, isEntity } from "../src/tree/fields.ts";
 import { createTreeSpace } from "../src/tree/schema.ts";
 import { TEST_MACHINE } from "./space-helpers.ts";
@@ -25,7 +26,8 @@ export interface TreeFixture {
 
 interface Send {
   who: TreeActor;
-  base: string;
+  /** The as_of the request is based on; by default the space as it is now, `null` for none. */
+  base: string | null;
   request_id: string;
   entry: string;
 }
@@ -65,6 +67,19 @@ export function openTree(
     conn.prepare("SELECT id FROM actors WHERE kind = $kind").get({ kind })?.["id"] as Id<"ac">;
   const human = actor(id("human"), "human", "ui:test");
   const agent = actor(id("agent"), "agent", "mcp:codex");
+  const asOf = (): string => {
+    const r =
+      conn
+        .prepare(
+          "SELECT authority_epoch AS e, last_seq AS s, authority_incarnation AS i FROM space",
+        )
+        .get() ?? {};
+    return formatAsOf({
+      epoch: Number(r["e"]),
+      seq: Number(r["s"]),
+      incarnation: String(r["i"]) as Id<"ai">,
+    });
+  };
   const writer = new TreeWriter(conn, {
     machineId: TEST_MACHINE,
     ...(at === undefined ? {} : { at }),
@@ -82,7 +97,7 @@ export function openTree(
         actor: more.who ?? human,
         command,
         input,
-        ...(more.base === undefined ? {} : { base: more.base }),
+        ...(more.base === null ? {} : { base: more.base ?? asOf() }),
         ...(more.entry === undefined ? {} : { entry: more.entry }),
       }),
     close: () => {
@@ -167,8 +182,11 @@ export function treeHistoryProblems(conn: Connection): string[] {
     v.fv[field] = seq;
     v.version = seq;
   }
+  // Both ways: every live row is its history, and every row the history made is still there.
+  const stored = new Set<string>();
   for (const entity of Object.keys(FIELDS)) {
     for (const live of conn.prepare(`SELECT * FROM ${entity}`).all()) {
+      stored.add(`${entity}|${String(live["id"])}`);
       if (Number(live["created_seq"]) === 0) continue; // the space's own root, made with it
       const key = `${entity}|${String(live["id"])}`;
       const played = rows.get(key);
@@ -192,6 +210,10 @@ export function treeHistoryProblems(conn: Connection): string[] {
       }
       if (Number(live["version"]) !== v.version) problems.push(`history: ${entity} version`);
     }
+  }
+  for (const key of rows.keys()) {
+    if (!stored.has(key))
+      problems.push(`history: a ${key.split("|")[0] ?? ""} row the history made is gone`);
   }
   const refs =
     conn.prepare("SELECT max(ref) AS top, (SELECT next_ref FROM space) AS next FROM tasks").get() ??
