@@ -65,6 +65,7 @@ import {
 import type { ServiceContext } from "@ttasks/service/install";
 import type { GateFacts } from "@ttasks/service/runtime-gate";
 import type { VersionManifest } from "@ttasks/service/version-folder";
+import { planRetirement, type KeptFor } from "@ttasks/service/version-retire";
 import { CLI_SPEC, type Globals } from "./args.ts";
 import {
   alive,
@@ -287,7 +288,7 @@ function localChecks(io: Io, layout: Layout, now: number): Check[] {
             detail: "install.json names another install ID: run ttasks service install again.",
           },
     );
-    checks.push(updateCheck(state, installFile));
+    checks.push(withVersions(updateCheck(state, installFile), layout.root, state, io.platform));
   } else {
     checks.push({
       id: "install",
@@ -611,6 +612,50 @@ function runsCheck(runs: Status["runs"]): Check {
 }
 
 const VERSION_WORD = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$/;
+
+const KEPT_FOR: Record<KeptFor, string> = {
+  current: "current",
+  rollback: "the way back",
+  newer: "newer than current",
+  pinned: "pinned",
+};
+
+/**
+ * The update row's word on the version folders: which are kept and why, which wait to be removed,
+ * and a warning for one left as it is because something in it is not the installer's.
+ */
+export function withVersions(
+  check: Check,
+  root: string,
+  state: string,
+  platform: NodeJS.Platform,
+): Check {
+  const plan = planRetirement({ root, state, platform });
+  if (plan === undefined) return check;
+  const kept = plan.verdicts.flatMap((v) =>
+    v.kind === "kept" ? [`${v.version} (${KEPT_FOR[v.why]})`] : [],
+  );
+  const waiting = [
+    ...(plan.pending === undefined ? [] : [plan.pending.version]),
+    ...plan.verdicts.flatMap((v) =>
+      v.kind === "in_use" || v.kind === "retire" ? [v.version] : [],
+    ),
+  ];
+  const left = plan.verdicts.flatMap((v) =>
+    v.kind === "foreign" ? [`versions/${v.version} was left as it is: ${v.problem}.`] : [],
+  );
+  const detail = [
+    check.detail,
+    ...(kept.length > 0 ? [`Kept: ${kept.join(", ")}.`] : []),
+    ...(waiting.length > 0
+      ? [
+          `${waiting.join(", ")} ${waiting.length > 1 ? "wait" : "waits"} to be removed: still in use, or removed at the service's next start.`,
+        ]
+      : []),
+    ...left,
+  ].join(" ");
+  return { ...check, detail, ...(left.length > 0 ? { status: "warn" as const } : {}) };
+}
 
 /**
  * The update row (A2 3.12.6, 3.13): an update journal means an update runs now or was cut off,
