@@ -1,6 +1,7 @@
 // A routine's row and the Routines page's lists. The box is round with a small loop: checking it
 // off logs this time and shows the next, and never finishes the routine, which only "Finish
 // routine…" in its card does. Due routines offer Skip beside it.
+import { Fragment, type ReactNode } from "react";
 import { useIntl } from "react-intl";
 import type { RoutineRow } from "@ttasks/client/store";
 import type { Clock } from "@ttasks/client/today";
@@ -15,6 +16,7 @@ const styles = classes(css, [
   "box",
   "main",
   "title",
+  "open",
   "line",
   "part",
   "late",
@@ -38,10 +40,13 @@ export function RoutineItem({
   routine,
   clock,
   actions,
+  onOpen,
 }: {
   readonly routine: RoutineRow;
   readonly clock: Clock;
   readonly actions: RoutineActions;
+  /** Its title opens the routine's card. */
+  readonly onOpen?: ((routine: RoutineRow) => void) | undefined;
 }) {
   const t = useT();
   const list = useList();
@@ -64,7 +69,20 @@ export function RoutineItem({
         <LoopIcon />
       </button>
       <div className={styles.main}>
-        <div className={styles.title}>{routine.title}</div>
+        {onOpen === undefined ? (
+          <div className={styles.title}>{routine.title}</div>
+        ) : (
+          <button
+            type="button"
+            className={`${styles.title} ${styles.open}`}
+            data-part="routine-open"
+            onClick={() => {
+              onOpen(routine);
+            }}
+          >
+            {routine.title}
+          </button>
+        )}
         <div className={styles.line}>
           <span className={styles.part} data-part="routine-part">
             {line}
@@ -106,10 +124,17 @@ export function RoutineLists({
   routines,
   clock,
   actions,
+  open,
+  onOpen,
+  below,
 }: {
   readonly routines: Iterable<RoutineRow>;
   readonly clock: Clock;
   readonly actions: RoutineActions;
+  /** The routine whose card is open, under its row. */
+  readonly open?: string | undefined;
+  readonly onOpen?: (routine: RoutineRow) => void;
+  readonly below?: (routine: RoutineRow) => ReactNode;
 }) {
   const t = useT();
   const groups = routineGroups(routines, clock);
@@ -122,7 +147,10 @@ export function RoutineLists({
             : t(key === "due" ? "routines.due" : "routines.coming")}
         </h2>
         {rows.map((routine) => (
-          <RoutineItem key={routine.id} routine={routine} clock={clock} actions={actions} />
+          <Fragment key={routine.id}>
+            <RoutineItem routine={routine} clock={clock} actions={actions} onOpen={onOpen} />
+            {open === routine.id ? below?.(routine) : null}
+          </Fragment>
         ))}
       </section>
     );

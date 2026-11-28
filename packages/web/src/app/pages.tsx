@@ -34,6 +34,7 @@ import { TodayPage } from "../views/Today.tsx";
 import { TrashPage } from "../views/Trash.tsx";
 import { SearchPage as SearchResults } from "../views/Search.tsx";
 import { NodeLibrary } from "../library/Library.tsx";
+import { RoutinesPage } from "../routine/RoutinesPage.tsx";
 
 /**
  * Writes the expanded task into the view's URL. Expanding replaces the entry; collapsing pushes
@@ -73,6 +74,7 @@ export function ViewPage({
   if (view === "today") {
     return <TodayPage task={task} onExpand={onExpand} />;
   }
+  if (view === "routines") return <RoutinesPage />;
   if (view === "completed") return <CompletedPage task={task} onExpand={onExpand} />;
   if (view === "agents") return <AgentsPage task={task} onExpand={onExpand} />;
   if (view === "activity") return <ActivityPage />;

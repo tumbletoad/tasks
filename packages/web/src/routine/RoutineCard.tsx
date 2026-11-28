@@ -27,12 +27,12 @@ const sheet = classes(setupCss, [
 
 /** A time done or skipped, as get_task's routine view gives it (contracts' RoutineEntry). */
 export interface RoutineEntryView {
-  readonly due?: { readonly date: string; readonly at?: string };
+  readonly due?: { readonly date: string; readonly at?: string | undefined } | undefined;
   readonly state: "done" | "skipped";
   readonly at: string;
   readonly by: string;
-  readonly why?: "you" | "run_failed";
-  readonly note?: string;
+  readonly why?: "you" | "run_failed" | undefined;
+  readonly note?: string | undefined;
 }
 
 export interface RoutineCardActions {

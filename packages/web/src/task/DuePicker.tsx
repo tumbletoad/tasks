@@ -14,7 +14,10 @@ import { dueChange } from "../edit/change.ts";
 import { addDays, addMonths, quickPicks, readDue, weekdayOf } from "@ttasks/client/capture";
 import { whoOf } from "../edit/edits.ts";
 import { useEdits } from "../edit/useEdits.ts";
-import { useT, type Translate } from "../i18n/intl.tsx";
+import { parseRepeat } from "@ttasks/contracts/repeat";
+import { formatRule } from "@ttasks/contracts/schedule";
+import { useList, useT, type Translate } from "../i18n/intl.tsx";
+import { scheduleWords } from "../row/schedule.ts";
 import { formatDay, type Clock } from "@ttasks/client/today";
 import type { TaskRow } from "@ttasks/client/store";
 import css from "./Picker.module.css";
@@ -60,6 +63,7 @@ export function DuePicker({
   shown,
   tip,
   shortOf,
+  onRepeat,
 }: {
   readonly task: TaskRow;
   readonly clock: Clock;
@@ -68,6 +72,11 @@ export function DuePicker({
   readonly tip: string | undefined;
   /** A date as the pill shows it ("Fri 20 Nov"), for the toast. */
   readonly shortOf: (date: string) => string;
+  /**
+   * Offered on a task with no task above or below it, on a space that keeps routines: a schedule
+   * typed in the field ("every saturday") makes the task a routine you do, by its stored rule.
+   */
+  readonly onRepeat?: ((rule: string, base: string | undefined) => void) | undefined;
 }) {
   const t = useT();
   const edits = useEdits();
@@ -122,6 +131,14 @@ export function DuePicker({
                 : undefined
             }
             onPick={apply}
+            {...(onRepeat === undefined
+              ? {}
+              : {
+                  onRepeat: (rule: string) => {
+                    onRepeat(rule, opened.current?.base);
+                    setOpen(false);
+                  },
+                })}
           />
         </Dialog>
       </Popover>
@@ -134,16 +151,25 @@ function DueBody({
   clock,
   changed,
   onPick,
+  onRepeat,
 }: {
   readonly task: TaskRow;
   readonly clock: Clock;
   /** Who changed the due date since the popover opened, if anyone did. */
   readonly changed: string | undefined;
   readonly onPick: (date: string | undefined) => void;
+  readonly onRepeat?: (rule: string) => void;
 }) {
   const t = useT();
+  const list = useList();
+  const field = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
   const reading = readDue(text, clock.today);
+  // A schedule in the field, where a routine is offered: it is read only when no date is.
+  const repeat =
+    onRepeat !== undefined && reading.kind === "invalid"
+      ? parseRepeat(text, clock.today)
+      : undefined;
   let preview: string;
   switch (reading.kind) {
     case "date":
@@ -155,9 +181,17 @@ function DueBody({
     case "clear":
       preview = t("due.clear");
       break;
-    case "invalid":
-      preview = t("due.notADate");
+    case "invalid": {
+      if (repeat === undefined) {
+        preview = t("due.notADate");
+        break;
+      }
+      const words = scheduleWords(repeat, { t, list, locale: clock.locale });
+      preview = t("capture.repeat", {
+        schedule: words.charAt(0).toLocaleLowerCase(clock.locale) + words.slice(1),
+      });
       break;
+    }
     case "empty":
       preview = "";
   }
@@ -170,7 +204,8 @@ function DueBody({
         data-part="due-field"
         aria-label={t("due.field")}
         aria-describedby={`due-preview-${task.id}`}
-        aria-invalid={reading.kind === "invalid"}
+        ref={field}
+        aria-invalid={reading.kind === "invalid" && repeat === undefined}
         placeholder={t("due.placeholder")}
         // The popover's first stop: the person types at once.
         autoFocus
@@ -184,6 +219,7 @@ function DueBody({
           event.preventDefault();
           if (reading.kind === "date") onPick(reading.date);
           else if (reading.kind === "clear") onPick(undefined);
+          else if (repeat !== undefined) onRepeat?.(formatRule(repeat));
         }}
       />
       <p
@@ -231,6 +267,19 @@ function DueBody({
         >
           {t("due.none")}
         </button>
+        {onRepeat === undefined ? null : (
+          <button
+            type="button"
+            className={styles.pick}
+            data-part="due-repeat"
+            onClick={() => {
+              setText(t("due.repeatStart"));
+              field.current?.focus();
+            }}
+          >
+            {t("due.repeat")}
+          </button>
+        )}
       </div>
       <MonthGrid
         clock={clock}

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { RoutineRow } from "@ttasks/client/store";
 import type { Clock } from "@ttasks/client/today";
 import { I18n } from "../i18n/intl.tsx";
+import { NewRoutine } from "./NewRoutine.tsx";
 import { RoutineLists, type RoutineActions } from "./Routine.tsx";
 import { RoutineCard, type RoutineCardActions, type RoutineEntryView } from "./RoutineCard.tsx";
 
@@ -203,5 +204,51 @@ describe("[A5.routines.web.card] a routine's card: its times done, Pause, and Fi
     });
     expect(finished).toEqual(["Weekly review"]);
     expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+  });
+});
+
+describe("[A5.routines.web.new] + New routine reads its schedule as the person types and makes it", () => {
+  const type = (input: HTMLInputElement | null, value: string) => {
+    if (input === null) throw new Error("no field");
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+
+  test("the words read as a schedule, words that are none say so, and Make sends the rule", async () => {
+    const made: string[] = [];
+    act(() => {
+      root.render(
+        <I18n>
+          <NewRoutine
+            clock={CLOCK}
+            onMake={(title, rule) => {
+              made.push(`${title} ${rule}`);
+              return Promise.resolve(true);
+            }}
+          />
+        </I18n>,
+      );
+    });
+    act(() => {
+      container.querySelector<HTMLButtonElement>('[data-part="routine-new"]')?.click();
+    });
+    const field = (part: string) =>
+      container.querySelector<HTMLInputElement>(`[data-part="${part}"]`);
+    const preview = () => container.querySelector('[data-part="routine-new-preview"]')?.textContent;
+    const save = () => container.querySelector<HTMLButtonElement>('[data-part="routine-new-save"]');
+    type(field("routine-new-title"), "Water the plants");
+    type(field("routine-new-schedule"), "now and then");
+    expect(preview()).toBe("Not a schedule: try every saturday or weekdays at 7");
+    expect(save()?.disabled).toBe(true);
+    type(field("routine-new-schedule"), "every saturday");
+    expect(preview()).toBe("Every Saturday");
+    await act(async () => {
+      save()?.click();
+      await Promise.resolve();
+    });
+    expect(made).toEqual(["Water the plants FREQ=WEEKLY;BYDAY=SA"]);
+    expect(container.querySelector('[data-part="routine-new-form"]')).toBeNull();
   });
 });

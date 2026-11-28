@@ -119,3 +119,61 @@
 .menu button:hover {
   color: var(--k-text);
 }
+
+/* A routine's title opens its card, and reads as a title. */
+.open {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/* "+ New routine" and its form: a title, the schedule in words, and what the words read as. */
+.add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--k-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.add:hover {
+  color: var(--k-text);
+}
+
+.form {
+  display: grid;
+  gap: 8px;
+  max-width: 32rem;
+  margin-top: 16px;
+}
+
+.field {
+  padding: 6px 8px;
+  border: 1px solid var(--k-control);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--k-text);
+  font: inherit;
+}
+
+.preview {
+  min-height: 1.4em;
+  margin: 0;
+  color: var(--k-muted);
+  font-size: 0.875em;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+}

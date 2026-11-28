@@ -25,6 +25,8 @@ import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
 import { shortDate } from "../task/Facts.tsx";
 import { TaskList } from "../views/TaskList.tsx";
+import { useRoutineActions } from "../routine/actions.ts";
+import { RoutineItem } from "../routine/Routine.tsx";
 import { ArchivedLine } from "./Archived.tsx";
 import { classes } from "./css.ts";
 import { useTitle } from "./frame.ts";
@@ -41,6 +43,7 @@ const styles = classes(css, [
   "tab",
   "count",
   "line",
+  "routines",
 ]);
 
 /** A tab is current only on its own address: the task list's is not current under `/library`. */
@@ -268,8 +271,28 @@ export function ProjectScreen({
             expand={task}
             onExpand={onExpand}
           />
+          <ProjectRoutines project={project} clock={clock} />
         </>
       )}
     </>
+  );
+}
+
+/** The project's routines, after its open tasks under a quiet line: they count in none of its views. */
+function ProjectRoutines({ project, clock }: { readonly project: string; readonly clock: Clock }) {
+  const t = useT();
+  const state = useLive();
+  const actions = useRoutineActions();
+  const routines = [...state.routines.values()]
+    .filter((r) => r.parent === project && r.lifecycle === "active" && r.deleted_at === undefined)
+    .sort((a, b) => a.position.localeCompare(b.position));
+  if (routines.length === 0) return null;
+  return (
+    <section data-part="project-routines">
+      <h2 className={styles.routines}>{t("project.routines")}</h2>
+      {routines.map((routine) => (
+        <RoutineItem key={routine.id} routine={routine} clock={clock} actions={actions} />
+      ))}
+    </section>
   );
 }
