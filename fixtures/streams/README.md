@@ -2,7 +2,7 @@
 
 Recorded output streams of `claude -p`, turned into fixture text. The print-mode stream parser is built on them and its fake agents replay them. Codex runs speak its app server, recorded in `fixtures/codex-app-server/`.
 
-Recorded on 2026-11-12 by the lab in `spikes/m0/runs/` with Claude Code 2.1.322 and codex-cli 0.167.2:
+Recorded on 2026-11-12 by a lab that is now removed, with Claude Code 2.1.322 and codex-cli 0.167.2:
 
 - `windows-*`: Windows 11. `claude -p` and `codex exec --json` with full access, both CLIs.
 - `linux-*`: Ubuntu 24.04 without sudo rights. `codex exec --json` only, in the default sandbox with the probe's tools on `default_tools_approval_mode = "approve"` (no full access and no Claude Code sessions there in this step).
@@ -40,7 +40,7 @@ No recorded run ended inside a line: both CLIs wrote whole lines, also when kill
 
 ## How the sanitiser made them
 
-`spikes/m0/runs/sanitise.ts` (lab code with tests) writes every value by the fixture schema `tests/stream-schema.ts`. The schema is an explicit allow-list of fields per CLI and event type, and each allowed field has exactly one treatment with a fixed output: a known field never lets an observed value through.
+The lab's sanitiser wrote every value by the fixture schema `tests/stream-schema.ts`, which stays with the content check. The schema is an explicit allow-list of fields per CLI and event type, and each allowed field has exactly one treatment with a fixed output: a known field never lets an observed value through.
 
 | Treatment | Fields (examples) | Input it takes | Output |
 |---|---|---|---|
@@ -75,8 +75,8 @@ The CLI version strings stay, so a parser knows which version a shape came from.
 
 The scan cannot recognise an arbitrary private name (a person, a customer, a project) in a field whose values the structure does not constrain: it knows shapes and this machine's names only. The structural assertions are the guarantee: in the stream fixtures no string field is free. The index's `case` and `note` texts are written by the lab's own code.
 
-The lab runs both layers before it publishes anything: every output is built and checked in the run's scratch folder, and only when all pass are they copied here (`spikes/m0/runs/publish.ts`). Raw streams never left their scratch folder, and the Linux recordings were sanitised on the machine that made them.
+The lab ran both layers before it published anything: every output was built and checked in the run's scratch folder, and only when all passed were they copied here. Raw streams never left their scratch folder, and the Linux recordings were sanitised on the machine that made them.
 
 ## Regenerating
 
-Only through the lab (`spikes/m0/runs/README.md`): record with `lab.ts n01`, `n02`, `n03`, `repeats` (Windows) or `n02-linux`, then `lab.ts n05 --fixtures fixtures/streams`, then `pnpm exec prettier --write "fixtures/streams/*.json"`. After a change to the schema, `lab.ts resanitise --fixtures fixtures/streams` runs the committed fixtures through it again. Never edit a fixture by hand to add content.
+The lab that recorded and sanitised these streams is removed. A new recording needs a sanitiser that writes every value by `tests/stream-schema.ts` and passes the content check before anything is copied here. Never edit a fixture by hand to add content.

@@ -50,8 +50,7 @@ export function inspect(line: string): Message {
   return isRequestId(id) ? { kind: "response", id } : OTHER;
 }
 
-// --- MCP eras (A2 3.6.4, A3 3.3; the 2025-11-25 and 2026-07-28 schemas, as the M0 lab's stub
-// read them, spikes/m0/kit/mcp-stub.ts)
+// --- MCP eras (A2 3.6.4, A3 3.3; the 2025-11-25 and 2026-07-28 schemas)
 
 export type Era = "legacy" | "modern";
 

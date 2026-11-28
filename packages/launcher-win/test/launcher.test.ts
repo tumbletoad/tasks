@@ -471,7 +471,7 @@ describe.runIf(windows)("Windows launchers", () => {
         const entries = owned.flatMap((name) =>
           Array.from({ length: COPIES }, (_, i) => `${spelled(name, i)}=decoy-${String(i)}`),
         );
-        // Any TTASKS_ variable the test runs with, such as TTASKS_VERIFY_LAB, would show up too.
+        // Any TTASKS_ variable the test runs with, such as TTASKS_VERIFY_BASE, would show up too.
         const inherited = Object.keys(process.env).filter((name) => /^ttasks_/i.test(name));
         const clean = Object.fromEntries([...owned, ...inherited].map((name) => [name, undefined]));
         interface Report {
