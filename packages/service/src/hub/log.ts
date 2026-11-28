@@ -243,6 +243,9 @@ export const EVENTS = {
     },
   },
   "update.repair_failed": { lvl: "error", c: "hub", fields: { code: "error_code" } },
+  /** Old version folders removed (retire.ts); one that cannot go yet waits for a later pass. */
+  "update.retired": { lvl: "info", c: "hub", fields: { count: "int" } },
+  "update.retire_failed": { lvl: "warn", c: "hub", fields: { code: "error_code" } },
   /**
    * After a repair the service restarts: current names another version than it runs (`version`),
    * or the update changed the Windows supervisor it runs under, which then hands over
@@ -539,6 +542,18 @@ export const EVENTS = {
     fields: { stage: ["sighting", "persist"] },
   },
   "http.launch_failed": { lvl: "error", c: "http", fields: { stage: ["dispatch"] } },
+  // The phone's link (link/service.ts): whether it listens, why a connection was closed, a pairing.
+  "http.link_listen": {
+    lvl: "info",
+    c: "http",
+    fields: { outcome: ["listening", "stopped", "failed"] },
+  },
+  "http.link_refused": {
+    lvl: "info",
+    c: "http",
+    fields: { reason: ["peer", "request", "certificate", "code", "removed", "not_paired"] },
+  },
+  "http.link_paired": { lvl: "info", c: "http", fields: {} },
   // The MCP endpoint's events (M2.02): a connection, a tool of the generated list, fixed words.
   // Never a message, an argument or a result.
   "mcp.closed": { lvl: "warn", c: "mcp", fields: { conn: "int", reason: CLOSE_REASONS } },

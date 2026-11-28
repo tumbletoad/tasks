@@ -8,22 +8,38 @@
 // so two agents editing different passages both stand: it is checked against no base. Old words
 // that are gone, or stand more than once, write nothing, and the answer says how often they stand
 // with the page's start as it is now. An edit or an append finishes the body as a body sent whole
-// is stored, within the same size.
+// is stored, within the same size. Which input is refused, which write is held to a base and what
+// changes nothing are today's writer's rules, read and decided by the same functions
+// (write/request.ts, write/pages.ts).
 import type { Row } from "../driver.ts";
-import { appended, excerptOf, finishedBody, occurrences } from "../write/pages.ts";
-import type { Fields } from "../write/request.ts";
 import {
-  BRIEF,
+  appended,
+  excerptOf,
+  finishedBody,
+  nodeTexts,
+  occurrences,
+  pageInTrashAlready,
+  pageSetTexts,
+  textWrite,
+} from "../write/pages.ts";
+import {
+  nodeInstructFields,
+  nodeSetFields,
+  pageAppendFields,
+  pageCreateFields,
+  pageEditFields,
+  pageSetFields,
+  type Fields,
+} from "../write/request.ts";
+import {
   findNode,
   findPage,
   KEY,
-  NOTE,
   problem,
   read,
   refText,
   required,
   str,
-  TITLE,
   type Check,
 } from "./commands.ts";
 import type { Command, Tx } from "./tx.ts";
@@ -46,18 +62,20 @@ function liveNode(tx: Tx, key: unknown, field: string): Row {
   return found;
 }
 
-/** A page that is shown; one in the Trash only when `trashed`. */
-function livePage(tx: Tx, key: unknown, trashed = false): Row {
+/** A page that is shown; one in the Trash only when `restoring`. */
+function livePage(tx: Tx, key: unknown, restoring = false): Row {
   const page = findPage(tx, key) ?? problem("NOT_FOUND", "The space has no page there", "page");
-  if ((page["deleted_at"] !== null) !== trashed) {
-    problem(
-      trashed ? "INVALID_TRANSITION" : "DELETED",
-      trashed ? "The page is not in the Trash" : "The page is in the Trash",
-      "page",
-    );
+  if (page["deleted_at"] !== null && !restoring) {
+    problem("DELETED", "The page is in the Trash", "page");
   }
   return page;
 }
+
+/** Whether any of a node's texts was written since it was made: then each is held to a base. */
+const textsWritten = (node: Row): boolean => {
+  const fv = JSON.parse(String(node["fv"])) as Record<string, unknown>;
+  return ["brief", "description", "for_agents"].some((field) => field in fv);
+};
 
 const pageAnswer = (tx: Tx, page: Row, extra: Record<string, unknown> = {}) => ({
   page: { id: page["id"], ref: refText(tx, page["ref"]) },
@@ -65,7 +83,7 @@ const pageAnswer = (tx: Tx, page: Row, extra: Record<string, unknown> = {}) => (
 });
 
 const pageCreate: Run = (tx, input) => {
-  const owner = String(liveNode(tx, input["on"], "on")["id"]);
+  const owner = String(liveNode(tx, input["owner"], "on")["id"]);
   const id = str(input, "id") ?? tx.newId("pg");
   const ref = tx.ref();
   tx.create(
@@ -115,22 +133,22 @@ const pageAppend: Run = (tx, input) => {
 const pageSet: Run = (tx, input) => {
   const page = livePage(tx, input["page"]);
   const id = String(page["id"]);
-  let words = str(input, "body");
+  const owner = String(page["owner_id"]);
+  let version: string | undefined;
   if (input["from_seq"] !== undefined) {
-    const version = tx.get(SQL.bodyAt, { id, seq: Number(input["from_seq"]) })?.["body"];
-    if (typeof version !== "string") {
+    const found = tx.get(SQL.bodyAt, { id, seq: Number(input["from_seq"]) })?.["body"];
+    if (typeof found !== "string") {
       return problem("NOT_FOUND", "The page has no version made by this change", "from_seq");
     }
-    words = version;
+    version = found;
   }
-  const set: Record<string, string> = {};
-  for (const field of ["title", "brief"]) {
-    const value = str(input, field);
-    if (value !== undefined) set[field] = value;
-  }
-  if (words !== undefined) set["body"] = words;
-  const changed = Object.fromEntries(Object.entries(set).filter(([f, v]) => page[f] !== v));
-  if (Object.keys(changed).length > 0) tx.set("pages", id, String(page["owner_id"]), changed);
+  const { held, set } = textWrite(
+    pageSetTexts(input, version),
+    (field) => String(page[field]),
+    true,
+  );
+  if (tx.held("pages", id, owner, held)) return pageAnswer(tx, page);
+  if (Object.keys(set).length > 0) tx.set("pages", id, owner, set, false);
   return pageAnswer(tx, page);
 };
 
@@ -138,7 +156,7 @@ const pageSet: Run = (tx, input) => {
 const pageMove: Run = (tx, input) => {
   const page = livePage(tx, input["page"]);
   const to = String(liveNode(tx, input["on"], "on")["id"]);
-  if (page["owner_id"] !== to) tx.set("pages", String(page["id"]), to, { owner: to });
+  if (page["owner_id"] !== to) tx.set("pages", String(page["id"]), to, { owner: to }, false);
   return pageAnswer(tx, page, { on: to });
 };
 
@@ -146,23 +164,25 @@ const pageTrashed =
   (trash: boolean): Run =>
   (tx, input) => {
     const page = livePage(tx, input["page"], !trash);
-    tx.set("pages", String(page["id"]), String(page["owner_id"]), {
-      deleted: { deleted_at: trash ? tx.at : null, deleted_by: trash ? tx.author : null },
-    });
+    if (pageInTrashAlready(page["deleted_at"] !== null, !trash)) return pageAnswer(tx, page);
+    const deleted = { deleted_at: trash ? tx.at : null, deleted_by: trash ? tx.author : null };
+    tx.set("pages", String(page["id"]), String(page["owner_id"]), { deleted }, false);
     return pageAnswer(tx, page);
   };
+
+/** Whole texts of a node, held to a base once its texts were written. */
+function setTexts(tx: Tx, node: Row, given: ReturnType<typeof nodeTexts>): void {
+  const id = String(node["id"]);
+  const { held, set } = textWrite(given, (field) => String(node[field]), textsWritten(node));
+  if (tx.held("nodes", id, id, held)) return;
+  if (Object.keys(set).length > 0) tx.set("nodes", id, id, set, false);
+}
 
 /** A node's brief and description: the words a person or an agent reads first about it. */
 const nodeSet: Run = (tx, input) => {
   const node = liveNode(tx, input["node"], "node");
-  const id = String(node["id"]);
-  const set: Record<string, string> = {};
-  for (const field of ["brief", "description"]) {
-    const value = str(input, field);
-    if (value !== undefined && node[field] !== value) set[field] = value;
-  }
-  if (Object.keys(set).length > 0) tx.set("nodes", id, id, set);
-  return { node: { id } };
+  setTexts(tx, node, nodeTexts({ kind: "node.set", ...input }));
+  return { node: { id: node["id"] } };
 };
 
 /** The text for agents on the space or a project: instructions, so only a person writes it. */
@@ -174,13 +194,25 @@ const nodeInstruct: Run = (tx, input) => {
   if (node["kind"] === "task") {
     problem("VALIDATION_FAILED", "A task's instructions are its notes for agents", "node");
   }
-  const id = String(node["id"]);
-  const words = str(input, "text") ?? "";
-  if (node["for_agents"] !== words) tx.set("nodes", id, id, { for_agents: words });
-  return { node: { id } };
+  setTexts(tx, node, nodeTexts({ kind: "node.instruct", text: str(input, "text") ?? "" }));
+  return { node: { id: node["id"] } };
 };
 
-// The checks, through the one `Fields` today's writer reads with.
+// The checks: today's readers (write/request.ts), with the page and the node named by key.
+
+const keyOf =
+  (name: string) =>
+  (f: Fields): string =>
+    f.text(name, KEY);
+
+/** Today's reader, then nothing left unread. */
+const whole =
+  (reader: (f: Fields) => object): Check =>
+  (f) => {
+    const out = { ...reader(f) } as Record<string, unknown>;
+    f.done();
+    return out;
+  };
 
 const onePage: Check = (f) => {
   required(f, "page");
@@ -188,41 +220,11 @@ const onePage: Check = (f) => {
 };
 
 const checkCreate: Check = (f) => {
+  const id = f.has("id") ? f.id("id", "pg") : undefined;
   required(f, "on");
-  required(f, "title");
-  return read(f, {
-    id: (k) => f.id(k, "pg"),
-    on: (k) => f.text(k, KEY),
-    title: (k) => f.text(k, TITLE),
-    brief: (k) => f.text(k, BRIEF),
-    body: (k) => f.text(k, { ...NOTE, empty: true }),
-  });
-};
-
-const checkEdit: Check = (f) => {
-  for (const key of ["page", "old", "new"]) required(f, key);
-  return read(f, {
-    page: (k) => f.text(k, KEY),
-    old: (k) => f.text(k, NOTE),
-    new: (k) => f.text(k, { ...NOTE, empty: true }),
-  });
-};
-
-const checkAppend: Check = (f) => {
-  required(f, "page");
-  required(f, "text");
-  return read(f, { page: (k) => f.text(k, KEY), text: (k) => f.text(k, NOTE) });
-};
-
-const checkSet: Check = (f) => {
-  required(f, "page");
-  return read(f, {
-    page: (k) => f.text(k, KEY),
-    title: (k) => f.text(k, TITLE),
-    brief: (k) => f.text(k, BRIEF),
-    body: (k) => f.text(k, { ...NOTE, empty: true }),
-    from_seq: (k) => f.int(k, 1, Number.MAX_SAFE_INTEGER),
-  });
+  const out = { ...pageCreateFields(f, keyOf("on")), ...(id === undefined ? {} : { id }) };
+  f.done();
+  return out;
 };
 
 const checkMove: Check = (f) => {
@@ -231,31 +233,15 @@ const checkMove: Check = (f) => {
   return read(f, { page: (k) => f.text(k, KEY), on: (k) => f.text(k, KEY) });
 };
 
-const nodeKey = (f: Fields) => (k: string) => f.text(k, KEY);
-
-const checkNodeSet: Check = (f) => {
-  required(f, "node");
-  return read(f, {
-    node: nodeKey(f),
-    brief: (k) => f.text(k, BRIEF),
-    description: (k) => f.text(k, { ...NOTE, empty: true }),
-  });
-};
-
-const checkInstruct: Check = (f) => {
-  required(f, "node");
-  required(f, "text");
-  return read(f, { node: nodeKey(f), text: (k) => f.text(k, { ...NOTE, empty: true }) });
-};
-
 export const KNOWLEDGE: Readonly<Record<string, Command>> = {
   "page.create": { check: checkCreate, run: pageCreate },
-  "page.edit": { check: checkEdit, run: pageEdit },
-  "page.append": { check: checkAppend, run: pageAppend },
-  "page.set": { check: checkSet, run: pageSet },
+  "page.edit": { check: whole((f) => pageEditFields(f, keyOf("page"))), run: pageEdit },
+  "page.append": { check: whole((f) => pageAppendFields(f, keyOf("page"))), run: pageAppend },
+  "page.set": { check: whole((f) => pageSetFields(f, keyOf("page"))), run: pageSet },
   "page.move": { check: checkMove, run: pageMove },
   "page.trash": { check: onePage, run: pageTrashed(true) },
   "page.restore": { check: onePage, run: pageTrashed(false) },
-  "node.set": { check: checkNodeSet, run: nodeSet },
-  "node.instruct": { check: checkInstruct, run: nodeInstruct },
+  // A tree node holds its brief in one place, whatever its kind.
+  "node.set": { check: whole((f) => nodeSetFields(f, keyOf("node"), () => true)), run: nodeSet },
+  "node.instruct": { check: whole((f) => nodeInstructFields(f, keyOf("node"))), run: nodeInstruct },
 };

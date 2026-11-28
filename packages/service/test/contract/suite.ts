@@ -430,6 +430,7 @@ const LATER: Readonly<Record<string, Later>> = {
     why: "the next page after a task was deleted, under the example's cursor",
     now: { error: "cursor_expired" },
   },
+  ...pagesLater(),
 };
 
 const VERIFIED = new Set([
@@ -462,6 +463,9 @@ const VERIFIED = new Set([
   "task.delete 0",
   "task.delete 1",
   "task.trash 0",
+  "page.read 1",
+  "page.write 0",
+  "page.write 1",
 ]);
 
 type Value = Record<string, unknown>;
@@ -472,6 +476,11 @@ const refs = (list: unknown, key = "ref"): unknown[] =>
 /** What a result means, per entry: the parts an example documents that a world can reproduce. */
 function meaning(entry: string, value: Value): unknown {
   switch (entry) {
+    case "page.read":
+      // The world's project has its own pages and texts: the node by what it is and its name.
+      return { view: value["view"], kind: value["kind"], title: value["title"] };
+    case "page.write":
+      return { result: value["result"] };
     case "activity.list":
       // The world's agents made other changes than the example's: a line by its form.
       return {
@@ -1002,6 +1011,17 @@ const GRANT_CALLS: readonly [string, (n: number) => Record<string, unknown>][] =
   ["space.status", () => ({})],
   ["task.search", () => ({ q: "status:open" })],
   ["task.get", () => ({ task: "M-1" })],
+  ["page.read", () => ({ target: "space" })],
+  [
+    "page.write",
+    (n) => ({
+      action: "append",
+      target: "M-1",
+      text: "More.",
+      why: "a grant check",
+      request_id: `contract-grant-${String(n).padStart(8, "0")}`,
+    }),
+  ],
   [
     "task.add",
     (n) => ({
@@ -1394,4 +1414,25 @@ async function buildWorld(t: ContractTransport): Promise<{ asOf(): Promise<strin
       },
     );
   return { asOf };
+}
+
+/**
+ * The page examples the world cannot reproduce yet: they read and write Mira's pages (M-180 in
+ * Lumen Health), which no example of the world makes, and its Lumen Health holds no page Trash.
+ */
+function pagesLater(): Record<string, Later> {
+  const owner = "a world that holds Mira's pages, M-180 in Lumen Health";
+  const missing = (why: string): Later => ({ owner, why, now: { error: "not_found" } });
+  return {
+    "page.read 0": missing("the world has no page M-180"),
+    "page.history 0": missing("the world has no page M-180"),
+    "page.history 1": missing("the world has no page M-180"),
+    "page.trashed 0": { owner, why: "the world's Trash holds no page", now: { result: "schema" } },
+    "page.write 2": missing("the world has no page M-180"),
+    "page.write 3": missing("the world's projects have other IDs than Mira's Lumen Health"),
+    "page.write 4": missing("the world has no page M-180"),
+    "page.write 5": missing("the world has no page M-180"),
+    "page.write 6": missing("the world has no page M-180"),
+    "node.instruct 0": missing("the world's projects have other IDs than Mira's Lumen Health"),
+  };
 }

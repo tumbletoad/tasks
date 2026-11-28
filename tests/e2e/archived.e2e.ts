@@ -2,7 +2,7 @@
 // leaves the sidebar's areas for Archived the moment it is archived and after a reload, keeps its
 // open tasks in sight, takes no new work, says so on its own page, and Unarchive there brings it
 // back with an Undo. Pictures of the sidebar before and after, and of Archived open, at 1,440 and
-// 390 px in both themes. The worker's other tests share Mira, so the groups here are this test's.
+// 390 px in both themes. The file's other tests share Mira, so the groups here are this test's.
 import { expect, type Locator, type Page, type Route } from "@playwright/test";
 import { test } from "./fixture.ts";
 import { axeFound, picture, pictures, showsSpace, signIn, themes } from "./page.ts";

@@ -8,8 +8,11 @@ import { normaliseStored, WRITE_LIMITS } from "./request.ts";
 /** The characters of a page an unapplied edit answers with: the rest is read with its cursor. */
 export const EXCERPT_CHARS = 1_200;
 
-/** A page whose holder lives: its row, and the task that holds it when one does. */
-const LIVE_OWNER =
+/**
+ * Whether page row `p` is shown: what holds it lives. A page on a task or project in the Trash goes
+ * with it, unwritten.
+ */
+export const PAGE_SHOWN =
   "((p.owner_kind = 'task' AND EXISTS (SELECT 1 FROM tasks t WHERE t.id = p.owner_id " +
   "AND t.deleted_at IS NULL)) " +
   "OR (p.owner_kind = 'project' AND EXISTS (SELECT 1 FROM projects r WHERE r.id = p.owner_id " +
@@ -19,8 +22,8 @@ const LIVE_OWNER =
   "OR p.owner_kind = 'space')";
 
 export const PAGE_SQL = {
-  byId: `SELECT p.*, ${LIVE_OWNER} AS shown FROM pages p WHERE p.id = $id`,
-  byRef: `SELECT p.*, ${LIVE_OWNER} AS shown FROM pages p WHERE p.ref = $ref`,
+  byId: `SELECT p.*, ${PAGE_SHOWN} AS shown FROM pages p WHERE p.id = $id`,
+  byRef: `SELECT p.*, ${PAGE_SHOWN} AS shown FROM pages p WHERE p.ref = $ref`,
   page: "SELECT * FROM pages WHERE id = $id",
   insert:
     "INSERT INTO pages (id, ref, owner_kind, owner_id, title, brief, body, created_at, " +
@@ -99,3 +102,58 @@ export function finishedBody(body: string): string | undefined {
 /** What `page.append` leaves: the text after a blank line, or the text alone on an empty body. */
 export const appended = (body: string, text: string): string =>
   body === "" ? text : `${body.replace(/\n+$/u, "")}\n\n${text}`;
+
+/** Whole texts a request gives, field by field, in the order they are written. */
+export type GivenTexts = readonly (readonly [field: string, value: string])[];
+
+/** A page's set: its title, brief and body as given, the body a version left in place of one sent. */
+export function pageSetTexts(
+  op: { title?: string; brief?: string; body?: string },
+  version: string | undefined,
+): GivenTexts {
+  const body = version ?? op.body;
+  return [
+    ...(op.title === undefined ? [] : [["title", op.title] as const]),
+    ...(op.brief === undefined ? [] : [["brief", op.brief] as const]),
+    ...(body === undefined ? [] : [["body", body] as const]),
+  ];
+}
+
+/** A node's texts as `node.set` or `node.instruct` gives them. */
+export function nodeTexts(
+  op:
+    | { kind: "node.set"; brief?: string; description?: string }
+    | { kind: "node.instruct"; text: string },
+): GivenTexts {
+  if (op.kind === "node.instruct") return [["for_agents", op.text]];
+  return [
+    ...(op.brief === undefined ? [] : [["brief", op.brief] as const]),
+    ...(op.description === undefined ? [] : [["description", op.description] as const]),
+  ];
+}
+
+/**
+ * What whole texts write where they are held now: the fields the caller's base holds the request
+ * to, and the ones that change. Every given field is held to the base, the same words included, so a
+ * save made on a stale read is a conflict also where it matches what is there. Texts never written
+ * before hold nothing: a first description races nothing its person read. A page's texts were
+ * written by its create, so they are always held.
+ */
+export function textWrite(
+  given: GivenTexts,
+  now: (field: string) => string,
+  written: boolean,
+): { held: string[]; set: Record<string, string> } {
+  return {
+    held: written ? given.map(([field]) => field) : [],
+    set: Object.fromEntries(given.filter(([field, value]) => now(field) !== value)),
+  };
+}
+
+/**
+ * Whether a page's move to the Trash or out of it, or to another holder, finds it there already:
+ * nothing to write. None of the three is held to a base: each says where the page goes, whatever
+ * else changed.
+ */
+export const pageInTrashAlready = (deleted: boolean, restoring: boolean): boolean =>
+  deleted !== restoring;

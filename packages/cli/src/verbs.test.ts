@@ -8,6 +8,8 @@ import { baseRead } from "./verbs.ts";
 function writesOf(verb: VerbSpec): Record<string, unknown>[] {
   const several = verb.positionals.find((p) => p.repeat === true);
   if (several !== undefined) return [{ [several.field]: ["M-14", "M-15"] }];
+  if (verb.entry === "page.write")
+    return [{ action: "create" }, { action: "edit", target: "M-180" }];
   const actions = verb.actions;
   if (actions === undefined) return [{}, { task: "M-14" }];
   const values = verb.positionals.find((p) => p.field === actions.field)?.values ?? [];
@@ -34,6 +36,7 @@ describe("[A3.2.cli.base] every verb whose base the command line fills can read 
         expect(read, `${verb.verb} ${JSON.stringify(input)}`).toBeDefined();
         const reads =
           read?.op === "task.get" ||
+          (verb.entry === "page.write" && read?.op === "page.read") ||
           (read?.op === verb.entry &&
             verb.actions?.reads.includes(String(read.input[verb.actions.field])) === true);
         expect(reads, `${verb.verb} ${JSON.stringify(input)}`).toBe(true);

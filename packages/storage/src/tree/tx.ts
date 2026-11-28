@@ -234,6 +234,15 @@ export class Tx {
   }
 
   /**
+   * Holds the request to `fields` of a row as they stood at the base, written or not; true when
+   * one changed since, and the request then writes nothing.
+   */
+  held(entity: Entity, id: string, node: string | null, fields: readonly string[]): boolean {
+    if (fields.length === 0) return false;
+    return this.#newer(this.#touch(entity, id, node), fields).length > 0;
+  }
+
+  /**
    * Sets fields of an existing row, each as an object of its columns (a one-column field may be
    * given as its value). The fields of one call change together: when any of them changed after
    * the base, the call writes none of them, the conflicts are collected, and the request writes

@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { normaliseText, resultTokens } from "@ttasks/contracts";
 import { bridgePrincipal, toolCaller } from "../src/mcp/index.ts";
 import { SKILL_LIST_BYTES } from "../src/skills/index.ts";
+import { DIGEST_TOKENS } from "../src/mcp/render.ts";
 import { DATA_WORD, closeMarker, openMarker } from "../src/mcp/text.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { join } from "node:path";
@@ -169,7 +170,7 @@ function budgetOf(tool: string, args: Json, isError: boolean): number {
         ? 1_500 * (1 + args["skills"].length)
         : 1_500 + SKILL_LIST_BYTES / 1.5;
     case "get_task":
-      return args["sections"] === undefined ? 1_200 : 4_000;
+      return args["sections"] === undefined ? DIGEST_TOKENS : 4_000;
     case "update_task":
       return 400;
     case "add_entry":
