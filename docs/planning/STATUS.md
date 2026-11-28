@@ -46,7 +46,7 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 2b.4 | The schedule calculator: the stored form, the next date and due time through daylight saving, the claim after an absence, and a schedule's words | done (#241, #253) |
 | 2b.2 | Routines: one task of a kind of its own that comes back on a schedule, its runs logged under it, a page of the active ones | doing: the node kind, its tables and commands with Undo in the tree's storage (#269); the app todo: 2.4 |
 | 2b.3 | Agent runs on a schedule (Refresh, tidying), Refresh in the top bar, Continue interactively | todo: 2.4 |
-| 3.1 | The projector for the tree on disk, written on the tree schema of 2.3 and switched on in 2.5 | doing: the files rendered from a snapshot (#276); the pass that writes them and its record in review; the service running it next |
+| 3.1 | The projector for the tree on disk, written on the tree schema of 2.3 and switched on in 2.5 | review: the files rendered from a snapshot (#276) and the pass that writes them with its record (#281) are merged; the service running the pass for a tree space, with `ttasks view rebuild`, is in review; today's spaces keep today's projector until the switch |
 | 3.2 | Inherited default folders, other folders as hints, Open says when a folder is set only on another machine | todo: 2.9 |
 | 3.3 | The trial's tasks again, tools only against tools with the tree, and a rename's rebuild timed on Windows | todo: 3.1 |
 | 4.1 | Budgets that speak in a write's answer, and tidying a project's library | ready: the budgets; tidying todo: 2b.3 |

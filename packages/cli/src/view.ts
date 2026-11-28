@@ -50,7 +50,17 @@ export async function viewCommand(
       space: await whichSpace(io, globals, rest[0], call),
     });
     if (globals.json) io.stdout(`${JSON.stringify(result)}\n`);
-    else {
+    else if (typeof result["rewritten"] === "number") {
+      // A tree space's files: counted in files.
+      const checked = Number(result["checked"]);
+      const rewritten = result["rewritten"];
+      const files = checked === 1 ? "1 generated file" : `${String(checked)} generated files`;
+      const again =
+        rewritten === 1
+          ? "1 was missing or changed and is written again"
+          : `${String(rewritten)} were missing or changed and are written again`;
+      io.stdout(`Checked ${files}. ${again}.\n`);
+    } else {
       const checked = Number(result["checked"]);
       const queued = Number(result["queued"]);
       const files = checked === 1 ? "1 generated file" : `${String(checked)} generated files`;

@@ -74,4 +74,4 @@ export {
   type PassReport,
   type StartReport as FilesStartReport,
 } from "./files/pass.ts";
-export { runFiles, type FilesLoopOptions } from "./files/loop.ts";
+export { runFiles, type FilesLoopOptions, type Rebuilt } from "./files/loop.ts";
