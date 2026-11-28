@@ -7,7 +7,8 @@ import type { Row, SqlValue } from "../driver.ts";
 import { formatTaskRef, parseTaskRef } from "../refs.ts";
 import { positionBetween } from "../write/positions.ts";
 import { freeSlug } from "../write/slugs.ts";
-import { listPreference, readSpacePreference, type ScaleKey } from "../preferences.ts";
+import { listPreference, type ScaleKey } from "../preferences.ts";
+import { dedupeWindowMs, finishedOf } from "../write/dedupe.ts";
 import { Fields, sourceFields, WRITE_LIMITS } from "../write/request.ts";
 import type { Command, Tx } from "./tx.ts";
 
@@ -27,15 +28,16 @@ const NOTE_KINDS = [
   "learning",
 ] as const;
 
-const DAY_MS = 86_400_000;
-
 const SQL = {
   liveSource: "SELECT id FROM sources WHERE source_key = $key AND deleted_at IS NULL",
   /** The newest live task a source is the origin of. */
   originTask:
-    "SELECT t.id, t.ref, t.lifecycle, t.completed_at FROM tasks t JOIN nodes n ON n.id = t.id " +
+    "SELECT t.id, t.ref, t.lifecycle, t.fp, t.created_seq FROM tasks t JOIN nodes n ON n.id = t.id " +
     "WHERE t.origin_source_id = $source AND n.deleted_at IS NULL ORDER BY n.created_seq DESC LIMIT 1",
   node: "SELECT * FROM nodes WHERE id = $id",
+  sameLog:
+    "SELECT 1 FROM notes WHERE owner_id = $owner AND body = $body AND deleted_at IS NULL " +
+    "AND kind NOT IN ('note', 'learning')",
   taskByRef: "SELECT id FROM tasks WHERE ref = $ref",
   child:
     "SELECT * FROM nodes WHERE parent_id = $parent AND kind = 'project' AND (slug = $slug OR lower(title) = $title)",
@@ -184,18 +186,19 @@ function known(tx: Tx, list: ScaleKey, value: unknown, field: string): string {
 }
 
 /**
- * The task a draft with source key `key` captured before, when it still counts (open, or finished
- * within the space's window), and the live source of that key.
+ * The task a draft with source key `key` captured before, when it still counts, and the live source
+ * of that key. An open task counts; a finished one when it finished within the space's window, by
+ * today's rule (dedupe.ts `finishedOf`): when this space recorded the finish, never the date the
+ * finish names, so an archive and a backdated completion count too. One this request finished is
+ * no match: a draft after it is new work.
  */
 function captured(tx: Tx, key: string): { task: Row | undefined; source: string | null } {
   const source = tx.get(SQL.liveSource, { key })?.["id"];
   if (typeof source !== "string") return { task: undefined, source: null };
   const task = tx.get(SQL.originTask, { source });
-  const days = readSpacePreference(tx.conn, "tasks.dedupe_window_days").value as number;
-  const finished = task?.["completed_at"];
-  const counts =
-    task?.["lifecycle"] === "active" ||
-    (typeof finished === "number" && finished >= tx.at - days * DAY_MS);
+  if (task === undefined || task["lifecycle"] === "active") return { task, source };
+  const finished = finishedOf(tx.conn, task);
+  const counts = finished.seq !== tx.seq && finished.at >= tx.at - dedupeWindowMs(tx.conn);
   return { task: counts ? task : undefined, source };
 }
 
@@ -210,7 +213,11 @@ const tasksAdd: Run = (tx, input) => {
       const found = key === undefined ? undefined : captured(tx, key);
       if (found?.task !== undefined) {
         const id = String(found.task["id"]);
-        if (log !== undefined) addNote(tx, id, id, log, "progress");
+        // As today: the log follows an active match only, and once.
+        const follows =
+          found.task["lifecycle"] === "active" &&
+          tx.get(SQL.sameLog, { owner: id, body: log ?? "" }) === undefined;
+        if (log !== undefined && follows) addNote(tx, id, id, log, "progress");
         return { status: "exists", id, ref: refText(tx, found.task["ref"]) };
       }
       const parent = parentFor(tx, draft["under"], at("under"));

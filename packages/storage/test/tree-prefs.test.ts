@@ -128,7 +128,9 @@ describe("[S2.tree.prefs] a space's preferences on the tree", () => {
         moves: [{ from: "L", to: "M" }],
       }),
     );
-    expect(moved.result).toMatchObject({ moved: [{ from: "L", to: "M", tasks: 1 }] });
+    expect(moved.result).toMatchObject({
+      moved: [{ from: "L", to: "M", active: 1, finished: 0, trash: 0 }],
+    });
     expect(fx.conn.prepare("SELECT effort FROM tasks ORDER BY ref").all()).toEqual([
       { effort: "M" },
       { effort: "S" },

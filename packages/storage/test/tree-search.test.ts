@@ -88,6 +88,19 @@ describe("[S2.tree.search] the tree's search index, kept in each commit, and a s
     expect(found("seeds")).toHaveLength(2);
   });
 
+  test("documents of equal rank are found in the same order after a rebuild", () => {
+    const first = add({ title: "Renew the passport" });
+    const second = add({ title: "Renew the passport" });
+    const top = () => found("passport").slice(0, 1);
+    const before = top();
+    // A rebuild numbers the documents again, in another order than the commits made them.
+    fx.conn.exec("DELETE FROM search_fts");
+    fx.conn.exec("DELETE FROM search_docs");
+    fx.conn.transaction("immediate", () => rebuildTreeIndex(fx.conn));
+    expect(top()).toEqual(before);
+    expect([first, second].sort()[0]).toBe(before[0]);
+  });
+
   test("a request refused after its writes leaves the index as it was; a rebuild makes the same documents", () => {
     const made = fx.send("tasks.add", { tasks: [{ title: "Fix the export" }] });
     const task = (ok(made) as { tasks: { id: string }[] }).tasks[0]?.id ?? "";
