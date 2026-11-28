@@ -1,9 +1,9 @@
 # Status
 
 The state of each step of [`PLAN.md`](PLAN.md). A row is a part that can be built and merged by
-itself. States: `todo` (something it needs is not done), `ready` (it can start), `doing`,
-`review` (its pull request is open), `done` (merged). Set a row to `doing` on your branch and name
-it in your pull request.
+itself. States: `todo` (something it needs is not done), `ready` (it can start), `doing` (with what
+has merged and what comes next), `done` (merged). A row says what is on main: it changes when a
+pull request has merged, in a change of its own, and never on a branch that builds the step.
 
 ## Built before this plan
 
@@ -32,7 +32,7 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 1.5 | The skill `keeping-the-library`, and a brief explained as "what this is" | done (#251) |
 | 1.6 | The app: the project screen with its Library, the page screen with History and Restore, page edits under Changes | done (#255, #257) |
 | 1.7 | The trial: twenty scripted tasks with Claude Code and Codex, and the bytes of history per page edit | done (#275, #278): the result is under [Step 1's trial](#step-1s-trial) |
-| 1.8 | The harvest of one real project, and a walk through it as a person | todo: 1.7 |
+| 1.8 | The harvest of one real project, and a walk through it as a person | ready: the owner's, on a real space |
 | 2.1 | The short design for one tree, reviewed before code (#237) | done |
 | 2.2 | (i) The feed sends a tree, today's areas and projects as parent rows at its edge, and the page's store reads it | done (#261, #268) |
 | 2.3 | (ii) The tree's schema and command core beside today's storage, used by nothing yet: add, read and finish in a disposable tree space, Undo's walk, the crash test | done (#244, #256, #260) |
@@ -40,21 +40,21 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 2.5 | (iv) The projector on the tree, the finishing dialog, the new tool shapes with the skills, instructions and hints, behind the tree backend | todo: 2.4, 3.1 |
 | 2.6 | (v) The switch: new spaces are trees, old formats are named before anything changes, the owner's carry-over on a trial copy first | todo: 2.5 |
 | 2.7 | (vi) Deletion: the feed's adapter, today's writer, the old migration chain, the old projector and places | todo: 2.6 |
-| 2.8 | The app: the sidebar tree, the project screen with its Tasks and Library tabs, breadcrumbs, the derived status line and one address for a project, reading only (#284). Waits: the brief in the screen's head (the feed sends no node's brief yet), the expanded task's Brief, Description, Knowledge and subtasks' boxes, the finishing dialog, the Notes tab, and the labels of creating and moving that still say "area" | review (#284) |
+| 2.8 | The app: the sidebar tree, the project screen, breadcrumbs, the derived status line, the expanded task's Brief, Description, Knowledge and subtasks | doing: the side menu as the tree at any depth, one project screen with its Tasks and Library tabs, breadcrumbs, the status line and one address for a project, reading only (#284); next: the brief in the screen's head (the feed sends no node's brief yet); the expanded task's fields and subtasks' boxes, the finishing dialog, the Notes tab and the labels that still say "area" todo: 2.5 |
 | 2.9 | Folders on any node in the app, Settings > Folders, a project's rename and archive | todo: 2.6 |
 | 2b.1 | The short design for routines | done (#235) |
 | 2b.4 | The schedule calculator: the stored form, the next date and due time through daylight saving, the claim after an absence, and a schedule's words | done (#241, #253) |
 | 2b.2 | Routines: one task of a kind of its own that comes back on a schedule, its runs logged under it, a page of the active ones | doing: the node kind, its tables and commands with Undo in the tree's storage (#269); the app todo: 2.4 |
 | 2b.3 | Agent runs on a schedule (Refresh, tidying), Refresh in the top bar, Continue interactively | todo: 2.4 |
-| 3.1 | The projector for the tree on disk, written on the tree schema of 2.3 and switched on in 2.5 | review: the files rendered from a snapshot (#276) and the pass that writes them with its record (#281) are merged; the service running the pass for a tree space, with `ttasks view rebuild`, is in review; today's spaces keep today's projector until the switch |
-| 3.2 | Inherited default folders, other folders as hints, Open says when a folder is set only on another machine | todo: 2.9 |
-| 3.3 | The trial's tasks again, tools only against tools with the tree, and a rename's rebuild timed on Windows | todo: 3.1 |
+| 3.1 | The projector for the tree on disk, written on the tree schema of 2.3 and switched on in 2.5 | done (#276, #281, #285): rendered, written by a pass with its record, and run by the service for a tree space; switched on for every space in 2.6 |
+| 3.2 | Inherited default folders, other folders as hints, Open says when a folder is set only on another machine | todo: 2.4 (the folders and Open and Run families) |
+| 3.3 | The trial's tasks again, tools only against tools with the tree, and a rename's rebuild timed on Windows | doing: a rename's rebuild timed on Windows (in the design's pull request, #271); the trial's tasks with file tools todo: 2.4 |
 | 4.1 | Budgets that speak in a write's answer, and tidying a project's library | ready: the budgets; tidying todo: 2b.3 |
 | 4.2 | Ingestion: a run makes tasks and sources from the person's sources by itself | todo: 2b.3 |
 | 4.3 | The library skill's later versions, from the trial | ready |
 | 5.1 | The phone's listener apart from the page's, in the same process: it reaches only the operations, the feed and a task's runs | done (#245) |
 | 5.2 | An endpoint for paired phones over pinned TLS, with rights per phone and space, and pairing by a QR code from Settings > Phones | done (#245, #252) |
-| 5.3 | The phone app as a development build in the workspace, and its first proof; Today and capture shared with the page once step 1's page work has merged | doing: Today, capture and the feed's store shared in `packages/client` (#264); the app with its pinned link, built in CI and tried on an emulator against the real service (#270); scan, name and reopen through the one screen, with one owner of the link, in review (#283); next: Today on the phone |
+| 5.3 | The phone app as a development build in the workspace, and its first proof; Today and capture shared with the page once step 1's page work has merged | doing: Today, capture and the feed's store shared in `packages/client` (#264); the app with its pinned link, built in CI and tried on an emulator against the real service (#270); scan, name and reopen through the one screen, with one owner of the link (#283); next: Today on the phone |
 | 5.4 | The stores' test tracks, the relay for use away from home, push messages | todo: 5.3 |
 | 6.1 | Differences between versions of a page and of a description | todo: 2.8 |
 
