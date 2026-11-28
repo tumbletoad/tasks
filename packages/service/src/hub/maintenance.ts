@@ -16,7 +16,8 @@ import type { Id, StayReason } from "@ttasks/storage";
 /**
  * Whether retention may remove a daily backup that was made into the space's own folder, once its
  * move to the backups folder is done (from the first run after the one that finished it). Off: such
- * a backup is never removed, wherever it stands. The owner decides.
+ * a backup is never removed, wherever it stands, unless the backups folder set for the space is
+ * that folder itself: there its backups are the ordinary ones. The owner decides.
  */
 export const PRUNE_OLD_DAILIES = false;
 
@@ -35,11 +36,7 @@ export interface MaintenanceJob {
    * here (storage's moveOldBackups); retention never removes anything there.
    */
   readonly backupDir: string;
-  /**
-   * Daily backups this machine found in the space's own folder before, by name: unless
-   * `pruneOldDailies` (default PRUNE_OLD_DAILIES), retention keeps them wherever they stand now.
-   */
-  readonly oldDailies?: readonly string[];
+  /** Whether retention may remove old daily backups (default PRUNE_OLD_DAILIES). */
   readonly pruneOldDailies?: boolean;
   /** Remove leftovers: only in a folder this service alone writes (above). */
   readonly cleanup: boolean;
@@ -69,8 +66,6 @@ export interface MaintenanceReport {
     readonly finished: number;
     readonly stayed: Partial<Record<StayReason, number>>;
   };
-  /** The daily backups in the space's own folder at the run's start, by name, to remember. */
-  readonly oldDailies?: readonly string[];
   /** The backup found the space's search index damaged: the space's writer repairs it. */
   readonly searchIndexDamaged?: true;
   /** Retention ran and trial restored the newest backups, until one passed. */

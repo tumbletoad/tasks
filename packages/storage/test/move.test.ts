@@ -15,7 +15,7 @@ import {
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { backupSpace, type BackupRecord } from "../src/backup/backup.ts";
-import { listBackupsIn } from "../src/backup/list.ts";
+import { listBackups, listBackupsIn } from "../src/backup/list.ts";
 import { moveOldBackups, SETTLED_MS, type MoveSeams } from "../src/backup/move.ts";
 import { NODE_IO } from "../src/files.ts";
 import { restoreLatest } from "../src/restore/rescue.ts";
@@ -173,6 +173,25 @@ describe("[A1.5.backup.old-move] a space's old backups move to its backups folde
     await eachOnceAndWhole(s);
   });
 
+  test("restore latest takes the same backup from the other folder before older work when the copy it listed does not restore", async () => {
+    const s = await oldBackups();
+    await move(s, Date.now());
+    const newest = s.made[2] as BackupRecord;
+    // The listed original no longer restores (its own file now, of the right size): the newest
+    // work is still in the copy beside it.
+    const bytes = readFileSync(newest.file);
+    rmSync(newest.file);
+    bytes[bytes.length - 9] = (bytes[bytes.length - 9] ?? 0) ^ 0xff;
+    writeFileSync(newest.file, bytes);
+    const latest = await restoreLatest(
+      s.checked,
+      [s.to, s.own],
+      s.space.spaceId,
+      join(folders.make(), "latest"),
+    );
+    expect(latest.backup).toBe(newest.name);
+  });
+
   test("another file at a backup's name in the backups folder keeps both; the same backup there already lets the original go", async () => {
     const s = await oldBackups();
     const [data, sidecar, same] = s.made as [BackupRecord, BackupRecord, BackupRecord];
@@ -206,7 +225,7 @@ describe("[A1.5.backup.old-move] a space's old backups move to its backups folde
     const result = await move(s, Date.now(), { freeBytes: () => 0 });
     expect(result.copied).toEqual([]);
     expect(result.stayed.map((x) => x.why)).toEqual(["no_room", "no_room", "no_room"]);
-    expect(readdirSync(s.to)).toEqual([]);
+    expect(listBackups(s.to)).toMatchObject({ backups: [], leftovers: [] });
   });
 
   test("a backups folder that is the old folder under another name, or inside the space, moves nothing", async () => {

@@ -17,8 +17,11 @@ import {
   loadDriver,
   moveOldBackups,
   oldDailies,
+  recordedOldDailies,
   planRetention,
   removeBackupLeftovers,
+  type BackupListing,
+  type Id,
   type StayReason,
 } from "@ttasks/storage";
 import {
@@ -32,6 +35,16 @@ const reply = (message: MaintenanceReply): void => {
   parentPort?.postMessage(message);
 };
 
+/**
+ * The old daily backups retention keeps: those still in the space's own folder and those the
+ * backups folder's record names (storage's moveOldBackups). A record that does not read keeps
+ * every backup, since any daily one may be old.
+ */
+function keptOld(listing: BackupListing, spaceId: Id<"sp">, old: readonly string[]): string[] {
+  const recorded = recordedOldDailies(listing.folder, spaceId);
+  return recorded === undefined ? listing.backups.map((b) => b.name) : [...old, ...recorded];
+}
+
 async function upkeep(job: MaintenanceJob): Promise<MaintenanceReport> {
   const checked = await CheckedDriver.check(await loadDriver(DEFAULT_DRIVER));
   const dir = job.backupDir;
@@ -43,7 +56,7 @@ async function upkeep(job: MaintenanceJob): Promise<MaintenanceReport> {
     return { leftovers: 0, backup: "away", removed: 0, unverified: 0 };
   }
   // Found before the move, so a backup whose move ends in this run is kept in it either way.
-  const old = oldDailies(job.folder, dir);
+  const old = oldDailies(job.folder, dir, job.spaceId);
   const moved = job.atStart
     ? await moveOldBackups(job.folder, dir, job.spaceId, job.now)
     : undefined;
@@ -77,9 +90,7 @@ async function upkeep(job: MaintenanceJob): Promise<MaintenanceReport> {
           planRetention(listing, after, {
             spaceId: job.spaceId,
             always:
-              (job.pruneOldDailies ?? PRUNE_OLD_DAILIES)
-                ? old
-                : [...old, ...(job.oldDailies ?? [])],
+              (job.pruneOldDailies ?? PRUNE_OLD_DAILIES) ? old : keptOld(listing, job.spaceId, old),
           }),
           { history: job.incarnation },
         )
@@ -113,7 +124,6 @@ async function upkeep(job: MaintenanceJob): Promise<MaintenanceReport> {
       : {
           moved: { copied: moved.copied.length, finished: moved.finished.length, stayed },
         }),
-    ...(old.length === 0 ? {} : { oldDailies: old }),
     backup: due ? "taken" : "not_due",
     removed: retention?.removed.length ?? 0,
     unverified: (retention?.unverified.length ?? 0) + broken,

@@ -11,6 +11,10 @@
 //    the original removed, its data first. So a power cut, a full disk or a drive taken away
 //    between the two steps costs nothing: the original stays until a copy that has reached the
 //    disk reads back.
+// A daily backup's original goes only once its name is in the backups folder's record of old
+// daily backups (OLD_DAILIES_FILE), which retention keeps wherever they stand: written, synced and
+// read back before any removal, so a failed write leaves the originals for the next start. Beside
+// the backups, it serves every machine that shares the folder.
 // Whatever does not read back, is incomplete, or finds another file at its name stays where it is,
 // both copies if need be, and the result says why. The service runs this at its start, under the
 // space's writer.lock, and stops the run before it releases the lock (hub/spaces.ts).
@@ -32,6 +36,7 @@ import {
   readBounded,
   removeQuietly,
   temporaryTag,
+  writeFileAtomic,
   writeFileExclusive,
   type FileIo,
 } from "../files.ts";
@@ -138,14 +143,63 @@ const isNoRoom = (error: unknown): boolean => {
 };
 
 /**
- * The daily backups of a space's old folder, when it is not its backups folder `to`: they and
- * their copies are kept by retention until their move is done (maintenance-entry.ts).
+ * The daily backups of the space `spaceId` in its old folder, when that is not its backups folder
+ * `to`. Where the two are one folder, its backups are the ordinary ones, and none is old.
  */
-export function oldDailies(space: string, to: string): string[] {
+export function oldDailies(space: string, to: string, spaceId: Id<"sp">): string[] {
   if (folders(space, to) === undefined) return [];
   return listBackups(join(space, BACKUPS_FOLDER))
-    .backups.filter((b) => b.sidecar?.kind === "daily")
+    .backups.filter((b) => b.sidecar?.kind === "daily" && b.sidecar.space_id === spaceId)
     .map((b) => b.name);
+}
+
+/** The record, in a backups folder, of the space's daily backups made into its own folder. */
+const oldDailiesFile = (spaceId: Id<"sp">): string => `.old-dailies-${spaceId}.json`;
+
+/**
+ * The names in the backups folder `to`'s record of the space's old daily backups: none when there
+ * is no record, undefined when one is there and does not read.
+ */
+export function recordedOldDailies(
+  to: string,
+  spaceId: Id<"sp">,
+  policy: BundlePolicy = BUNDLE_POLICY,
+): string[] | undefined {
+  try {
+    const read = readBounded(join(to, oldDailiesFile(spaceId)), policy.maxOtherFileBytes);
+    if (read.state === "missing") return [];
+    if (read.state !== "ok") return undefined;
+    const names = (JSON.parse(Buffer.from(read.bytes).toString("utf8")) as { names?: unknown })
+      .names;
+    return Array.isArray(names) && names.every((n) => typeof n === "string") ? names : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Adds `names` to the record; whether the record holds every one of them when it returns. A record
+ * that does not read is never written over.
+ */
+function recordOldDailies(
+  to: string,
+  spaceId: Id<"sp">,
+  names: readonly string[],
+  policy: BundlePolicy,
+  io: FileIo,
+): boolean {
+  const known = recordedOldDailies(to, spaceId, policy);
+  if (known === undefined) return false;
+  if (names.every((n) => known.includes(n))) return true;
+  const all = [...known, ...names.filter((n) => !known.includes(n))];
+  try {
+    const text = `${JSON.stringify({ format: 1, names: all })}\n`;
+    writeFileAtomic(to, oldDailiesFile(spaceId), text, io);
+  } catch {
+    return false;
+  }
+  const again = recordedOldDailies(to, spaceId, policy);
+  return again !== undefined && names.every((n) => again.includes(n));
 }
 
 /**
@@ -171,6 +225,7 @@ export async function moveOldBackups(
   };
   // Once the disk is full, no further copy is tried in this run.
   let full = false;
+  const recorded = recordOldDailies(to, spaceId, oldDailies(space, to, spaceId), policy, io);
   for (const b of listBackups(from, policy).backups) {
     if (b.sidecar === undefined) {
       // A `.db.gz` without a sidecar that reads: nothing says what it should hold.
@@ -191,6 +246,8 @@ export async function moveOldBackups(
           stay(b.name, "taken");
         } else if (!(await readsBack(data, b.sidecar))) {
           stay(b.name, "unverified");
+        } else if (b.sidecar.kind === "daily" && !recorded) {
+          stay(b.name, "failed");
         } else if (now - statSync(sidecar).mtimeMs >= SETTLED_MS) {
           // Step 2. The folders are looked at again right before each removal.
           for (const original of [b.file, b.sidecarFile]) {

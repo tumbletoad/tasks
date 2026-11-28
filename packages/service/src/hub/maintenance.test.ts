@@ -8,6 +8,7 @@ import {
   listBackups,
   listBackupsIn,
   newId,
+  recordedOldDailies,
   restoreBackup,
 } from "@ttasks/storage";
 import { checkedDriver } from "@ttasks/testkit";
@@ -255,14 +256,28 @@ describe("[A1.5.backup.old-move] the upkeep moves a space's old backups and keep
     const names = dailies.map((b) => b.name).sort();
     const first = await runner.run({ ...job, now: start });
     expect(first.moved).toEqual({ copied: 3, finished: 0, stayed: {} });
-    expect(first.oldDailies?.slice().sort()).toEqual(names);
+    // Recorded beside the backups before any original goes.
+    expect(recordedOldDailies(outside, space.space.spaceId)?.slice().sort()).toEqual(names);
     expect(kept(space, outside, names)).toEqual(names);
-    const recorded = { oldDailies: first.oldDailies ?? [] };
-    const second = await runner.run({ ...job, ...recorded, now: start + 2 * HOUR });
+    const second = await runner.run({ ...job, now: start + 2 * HOUR });
     expect(second.moved).toMatchObject({ copied: 0, finished: 3 });
     expect(existsSync(backupsFolder(space.folder))).toBe(false);
-    await runner.run({ ...job, ...recorded, now: start + 3 * HOUR });
+    await runner.run({ ...job, now: start + 3 * HOUR });
     expect(kept(space, outside, names)).toEqual(names);
+  }, 120_000);
+
+  test("when their record cannot be written, the originals stay and no old daily backup is pruned", async () => {
+    const { space, dailies, outside, runner, job, start } = await old("old-unrecorded");
+    const names = dailies.map((b) => b.name).sort();
+    // A folder where the record goes: it can be neither written nor read.
+    mkdirSync(join(outside, `.old-dailies-${space.space.spaceId}.json`));
+    await runner.run({ ...job, now: start });
+    const second = await runner.run({ ...job, now: start + 2 * HOUR });
+    expect(second.moved).toMatchObject({ finished: 0, stayed: { failed: 3 } });
+    for (const b of dailies) expect(existsSync(b.file) && existsSync(b.sidecarFile)).toBe(true);
+    await runner.run({ ...job, now: start + 3 * HOUR });
+    expect(kept(space, outside, names)).toEqual(names);
+    expect(listBackups(outside).backups.filter((b) => b.state === "ok")).toHaveLength(14);
   }, 120_000);
 
   test("with pruning on, old daily backups fall under the rules from the run after the one that finished their move", async () => {

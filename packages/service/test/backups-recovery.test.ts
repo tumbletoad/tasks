@@ -20,6 +20,7 @@ import {
   createSpace,
   listBackups,
   newId,
+  recordedOldDailies,
   restoreBackup,
   type Id,
 } from "@ttasks/storage";
@@ -30,7 +31,6 @@ import { restoreInPlace } from "../../storage/src/restore/restore.ts";
 import { FIXTURE_MACHINE } from "../../storage/test/fixture-requests.ts";
 import { Maintenance } from "../src/hub/maintenance.ts";
 import { startService, type RunningService } from "../src/hub/service.ts";
-import { readSpaceSettings } from "../src/hub/space-settings.ts";
 import {
   backupsOf,
   readLog,
@@ -565,9 +565,7 @@ describe("[A1.5.backup.outside-home] a space's backups go beside the TTasks home
       expect(readdirSync(own).sort()).toEqual(files);
       expect(listBackups(outside).backups.find((b) => b.name === earlier.name)?.state).toBe("ok");
       // Remembered, so retention keeps it wherever it stands once its move is done.
-      expect(readSpaceSettings(stateOf(home), work.space.spaceId).oldDailies).toEqual([
-        earlier.name,
-      ]);
+      expect(recordedOldDailies(outside, work.space.spaceId)).toEqual([earlier.name]);
       const listed = (await call(user, "space/backups", { space: work.folder }))["backups"];
       expect(listed).toEqual([
         expect.objectContaining({ name: daily[0]?.name, folder: outside }),

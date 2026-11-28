@@ -104,7 +104,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   two starts of TTasks: a copy first, and the original goes only at a later start, once the copy
   reads back whole. Nothing there is overwritten. One that is not whole, whose copy does not read
   back, or whose name another file has there, stays, and `ttasks space list` and `ttasks doctor`
-  say so.
+  say so. Where the backups folder set for a space is its own `backups` folder, nothing moves, and
+  clean-up treats the daily backups there as ordinary ones, old ones too.
 - A backup that is called verified has passed a trial restore. So has every backup you make with
   `ttasks space backup`.
 - While a space is open for changes, TTasks backs it up once a day. It keeps the backups of seven

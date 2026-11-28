@@ -127,7 +127,6 @@ import {
   readSpaceSettings,
   recordFailedMigration,
   recordMigration,
-  recordOldDailies,
   recordProjectionRescue,
   recordSeen,
   recordSyncedConfirmed,
@@ -2004,7 +2003,6 @@ export class SpaceManager {
               atStart,
               now,
               utcOffsetMinutes: -new Date(now).getTimezoneOffset(),
-              oldDailies: readSpaceSettings(this.#options.settingsDir, spaceId).oldDailies ?? [],
             },
             stop.signal,
           );
@@ -2025,11 +2023,6 @@ export class SpaceManager {
           });
           space.backups.ran(begun, report);
           if (report.moved !== undefined) space.oldStayed = report.moved;
-          try {
-            recordOldDailies(this.#options.settingsDir, spaceId, report.oldDailies ?? []);
-          } catch {
-            // Found again by the next run while they are in the space's own folder.
-          }
           if (report.searchIndexDamaged === true) this.#repairSearch(space);
         },
         (error: unknown) => {
