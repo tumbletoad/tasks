@@ -1125,5 +1125,18 @@
   "routine.skipThis": "Skip this time: {title}",
   "routines.due": "Due",
   "routines.coming": "Coming",
-  "routines.paused": "Paused ({count})"
+  "routines.paused": "Paused ({count})",
+  "routine.kind": "Routine",
+  "routine.entries": "Done",
+  "routine.entriesNone": "No time done yet.",
+  "routine.entrySkipped": "skipped",
+  "routine.entryRunFailed": "skipped: its run failed",
+  "routine.entryExtra": "an extra time",
+  "routine.pause": "Pause",
+  "routine.resume": "Resume",
+  "routine.finish": "Finish routine…",
+  "routine.finishTitle": "Finish {title} for good?",
+  "routine.finishLead": "It stops coming back. {count, plural, =0 {It has no entries yet.} one {Its entry stays with it in Completed.} other {Its # entries stay with it in Completed.}}",
+  "routine.finishCancel": "Cancel",
+  "routine.finishConfirm": "Finish routine"
 }

@@ -79,3 +79,43 @@
 .part + .part::before {
   content: " · ";
 }
+
+/* A routine's card: its kind and line, its times done, and its two actions. */
+.card {
+  display: grid;
+  gap: 8px;
+  padding: 8px 0 12px;
+}
+
+.kind {
+  color: var(--k-muted);
+}
+
+.entries {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  padding: 2px 0;
+  color: var(--k-muted);
+  font-size: 0.875em;
+}
+
+.menu {
+  display: flex;
+  gap: 12px;
+}
+
+.menu button {
+  border: 0;
+  background: transparent;
+  color: var(--k-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.menu button:hover {
+  color: var(--k-text);
+}

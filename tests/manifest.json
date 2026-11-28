@@ -7294,6 +7294,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.routines.web.card",
+      "title": "A routine's card: its kind, schedule and next time, its times done newest first (a skip, an extra time, a note), Pause, and Finish routine… behind its dialog that names its entries and finishes only on its own button",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.routines.capture",
+      "title": "On a space that keeps routines, a capture that says a schedule (water the plants every saturday, stand-up weekdays at 9) shows it as a chip and is a routine you do, its schedule taking the place of a date, a star and the Inbox; elsewhere, kept as text, or no schedule, the words stay the title",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.routines.web.lists",
       "title": "A routine's row and the Routines page's lists: Due (late since a day, or today, with Skip), Coming (next on a day) and Paused with its count, each line its schedule in words, who does it and its newest entry; a finished routine in none; the round box with its loop checks off this time, and no box is a task's checkbox",
       "source": "Routines design, pull request 235",

@@ -10,6 +10,7 @@ import type { RoutineRow } from "@ttasks/client/store";
 import type { Clock } from "@ttasks/client/today";
 import { I18n } from "../i18n/intl.tsx";
 import { RoutineLists, type RoutineActions } from "./Routine.tsx";
+import { RoutineCard, type RoutineCardActions, type RoutineEntryView } from "./RoutineCard.tsx";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -127,5 +128,80 @@ describe("[A5.routines.web.lists] a routine's row and the Routines page's lists"
     expect(done).toEqual(["Water the plants"]);
     expect(skipped).toEqual(["Water the plants"]);
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
+  });
+});
+
+describe("[A5.routines.web.card] a routine's card: its times done, Pause, and Finish behind its dialog", () => {
+  const paused: string[] = [];
+  const finished: string[] = [];
+  const cardActions: RoutineCardActions = {
+    pause: (r) => paused.push(`pause ${r.title}`),
+    resume: (r) => paused.push(`resume ${r.title}`),
+    finish: (r) => finished.push(r.title),
+  };
+  const card = (r: RoutineRow, entries: RoutineEntryView[]) => {
+    act(() => {
+      root.render(
+        <I18n>
+          <RoutineCard routine={r} entries={entries} clock={CLOCK} actions={cardActions} />
+        </I18n>,
+      );
+    });
+  };
+  const entryLines = () =>
+    [...container.querySelectorAll('[data-part="routine-entry"]')].map((li) =>
+      [...li.querySelectorAll("span")].map((s) => s.textContent).join(" · "),
+    );
+
+  test("the times done, newest first: a skip, an extra time and a note", () => {
+    card(routine({ title: "Water the plants", entries: 3 }), [
+      {
+        due: { date: "2026-12-05" },
+        state: "skipped",
+        why: "you",
+        at: "2026-12-05T10:00:00.000Z",
+        by: "user",
+      },
+      { state: "done", at: "2026-12-02T18:00:00.000Z", by: "user" },
+      {
+        due: { date: "2026-11-28" },
+        state: "done",
+        at: "2026-11-27T09:00:00.000Z",
+        by: "user",
+        note: "The fern too",
+      },
+    ]);
+    expect(entryLines()).toEqual([
+      "Sat 5 Dec · skipped",
+      "Wed 2 Dec · an extra time",
+      "Sat 28 Nov · The fern too",
+    ]);
+    expect(container.querySelector('[data-part="routine-card"]')?.textContent).toContain(
+      "Every Saturday",
+    );
+  });
+
+  test("Pause, then Finish routine… asks first, and Cancel finishes nothing", () => {
+    paused.length = 0;
+    finished.length = 0;
+    card(routine({ title: "Weekly review", entries: 23 }), []);
+    act(() => {
+      container.querySelector<HTMLButtonElement>('[data-part="routine-pause"]')?.click();
+    });
+    expect(paused).toEqual(["pause Weekly review"]);
+    act(() => {
+      container.querySelector<HTMLButtonElement>('[data-part="routine-finish"]')?.click();
+    });
+    const dialog = document.querySelector('[role="alertdialog"]');
+    expect(dialog?.textContent).toContain("Finish Weekly review for good?");
+    expect(dialog?.textContent).toContain(
+      "It stops coming back. Its 23 entries stay with it in Completed.",
+    );
+    expect(finished).toEqual([]);
+    act(() => {
+      document.querySelector<HTMLButtonElement>('[data-part="routine-finish-confirm"]')?.click();
+    });
+    expect(finished).toEqual(["Weekly review"]);
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
   });
 });

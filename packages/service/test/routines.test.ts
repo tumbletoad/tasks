@@ -323,7 +323,9 @@ describe("[S2.tree.routines.service] a routine a person does, through the reques
     await feed.start();
     const added = (await call(
       "task.add",
-      { tasks: [{ title: "Fixture send the weekly report", repeat: "every friday" }] },
+      {
+        tasks: [{ title: "Fixture send the weekly report", repeat: "every friday", inbox: false }],
+      },
       AGENT,
     )) as { tasks: Json[] };
     expect(findEntry("task.add")?.output.safeParse(added).success).toBe(true);
