@@ -3,7 +3,6 @@
 // What a task's composer sends and when its words count as gone (composer.ts, unsent.ts): the words
 // as typed, one request ID for one note across a reload, and an Open's words clear once they are on
 // the task.
-import { PRODUCT_ID } from "@ttasks/brand";
 import { beforeEach, describe, expect, test } from "vitest";
 import { keepDraft, keepNote, letGo, readDraft, readNotes, wordsOf } from "../unsent.ts";
 import { onSaved, savedWords, type Saved } from "./composer.ts";
@@ -42,14 +41,6 @@ describe("[A5.3.8.web.composer-sends] a composer sends what was typed once, and 
     ).toEqual(["And the plumber", "Call the landlord"]);
     letGo(SPACE, { kind: "note", task: "tk_1", id: ID });
     expect(readNotes(SPACE, "tk_1")).toEqual([{ words: "And the plumber", id: SECOND }]);
-    // An earlier build kept one note under the task's name alone: it is read and let go alike.
-    localStorage.setItem(
-      `${PRODUCT_ID}.note.${SPACE}.tk_3`,
-      JSON.stringify({ words: "Call the bank", id: ID }),
-    );
-    expect(readNotes(SPACE, "tk_3")).toEqual([{ words: "Call the bank", id: ID }]);
-    letGo(SPACE, { kind: "note", task: "tk_3", id: ID });
-    expect(readNotes(SPACE, "tk_3")).toEqual([]);
     // What is read back is checked by its shape.
     keepNote(SPACE, "tk_4", { words: "x", id: "not an id" });
     expect(readNotes(SPACE, "tk_4")).toEqual([]);

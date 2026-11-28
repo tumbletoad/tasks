@@ -606,7 +606,5 @@ export interface Instance {
 /** The instances a space last opened a task in and ran one with on this machine, by key. */
 export interface LastUsed {
   readonly open?: string;
-  /** The route of that Open: a key no longer in machine.toml still says T3 Code (`t3-mcp`). */
-  readonly open_route?: string;
   readonly run?: string;
 }
