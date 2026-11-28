@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -17,7 +17,9 @@ import {
 import { repoRoot } from "./run.ts";
 
 async function writeTree(files: Record<string, string>): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "ttasks-manifest-"));
+  // The long form of the path: a temporary folder given by its 8.3 name leads Vitest to name some
+  // of its files by the long one, and the check reports paths relative to the root.
+  const root = await realpath(await mkdtemp(join(tmpdir(), "ttasks-manifest-")));
   for (const [path, content] of Object.entries(files)) {
     await mkdir(dirname(join(root, path)), { recursive: true });
     await writeFile(join(root, path), content);
