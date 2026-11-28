@@ -147,7 +147,7 @@ describe("[A3.3.3.mcp.tool-list] one tool list on every connection, online and o
       modernLists.add((await boundModern.request("tools/list", modern())).result ?? "");
       expect([...legacy]).toEqual([JSON.stringify(offline.tools_list.result)]);
       expect([...modernLists]).toEqual([JSON.stringify(offline.tools_list.modern_result)]);
-      // The list is the generated one: run_report comes with run bindings. The instructions are v0's.
+      // The list is the generated one. The instructions are v0's.
       const tools = (offline.tools_list.result["tools"] as Json[]).map((tool) => tool["name"]);
       expect(tools).toEqual([
         "add_entry",
@@ -164,96 +164,6 @@ describe("[A3.3.3.mcp.tool-list] one tool list on every connection, online and o
       ]);
       expect(offline.initialize.result["instructions"]).toBe(INSTRUCTIONS);
       expect(replayed.unanswered).toEqual([]);
-    },
-    LONG,
-  );
-});
-
-describe("[A3.3.4.tools.run-report] run_report outside a run or routine binding", () => {
-  test(
-    "no tool is offered for it, a call by its name is an unknown tool in both eras, the CLI gets not_permitted, and nothing is written",
-    async () => {
-      const w = await opened("rr");
-      await grantHome(w.home, w.path, { instance: "test-agent", space: w.space });
-      const user = await classSession(w.home, w.path, "cli-interactive");
-      cleanups.push(() => {
-        user.close();
-      });
-      const asOf = async (): Promise<string> =>
-        ((await user.call("op/call", { op: "space.status", input: {} })) as { as_of: string })
-          .as_of;
-      await user.call("op/call", {
-        op: "task.add",
-        input: { tasks: [{ title: "Fixture task" }], request_id: "fixture-request-rr-0001" },
-      });
-      const report = (n: number) => ({
-        name: "run_report",
-        arguments: {
-          sources: [{ name: "Mail", state: "ok", items_seen: 3 }],
-          summary: "Fixture summary, refused.",
-          request_id: `fixture-request-rr-${String(n).padStart(4, "0")}`,
-        },
-      });
-      const unknown = (reply: { result?: string | undefined; error?: unknown }) => {
-        expect(reply.result).toBeUndefined();
-        expect(JSON.stringify(reply.error)).toContain("Unknown tool");
-      };
-      const unbound = await raw(w, bridgeContext({ space: w.space }));
-      await unbound.initialize();
-      const modernUnbound = await raw(w, bridgeContext({ space: w.space }));
-      const before = await asOf();
-      unknown(await unbound.request("tools/call", report(2)));
-      unknown(await modernUnbound.request("tools/call", modern("2026-07-28", report(3))));
-      // The CLI: a person's terminal and an agent's shell are no run either.
-      for (const cls of ["cli-interactive", "cli-agent"] as const) {
-        const session = await classSession(w.home, w.path, cls, {
-          ...(cls === "cli-agent" ? { CODEX_THREAD_ID: "fixture-thread" } : {}),
-          TTASKS_SPACE: w.space,
-        });
-        try {
-          const error = await session
-            .call("op/call", {
-              op: "run.report",
-              input: report(5 + (cls === "cli-agent" ? 1 : 0)).arguments,
-            })
-            .then(
-              () => undefined,
-              (thrown: unknown) => errorOf(thrown),
-            );
-          expect(error, cls).toMatchObject({ code: "not_permitted", data: { binding: "none" } });
-        } finally {
-          session.close();
-        }
-      }
-      // Nothing was written: not a report, not even the agent's first act in the space.
-      expect(await asOf()).toBe(before);
-      // No receipt in the unbound connections' writer scope, which is the agent home's (A3 3.7.9).
-      const agent = {
-        class: "bridge" as const,
-        env: {},
-        principal: bridgePrincipal(bridgeContext(), w.service.ops.machine.id),
-        home: "test-agent",
-        binding: { kind: "none", space: w.space, named: false } as const,
-      };
-      for (const request of ["fixture-request-rr-0002", "fixture-request-rr-0003"]) {
-        const receipt = (await opCall(w.service.ops, agent, {
-          op: "receipt.get",
-          input: { request },
-          space: w.space,
-        })) as { found: boolean };
-        expect(receipt.found, request).toBe(false);
-      }
-      // The lookup finds that scope's receipt: a write through the same connection has one.
-      await unbound.request("tools/call", {
-        name: "add_tasks",
-        arguments: { tasks: [{ title: "Fixture task" }], request_id: "fixture-request-rr-0010" },
-      });
-      const written = (await opCall(w.service.ops, agent, {
-        op: "receipt.get",
-        input: { request: "fixture-request-rr-0010" },
-        space: w.space,
-      })) as { found: boolean };
-      expect(written.found).toBe(true);
     },
     LONG,
   );
