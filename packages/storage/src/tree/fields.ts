@@ -28,6 +28,13 @@ export const FIELDS = {
     wrap: ["wrap_state", "outcome", "wrapped_at", "wrapped_by"],
   },
   notes: { body: ["body", "edited_at"], deleted: ["deleted_at"] },
+  pages: {
+    title: ["title"],
+    brief: ["brief"],
+    body: ["body"],
+    owner: ["owner_id"],
+    deleted: ["deleted_at", "deleted_by"],
+  },
 } as const satisfies Record<string, Record<string, readonly string[]>>;
 
 export type Entity = keyof typeof FIELDS;
@@ -50,6 +57,7 @@ export const KEYS: Record<Entity, readonly string[]> = {
     "run_id",
     "created_at",
   ],
+  pages: ["id", "ref", "created_at", "created_by"],
 };
 
 /** A field's columns. */

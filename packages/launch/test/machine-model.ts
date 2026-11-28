@@ -1,4 +1,4 @@
-// A model of the world around the launch state machine, for the property test (A4 5.1, 5.2): fake
+// A model of the world around the launch state machine, for the property test: fake
 // terminals with their shims, a fake URL opener, a fake T3 that keys idle threads by grant and
 // launch, a wall clock that can step either way, a monotonic clock that only time moves and the
 // timers that run on it, and a fault injector. The injector kills the service at any call to the
@@ -29,7 +29,7 @@ export class Crash extends Error {
 /** The deadlines the model gives the machine: a call to the store, and an external step. */
 export const DEADLINES = { store: 15_000, step: 30_000 } as const;
 
-/** A4 3.9.1's edges, written out here so a wrong table in the implementation cannot pass. */
+/** The machine's edges, written out here so a wrong table in the implementation cannot pass. */
 const MODEL_EDGES: Readonly<Record<string, readonly string[]>> = {
   prepared: ["dispatching", "failed"],
   // A self edge records the T3 repeat before it is sent; a confirmation is one step.
@@ -70,7 +70,7 @@ export type Slow =
 /** What the live service does: each starts a call, which may still be under way at the next. */
 export type LiveEvent =
   | { kind: "click"; task: number; instance: number; route: Route; repeat: boolean }
-  /** `crash`: the service dies right after the external step took effect (A4 5.2). */
+  /** `crash`: the service dies right after the external step took effect. */
   | { kind: "confirm"; pick: number; crash: boolean }
   /** `same`: the shim sends the claim ID it sent before (a retry, or a duplicate request). */
   | { kind: "claim"; pick: number; same: boolean }
@@ -80,7 +80,7 @@ export type LiveEvent =
       what: "started" | "settled" | "exited" | "bound" | "checked" | "lost";
     }
   | { kind: "sweep" }
-  /** Start-up recovery while live calls already run (A4 3.9.3). */
+  /** Start-up recovery while live calls already run. */
   | { kind: "recover" }
   /** Time passes: both clocks move, and the timers due on the way fire. */
   | { kind: "tick"; ms: number };
@@ -460,7 +460,7 @@ export class World {
    * An external step of the service: the machine calls it on a record it has just committed, and
    * it takes effect a while later. Until its deadline its call owns the intent, so nothing changes
    * the record in between; after it, the machine has given up on the step, and a late effect
-   * happens on a record the machine has moved on from as A4 says for not knowing.
+   * happens on a record the machine has moved on from, as for not knowing.
    */
   async #step<T>(
     life: Life,
@@ -601,8 +601,8 @@ export class World {
 
   /** T3's repeat of the idle-thread create, as it takes effect. Its answer can be lost too. */
   #replay(intent: LaunchIntent): DispatchOutcome {
-    // The adapter sends only while its pairing is still the intent's grant, checked at the send
-    // (A4 3.9.2, M2.11): a re-pairing after the machine read the grant creates nothing.
+    // The adapter sends only while its pairing is still the intent's grant, checked at the send:
+    // a re-pairing after the machine read the grant creates nothing.
     if (intent.evidence.grant !== this.grant) return { kind: "refused" };
     // T3 refuses the repeat (an error before it creates anything): the first call's thread, if
     // it made one, is still there.
@@ -814,7 +814,7 @@ export class World {
             });
             return;
           case "checked":
-            // T3's folder check of the thread it made (A4 3.4.1 step 3).
+            // T3's folder check of the thread it made.
             if (thread === undefined) return;
             await machine.report(id, {
               kind: "confirmed",
@@ -877,7 +877,7 @@ export class World {
           intent?.state,
         );
       }
-      // Failed is definite evidence that nothing started (A4 3.9.1): never so while an agent or a
+      // Failed is definite evidence that nothing started: never so while an agent or a
       // T3 thread exists, except for what an agent or a thread reported about itself.
       const started = (this.agents.get(id) ?? 0) > 0 || (this.threads.get(id)?.size ?? 0) > 0;
       if (started && intent?.state === "failed") {

@@ -1,5 +1,5 @@
-// The release archives (A2 3.12.4) on Node built-ins only, promoted from the M0.03 spike
-// (A2 3.12.4): a gzipped ustar for Linux and macOS, a zip for Windows.
+// The release archives on Node built-ins only:
+// a gzipped ustar for Linux and macOS, a zip for Windows.
 //
 // Both writers are deterministic, so the same version folder always gives the same bytes: entries
 // sorted, one fixed timestamp, uid and gid 0 with no owner names, explicit modes (the exec bit on

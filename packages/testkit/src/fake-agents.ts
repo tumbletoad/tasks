@@ -1,6 +1,6 @@
-// Fake `claude` and `codex` commands for the tests of detection and `ttasks doctor` (A3 3.14, M4.05):
+// Fake `claude` and `codex` commands for the tests of detection and `ttasks doctor`:
 // small Node scripts laid out as npm installs, so detection finds them on a scratch PATH and runs
-// them as `node <entry>` on every OS (A4 3.2), and doctor runs them as real processes. They read the
+// them as `node <entry>` on every OS, and doctor runs them as real processes. They read the
 // entries setup wrote (`.claude.json` in CLAUDE_CONFIG_DIR, else the user home, and
 // `$CODEX_HOME/config.toml`), and only in a scratch user home:
 // - `--version` prints a version in each tool's form (Claude Code's FAKE_AGENT_CLAUDE_VERSION, else
@@ -8,7 +8,7 @@
 // - `claude auth status` and `codex login status` exit 0 while FAKE_SIGNED_IN is in the app's home,
 //   1 when it is not.
 // - `claude mcp get <name>` and `codex mcp get <name> --json` exit 0 and describe the entry when it
-//   is there, 1 when it is not (doctor's `mcp` and `codex.engines` checks, M4.05).
+//   is there, 1 when it is not (doctor's `mcp` and `codex.engines` checks).
 // - Headless runs (doctor's `--live`): `claude -p --allowedTools mcp__<name>__<tool> …` and
 //   `codex exec … -c mcp_servers.<name>.default_tools_approval_mode="approve" -` read the prompt
 //   from stdin, start the server their own file names for <name> (as the app would), and call

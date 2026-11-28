@@ -1,17 +1,17 @@
-// `ttasks install --finish [--created <path>]...` (A2 3.12.4 step 4 on Linux, step 5 on Windows):
+// `ttasks install --finish [--created <path>]...`:
 // the install scripts' hand-over to the version they have verified and renamed into
 // `<root>/versions/<v>/`, run through that version's own version-local launcher. Authenticity was
-// settled by the script before anything from the archive ran (review SL-13); this is the
+// settled by the script before anything from the archive ran; this is the
 // functional half:
 //   1. the install it belongs to is checked: a separate install whose root the launcher named, a
 //      umask that leaves the person's own bits, and a state folder no other user can change,
-//   2. the self-test: doctor's integrity and runtime rows and the candidate's checks (A2 3.12.6),
+//   2. the self-test: doctor's integrity and runtime rows and the candidate's checks,
 //      printed as doctor prints them. Any failure stops here, and current stays as it was. It
 //      checks the version, not whether bin holds both stable launchers yet: an install cut off
 //      between them is finished by the next step, never refused by this one,
 //   3. only then the switch (service's finishInstall): update.lock, current, the stable command,
 //      install.json with what the installer created,
-//   4. the stable command, and the offer of `ttasks service install` (A2 3.12.4), which this
+//   4. the stable command, and the offer of `ttasks service install`, which this
 //      never runs itself,
 //   5. when this install's service runs another version, the last lines say so and name the
 //      restart. A person at a terminal is asked once whether to restart it now: a restart ends
@@ -104,8 +104,7 @@ export async function installCommand(
   let target: ReturnType<typeof install.installTarget>;
   try {
     target = install.installTarget(versionFolder, facts);
-    // Before the self-test writes into `<state>/tmp`: the umask and the state folder
-    // (A2 3.2.2 rule 5).
+    // Before the self-test writes into `<state>/tmp`: the umask and the state folder.
     install.refuseBeforeFinish(target, io.platform);
   } catch (error) {
     if (error instanceof install.InstallError) {

@@ -1,4 +1,4 @@
-// Command lines of TTasks's own printed for a person to paste (A3 3.13.7): the one rule for every
+// Command lines of TTasks's own printed for a person to paste: the one rule for every
 // such line. On Windows a line is for PowerShell, the shell Windows Terminal opens by default;
 // elsewhere for a POSIX shell (sh, bash, zsh). A word is printed as it is when the shell takes it
 // literally, else quoted so that it does:

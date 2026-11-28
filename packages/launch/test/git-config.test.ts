@@ -1,4 +1,4 @@
-// The Git config reader behind a place's remote (A1 3.15). The remote is an
+// The Git config reader behind a place's remote. The remote is an
 // identity check, so the reader follows git's own syntax or reads nothing. Examples first, among
 // them round three's finding 2 (a URL continued onto the next line read as one URL for two
 // remotes). Then git itself as the oracle: random config files, valid and broken, read by this

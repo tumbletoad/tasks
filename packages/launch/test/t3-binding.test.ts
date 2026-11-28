@@ -1,6 +1,6 @@
-// Exact-folder binding for T3 (A4 3.4.1 steps 1 to 4, A4 5.1 "Exact-folder resolver", R11): each
+// Exact-folder binding for T3: each
 // case gives the expected strategy or nothing, and never a containing project. Directories are
-// compared by identity (A1 3.15). Git repositories and worktrees are made by git itself in a
+// compared by identity. Git repositories and worktrees are made by git itself in a
 // temporary folder, so the reader of git's files is checked against git's own layout, and the fake
 // T3 checks an existing worktree with `git worktree list`, as T3 does. Where git is not installed
 // those cases are skipped with that reason.

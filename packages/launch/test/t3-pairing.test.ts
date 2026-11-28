@@ -1,4 +1,4 @@
-// Pairing with T3 (A4 3.4.1 "Pairing", A7 3.9 M2.11): OAuth with PKCE against a fake T3 server on
+// Pairing with T3: OAuth with PKCE against a fake T3 server on
 // a loopback port the OS assigns. S256 only, a fresh verifier and state per attempt, the redirect on
 // loopback, the state compared before the code is exchanged, a deadline on every wait, secrets sent
 // to loopback endpoints only, and no secret in an error. Fixture data and a temporary folder only.
@@ -209,7 +209,7 @@ describe("[A4.3.4.1.t3.pairing] pairing with T3 by OAuth and PKCE", () => {
         chmodSync(runtime, 0o666);
         expect(await readT3Origin(other)).toEqual({ status: "unsafe" });
         // As T3 makes them under umask 002 (0775, 0664): its group may write them only when that
-        // group is the person's own private group, as for TTasks's own files (A2 3.2.2 rule 5).
+        // group is the person's own private group, as for TTasks's own files.
         const userdata = join(other, "userdata");
         chmodSync(runtime, 0o664);
         chmodSync(userdata, 0o775);

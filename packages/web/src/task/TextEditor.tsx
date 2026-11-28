@@ -74,7 +74,7 @@ export function Pen({
  */
 export function useEditing(
   space: string,
-  task: string,
+  owner: string,
   part: TextPart,
   text: string,
   editable: boolean,
@@ -84,11 +84,11 @@ export function useEditing(
   latest.current = text;
   useLayoutEffect(() => {
     if (!editable) return;
-    const kept = readTextDraft(space, task, part);
+    const kept = readTextDraft(space, owner, part);
     if (kept === undefined) return;
     if (kept.typed !== latest.current) setOpen(true);
-    else letGo(space, { kind: "text", task, part, text: kept.typed });
-  }, [editable, space, task, part]);
+    else letGo(space, { kind: "text", task: owner, part, text: kept.typed });
+  }, [editable, space, owner, part]);
   return [open && editable, setOpen];
 }
 
@@ -114,16 +114,16 @@ export function useSaved(text: string): readonly [string, (words: string | undef
  */
 export function NotSaved({
   space,
-  task,
+  owner,
   part,
 }: {
   readonly space: string;
-  readonly task: string;
+  readonly owner: string;
   readonly part: TextPart;
 }) {
   const t = useT();
   const say = useToast();
-  return useRefusedTexts(space, task, part).map(({ tab, typed }) => (
+  return useRefusedTexts(space, owner, part).map(({ tab, typed }) => (
     <span key={tab} className={line.line} data-part="not-saved" role="status">
       <span className={line.why}>{t("edit.notSaved")}</span>
       <span className={line.value} dir="auto" data-part="not-saved-value">
@@ -151,7 +151,7 @@ export function NotSaved({
         className={line.act}
         data-part="discard-not-saved"
         onClick={() => {
-          letGo(space, { kind: "text", task, part, text: typed, tab, refused: true });
+          letGo(space, { kind: "text", task: owner, part, text: typed, tab, refused: true });
         }}
       >
         {t("edit.discard")}
@@ -162,7 +162,7 @@ export function NotSaved({
 
 export interface TextEditorProps {
   readonly space: string;
-  readonly task: string;
+  readonly owner: string;
   readonly part: TextPart;
   /** The box's name for a screen reader. */
   readonly label: string;
@@ -185,7 +185,7 @@ export interface TextEditorProps {
 
 export function TextEditor({
   space,
-  task,
+  owner,
   part,
   label,
   text,
@@ -204,7 +204,7 @@ export function TextEditor({
   // reload brought back what was typed.
   const [opened] = useState(
     (): TextDraft =>
-      readTextDraft(space, task, part) ?? {
+      readTextDraft(space, owner, part) ?? {
         typed: text,
         before: text,
         ...(base === undefined ? {} : { base }),
@@ -231,11 +231,11 @@ export function TextEditor({
     ...(opened.base === undefined ? {} : { base: opened.base }),
   });
   const keep = (typed: string) => {
-    keepTextDraft(space, task, part, typed === opened.before ? undefined : draft(typed));
+    keepTextDraft(space, owner, part, typed === opened.before ? undefined : draft(typed));
   };
   const release = () => {
-    const kept = readTextDraft(space, task, part);
-    if (kept !== undefined) letGo(space, { kind: "text", task, part, text: kept.typed });
+    const kept = readTextDraft(space, owner, part);
+    if (kept !== undefined) letGo(space, { kind: "text", task: owner, part, text: kept.typed });
   };
   const finish = (send: boolean) => {
     if (sending.current) return;
@@ -251,12 +251,12 @@ export function TextEditor({
     setSaving(true);
     save(typed, opened.base).then(
       () => {
-        letGo(space, { kind: "text", task, part, text: typed });
+        letGo(space, { kind: "text", task: owner, part, text: typed });
         onDone(typed);
       },
       (error: unknown) => {
         // Refused: never sent again from here. The words wait under the text as not saved.
-        keepRefusedText(space, task, part, draft(typed));
+        keepRefusedText(space, owner, part, draft(typed));
         release();
         say(refusalText(error, t("text.notSaved")));
         onDone(undefined);

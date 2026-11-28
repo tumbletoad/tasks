@@ -1,4 +1,4 @@
-// The agent's environment (A4 3.8), computed by the service when the shim claims
+// The agent's environment, computed by the service when the shim claims
 // and applied by the shim as it is. Built, never passed through:
 //
 // 1. Base, of one of two kinds (environment/ builds it):
@@ -7,12 +7,12 @@
 //      whole: what a profile exports (nvm's PATH, a tool's home) is what the agent needs.
 //    - `service`: the service's own environment, when no user base could be read. Only the names
 //      of an allow-list are picked from it, so the service's other variables never reach the agent.
-// 2. Taken out of the base: the home variables (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`, A4 3.8), so
-//    only an instance's own `env` selects a home; A4 3.8's scrub (SCRUB_NAMES, SCRUB_PREFIXES),
+// 2. Taken out of the base: the home variables (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`), so
+//    only an instance's own `env` selects a home; the scrub (SCRUB_NAMES, SCRUB_PREFIXES),
 //    which leaves the variables that say which account an app uses (accountVariable); and those
 //    too for an instance with a home of its own (`ownHome`), whose account is the one signed in there.
 // 3. The instance's `env` applies: what the person set for it wins.
-// 4. Every `TTASKS_*`, the product's own, after merging, then A4's additions: `TTASKS_TICKET` for
+// 4. Every `TTASKS_*`, the product's own, after merging, then the launch's additions: `TTASKS_TICKET` for
 //    the bridge's role, `TTASKS_TASK` and `TTASKS_SPACE` as hints.
 // 5. Linux and macOS: PATH gets the executable's own folder in front (nvm keeps `node` beside it).
 //
@@ -26,11 +26,11 @@ import { ENV_PREFIX, envVar } from "@ttasks/brand";
 import { accountVariable, HOME_VARIABLES, type BuiltInTargetId } from "../catalogue.ts";
 import { AGENT_ENV_NAME, isBoundedText, REPLY_BOUNDS } from "./wire.ts";
 
-/** The base's share of the names: half, less room for libuv's names and A4's additions. */
+/** The base's share of the names: half, less room for libuv's names and the launch's additions. */
 const BASE_MAX = REPLY_BOUNDS.env / 2 - 64;
 
 /**
- * A4 3.8's scrub, by exact name: a leftover `CLAUDECODE=1` makes Claude Code refuse a nested
+ * The scrub, by exact name: a leftover `CLAUDECODE=1` makes Claude Code refuse a nested
  * session, a leftover session ID would bind to the wrong session, and the last two change how any
  * Node program starts.
  */
@@ -43,10 +43,10 @@ export const SCRUB_NAMES = [
   "NODE_OPTIONS",
 ] as const;
 
-/** A4 3.8's scrub, by prefix: agent sessions' own variables and every one of the product's. */
+/** The scrub, by prefix: agent sessions' own variables and every one of the product's. */
 export const SCRUB_PREFIXES = ["CLAUDE_CODE_", "CODEX_SANDBOX", "T3CODE_", ENV_PREFIX] as const;
 
-/** Whether A4 3.8's scrub removes `name` (Windows names compared without case). */
+/** Whether the scrub removes `name` (Windows names compared without case). */
 export function scrubbed(name: string, platform: NodeJS.Platform): boolean {
   const key = platform === "win32" ? name.toUpperCase() : name;
   return (
@@ -102,7 +102,7 @@ const POSIX_PREFIXES = ["LC_", "XDG_"] as const;
 
 /**
  * Windows: what a program started from the desktop has. The user's profile folders are named by
- * these variables; TTasks stores nothing in them (A2 3.2.2 rule 4 is about TTasks's own files).
+ * these variables; TTasks stores nothing in them.
  */
 const WIN32 = [
   "PATHEXT",
@@ -155,7 +155,7 @@ export function allowedNames(platform: NodeJS.Platform): {
     : { names: [...COMMON, ...POSIX], prefixes: POSIX_PREFIXES };
 }
 
-/** The names A4 3.8 adds: the ticket for the bridge's role, the task and the space as hints. */
+/** The names the launch adds: the ticket for the bridge's role, the task and the space as hints. */
 export const ADDED = {
   ticket: envVar("TICKET"),
   task: envVar("TASK"),
@@ -184,7 +184,7 @@ export interface EnvironmentInput {
   readonly instance: Readonly<Record<string, string>>;
   /** The app whose home the instance has of its own: its account variables are not inherited. */
   readonly ownHome?: BuiltInTargetId;
-  /** A4's additions, by the names of ADDED. */
+  /** The launch's additions, by the names of ADDED. */
   readonly additions: Readonly<Record<string, string>>;
   /** The agent's absolute executable: its folder goes in front of PATH (Linux and macOS). */
   readonly executable?: string;
@@ -204,7 +204,7 @@ export function agentEnvironment(input: EnvironmentInput): Record<string, string
   // 1. The base: whole for the person's own, through the allow-list for the service's; within the
   // bounds the shim reads the reply with (wire.ts): a name of AGENT_ENV_NAME's form, a value within
   // its bound, and at most half the names, the other half being the instance's (records.ts) with
-  // A4's additions.
+  // the launch's additions.
   const { names, prefixes } = allowedNames(input.platform);
   const allowed = new Set(names.map(key));
   const whole = input.baseKind === "user";
@@ -228,7 +228,7 @@ export function agentEnvironment(input: EnvironmentInput): Record<string, string
   for (const [name, value] of Object.entries(input.instance)) {
     if (!value.includes("\0") && isEnvName(name)) set(name, value);
   }
-  // 4. The product's own after merging, then A4's additions.
+  // 4. The product's own after merging, then the launch's additions.
   drop((name) => key(name).startsWith(ENV_PREFIX));
   for (const [name, value] of Object.entries(input.additions)) {
     if (value !== "" && !value.includes("\0")) set(name, value);
@@ -256,11 +256,11 @@ const isEnvName = (name: string): boolean =>
   name !== "" && !name.includes("=") && !name.includes("\0");
 
 /**
- * The environment a terminal starts with (A4 3.6.2): the service's own, scrubbed as an agent's
+ * The environment a terminal starts with: the service's own, scrubbed as an agent's
  * would be (no agent session's variables reach the shim's window), with the session layer on top
  * where there is one (a linger-started service lacks DISPLAY and the bus, and a terminal needs
  * them to open a window), and of the product's own variables only the install's home, by which
- * the shim finds this install's service (A2 3.6.1). The shim passes none of it to the agent but
+ * the shim finds this install's service. The shim passes none of it to the agent but
  * the terminal's own TERM and the like (wire.ts TERMINAL_ENV).
  */
 export function terminalEnvironment(

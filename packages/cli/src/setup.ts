@@ -1,5 +1,5 @@
-// `ttasks setup` (A2 3.10, A3 3.13, A4 3.4.1): connecting this machine's agent apps. M2.11 brought
-// `ttasks setup t3`, the pairing with T3 Code; M2.14 `ttasks setup agents` (setup-agents.ts, loaded
+// `ttasks setup`: connecting this machine's agent apps:
+// `ttasks setup t3`, the pairing with T3 Code; `ttasks setup agents` (setup-agents.ts, loaded
 // only for that command), TTasks's MCP server entry in each Claude Code and Codex home; `ttasks setup
 // instances` (setup-instances.ts) the [[instance]] entries Open starts an agent with.
 //
@@ -10,7 +10,7 @@
 // The service runs the pairing (hub/t3.ts) and keeps the token in its machine state; the CLI only
 // hands T3's approval page to the person's browser, because the CLI runs in their desktop session
 // and the service may not (a user unit started at boot). The page is opened with the OS's own
-// opener (A4 3.6.5's primary per OS), the URL as one argument and no shell, and is printed too, so
+// opener, the URL as one argument and no shell, and is printed too, so
 // it can be opened by hand (over SSH, or when no browser starts). The page's URL holds the
 // attempt's state and PKCE challenge, never a secret: the verifier and the token stay in the
 // service. Only the user pairs, from an interactive terminal; the status works everywhere.
@@ -69,7 +69,7 @@ waiting on the earlier one is then shown as unknown, never repeated.
 const WAIT_MARGIN_MS = 30_000;
 
 export interface SetupOptions extends ConnectOptions {
-  /** Opens an http(s) URL in the person's browser. The default is the OS's opener (A4 3.6.5). */
+  /** Opens an http(s) URL in the person's browser. The default is the OS's opener. */
   readonly openUrl?: (url: string, io: Io) => Promise<boolean>;
   /** Tests only: the agent environment and home `ttasks setup agents` works in. */
   readonly agents?: AgentsSetupOptions;
@@ -157,7 +157,7 @@ export async function setupCommand(
       if (globals.json) io.stdout(`${JSON.stringify(result)}\n`);
       else {
         io.stdout(`${String(result["message"])}\n`);
-        // Each T3 instance: the route a click takes now, or why none (M6.10).
+        // Each T3 instance: the route a click takes now, or why none.
         const instances = Array.isArray(result["instances"]) ? result["instances"] : [];
         for (const item of instances as unknown[]) {
           if (typeof item !== "object" || item === null) continue;

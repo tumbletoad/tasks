@@ -1,4 +1,4 @@
-// `ttasks doctor [--json] [--self-test]` (A2 3.13), the service-side checks this build can make.
+// `ttasks doctor [--json] [--self-test]`, the service-side checks this build can make.
 // It works without a running service: that is one of the things it reports. It opens no space
 // database: the service reports each space's state.
 //
@@ -8,10 +8,10 @@
 //              the command that fixes a file or folder another user could change
 //   install    install.json's install ID matches the one computed from the state folder
 //   update     no update journal is left (one is an update running or cut off), and the last
-//              update's outcome from install.json (M6.12)
+//              update's outcome from install.json
 //   integrity  the version folder this CLI runs from matches its manifest.json, `current` names an
 //              installed version, and on Windows both stable launchers are there
-//   runtime    the runtime gate of A2 3.12.1 with this process's Node, against the manifest's pins
+//   runtime    the runtime gate with this process's Node, against the manifest's pins
 //   service    running, its version and build against this CLI's, its protocol range
 //   endpoint   ipc.key readable, the handshake verifies, service/status answers
 //   spaces     each space's state and the holder of a lock held elsewhere
@@ -24,13 +24,13 @@
 //   http       the UI listener: blocked by a foreign port holder, moved, a Windows excluded range,
 //              and its self-test (a rebinding Host gets 421, index.html has a fresh nonce)
 //   launch.scopes, launch.terminal, launch.env, launch.t3, sessions
-//              what the service's launch service and binding say (doctor-launch.ts, A3 3.14)
+//              what the service's launch service and binding say (doctor-launch.ts)
 //   candidate-space, candidate-endpoint, candidate-bridge
-//              with --self-test from a version folder: the candidate's own checks of A2 3.12.6
-//              (M1.14): a temporary space, a temporary endpoint and handshake, and this version's
+//              with --self-test from a version folder: the candidate's own checks:
+//              a temporary space, a temporary endpoint and handshake, and this version's
 //              bridge answering tools/list, each in a folder of its own below <state>/tmp/
 //
-// Every check is non-interactive. `--self-test` (A2 3.13: the subset for CI, install and updates)
+// Every check is non-interactive. `--self-test` (the subset for CI, install and updates)
 // adds the candidate's checks, which write temporary files; `ttasks install --finish` runs integrity,
 // runtime and those before it switches current. Run from source there is no version folder, so
 // integrity, runtime and the candidate's checks are skipped: the build runs them in every version
@@ -95,11 +95,11 @@ export interface Check {
 
 const DAY = 86_400_000;
 
-/** ttasksw.exe's record that it gave up restarting the service (A2 3.3.2), in `<state>/crash`. */
+/** ttasksw.exe's record that it gave up restarting the service, in `<state>/crash`. */
 const SUPERVISOR_RECORD = "supervisor-gave-up.json";
 
 /**
- * A successful start keeps an old give-up record (A2 3.3.2), so it is reported only when it is
+ * A successful start keeps an old give-up record, so it is reported only when it is
  * newer than the running service's start, or when no service runs.
  */
 function supervisorCheck(state: string, crash: string): Check {
@@ -154,7 +154,7 @@ function countBy(values: readonly string[]): string {
 }
 
 /**
- * machine.toml (A2 3.2.4) read as the service reads it at its start: what would refuse the start
+ * machine.toml read as the service reads it at its start: what would refuse the start
  * fails here with the same words, the fix included (a file or folder another user could change).
  * Problems that drop only their entry are a warning. Keys and codes only, never a value.
  */
@@ -216,7 +216,7 @@ function notReadNote(key: string): string {
 function localChecks(io: Io, layout: Layout, now: number): Check[] {
   const checks: Check[] = [];
   const state = layout.state;
-  // The data folder is hidden (`~/.ttasks`), so the row says where it is (A2 3.13).
+  // The data folder is hidden (`~/.ttasks`), so the row says where it is.
   const where = `Data and configuration are in ${layout.data}. By default each space's backups are in a folder of its own in ${layout.backups}; ${CLI_NAME} space list shows each space's.`;
   if (!existsSync(state)) {
     checks.push({
@@ -406,7 +406,7 @@ export function spacesCheck(spaces: NonNullable<Status["spaces"]>, startedMs: nu
  * The request path, end to end: `op/list` names the entry of every verb this CLI has, and
  * `space.status` answers through `op/call` for each served space, so a service whose status
  * answers while its operations fail does not pass. One folder serves a space at a time, so each
- * space is asked once by its ID. With no space served, op/call must still answer with A3's body for
+ * space is asked once by its ID. With no space served, op/call must still answer with the error body for
  * a space it does not serve. Only codes reach the detail, never a result.
  */
 export async function requestCheck(session: Session, spaces: Status["spaces"]): Promise<Check> {
@@ -441,7 +441,7 @@ export async function requestCheck(session: Session, spaces: Status["spaces"]): 
         ? { id: "requests", status: "ok", detail: "No space is served; op/call answered." }
         : { id: "requests", status: "fail", detail: `op/call failed: ${code}.` };
     }
-    // Copies of one space share its ID, which names the copy A2 3.10.5's rule picks: each space
+    // Copies of one space share its ID, which names the copy the service picks: each space
     // is asked once, by its ID.
     const ids = [...new Set(served.map((space) => space.id))];
     for (const id of ids) await ask(id);
@@ -509,7 +509,7 @@ async function serviceChecks(
   connect: ConnectOptions,
   live: boolean,
 ): Promise<Check[]> {
-  // The launch rows and the sessions row (A3 3.14), loaded only here, like the agent side.
+  // The launch rows and the sessions row, loaded only here, like the agent side.
   const launch = await import("./doctor-launch.ts");
   const record = readServiceRecord(state);
   if (record === undefined) {
@@ -670,7 +670,7 @@ export function withVersions(
 }
 
 /**
- * The update row (A2 3.12.6, 3.13): an update journal means an update runs now or was cut off,
+ * The update row: an update journal means an update runs now or was cut off,
  * which the service or `ttasks update --repair` finishes; else the last update's outcome from
  * install.json, a rolled-back one with its reason.
  */
@@ -724,7 +724,7 @@ const named = (problems: readonly string[]): string =>
   `${problems.slice(0, NAMED).join("; ")}${problems.length > NAMED ? `; and ${String(problems.length - NAMED)} more` : ""}`;
 
 /**
- * The version folder's rows (A2 3.13): integrity, and the runtime gate of A2 3.12.1 against the
+ * The version folder's rows: integrity, and the runtime gate against the
  * manifest's pins. Both load their modules only here: the gate loads storage's start-up check,
  * which probes in-memory databases only, and nothing else of the CLI needs either. `launchers`
  * false leaves out whether bin holds both stable launchers: `install --finish` checks the version
@@ -784,7 +784,7 @@ export async function versionChecks(
 }
 
 /**
- * The candidate's checks of A2 3.12.6, handed to M1.14: a temporary space, a
+ * The candidate's checks, which the install scripts run: a temporary space, a
  * temporary endpoint with a handshake, and this version's own bridge answering tools/list, each in
  * a folder of its own below `<state>/tmp/`. They run with `--self-test` from a version folder:
  * `ttasks install --finish` runs them before it switches current, and the build's gate runs them in
@@ -825,7 +825,7 @@ export async function candidateRows(
   return candidateChecks({
     state,
     build: { version: manifest.version, build: manifest.build },
-    // This version's runtime and entry, with the flag its launchers pass (A2 3.12.3): the bridge
+    // This version's runtime and entry, with the flag its launchers pass: the bridge
     // runs in a home of its own, which a launcher would replace with the install root.
     entry: [
       process.execPath,

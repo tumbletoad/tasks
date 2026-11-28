@@ -21,7 +21,8 @@ import {
   RequestProblem,
   type WriteProblem,
 } from "../write/request.ts";
-import { checkHistory, COMMANDS } from "./commands.ts";
+import { checkHistory } from "./commands.ts";
+import { COMMANDS } from "./registry.ts";
 import { TreeProblem } from "./fields.ts";
 import { planHistory, STEP_SQL } from "./steps.ts";
 import {
@@ -365,7 +366,7 @@ export class TreeWriter {
             : { target: plan.target, work: [], reason: error.message };
       if (kept !== undefined) {
         this.#conn.prepare(SQL.markDead).run({ target: kept.target });
-        return now("applied", { result: { kept } });
+        return now("unchanged", { result: { kept } });
       }
       return now("rejected", {
         error: {

@@ -174,6 +174,127 @@
   color: var(--k-muted);
 }
 
+/* Today's pages agents changed: rows where a task's title starts. */
+.changes > ul {
+  padding: 0 24px 0 40px;
+}
+
+@media (max-width: 599px) {
+  .changes > ul {
+    padding: 0 16px;
+  }
+}
+
+/* A task card's Knowledge, under its facts: its label above, as one word it is wider than theirs. */
+.knowledge {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--k-line);
+}
+
+.kLabel {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--k-muted);
+}
+
+.kValue {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+
+.kPages {
+  align-self: stretch;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kPage {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 2px 0;
+  color: var(--k-text-2);
+  text-decoration: none;
+}
+
+.kPage > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kPage > .ref {
+  flex: none;
+  white-space: nowrap;
+}
+
+.kPage:hover {
+  color: var(--k-text);
+}
+
+.kValue .newPage {
+  margin-inline-start: -6px;
+}
+
+.kValue .fold {
+  font-size: 0.8125rem;
+  color: var(--k-muted);
+}
+
+.kLevel {
+  align-self: stretch;
+  margin: 4px 0 0 12px;
+}
+
+.kLevelName {
+  font-size: 0.75rem;
+  color: var(--k-muted);
+  text-decoration: none;
+}
+
+.kLevelName:hover {
+  color: var(--k-text);
+}
+
+/* An empty Library: its line, and the way to have an agent build it. */
+.empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+}
+
+.build {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px var(--k-control);
+  background: none;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  color: var(--k-text);
+  cursor: pointer;
+}
+
+.build:hover {
+  background: var(--k-hover);
+}
+
+.build[aria-disabled="true"] {
+  color: var(--k-muted);
+  cursor: default;
+}
+
 /* A list's heading with New page at its end. */
 .headed {
   display: flex;
@@ -815,5 +936,11 @@
 @media (prefers-reduced-motion: reduce) {
   .fold::before {
     transition: none;
+  }
+}
+
+@media (max-width: 1023px) {
+  .knowledge {
+    margin: 0 0 14px;
   }
 }

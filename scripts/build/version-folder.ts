@@ -1,23 +1,23 @@
-// A version folder (A2 3.12.2), assembled from the verified runtime, the launchers and the bundles:
+// A version folder, assembled from the verified runtime, the launchers and the bundles:
 //
 //   bin/ttasks                     POSIX launcher (Linux, macOS)
-//   bin/ttasks-launchd             launchd wrapper (macOS, M1.12's text, A2 3.3.4)
+//   bin/ttasks-launchd             launchd wrapper (macOS)
 //   bin/ttasks.exe, bin/ttasksw.exe C launchers (Windows)
 //   bin/ttasks-run.exe             the holder of a background run's job object (Windows)
 //   runtime/node | node.exe       the official Node binary, unmodified
 //   lib/ttasks.mjs                 entry: compile cache, then the CLI chunk, the bridge or the shim
 //   lib/chunks/*.mjs              the CLI, the three worker entries and their shared chunks
-//   lib/bridge.mjs                the bridge, Node built-ins only (A2 3.7.1)
-//   lib/shim.mjs                  the launch shim, Node built-ins only (A4 3.6.3)
-//   lib/mcp-offline.json          its offline answers, stamped with this build (A2 3.7.3)
-//   ui/index.html, ui/assets/*    the page (packages/web, M2.13), which the service serves
-//   ui/manifest.webmanifest, ui/icon*  its web app manifest and icons (M5.01)
+//   lib/bridge.mjs                the bridge, Node built-ins only
+//   lib/shim.mjs                  the launch shim, Node built-ins only
+//   lib/mcp-offline.json          its offline answers, stamped with this build
+//   ui/index.html, ui/assets/*    the page (packages/web), which the service serves
+//   ui/manifest.webmanifest, ui/icon*  its web app manifest and icons
 //   licenses/node.txt             Node's licence, from its archive
 //   LICENSE, NOTICE               TTasks's
 //   THIRD_PARTY.txt               the npm packages in lib/ and ui/, with their licences
 //   manifest.json                 the build and the SHA-256 of every other file
 //
-// `native/` (empty unless a fallback SQLite binding is needed, A2 3.12.1) is not made: an archive
+// `native/` (empty unless a fallback SQLite binding is needed) is not made: an archive
 // holds no empty folder, and a build has none yet.
 import { closeSync, existsSync, readFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
@@ -52,7 +52,7 @@ export function plannedFiles(platform: Platform): string[] {
     "lib/mcp-offline.json",
     "lib/shim.mjs",
     "ui/index.html",
-    // The web app manifest and its icons (A5 3.24 `PWA`, M5.01), at the page's root.
+    // The web app manifest and its icons, at the page's root.
     "ui/manifest.webmanifest",
     "ui/icon.svg",
     "ui/icon-192.png",

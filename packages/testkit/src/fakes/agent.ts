@@ -1,4 +1,4 @@
-// A fake interactive agent (A4 3.6.3 step 6; M2.09): what a launch's shim starts in place of
+// A fake interactive agent: what a launch's shim starts in place of
 // Claude Code or Codex. At its start it writes a report: its argv after `--` exactly as it got it,
 // the working folder it started in (as a path, and as the identity of the directory it holds,
 // read through `.`), and its environment's names. Then it runs until FAKE_AGENT_RELEASE (a file

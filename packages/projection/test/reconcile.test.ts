@@ -1,4 +1,4 @@
-// Reconciliation, file by file (A1 3.13 rule 5): every file of the trusted record is looked at on
+// Reconciliation, file by file: every file of the trusted record is looked at on
 // disk at start, after a batch that failed, and on `ttasks view rebuild`; a task's file that is
 // missing or different is rendered again (a different file moved aside first), a root file is
 // placed again, and a file the record does not hold is left alone. A rebuild of an intact tree

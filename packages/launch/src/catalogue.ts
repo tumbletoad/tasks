@@ -1,11 +1,10 @@
-// The built-in target catalogue (A4 3.2, L1): reviewed code, shipped in the binary. A target is
+// The built-in target catalogue: reviewed code, shipped in the binary. A target is
 // what TTasks can open a task in; an instance (instances.ts) binds a target to one account or
 // config home on this machine. Space data never carries a command: a target defined by a space is
 // a `custom:` definition that stays disabled until approved on each machine (approval.ts).
 //
-// The facts come from A4 3.4 (routes), 3.11.6 (permission flags) and 3.15.3 (budgets). The launch
-// steps (M2.08 to M2.11) build the routes on these entries; this step owns the data, its
-// invariants and what detection needs.
+// The routes are built on these entries; this module owns the data, its invariants and what
+// detection needs.
 
 export const BUILT_IN_TARGETS = [
   "t3",
@@ -19,7 +18,7 @@ export const BUILT_IN_TARGETS = [
 export type BuiltInTargetId = (typeof BUILT_IN_TARGETS)[number];
 export type TargetId = BuiltInTargetId | `custom:${string}`;
 
-/** A `custom:` target ID: `custom:` and a slug (A4 3.4.7). */
+/** A `custom:` target ID: `custom:` and a slug. */
 export const CUSTOM_TARGET_ID = /^custom:[a-z0-9][a-z0-9-]{0,39}$/u;
 
 export const isBuiltInTarget = (value: string): value is BuiltInTargetId =>
@@ -38,7 +37,7 @@ export type RouteKind = "terminal" | "link" | "t3-mcp" | "clipboard";
 export const SETTINGS = ["permission", "arguments", "environment", "home"] as const;
 export type Setting = (typeof SETTINGS)[number];
 
-/** A template element: literal text and placeholders (A4 3.6.4). */
+/** A template element: literal text and placeholders. */
 export type Template = string;
 
 export interface RouteDef {
@@ -46,7 +45,7 @@ export interface RouteDef {
   readonly folder: "cwd" | "param" | "project-exact" | "none";
   readonly prompt: "sent" | "prefilled" | "clipboard";
   readonly nativeId: "preset" | "returned" | "bridge" | "reference-match" | "none";
-  /** The app's hard limit in characters; null when there is none (A4 3.15.3). */
+  /** The app's hard limit in characters; null when there is none. */
   readonly maxPrompt: number | null;
   /** TTasks's cap for the brief; for Copy, the brief with the person's words. */
   readonly budget: number;
@@ -60,9 +59,9 @@ export interface RouteDef {
    */
   readonly carries: readonly Setting[];
   /**
-   * Link routes of the best-effort apps (A4 3.4.4, 3.4.5): the bridge's binding confirms the launch
+   * Link routes of the best-effort apps: the bridge's binding confirms the launch
    * only when the bridge's working folder is the folder the link named. Otherwise a binding through
-   * the launch reference confirms it (A4 3.9.2).
+   * the launch reference confirms it.
    */
   readonly confirmFolder?: boolean;
   /**
@@ -76,11 +75,11 @@ export interface RouteDef {
   readonly url?: string;
 }
 
-/** How detection finds a target's command and homes (A4 3.2). Data only: detect.ts reads it. */
+/** How detection finds a target's command and homes. Data only: detect.ts reads it. */
 export interface DetectRule {
   /** Command names looked up on the agent environment's PATH. */
   readonly binaries: readonly string[];
-  /** An npm install: run as `node <entry>`, never through a `.cmd` shim or `env node` (A4 3.2). */
+  /** An npm install: run as `node <entry>`, never through a `.cmd` shim or `env node`. */
   readonly npm?: { readonly package: string; readonly entry: string };
   /** User wrapper scripts in `~/.local/bin`: names that start with this prefix (Linux, macOS). */
   readonly wrapperPrefix?: string;
@@ -100,7 +99,7 @@ export interface DetectRule {
   readonly appFolderEnv?: string;
   /** A per-user command folder of the app, relative to the home (T3's `.t3/bin`). */
   readonly appBin?: string;
-  /** URL scheme of the app's handler. Detected by a later step (A4 3.4.4, 3.4.5). */
+  /** URL scheme of the app's handler. Detected by a later step. */
   readonly urlScheme?: string;
 }
 
@@ -146,7 +145,7 @@ const NO_ARGS = {
 } as const;
 
 const TERMINAL_BUDGET = 8_000;
-/** Windows' command line limit, the lower of the two OSes' bounds (A4 3.15.3). */
+/** Windows' command line limit, the lower of the two OSes' bounds. */
 const COMMAND_LINE_LIMIT = 32_767;
 
 export const CATALOGUE: readonly TargetDef[] = [
@@ -179,7 +178,7 @@ export const CATALOGUE: readonly TargetDef[] = [
       urlScheme: "t3code",
     },
     testedVersions: ">=0.1.7 <0.2.0",
-    // A4 3.11.6: T3 takes a runtime mode per thread, not flags. M2.09 maps the permission.
+    // T3 takes a runtime mode per thread, not flags.
     permissionArgs: NO_ARGS,
   },
   {
@@ -270,7 +269,7 @@ export const CATALOGUE: readonly TargetDef[] = [
     },
     testedVersions: ">=2.1.0 <3.0.0",
     permissionArgs: {
-      // A4 3.11.6: Claude runs with `inherit` are refused, like Codex's.
+      // Claude runs with `inherit` are refused, like Codex's.
       inherit: { open: [], run: null },
       "full-access": {
         open: ["--permission-mode", "bypassPermissions"],
@@ -396,7 +395,7 @@ export const CATALOGUE: readonly TargetDef[] = [
         folder: "param",
         prompt: "prefilled",
         nativeId: "bridge",
-        // Undocumented (A4 3.15.3): the budget is the bound until M0 measures one.
+        // Undocumented: the budget is the bound until one is measured.
         maxPrompt: null,
         budget: 2_000,
         trust: "unknown",
@@ -446,7 +445,7 @@ export function targetDef(id: BuiltInTargetId): TargetDef {
 /**
  * Whether `name` says which account or endpoint `target`'s app uses (its `account` prefixes), or
  * any target's when none is given (Windows names compared without case). The scrub of the
- * person's environment (A4 3.8) leaves these, so the default home keeps the person's setup whole.
+ * person's environment leaves these, so the default home keeps the person's setup whole.
  */
 export function accountVariable(
   name: string,
@@ -461,7 +460,7 @@ export function accountVariable(
 /**
  * The variables that select an agent's config home (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`). A home is
  * the instance's choice and nothing else's: the launch removes these from the inherited agent
- * environment (A4 3.8's scrub) before the instance's `env` applies, so an instance without one
+ * environment (the scrub) before the instance's `env` applies, so an instance without one
  * runs its target's default home whatever the person's shell exports. Pinning the default home
  * instead would not be the same for Claude Code, whose `.claude.json` moves into a named folder.
  */
@@ -472,11 +471,11 @@ export const HOME_VARIABLES: readonly string[] = [
 ].sort();
 
 // ---------------------------------------------------------------------------------------------
-// Placeholders (A4 3.6.4)
+// Placeholders
 
 /**
  * Placeholders that stand for whole argv elements (zero or more of them). `{tool_env}` is Codex's
- * declaration that TTasks's MCP entry takes the ticket from the environment (A4 3.4.3), given only
+ * declaration that TTasks's MCP entry takes the ticket from the environment, given only
  * when the home's own entry lacks it.
  */
 export const WHOLE_ELEMENT_PLACEHOLDERS = ["exec", "permission", "extra_args", "tool_env"] as const;
@@ -500,7 +499,7 @@ export const PLACEHOLDERS: Readonly<Record<string, { argv: boolean; url: boolean
   "launch.ref": { argv: true, url: true },
 };
 
-/** The placeholders of a terminal's own command line (A4 3.6.1): `{shim}` is three elements. */
+/** The placeholders of a terminal's own command line: `{shim}` is three elements. */
 export const TERMINAL_PLACEHOLDERS = ["terminal", "cwd", "title", "shim"] as const;
 
 /** The names in `{…}` within `text`, in order. */
@@ -514,7 +513,7 @@ export type TemplateProblem = "unknown_placeholder" | "split_element" | "brief_b
 export const BRIEF_OPTION = /^--[a-z][a-z0-9-]*=\{brief\}$/u;
 
 /**
- * Checks an argv template against A4 3.6.4: known placeholders only, whole-element placeholders
+ * Checks an argv template: known placeholders only, whole-element placeholders
  * alone in their element, and `{brief}` only after `--` or as the value of `--name={brief}`.
  * Returns the problems found, empty when the template is good.
  */

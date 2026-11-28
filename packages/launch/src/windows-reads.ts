@@ -1,5 +1,5 @@
-// What the Windows PowerShell 5.1 helper scripts share: the registry layers' reader (A4 3.8,
-// environment/layers.ts) and the synced-folder check's facts run (A1 3.2, service's sync-host.ts).
+// What the Windows PowerShell 5.1 helper scripts share: the registry layers' reader
+// (environment/layers.ts) and the synced-folder check's facts run (service's sync-host.ts).
 // Both call .NET only, never a cmdlet, and write lines of base64 fields ending in `end`.
 //
 // One rule for both: a read that failed is never taken for a key or a value that is not there.

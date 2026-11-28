@@ -1,13 +1,13 @@
-// The shim's machine state (A4 3.6.3 "Launch folder", 3.9.1): one folder per launch
+// The shim's machine state: one folder per launch
 // under the install's launch folders, `<launch root>/<launch ID>/`, 0700, holding
 // - `launch.json` (0600, replaced atomically, written by the service): the spawn plan (argv, the
 //   folder or none, the instance's environment, the title), from dispatch the folder resolved right
 //   before the launch with the check the shim runs there, the ticket's hash and whether its shim
 //   role is spent, and once claimed the attachment credential's hash with the shim's PID and start
 //   time;
-// - `exit.json` (written atomically by the shim when the service cannot be reached, A4 3.6.3 step 9).
-// The folder goes with the launch's end, and nothing of the launch stays. None of this enters a space: a space holds IDs and codes only (A4 3.9.1). The launch root is
-// A2 3.2.1's: Linux `/run/user/<uid>/ttasks-<install>/launch/` (tmpfs, gone at logout, when no shim
+// - `exit.json` (written atomically by the shim when the service cannot be reached).
+// The folder goes with the launch's end, and nothing of the launch stays. None of this enters a space: a space holds IDs and codes only. The launch root is
+// on Linux `/run/user/<uid>/ttasks-<install>/launch/` (tmpfs, gone at logout, when no shim
 // can be left either), Windows `<state>\launch\`.
 //
 // Folders are named after the launch ID, not its reference: a reference is unique within one space
@@ -60,9 +60,9 @@ export interface PlanFolder {
 /** An identityKey: `<volume>:<file number>`. */
 const IDENTITY_KEY = /^[0-9]{1,20}:[0-9]{1,20}$/u;
 
-/** What the claim's reply hands the shim to start (A4 3.6.3 step 3), kept from the click. */
+/** What the claim's reply hands the shim to start, kept from the click. */
 export interface SpawnPlan {
-  /** The absolute executable first: the route's argv (M2.10 builds it). */
+  /** The absolute executable first: the route's argv. */
   readonly argv: readonly string[];
   /**
    * Where the agent works: the task's or its project's folder on this machine, or null for the
@@ -70,7 +70,7 @@ export interface SpawnPlan {
    * the folder is a fact of this machine's tree at that moment.
    */
   readonly folder: PlanFolder | null;
-  /** The instance's `env` (A4 3.8 layer 3). */
+  /** The instance's `env` (layer 3 of the agent's environment). */
   readonly env: Readonly<Record<string, string>>;
   /**
    * The app whose home the instance has of its own: the person's variables that say which account
@@ -81,19 +81,19 @@ export interface SpawnPlan {
   readonly title: string;
   readonly afterExit: AfterExit;
   /**
-   * The instance's `via_login_shell` (A4 3.8, Linux and macOS): the agent's environment starts
+   * The instance's `via_login_shell` (Linux and macOS): the agent's environment starts
    * from a login-shell snapshot the service takes in the task's folder right before the launch,
    * not from the stored one. The agent itself still starts directly. Absent: false.
    */
   readonly loginShell?: boolean;
   /**
-   * The argv elements the resolved folder fills at the claim (A4 3.6.4 `{cwd}`, Codex's `-C`):
+   * The argv elements the resolved folder fills at the claim (`{cwd}`, Codex's `-C`):
    * the folder is resolved right before the launch, after the plan was written, so those elements
    * are empty here. Absent: none.
    */
   readonly folderArgs?: readonly number[];
   /**
-   * Codex's reference match (A4 3.4.3): the home whose session files the service reads for this
+   * Codex's reference match: the home whose session files the service reads for this
    * launch's thread ID, after the agent started. Absent: no match.
    */
   readonly match?: { readonly home: string };
@@ -117,13 +117,13 @@ export interface LaunchFile {
    * was resolved with.
    */
   readonly folder?: { readonly path: string; readonly check: FolderCheck };
-  /** Issued at dispatch, when the ticket first leaves the service (A4 3.6.3). */
+  /** Issued at dispatch, when the ticket first leaves the service. */
   readonly ticket?: {
     readonly hash: string;
     readonly issuedAt: number;
     readonly shimUsed: boolean;
   };
-  /** Issued inside the claim, before its reply leaves (A4 3.1). */
+  /** Issued inside the claim, before its reply leaves. */
   readonly attachment?: { readonly hash: string; readonly pid: number; readonly startTime: string };
   /** The agent, as `launch.started` reported it. */
   readonly agent?: { readonly pid: number; readonly startedAt: number };
@@ -450,7 +450,7 @@ export const EXIT_FILE = "exit.json";
 const ENDED_FOLDER = "ended";
 
 /**
- * The launch root and each launch folder, and the files in them (A2 3.2.1, A4 3.6.3): set on each
+ * The launch root and each launch folder, and the files in them: set on each
  * new folder and file through @ttasks/files, so no umask decides them. On Windows the folder's ACL
  * decides.
  */

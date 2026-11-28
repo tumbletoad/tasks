@@ -1,4 +1,4 @@
-// The clipboard tools of `ttasks brief --copy` (A4 3.4.6): the OS's own program puts the text on the
+// The clipboard tools of `ttasks brief --copy`: the OS's own program puts the text on the
 // person's clipboard, because a CLI has no clipboard of its own. The text goes to the tool through
 // its standard input, never as an argument or in a file: a command line is readable by other local
 // users, and a script on disk outlives the copy.
@@ -66,7 +66,7 @@ type Env = Readonly<Record<string, string | undefined>>;
 const set = (env: Env, name: string): boolean => (env[name] ?? "") !== "";
 
 /**
- * The tools to try on this machine, in order (A4 3.4.6), or `no_session` on Linux without a
+ * The tools to try on this machine, in order, or `no_session` on Linux without a
  * desktop session to hold a clipboard.
  */
 export function clipboardTools(
@@ -119,7 +119,7 @@ export interface CopyOptions {
 }
 
 /**
- * Puts `text` on the clipboard with the first tool here that takes it (A4 3.4.6). Never reports a
+ * Puts `text` on the clipboard with the first tool here that takes it. Never reports a
  * copy that did not happen: only a tool's exit 0 is a copy.
  */
 export async function copyText(text: string, options: CopyOptions): Promise<CopyResult> {
