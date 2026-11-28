@@ -375,6 +375,8 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
     () => listsOf(node, state.pages.values(), state.space?.name ?? "", state.nodes),
     [node, state.pages, state.space?.name, state.nodes],
   );
+  // Nothing until the texts are read: the lists below them are drawn once, in their place.
+  if (read === undefined) return <div ref={root} className={styles.library} data-part="library" />;
   return (
     <div ref={root} className={styles.library} data-part="library">
       {read === "failed" ? (
@@ -390,7 +392,7 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
             {t("edit.tryAgain")}
           </button>
         </p>
-      ) : read === undefined ? null : (
+      ) : (
         <Texts
           node={node}
           read={read}
