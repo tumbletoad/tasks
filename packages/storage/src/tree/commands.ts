@@ -71,6 +71,11 @@ const SQL = {
     "SELECT p.*, o.deleted_at IS NULL AS shown FROM pages p JOIN nodes o ON o.id = p.owner_id " +
     "WHERE p.id = $id OR p.ref = $ref",
   pageOwner: "SELECT owner_id FROM pages WHERE id = $id",
+  /** The routines not paused in project `$id` and the projects below it. */
+  unpausedRoutines:
+    "WITH RECURSIVE down(id) AS (SELECT $id UNION ALL SELECT n.id FROM nodes n JOIN down " +
+    "ON n.parent_id = down.id WHERE n.kind = 'project') SELECT r.id FROM routines r " +
+    "JOIN nodes n ON n.id = r.id WHERE r.paused = 0 AND n.parent_id IN (SELECT id FROM down)",
 } as const;
 
 export const problem = (code: string, message: string, field?: string, data?: unknown): never => {
@@ -548,8 +553,14 @@ const projectArchived =
     if (project?.["kind"] !== "project")
       return problem("NOT_FOUND", "The space has no such project", "project");
     const id = String(project["id"]);
-    if ((project["archived_at"] !== null) !== archived)
-      tx.set("nodes", id, id, { archived: archived ? tx.at : null });
+    if ((project["archived_at"] !== null) === archived) return { project: { id } };
+    tx.set("nodes", id, id, { archived: archived ? tx.at : null });
+    // An archive pauses the routines in the project, and an unarchive leaves them paused.
+    if (archived) {
+      for (const r of tx.all(SQL.unpausedRoutines, { id })) {
+        tx.set("routines", String(r["id"]), String(r["id"]), { paused: { paused: 1 } });
+      }
+    }
     return { project: { id } };
   };
 
