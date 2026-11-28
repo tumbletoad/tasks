@@ -95,13 +95,13 @@ function noteDocuments(conn: Connection, owner: string, node: string, title: str
     }));
 }
 
-/** The documents a live node holds: its own, its notes, and its pages with their comments. */
+/** The documents a live node holds: its own (a routine's as a task's), its notes, and its pages with their comments. */
 function nodeDocuments(conn: Connection, prefix: string, id: string): TreeDocument[] {
   const node = conn.prepare(SQL.node).get({ id });
   if (node === undefined || node["deleted_at"] !== null) return [];
   const title = str(node["title"]);
   const docs: TreeDocument[] = [];
-  if (node["kind"] === "task") {
+  if (node["kind"] === "task" || node["kind"] === "routine") {
     const sources = conn.prepare(SQL.sources).all({ id });
     docs.push({
       kind: "task",
