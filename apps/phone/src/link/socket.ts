@@ -26,6 +26,11 @@ declare class TTasksLink extends NativeModule<Events> {
   clearPairing(): void;
   /** The name the person gave the phone in Android's settings, else its model. */
   deviceName(): string;
+  /** A file the app keeps (`[a-z]+`), or null. */
+  kept(name: string): string | null;
+  keep(name: string, text: string): void;
+  /** A new request ID. */
+  newId(): string;
 }
 
 export const native = requireNativeModule<TTasksLink>("TTasksLink");

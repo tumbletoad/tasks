@@ -4,121 +4,26 @@
 // key. The native link itself is tried on an emulator (tests/phone/emulator.ts). Fixture data only.
 import { parsePairing, type Pairing } from "@ttasks/contracts/link";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { WebSocket } from "ws";
+import { randomUUID } from "node:crypto";
 import { createServer, type Socket } from "node:net";
-import { connect as tlsConnect } from "node:tls";
 import {
   linkOwner,
+  spaceSession,
+  type Keep,
+  type SpaceView,
   openLink,
   pairWith,
   type Connect,
-  type LinkSocket,
   type LinkState,
   type Saved,
 } from "@ttasks/client/link";
 import { post } from "./http-client.ts";
 import { httpWorld, signIn, type HttpWorld } from "./http-world.ts";
-import { certPin } from "../src/link/cert.ts";
-import { phoneKey, type PhoneKey } from "./phone-client.ts";
+import { SPACE_HEADER } from "../src/http/app.ts";
+import { phoneKey } from "./phone-client.ts";
+import { freePort, memory, phone, until } from "./phone-link.ts";
 
 const SLOW = { timeout: 120_000 };
-
-interface Phone {
-  readonly connect: Connect;
-  /** Every `open` the phone sent, in order. */
-  readonly opens: Record<string, unknown>[];
-  /** Every address the phone connected to, in order. */
-  readonly dialled: string[];
-  /** Sockets open now, and the most there ever were at once. */
-  readonly sockets: { live: number; most: number };
-}
-
-/**
- * A phone with its own key. The first `lose` connections that get an answer lose it: the socket
- * closes before the phone reads it, as when the network drops just then. Closing a socket ends it
- * at once, also in the middle of its handshake.
- */
-function phone(key: PhoneKey = phoneKey(), lose = 0): Phone {
-  const opens: Record<string, unknown>[] = [];
-  const dialled: string[] = [];
-  const sockets = { live: 0, most: 0 };
-  let losing = lose;
-  const connect: Connect = (url, pin, events) => {
-    const { hostname, port } = new URL(url);
-    dialled.push(`${hostname}:${port}`);
-    sockets.live += 1;
-    sockets.most = Math.max(sockets.most, sockets.live);
-    let ws: WebSocket | undefined;
-    let closed = false;
-    const tls = tlsConnect({
-      host: hostname,
-      port: Number(port),
-      key: key.key,
-      cert: key.cert,
-      rejectUnauthorized: false,
-      minVersion: "TLSv1.3",
-    });
-    const end = () => {
-      if (closed) return false;
-      closed = true;
-      sockets.live -= 1;
-      ws?.terminate();
-      tls.destroy();
-      return true;
-    };
-    const socket: LinkSocket = {
-      events,
-      send: (text) => {
-        opens.push(JSON.parse(text) as Record<string, unknown>);
-        ws?.send(text);
-      },
-      close: () => {
-        end();
-      },
-    };
-    const ended = (code: number) => {
-      if (end()) socket.events.close(code);
-    };
-    const lost = losing > 0;
-    if (lost) losing -= 1;
-    tls.once("error", () => {
-      if (closed) return;
-      socket.events.error("network");
-      ended(1006);
-    });
-    tls.once("secureConnect", () => {
-      const peer = tls.getPeerX509Certificate();
-      if (peer === undefined || certPin(peer.raw) !== pin) {
-        socket.events.error("pin");
-        ended(1006);
-        return;
-      }
-      const opened = new WebSocket(url, {
-        createConnection: () => tls,
-        perMessageDeflate: false,
-        rejectUnauthorized: false,
-      });
-      ws = opened;
-      opened.on("open", () => {
-        if (!closed) socket.events.open();
-      });
-      opened.on("message", (data: Buffer) => {
-        if (closed) return;
-        if (lost) {
-          ended(1006);
-          return;
-        }
-        socket.events.message(data.toString("utf8"));
-      });
-      opened.on("error", () => undefined);
-      opened.on("close", (code: number) => {
-        ended(code);
-      });
-    });
-    return socket;
-  };
-  return { connect, opens, dialled, sockets };
-}
 
 /** An address that takes connections and never answers: an attempt there waits. */
 async function silent() {
@@ -170,24 +75,67 @@ const machine = async (action: string, body: unknown) => {
 };
 const phones = async () =>
   (await machine("phones", {}))["phones"] as { id: string; name: string }[];
+/** An operation as the page calls it, in the space Mira. */
+const op = async (name: string, body: unknown) => {
+  const reply = await post(world.port(), `/api/v1/op/${name}`, body, {
+    token,
+    headers: { [SPACE_HEADER]: "Mira" },
+  });
+  const parsed = JSON.parse(reply.body) as { result?: Record<string, unknown> };
+  return { status: reply.status, result: parsed.result };
+};
+/** A task added on the computer, in Focus so Today shows it. */
+const added = async (title: string): Promise<string> => {
+  const made = await op("task.add", { tasks: [{ title, focus: true }], request_id: randomUUID() });
+  const ref = (made.result?.["tasks"] as { ref: string }[] | undefined)?.[0]?.ref;
+  if (made.status !== 200 || ref === undefined) throw new Error(`task.add: ${String(made.status)}`);
+  return ref;
+};
+const lifecycle = async (ref: string) =>
+  ((await op("task.get", { task: ref })).result?.["task"] as { lifecycle?: string } | undefined)
+    ?.lifecycle;
+/** After a restart: the computer has its space open again. */
+const reopened = async () => {
+  ({ token } = await signIn(world));
+  await until(async () => (await op("task.search", {})).status === 200);
+};
+/** A session whose last view is kept. */
+function session(connect: Connect, saved: Saved, keep: Keep) {
+  const seen: { view?: SpaceView } = {};
+  const live = spaceSession({
+    connect,
+    saved,
+    keep,
+    newId: randomUUID,
+    report: (view) => {
+      seen.view = view;
+    },
+    retryMs: 50,
+    resendMs: 50,
+  });
+  const titles = () => [...(seen.view?.tasks.values() ?? [])].map((task) => task.title);
+  const titled = (title: string) => {
+    const task = [...(seen.view?.tasks.values() ?? [])].find((t) => t.title === title);
+    if (task === undefined) throw new Error(`no task ${title}`);
+    return task;
+  };
+  return { live, seen, titles, titled };
+}
+
+/** A phone paired under `name`, with its key. */
+async function pairedPhone(name: string) {
+  const key = phoneKey();
+  const paired = await pairWith(phone(key).connect, await code(), name);
+  if (paired.kind !== "served") throw new Error(`not paired: ${paired.kind}`);
+  paired.socket.close();
+  return { key, saved: paired.saved };
+}
+
 const code = async (): Promise<Pairing> => {
   const pairing = parsePairing((await machine("phone_pair", { space: "Mira" }))["code"] as string);
   if (pairing === undefined) throw new Error("the service made no pairing code");
   return pairing;
 };
-
-/** A port free now, so the service comes back on the same one after a restart. */
-const freePort = () =>
-  new Promise<number>((resolve, reject) => {
-    const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      server.close(() => {
-        resolve(typeof address === "object" && address !== null ? address.port : 0);
-      });
-    });
-  });
 
 let link: NonNullable<Parameters<typeof httpWorld>[1]>;
 
@@ -216,7 +164,7 @@ function owned(connect: Connect, saved: Saved) {
       states.push(state);
       wake?.();
     },
-    50,
+    { retryMs: 50 },
   );
   let read = 0;
   const next = async (kind: LinkState["kind"]): Promise<LinkState> => {
@@ -360,6 +308,49 @@ describe(
       quiet.close();
     });
 
+    test("the session holds the space's tasks and shows a new one as the computer adds it", async () => {
+      const { key, saved } = await pairedPhone("Live");
+      await added("Water the plants");
+      const { live, seen, titles } = session(phone(key).connect, saved, memory());
+      live.start();
+      await until(() => titles().includes("Water the plants"));
+      expect(seen.view?.live).toBe(true);
+      await added("Call the vet");
+      await until(() => titles().includes("Call the vet"));
+      live.stop();
+    });
+
+    test("a check-off leaves at once and reaches the computer; a capture lands once", async () => {
+      const { key, saved } = await pairedPhone("Writes");
+      const ref = await added("Post the letter");
+      const { live, seen, titles, titled } = session(phone(key).connect, saved, memory());
+      live.start();
+      await until(() => titles().includes("Post the letter"));
+      live.finish(titled("Post the letter"));
+      expect(titles()).not.toContain("Post the letter");
+      await until(async () => (await lifecycle(ref)) !== "active");
+      const request = live.add({ title: "Buy milk", inbox: true }, "Buy milk");
+      await until(() => seen.view?.added?.request === request);
+      const found = await op("task.search", { q: '"Buy milk"' });
+      expect(found.result?.["total"]).toBe(1);
+      expect(seen.view?.waiting).toEqual([]);
+      live.stop();
+    });
+
+    test("Undo after the check-off reached the computer reopens the task there", async () => {
+      const { key, saved } = await pairedPhone("Undo");
+      const ref = await added("Fold the laundry");
+      const { live, titles, titled } = session(phone(key).connect, saved, memory());
+      live.start();
+      await until(() => titles().includes("Fold the laundry"));
+      const request = live.finish(titled("Fold the laundry"));
+      await until(async () => (await lifecycle(ref)) !== "active");
+      live.undo(request);
+      await until(async () => (await lifecycle(ref)) === "active");
+      await until(() => titles().includes("Fold the laundry"));
+      live.stop();
+    });
+
     // Last: it restarts the service, after which the space opens again in its own time.
     test("the owner keeps the pairing while the computer is away and connects again when it is back", async () => {
       const p = phone();
@@ -370,11 +361,41 @@ describe(
       owner.start();
       await next("connected");
       await world.restart(link.link === undefined ? {} : { link: link.link });
-      ({ token } = await signIn(world));
+      await reopened();
       await next("offline");
       await next("connected");
       owner.stop();
       expect(p.opens.every((o) => !("pair" in o) || o === p.opens[0])).toBe(true);
+    });
+
+    test("a check-off made while the computer is away outlasts a restart of the app and arrives", async () => {
+      const { key, saved } = await pairedPhone("Away");
+      const ref = await added("Return the books");
+      const keep = memory();
+      const first = session(phone(key).connect, saved, keep);
+      first.live.start();
+      await until(() => first.titles().includes("Return the books"));
+      await world.stop();
+      await until(() => first.seen.view?.link.kind === "offline");
+      const request = first.live.finish(first.titled("Return the books"));
+      first.live.stop();
+
+      // The app starts again, still without the computer: the last rows, how old, the check-off.
+      const again = session(phone(key).connect, saved, keep);
+      again.live.start();
+      expect(again.seen.view?.loaded).toBe(true);
+      expect(again.seen.view?.live).toBe(false);
+      expect(again.seen.view?.asOf).toBeTypeOf("number");
+      expect(again.seen.view?.waiting.map((w) => w.request)).toEqual([request]);
+      expect(again.titles()).not.toContain("Return the books");
+
+      await world.restart(link.link === undefined ? {} : { link: link.link });
+      await reopened();
+      await until(() => again.seen.view?.waiting.length === 0);
+      expect(again.seen.view?.refused).toEqual([]);
+      await until(async () => (await op("task.get", { task: ref })).status === 200);
+      expect(await lifecycle(ref)).not.toBe("active");
+      again.live.stop();
     });
   },
 );

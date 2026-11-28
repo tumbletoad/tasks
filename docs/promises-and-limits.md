@@ -512,6 +512,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   connection keeps it.
 - A capture the phone sends again after its answer was lost, also after you removed and paired
   the same phone again, makes one task.
+- What you check off or capture on the phone while it cannot reach this computer is kept on the
+  phone, also when the app is closed, and sent when it can, once. When this computer refuses it,
+  the phone says so with your words. A check-off still on the phone is taken back by its Undo
+  without this computer hearing of it.
 
 ## Installing and updating
 
