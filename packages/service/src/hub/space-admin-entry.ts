@@ -43,7 +43,7 @@ async function run(job: AdminJob): Promise<AdminResult> {
       // restores.
       const record = await provenBackup(checked, job.folder, {
         kind: "manual",
-        ...(job.backupDir === undefined ? {} : { backupDir: job.backupDir }),
+        backupDir: job.backupDir,
       });
       const { sidecar } = record;
       return {
@@ -94,7 +94,7 @@ async function run(job: AdminJob): Promise<AdminResult> {
     case "restore-latest": {
       const latest = await restoreLatest(
         checked,
-        job.backupDirs,
+        job.backupDir,
         job.spaceId,
         job.target,
         job.incarnation === undefined ? {} : { incarnation: job.incarnation },

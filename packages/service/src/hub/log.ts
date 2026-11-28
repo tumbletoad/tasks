@@ -313,11 +313,7 @@ export const EVENTS = {
   "setup.home_granted": { lvl: "info", c: "hub", fields: { app: AGENT_APPS, replaced: "bool" } },
   "setup.home_revoked": { lvl: "info", c: "hub", fields: { count: "int" } },
   "space.opening": { lvl: "info", c: "space", fields: { entry: "int" } },
-  "space.restore_finished": {
-    lvl: "warn",
-    c: "space",
-    fields: { entry: "int", swapped: "bool", carried: "int" },
-  },
+  "space.restore_finished": { lvl: "warn", c: "space", fields: { entry: "int" } },
   // A migration still runs when the open's bound passes: the open waits for it.
   "space.migrating": { lvl: "info", c: "space", fields: { entry: "int", ms: "int" } },
   "space.migrated": {

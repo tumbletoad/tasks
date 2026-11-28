@@ -7,7 +7,7 @@ import { backupSpace } from "../src/backup/backup.ts";
 import { DATABASE_FILE } from "../src/manifest.ts";
 import { openReader } from "../src/open.ts";
 import { restoreInPlace } from "../src/restore/restore.ts";
-import { copyTree, rawWriter, readFacts, writeCommits } from "./backup-helpers.ts";
+import { backupsBeside, copyTree, rawWriter, readFacts, writeCommits } from "./backup-helpers.ts";
 import { checkedDriver, createFixtureSpace, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
 
 const folders = tempFolders("refs-restore");
@@ -42,6 +42,7 @@ describe("[A1.5.refs.across-restore] a restore over a space never gives a refere
     await fc.assert(
       fc.asyncProperty(fc.array(step, { minLength: 1, maxLength: 10 }), async (steps) => {
         const { folder } = await createFixtureSpace(folders.make());
+        const backupDir = folders.make();
         // Each reference ever given in the space, with the task it named.
         const given = new Map<number, string>();
         const backups: string[] = [];
@@ -63,14 +64,14 @@ describe("[A1.5.refs.across-restore] a restore over a space never gives a refere
             const at = tick();
             backups.push(
               basename(
-                (await backupSpace(checked, folder, { kind: "manual", now: () => at })).file,
+                (await backupSpace(checked, folder, { kind: "manual", backupDir, now: () => at }))
+                  .file,
               ),
             );
           } else if (backups.length > 0) {
             const name = backups[s.pick % backups.length] ?? "";
             const at = tick();
-            // A restore in place carries the backups folder into the restored space.
-            await restoreInPlace(checked, join(folder, "backups", name), folder, {
+            await restoreInPlace(checked, join(backupDir, name), folder, {
               machineId: TEST_MACHINE,
               now: () => at,
             });
@@ -90,13 +91,16 @@ describe("[A1.5.refs.across-restore] a restore over a space never gives a refere
     const parent = folders.make();
     const { folder } = await createFixtureSpace(parent);
     await writeCommits(folder, 2, "a");
-    const early = await backupSpace(checked, folder, { kind: "manual" });
+    const early = await backupSpace(checked, folder, { kind: "manual", backupDir: folders.make() });
 
     // The same space, further on elsewhere: its backup's counter is above the live space's.
     const elsewhere = join(parent, "elsewhere");
     copyTree(folder, elsewhere);
     await writeCommits(elsewhere, 5, "b");
-    const later = await backupSpace(checked, elsewhere, { kind: "manual" });
+    const later = await backupSpace(checked, elsewhere, {
+      backupDir: backupsBeside(elsewhere),
+      kind: "manual",
+    });
     const restored = await restoreInPlace(checked, later.file, folder, { machineId: TEST_MACHINE });
     expect((await readFacts(folder)).space.nextRef).toBe(
       (await readFacts(elsewhere)).space.nextRef,
@@ -110,7 +114,7 @@ describe("[A1.5.refs.across-restore] a restore over a space never gives a refere
     const raw = await rawWriter(folder);
     raw.exec("UPDATE space SET format_minor = format_minor + 50 WHERE one = 1");
     raw.close();
-    await restoreInPlace(checked, join(folder, "backups", basename(early.file)), folder, {
+    await restoreInPlace(checked, early.file, folder, {
       machineId: TEST_MACHINE,
     });
     expect((await readFacts(folder)).space.nextRef).toBe(reached);

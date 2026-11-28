@@ -36,7 +36,7 @@ import {
   WRITER_HOLDER_FILE,
   WRITER_LOCK_FILE,
 } from "../src/writer-lock.ts";
-import { readFacts, writeCommits } from "./backup-helpers.ts";
+import { backupsBeside, readFacts, writeCommits } from "./backup-helpers.ts";
 import { createRequest, FIXTURE_MACHINE, ownerCredential } from "./fixture-requests.ts";
 import { checkedDriver, createFixtureSpace, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
 import { rejection } from "./worker-helpers.ts";
@@ -139,7 +139,11 @@ async function holder(mode: "writer" | "lock", target: string): Promise<Holder> 
 async function spaceWithBackup(): Promise<{ folder: string; backup: BackupRecord }> {
   const { folder } = await createFixtureSpace(folders.make());
   await writeCommits(folder, 2, "a");
-  const backup = await backupSpace(await checkedDriver(), folder, { kind: "manual" });
+  // Outside the space: a restore in place moves the space's folder aside.
+  const backup = await backupSpace(await checkedDriver(), folder, {
+    kind: "manual",
+    backupDir: folders.make(),
+  });
   return { folder, backup };
 }
 
@@ -310,8 +314,8 @@ describe("[A1.5.writer.cross-process] a restore's swap and its writer.lock", () 
         );
         if (process.platform === "win32" && !releaseBeforeSwap) {
           // Windows refuses to rename a folder with an open file, writer.lock included: the
-          // reason the lock ends before the swap there. Nothing moves.
-          expect((await rejection(restoring)).code).not.toBe("SPACE_CHANGED");
+          // reason the lock ends before the swap there. The rename is refused, and nothing moves.
+          expect((await rejection(restoring)).code).toBe("STORAGE_CANT_OPEN");
           expect(readdirSync(dirname(folder)).sort()).toEqual(listed);
           continue;
         }
@@ -460,7 +464,10 @@ describe("[A1.5.writer.cross-process] one writer per space across processes: wri
     }
     // A claim of a read-only copy whose database has a second name is refused the same way.
     const copy = join(folders.make(), "copy");
-    const again = await backupSpace(await checkedDriver(), folder, { kind: "manual" });
+    const again = await backupSpace(await checkedDriver(), folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     await restoreBackup(await checkedDriver(), again.file, copy);
     linkSync(join(copy, DATABASE_FILE), join(parent, "copy.db"));
     expect((await rejection(w.claimSpace(copy, { machine: FIXTURE_MACHINE }))).code).toBe(

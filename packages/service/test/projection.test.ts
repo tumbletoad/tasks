@@ -30,6 +30,7 @@ import {
   waitFor,
 } from "./harness.ts";
 import { classSession, errorOf } from "./ops-helpers.ts";
+import { backupsBeside } from "../../storage/test/backup-helpers.ts";
 
 const running: RunningService[] = [];
 const cleanups: (() => void)[] = [];
@@ -339,7 +340,10 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
 
   test("a restore in place stops the projection before the swap, and the restored space is projected anew", async () => {
     const { home, folder } = await setUp("projrip");
-    const backup = await backupSpace(await checkedDriver(), folder, { kind: "manual" });
+    const backup = await backupSpace(await checkedDriver(), folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     const service = await start(home, folder);
     const claim = join(folder, "view", ".projection.json");
     await waitFor(() => (existsSync(claim) ? true : undefined), 30_000, "the first render");

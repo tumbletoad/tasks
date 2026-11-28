@@ -186,16 +186,3 @@ describe("[A2.3.12.6.update.spaces] the end of an update names each space that i
     expect(copy.status).toBe("ok");
   });
 });
-
-describe("[A1.5.backup.old-move] doctor names old backups that stay in a space's own folder", () => {
-  test("a space whose old backups stay is a warning, with the service's words", () => {
-    const message = "Old backups stay in the space's own backups folder: 1 not whole.";
-    const warned = spacesCheck(
-      [{ entry: 0, name: "Work", state: "open", old_backups: { message } }],
-      SINCE,
-    );
-    expect(warned.status).toBe("warn");
-    expect(warned.detail).toContain(`Work: open. ${message}`);
-    expect(spacesCheck([{ entry: 0, name: "Work", state: "open" }], SINCE).status).toBe("ok");
-  });
-});
