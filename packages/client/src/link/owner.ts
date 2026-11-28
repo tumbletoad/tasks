@@ -27,6 +27,15 @@ export interface LinkOwner {
   stop(): void;
   /** Open the link again now, replacing the one there is. Nothing while stopped. */
   now(): void;
+  /** Sends on the link that is up; false when none is. */
+  send(text: string): boolean;
+}
+
+export interface OwnerOptions {
+  /** How long it waits after a failure before it tries again. */
+  readonly retryMs?: number;
+  /** Each message the computer sends after its hello. */
+  readonly message?: (text: string) => void;
 }
 
 /**
@@ -37,8 +46,9 @@ export function linkOwner(
   connect: Connect,
   saved: Saved,
   report: (state: LinkState, saved: Saved) => void,
-  retryMs = 10_000,
+  options: OwnerOptions = {},
 ): LinkOwner {
+  const { retryMs = 10_000, message = () => undefined } = options;
   let pairing = saved;
   let running = false;
   let generation = 0;
@@ -85,7 +95,9 @@ export function linkOwner(
     socket = opened.socket;
     socket.events = {
       open: () => undefined,
-      message: () => undefined,
+      message: (text) => {
+        if (run === generation) message(text);
+      },
       error: () => undefined,
       close: () => {
         if (run !== generation) return;
@@ -110,6 +122,11 @@ export function linkOwner(
     },
     now: () => {
       if (running) void open();
+    },
+    send: (text) => {
+      if (socket === undefined) return false;
+      socket.send(text);
+      return true;
     },
   };
 }
