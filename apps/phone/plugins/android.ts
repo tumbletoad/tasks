@@ -1,12 +1,18 @@
 // The Android build's own settings, applied to the project `expo prebuild` generates:
 // - Android 10 (API 29) at least, because the link speaks only TLS 1.3;
+// - no R8 in the release build: the installed-app test runs inside it and calls its classes, which
+//   R8 renames and drops, and a sideloaded app gains little from a smaller APK;
 // - the release build signed with the owner's key when TTASKS_ANDROID_KEYSTORE names it at build
 //   time, so a new build installs over the old one and the pairing stays; otherwise with the
 //   template's throwaway key, for CI's own tests;
 // - the installed-app test in android-test/, built against the release build.
 import { withAppBuildGradle, withGradleProperties, type ConfigPlugin } from "expo/config-plugins";
 
-const MIN_SDK = "29";
+/** gradle.properties of the generated project, set whatever the template had. */
+const PROPERTIES: Record<string, string> = {
+  "android.minSdkVersion": "29",
+  "android.enableMinifyInReleaseBuilds": "false",
+};
 
 const APP_GRADLE = `
 // From apps/phone/plugins/android.ts.
@@ -39,9 +45,11 @@ dependencies {
 const withAndroid: ConfigPlugin = (config) => {
   config = withGradleProperties(config, (c) => {
     c.modResults = c.modResults.filter(
-      (item) => !(item.type === "property" && item.key === "android.minSdkVersion"),
+      (item) => !(item.type === "property" && item.key in PROPERTIES),
     );
-    c.modResults.push({ type: "property", key: "android.minSdkVersion", value: MIN_SDK });
+    for (const [key, value] of Object.entries(PROPERTIES)) {
+      c.modResults.push({ type: "property", key, value });
+    }
     return c;
   });
   return withAppBuildGradle(config, (c) => {
