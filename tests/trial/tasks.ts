@@ -118,7 +118,8 @@ export const TASKS: readonly TrialTask[] = [
     check: ({ world }) => {
       const page = pageOf(world, world.pages.export)?.body ?? "";
       return {
-        corrected_in_place: page.includes("zone_id") && !/`tz`/u.test(page),
+        // A row may still name the old column, to say it was wrong; no row is the old column.
+        corrected_in_place: page.includes("zone_id") && !/^- `tz`/mu.test(page),
         one_page_on_the_export: pagesWith(world, "visit_at") === 1,
       };
     },

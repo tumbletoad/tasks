@@ -20,6 +20,12 @@ export const PRODUCT_ID = "ttasks";
 /** The CLI command. */
 export const CLI_NAME = PRODUCT_ID;
 
+/**
+ * The phone app's ID on Android. An installed app keeps it: a build with another ID is another app,
+ * which pairs again.
+ */
+export const ANDROID_APP_ID = `com.tumbletoad.${PRODUCT_ID}`;
+
 /** The MCP server key in every agent configuration. Clients namespace tools with it. */
 export const MCP_SERVER_KEY = "ttasks";
 

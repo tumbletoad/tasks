@@ -8,7 +8,13 @@ import { misuse } from "../errors.ts";
 import { isId, newId, type Id, type RandomSource } from "../ids.ts";
 import { takeTaskRef } from "../refs.ts";
 import { columnsValue, fieldJson } from "../write/fields.ts";
-import { Fields, type Credential, type Envelope } from "../write/request.ts";
+import {
+  Fields,
+  notActive,
+  type Credential,
+  type Envelope,
+  type Intent,
+} from "../write/request.ts";
 import { provenanceOf, rowState, versionOf, type RowState } from "../write/row-state.ts";
 import {
   columnsOf,
@@ -55,6 +61,8 @@ export interface CheckedTreeRequest extends Envelope {
   command: string;
   /** The tool entry the request comes from: its refusals store no receipt. */
   entry?: string;
+  /** A plan's: the caller's intent, whose fingerprint its receipt keeps. */
+  intent?: Intent;
   input: Record<string, unknown>;
 }
 
@@ -72,6 +80,8 @@ export interface TreeConflict {
   version: number;
   by?: { actor: string; kind: string; label: string; origin: string };
   at?: number;
+  /** The operation of a plan that met it. */
+  op?: number;
 }
 
 /** The rows a request wrote, in order, with what they were before it. */
@@ -106,6 +116,8 @@ export class Tx {
   /** The request's base, none, or `history`: an Undo or Redo, guarded by newer work instead. */
   readonly #base: number | "history" | undefined;
   readonly #rows = new Map<string, Written>();
+  /** Each write in order, a row's creation with no field: what one of today's operations did. */
+  readonly #log: { key: string; field: string | null }[] = [];
   readonly conflicts: TreeConflict[] = [];
 
   constructor(
@@ -174,6 +186,7 @@ export class Tx {
       `${[...columns.map((c) => `$${c}`), "$seq", "$seq", ...(entity === "nodes" ? ["$seq"] : [])].join(", ")})`;
     this.conn.prepare(sql).run({ ...values, seq: this.seq });
     const id = String(values[keyOf(entity)]);
+    this.#log.push({ key: `${entity}|${id}`, field: null });
     this.#rows.set(`${entity}|${id}`, {
       entity,
       id,
@@ -244,6 +257,20 @@ export class Tx {
   }
 
   /**
+   * A conflict on `field` whatever the base: a write that is made once found it made otherwise
+   * (today's wrap-up `once`). The request then writes nothing.
+   */
+  clash(entity: Entity, id: string, node: string | null, field: string): void {
+    const row = this.#touch(entity, id, node);
+    const start = row.start;
+    if (start === undefined) throw misuse("A clash is on a row the request did not make");
+    if (this.conflicts.some((c) => c.entity === entity && c.id === id && c.field === field)) return;
+    const value = columnsValue(start.raw, columnsOf(entity, field));
+    const task = isId(node, "t") ? { task: node } : {};
+    this.conflicts.push({ entity, id, ...task, field, value, version: versionOf(start, field) });
+  }
+
+  /**
    * Holds the request to `fields` of a row as they stood at the base, written or not; true when
    * one changed since, and the request then writes nothing.
    */
@@ -268,10 +295,11 @@ export class Tx {
   ): void {
     const row = this.#touch(entity, id, node);
     // A request marked active changes active tasks only, decided as it finds them.
-    if (this.request.active === true && row.start !== undefined && isId(row.node, "t")) {
+    if (row.start !== undefined && isId(row.node, "t")) {
       const life = this.conn.prepare(SQL.lifecycle).get({ id: row.node })?.["lifecycle"];
-      if (life !== "active")
-        throw new TreeProblem("TASK_NOT_ACTIVE", "The task is not active", "task");
+      const refusal = notActive(this.request.active, life);
+      if (refusal !== undefined)
+        throw new TreeProblem(refusal.code, refusal.message, refusal.field);
     }
     if (based && this.#newer(row, Object.keys(fields)).length > 0) return;
     const assign: string[] = [];
@@ -288,11 +316,39 @@ export class Tx {
         params[column] = value[column] ?? null;
       }
       row.fields.add(field);
+      this.#log.push({ key: `${entity}|${id}`, field });
     }
     if (assign.length > 0) {
       const where = `WHERE ${keyOf(entity)} = $id`;
       this.conn.prepare(`UPDATE ${entity} SET ${assign.join(", ")} ${where}`).run(params);
     }
+  }
+
+  /** Where the request's writes stand now: what follows is the next operation's. */
+  get mark(): number {
+    return this.#log.length;
+  }
+
+  /**
+   * What the writes from mark `from` to `to` did, as today's writer says it of an operation: made
+   * a row, changed a field of one (any write to a row this request made), or nothing.
+   */
+  did(from: number, to: number): "created" | "updated" | "unchanged" {
+    const writes = this.#log.slice(from, to);
+    if (writes.some((w) => w.field === null)) return "created";
+    for (const { key, field } of writes) {
+      const row = this.#rows.get(key);
+      if (row === undefined || field === null) continue;
+      if (row.created) return "updated";
+      const now = this.conn.prepare(rowSql(row.entity)).get({ id: row.id });
+      const columns = columnsOf(row.entity, field);
+      const start = row.start?.raw;
+      if (now === undefined || start === undefined) continue;
+      if (fieldJson(columnsValue(start, columns)) !== fieldJson(columnsValue(now, columns))) {
+        return "updated";
+      }
+    }
+    return "unchanged";
   }
 
   /** The change rows of the request, coalesced; sets the versions of each changed row. */

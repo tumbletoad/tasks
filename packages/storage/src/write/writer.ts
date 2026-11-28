@@ -160,6 +160,9 @@ import {
   checkBaseOf,
   checkRequest,
   FOLDER_OPERATIONS,
+  notActive,
+  NO_SUCH_TASK,
+  OTHER_SPACE_TASK,
   formatAsOf,
   isHistoryOperation,
   normaliseStored,
@@ -3783,7 +3786,7 @@ function resolveTask(
   field: string,
 ): { id: Id<"t">; row?: TaskRow } {
   const found = (row: Row | undefined): { id: Id<"t">; row: TaskRow } => {
-    if (row === undefined) return problem("NOT_FOUND", "No task has this reference", op, field);
+    if (row === undefined) return problem("NOT_FOUND", NO_SUCH_TASK, op, field);
     const task = decodeTask(row);
     return { id: task.id, row: task };
   };
@@ -3796,7 +3799,7 @@ function resolveTask(
     if (parsed.prefix !== space.refPrefix) {
       const alias = conn.prepare(SQL.alias).get({ namespace: "ref_prefix", alias: parsed.prefix });
       if (alias?.["entity_kind"] !== "space") {
-        problem("SPACE_MISMATCH", "The reference has another space's prefix", op, field);
+        problem("SPACE_MISMATCH", OTHER_SPACE_TASK, op, field);
       }
     }
     return found(conn.prepare(SQL.taskByRef).get({ ref: parsed.ref }));
@@ -3804,7 +3807,7 @@ function resolveTask(
   const alias = conn.prepare(SQL.alias).get({ namespace: "planning", alias: ref });
   const id = alias?.["entity_id"];
   if (alias?.["entity_kind"] !== "task" || !isId(id, "t")) {
-    return problem("NOT_FOUND", "No task has this reference", op, field);
+    return problem("NOT_FOUND", NO_SUCH_TASK, op, field);
   }
   return found(conn.prepare(SQL.task).get({ id }));
 }
@@ -4228,14 +4231,11 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
   // A request marked `active` changes active tasks only (A3 3.4.6), checked on the state the
   // request sees, so the refusal is decided here and has its receipt. A task the request creates
   // is active.
-  if (
-    run.request.active === true &&
-    op.kind !== "task.create" &&
-    staged.task !== null &&
-    readTask(conn, staged.task).lifecycle !== "active"
-  ) {
-    problem("TASK_NOT_ACTIVE", "Only an active task changes here", i, "task");
-  }
+  const refusal =
+    op.kind === "task.create" || staged.task === null
+      ? undefined
+      : notActive(run.request.active, readTask(conn, staged.task).lifecycle);
+  if (refusal !== undefined) throw new RequestProblem({ ...refusal, op: i });
   switch (op.kind) {
     case "task.create": {
       const target = staged.target as Id<"t">;

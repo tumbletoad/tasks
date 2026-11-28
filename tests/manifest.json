@@ -2200,6 +2200,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "S3.files.layout",
+      "title": "Where a tree space's readable files are: the space and each project a folder with _index.md named by its stored slug, a task a file with _<ref>/ beside it only when it holds something, pages and sources in _pages/ and _sources/; a project's rename moves no path, a task's rename moves its file and keeps its folder, a move takes the subtree along; _done/ holds a finished or dropped task only when nothing open lies below it, and a reopen brings it back; the Trash and a taken-back note are not written; a device name, a title without ASCII letters and a long title get file names; every relative link reaches a file; one calculation of a node's path from its levels",
+      "source": "PLAN step 3",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S3.files.content",
+      "title": "What a tree space's readable files hold: a task's fixed front-matter keys, title, brief, subtasks, knowledge, links and fenced notes, without its reference or project again; a project's index with its projects, open tasks, library and the person's text for agents marked as theirs; the node's own folders on this machine only; a page's Markdown as written with raw HTML and images turned to text outside code blocks, and its comments; the README's commit; the same rows give the same bytes",
+      "source": "PLAN step 3",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "S2.tree.runs",
       "title": "A folder's change held to its path and its removal as the caller saw them, and a new folder to a removal since the base, as today's writer; What Open and Run record on the tree writer, by today's rules: a launch opens prepared, a second click that continues the same agent conversation or none gets it, and it moves by the state machine's edges only, by one compare-and-set, with evidence that only grows and a reason where a state takes one; a run is queued for a task with the person's instruction and moves on its version; a node's folder on this machine is set as the machine spells a path, changed and cleared, and a removed folder is refused; a launch of a task in the Trash is refused, and one may name a note of its task as its request",
       "owner": "M3",
@@ -2251,6 +2267,20 @@
     {
       "id": "S2.search.both",
       "title": "The search index, the same on both writers: a word of a title, a note, a page and a source found after each step, after the Trash and back, with a source linked to a second task, and after Undo",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.tree.space",
+      "title": "A tree space in a folder, opened as every space is: made with its manifest and the tree's step, recognised on open, its writer in the storage worker taking the tree's named commands and replaying a resend from its receipt, its reader reading what they wrote, and what only today's writer does refused on it",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.replay.tasks",
+      "title": "Today's service requests through both backends, one service serving a space on today's writer and a tree space, answers and what task.get then shows compared step by step: the tasks family's add, a lost reply sent again, update, finish, reopen and the Trash; captures by source with their log, a request ID reused, a stale base, an update that changes nothing, a finish and a Trash sent twice, and a task the space does not have; one handler per entry serving both, whole answers compared with IDs, references, as_of and versions by their relations and a retry held to its first as_of in each space; a finish as dropped and its ID reused as done, a finished task's edit, a finish dated in the future, the Trash with arguments that do not go together, a refused batch and its ID then taken by the corrected one, a duplicate title in one batch, a dated source, an update without its base, an accepted ID reused on other tools, and a person's edit between a write and its retry",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -7160,6 +7190,20 @@
     {
       "id": "S5.link.fields",
       "title": "Against the real service: a task whose folder the page shows reads on a phone without its folder or skills; a folder on a capture and a launch reference on a read are refused by name, and a task update, a folder change and the space's status are refused",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.qr",
+      "title": "The phone reads the pairing code the service makes, and refuses text without the prefix, a URL, broken JSON, another version, no address or one without a port, a short pin, no space and no code",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.phone.pairing",
+      "title": "The phone app's pairing against the real service: a code pairs the phone by its name and the pairing reopens without the code; an answer lost after the computer saved the phone gets one more open without the code and one phone; another key at the address gets nothing sent and leaves the code unspent; a removed phone is told so when it opens the link again",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

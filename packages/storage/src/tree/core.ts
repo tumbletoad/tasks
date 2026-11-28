@@ -19,11 +19,18 @@ import {
   checkBaseOf,
   checkEnvelope,
   checkHistoryEnvelope,
+  checkRequest,
   Fields,
   formatAsOf,
   RequestProblem,
+  type CheckedRequest,
+  type FieldConflict,
+  type Operation,
+  type OpResult,
   type WriteProblem,
+  type WriteResult,
 } from "../write/request.ts";
+import { runPlan } from "./plan.ts";
 import { checkHistory } from "./commands.ts";
 import { COMMANDS } from "./registry.ts";
 import { TreeProblem } from "./fields.ts";
@@ -82,6 +89,63 @@ const SQL = {
   ref: "SELECT t.ref AS ref, s.ref_prefix AS prefix FROM tasks t, space s WHERE t.id = $id",
 } as const;
 
+/** The command a request of today's operations runs as (plan.ts). */
+const PLAN = "plan";
+const PLAN_RUN = {
+  check: (f: Fields) => f.raw("ops") as Record<string, unknown>,
+  run: (tx: Tx, input: Record<string, unknown>) => runPlan(tx, input["ops"] as Operation[]),
+};
+
+/** Today's names of the tree's task fields that a conflict names. */
+const TODAY_FIELD: Readonly<Record<string, string>> = {
+  brief: "summary",
+  description: "context",
+};
+
+/**
+ * A plan's result as today's writer gives it: one result per operation, the conflicts on a task
+ * named as a task's fields, and the space's authority. A result already in today's shape (from a
+ * receipt) is returned as it is.
+ */
+function written(result: TreeResult, space: SpaceState): WriteResult {
+  const error = result.error;
+  return {
+    status: result.status,
+    as_of: result.as_of,
+    epoch: space.epoch,
+    incarnation: space.incarnation,
+    seq: result.seq,
+    ...(result.commit === undefined ? {} : { commit: result.commit }),
+    results: Array.isArray(result.result) ? (result.result as OpResult[]) : [],
+    conflicts: (result.conflicts ?? []).map(
+      ({ task, ...c }) =>
+        ({
+          ...c,
+          op: c.op ?? 0,
+          entity: c.entity === "nodes" ? "tasks" : (c.entity as FieldConflict["entity"]),
+          field: TODAY_FIELD[c.field] ?? c.field,
+          ...(task === undefined ? {} : { task }),
+        }) as FieldConflict,
+    ),
+    ...(error === undefined
+      ? {}
+      : {
+          error: {
+            code: error.code as WriteProblem["code"],
+            message: error.message,
+            ...(error.op === undefined ? {} : { op: error.op }),
+            ...(error.field === undefined
+              ? {}
+              : { field: TODAY_FIELD[error.field] ?? error.field }),
+            ...(error.at === undefined ? {} : { at: error.at }),
+          },
+        }),
+    warnings: result.warnings ?? [],
+    ...(result.answer === undefined ? {} : { answer: result.answer }),
+    ...(result.replayed === true ? { replayed: true } : {}),
+  };
+}
+
 /** What a preview throws to roll its transaction back. */
 const PREVIEW = new Error("A preview rolls its transaction back");
 
@@ -94,7 +158,15 @@ export interface TreeResult {
   commit?: Id<"op">;
   /** What the command did, as it said: stored with the receipt and returned on a retry. */
   result?: unknown;
-  error?: { code: string; message: string; field?: string; data?: unknown };
+  error?: {
+    code: string;
+    message: string;
+    field?: string;
+    at?: number;
+    data?: unknown;
+    /** The operation of a plan that met it. */
+    op?: number;
+  };
   conflicts?: TreeConflict[];
   /** What the caller found before the writer, said with an accepted result and replayed. */
   warnings?: string[];
@@ -310,6 +382,55 @@ export class TreeWriter {
       };
     }
     if (request.dry_run === true) return this.#preview(request);
+    return this.#submitted(request);
+  }
+
+  /**
+   * Decides a request of today's operations (plan.ts), with today's checks of it, and answers with
+   * today's result. Its receipt keeps that result under the fingerprint of the caller's intent, as
+   * today's writer keeps it, so the service answers a retry the same way on both.
+   */
+  submitPlan(input: unknown): WriteResult {
+    let checked: CheckedRequest;
+    try {
+      checked = checkRequest(input);
+      if (checked.dry_run === true) {
+        throw new RequestProblem({
+          code: "VALIDATION_FAILED",
+          message: "A tree space previews no request yet",
+          field: "dry_run",
+        });
+      }
+    } catch (error) {
+      if (!(error instanceof RequestProblem)) throw error;
+      const space = this.#conn.transaction("deferred", () => this.#space());
+      return written(
+        { status: "rejected", ...this.#asOf(space), error: problemOf(error.problem) },
+        space,
+      );
+    }
+    const { ops, intent, ...envelope } = checked;
+    const request: CheckedTreeRequest = {
+      ...envelope,
+      command: PLAN,
+      input: { ops },
+      ...(intent === undefined ? {} : { entry: intent.entry, intent }),
+    };
+    const result = this.#submitted(request);
+    return result.replayed === true && "results" in result
+      ? (result as unknown as WriteResult)
+      : written(
+          result,
+          this.#conn.transaction("deferred", () => this.#space()),
+        );
+  }
+
+  #asOf(space: SpaceState): { as_of: string; seq: number } {
+    const asOf = { epoch: space.epoch, incarnation: space.incarnation, seq: space.lastSeq };
+    return { as_of: formatAsOf(asOf), seq: space.lastSeq };
+  }
+
+  #submitted(request: CheckedTreeRequest): TreeResult {
     const result = this.#conn.transaction("immediate", () => {
       const decided = this.#decide(request);
       this.#at?.("before-commit", decided);
@@ -402,10 +523,11 @@ export class TreeWriter {
     }
     // Retries are kept apart by writer scope: the scope is part of the receipt's key.
     const lookup = { scope: request.actor.scope_id, request: request.request_id };
+    // A plan's is the caller's intent, as today's writer's is (receipts.ts requestFingerprint).
     const fingerprint = intentFingerprint({
       space_id: request.space_id,
-      entry: request.entry ?? request.command,
-      input: request.input,
+      entry: request.intent?.entry ?? request.entry ?? request.command,
+      input: request.intent?.input ?? request.input,
       reason: request.reason ?? null,
     });
     const prior = this.#conn.prepare(SQL.receipt).get(lookup);
@@ -417,8 +539,8 @@ export class TreeWriter {
           code: "REQUEST_ID_REUSED",
           message: "This request ID was used for another change: review it, then use a new ID",
           field: "request_id",
-          // When the first use was decided, so the caller can find it.
-          data: { at: prior["at"] },
+          // When the first use was decided, so the caller can find it, as today's writer says it.
+          at: Number(prior["at"]),
         },
       });
     }
@@ -445,7 +567,9 @@ export class TreeWriter {
         seq: result.commit === undefined ? null : result.seq,
         epoch: space.epoch,
         incarnation: space.incarnation,
-        result: JSON.stringify(storedResult(result)),
+        result: JSON.stringify(
+          request.command === PLAN ? written(storedResult(result), space) : storedResult(result),
+        ),
         at: this.#instant(),
       });
     }
@@ -474,7 +598,11 @@ export class TreeWriter {
     }
     const base = request.base?.seq;
     const history = request.command === "undo" || request.command === "redo";
-    const run = history ? undefined : COMMANDS[request.command];
+    const run = history
+      ? undefined
+      : request.command === PLAN
+        ? PLAN_RUN
+        : COMMANDS[request.command];
     if (!history && run === undefined) {
       return now("rejected", {
         error: { code: "VALIDATION_FAILED", message: "No command of that name", field: "command" },
@@ -581,6 +709,7 @@ export class TreeWriter {
           message: error.message,
           ...(error.field === undefined ? {} : { field: error.field }),
           ...(error.data === undefined ? {} : { data: error.data }),
+          ...(error.op === undefined ? {} : { op: error.op }),
         },
       });
     }

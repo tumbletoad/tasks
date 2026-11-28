@@ -1152,6 +1152,8 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         lockLost();
       },
       settle: async (space) => {
+        // Open and Run on a tree space come with their family of piece (iii).
+        if (space.writer.backend === "tree") return;
         await runs.settleRestored(space);
         await launches.settleRestored(space);
       },

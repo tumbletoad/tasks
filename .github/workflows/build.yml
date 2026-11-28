@@ -64,7 +64,8 @@ jobs:
         with:
           cache: true
 
-      - run: pnpm install --frozen-lockfile
+      # Without the phone app (apps/phone): this job never builds, checks or tests it.
+      - run: pnpm install --frozen-lockfile --filter '!@ttasks/phone'
 
       - name: Build, test-sign, run the runtime gate and check that the build is reproducible
         run: pnpm build --platform ${{ matrix.platform }} --sign test --check-reproducible --work "${{ runner.temp }}/ttasks-build"
@@ -136,7 +137,8 @@ jobs:
         with:
           cache: true
 
-      - run: pnpm install --frozen-lockfile
+      # Without the phone app (apps/phone): this job never builds, checks or tests it.
+      - run: pnpm install --frozen-lockfile --filter '!@ttasks/phone'
 
       - name: A test-signed build of this runner's platform
         run: pnpm build --platform ${{ matrix.platform }} --sign test --work "${{ runner.temp }}/ttasks-smoke-build" --dist "${{ runner.temp }}/ttasks-smoke-dist"
