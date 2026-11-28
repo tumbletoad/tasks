@@ -12,6 +12,7 @@
     "./schedule": "./src/schedule.ts",
     "./monitor": "./src/monitor.ts",
     "./runs": "./src/runs.ts",
+    "./link": "./src/link.ts",
     "./pages": "./src/pages.ts",
     "./project-status": "./src/project-status.ts",
     "./newer-work": "./src/newer-work.ts",

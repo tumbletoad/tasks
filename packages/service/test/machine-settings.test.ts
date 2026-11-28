@@ -72,8 +72,8 @@ describe("[A7.3.12.m5-11.machine-settings] this machine's settings, kept in mach
       for (const body of [
         { key: "ui.theme", value: "purple" },
         { key: "ui.theme" },
-        { key: "projection.dir", value: "/srv/view" },
-        { key: "autonomy.level", value: "full" },
+        { key: "ui.unknown", value: "x" },
+        { key: "tasks.dedupe_window_days", value: 7 },
       ]) {
         expect((await set(body)).status, JSON.stringify(body)).toBe(400);
       }

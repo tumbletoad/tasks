@@ -132,11 +132,19 @@ export async function makeWorld(
     os,
   });
   registerSpaces(home, [seeded.folder], options.instances);
+  // An agent's environment never holds a TTASKS_* variable, so the bridge it starts would look for
+  // the default home: Node reads the world's from this file first. An installed build's launcher
+  // finds its home by itself.
+  const bridgeEnv = join(root, "bridge.env");
+  writeFileSync(bridgeEnv, `TTASKS_HOME=${home}\n`);
   const service = await startService({
     env: serviceEnv(home),
     identity: () => ({ root: false, elevated: false, package: null }),
     say: () => undefined,
-    launch: { shimCommand: [process.execPath, BIN], baseEnv: () => process.env },
+    launch: {
+      shimCommand: [process.execPath, `--env-file=${bridgeEnv}`, BIN],
+      baseEnv: () => process.env,
+    },
     agentApps: { env: {}, home: join(root, "agent-apps") },
   });
   await service.spacesSettled;

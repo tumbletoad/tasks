@@ -705,7 +705,10 @@ export class StorageWorker {
     options: { appVersion?: string; busyTimeoutMs?: number } = {},
   ): Promise<{ conn: WorkerConnection; info: OpenedSpaceInfo }> {
     const info = await this.call("openSpace", { folder, ...options });
-    return { conn: new WorkerConnection(this, info.handle), info };
+    return {
+      conn: new WorkerConnection(this, info.handle, undefined, info.backend ?? "today"),
+      info,
+    };
   }
 
   /**
@@ -734,7 +737,16 @@ export class WorkerConnection {
   readonly #onClose: (() => void) | undefined;
   readonly handle: number;
 
-  constructor(worker: StorageWorker, handle: number, onClose?: () => void) {
+  /** A space's reader of a tree space reads the tree's tables (`OpenedSpaceInfo.backend`). */
+  readonly backend: "today" | "tree";
+
+  constructor(
+    worker: StorageWorker,
+    handle: number,
+    onClose?: () => void,
+    backend: "today" | "tree" = "today",
+  ) {
+    this.backend = backend;
     this.#worker = worker;
     this.handle = handle;
     this.#onClose = onClose;
@@ -821,6 +833,8 @@ export class SpaceWriterHandle {
   readonly handle: number;
   readonly spaceId: Id<"sp">;
   readonly revision: Revision;
+  /** Which writer the space has: today's, or a tree's that runs today's requests as its commands. */
+  readonly backend: "today" | "tree";
   readonly manifestRebuilt: boolean;
   readonly readOnlyReasons: readonly ReadOnlyReason[];
   /** Whether this open wrote the machine's record. */
@@ -851,6 +865,7 @@ export class SpaceWriterHandle {
     this.handle = info.handle;
     this.spaceId = info.spaceId;
     this.revision = info.revision;
+    this.backend = info.backend ?? "today";
     this.manifestRebuilt = info.manifestRebuilt;
     this.readOnlyReasons = info.readOnlyReasons;
     this.machineRegistered = machineRegistered;

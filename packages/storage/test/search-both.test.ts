@@ -145,6 +145,7 @@ describe("[S2.search.both] the search index, the same on both writers", () => {
       { do: "undo" },
       {
         step: { do: "undo" },
+        field: "seen.embassy",
         differs:
           "today's restore by Undo leaves the source link its second removal took; the tree's source stays on the task",
       },

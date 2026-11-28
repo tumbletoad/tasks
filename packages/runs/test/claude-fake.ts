@@ -16,7 +16,7 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { createInterface } from "node:readline";
-import { callTools, type ToolCall } from "./codex-server.ts";
+import { callTools, heldWhile, type ToolCall } from "./codex-server.ts";
 
 type Json = Record<string, unknown>;
 
@@ -52,6 +52,8 @@ export interface FakeClaudeScenario {
   readonly log?: string;
   /** Program mode: the stand-in census token. */
   readonly token?: string;
+  /** Program mode: the last result is not sent while this file exists. */
+  readonly holdWhile?: string;
   /** Program mode: the first command leaves an idle stand-in behind, with the token. */
   readonly leave?: "detached" | "in-group";
   /**
@@ -340,6 +342,7 @@ export function serveClaude(
       last = line.ms;
       // The client may have interrupted the replay while it waited.
       if (isOver()) continue;
+      if (index === lastResult) await heldWhile(scenario.holdWhile);
       if (index === lastResult) flood();
       const message = rewrite(line.msg);
       if (type === "system" && subtype === "init") session = message["session_id"];

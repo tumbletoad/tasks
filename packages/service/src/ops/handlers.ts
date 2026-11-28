@@ -35,7 +35,6 @@ import {
   samePrefValue,
   laterIn,
   AUTONOMY_IN_FORCE,
-  LATER_PREFERENCES,
   LATER_SETS,
   mayWrite,
   newerWorkJson,
@@ -123,7 +122,6 @@ import { HERE_ROWS, hereOf, hereRows, type Here, type Match } from "./here.ts";
 import {
   checkFolder,
   deepestProject,
-  folderState,
   expanded,
   folderName,
   folderRefused,
@@ -215,6 +213,9 @@ import {
 import { readFinished } from "./task-rows.ts";
 import { readChangeTasks, readTrash } from "./trash.ts";
 import { readActivity } from "./activity.ts";
+import { digestFolderOf } from "./digest-folder.ts";
+import { checkOnTree, checkPlan, isTree } from "./tree.ts";
+import { readTreeTask, treeTrail } from "./tree-read.ts";
 import { trailOff } from "../trial.ts";
 import {
   holderName,
@@ -490,6 +491,7 @@ async function callWith(
     if (space === undefined) throw unpicked;
     return space;
   };
+  if (space !== undefined && isTree(space)) checkOnTree(entry, input);
   const requestId = input["request_id"];
   // A launch is the user's record of its own, which answers a repeated click itself.
   if (
@@ -1017,6 +1019,7 @@ async function submit(
       message: "The service built an operation its entry does not declare.",
     });
   }
+  if (isTree(call.space)) checkPlan(call.entry, ops);
   let result: WriteResult;
   try {
     // The grant again before anything reaches the space (A3 3.7.8): a row revoked while this call
@@ -1537,28 +1540,8 @@ async function hereFor(
  * Where a task opens on this machine, for the digest: its folder, whether it is there now and the
  * repository it holds.
  */
-async function digestFolder(call: Call, folder: TaskFolder): Promise<DigestFolder | undefined> {
-  switch (folder.kind) {
-    case "task":
-    case "project": {
-      const platform = call.host.platform ?? process.platform;
-      const state = await folderState(folder.path, call.host.home, platform);
-      const open = openPath(folder.path, call.host.home, platform);
-      const repo =
-        state === "missing" || open === undefined ? undefined : await repoName(open, platform);
-      return {
-        path: folder.path,
-        of: folder.kind,
-        ...(state === "missing" ? { missing: true } : {}),
-        ...(repo === undefined ? {} : { repo }),
-      };
-    }
-    case "other_machine":
-      return { machine: folder.machine };
-    case "none":
-      return undefined;
-  }
-}
+const digestFolder = (call: Call, folder: TaskFolder): Promise<DigestFolder | undefined> =>
+  digestFolderOf(call.host, folder);
 
 function due(value: unknown, today: string, path: string): { date: string } | undefined {
   if (typeof value !== "string") return undefined;
@@ -3241,7 +3224,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       ? (input["notes"] as string[]).map((ref) => Number(ref.slice(1)))
       : undefined;
     // A task in the Trash reads as it is, marked so: an agent that gets not_found would add it again.
-    const read = await readTask(reader, task, {
+    const read = await (isTree(call.space) ? readTreeTask : readTask)(reader, task, {
       machine,
       ...ranges,
       ...(named === undefined ? {} : { named }),
@@ -3271,7 +3254,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (sections.length === 0) {
       const digest = digestOf(read, call.today, await digestFolder(call, read.folder));
       // What is known above the task, and its own pages, in the digest's one budget.
-      const library = trailOff() ? undefined : await trailOf(reader, read.space, read.row);
+      const trail = isTree(call.space) ? treeTrail : trailOf;
+      const library = trailOff() ? undefined : await trail(reader, read.space, read.row);
       const more = digest["more"] as Record<string, unknown>;
       answer = {
         view: "digest",
@@ -4039,10 +4023,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const { input } = call;
     const action = String(input["action"]);
     if (action === "set") return prefsSet(call);
-    const declared = prefsAsked(
-      input["keys"],
-      call.principal.audience === "agent" ? AGENT_PREFERENCES : TOOL_PREFERENCES,
-    );
+    const declared = prefsAsked(input["keys"], TOOL_PREFERENCES);
     let read;
     let held;
     try {
@@ -4777,14 +4758,6 @@ const TOOL_PREFERENCES: readonly PreferenceSpec[] = PREFERENCES.filter(
       isKeyList(p.shape)),
 ).toSorted((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 
-/**
- * The keys an audience is shown. An agent is not shown a key this build does not act on yet
- * (`LATER_PREFERENCES`): it would read as a setting in force. A person still reads what is stored.
- */
-const AGENT_PREFERENCES: readonly PreferenceSpec[] = TOOL_PREFERENCES.filter(
-  (p) => !LATER_PREFERENCES.some((later) => later.key === p.key),
-);
-
 /** The declarations `keys` names (A3 3.4.11): exact keys or prefixes ending in `.*`, else all. */
 function prefsAsked(keys: unknown, shown: readonly PreferenceSpec[]): PreferenceSpec[] {
   if (!Array.isArray(keys) || keys.length === 0) return [...shown];
@@ -4817,21 +4790,16 @@ function unknownPref(path: string, key: string, shown: readonly PreferenceSpec[]
   );
 }
 
-/** The step that makes a key this build declares and does not read do something, if it is one. */
-const laterStep = (p: PreferenceSpec): string | undefined =>
-  LATER_PREFERENCES.find((later) => later.key === p.key)?.step;
-
 /** The step that lets anyone set a key this build reads, if it is one. */
 const laterSet = (p: PreferenceSpec): string | undefined =>
   LATER_SETS.find((later) => later.key === p.key)?.step;
 
 /**
- * Whether the caller may set the key here (A1 3.16): a key this build acts on and lets be set,
+ * Whether the caller may set the key here (A1 3.16): a key this build lets be set,
  * never a policy key, else by its writers, and only for a caller who may set at all (later.ts).
  */
 const prefWritable = (p: PreferenceSpec, principal: Principal): boolean =>
   laterIn("prefs.manage", { action: "set" }, principal.audience) === undefined &&
-  laterStep(p) === undefined &&
   laterSet(p) === undefined &&
   !p.policy &&
   mayWrite(p, principal.actorKind);
@@ -4911,15 +4879,6 @@ async function prefsSet(call: Call): Promise<unknown> {
   });
   const changes = items.map((item, k): PrefChange => {
     const path = `set.${String(k)}`;
-    // Before the lookup: a machine key nothing reads yet is not one of the tool's, and still says so.
-    const step = LATER_PREFERENCES.find((later) => later.key === item.key)?.step;
-    if (step !== undefined) {
-      throw invalid(
-        `${path}.key`,
-        "This build does not act on this key yet, so it is not changed",
-        `It arrives with ${step}.`,
-      );
-    }
     const p = TOOL_PREFERENCES.find((spec) => spec.key === item.key);
     if (p === undefined) throw unknownPref(`${path}.key`, item.key, TOOL_PREFERENCES);
     const setStep = laterSet(p);
@@ -5042,7 +5001,6 @@ function prefRow(
 ): Record<string, unknown> {
   const value = read?.value ?? p.default;
   const fallback = p.default;
-  const later = LATER_PREFERENCES.find((row) => row.key === p.key);
   return {
     key: p.key,
     ...(action === "describe" ? { summary: p.summary, shape: shapeText(p.shape) } : {}),
@@ -5051,7 +5009,6 @@ function prefRow(
     writable: prefWritable(p, principal) && read?.state !== "newer",
     ...(p.policy ? { policy: true } : {}),
     ...(laterSet(p) === undefined ? {} : { fixed: true }),
-    ...(later === undefined ? {} : { in_force: later.inForce }),
     ...(action === "get" && p.key === EFFORT_SCALE_KEY && held !== undefined ? { held } : {}),
   };
 }

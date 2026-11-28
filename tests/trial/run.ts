@@ -23,6 +23,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { runMain } from "../../packages/cli/test/cli-harness.ts";
+import { parseToml } from "../../packages/service/src/config/toml.ts";
 import { instanceToml } from "../../packages/service/test/harness.ts";
 import { DATE_TASKS, TASKS, type CallLine, type TrialTask } from "./tasks.ts";
 import {
@@ -80,9 +81,11 @@ function parse(): Options {
   if (!Number.isInteger(seedTasks) || seedTasks < 1 || !Number.isInteger(repeats) || repeats < 0) {
     throw new Error(USAGE);
   }
+  const instances = standIn ? "" : readFileSync(values.instances ?? "", "utf8");
+  if (!standIn) readOnly(instances);
   return {
     agents,
-    instances: standIn ? "" : readFileSync(values.instances ?? "", "utf8"),
+    instances,
     standIn,
     conditions: trail === "both" ? ["on", "off"] : [trail],
     seedTasks,
@@ -91,6 +94,25 @@ function parse(): Options {
     out: values.out ?? mkdtempSync(join(tmpdir(), "ttasks-trial-out-")),
     keep: values.keep,
   };
+}
+
+/**
+ * Refuses instances that may write files. A real agent runs in the person's own profile, with
+ * their own instructions and memory, and with write access it has edited a repository of theirs
+ * outside the world. The tasks need only the TTasks tools, which every permission allows.
+ */
+function readOnly(text: string): void {
+  const parsed = parseToml(text);
+  if (!parsed.ok) throw new Error(`trial: the instances file is not TOML (${parsed.problem.code})`);
+  const tables = parsed.doc["instance"];
+  for (const table of Array.isArray(tables) ? (tables as Record<string, unknown>[]) : []) {
+    if (table["run_permission"] !== "read-only") {
+      throw new Error(
+        `trial: instance ${String(table["id"])} needs run_permission = "read-only": with more, ` +
+          "an agent can change the person's own files outside the world",
+      );
+    }
+  }
 }
 
 /** The stand-in agents: one instance for each of two runs at once, reading the script `plan`. */

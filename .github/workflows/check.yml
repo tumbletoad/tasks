@@ -67,7 +67,11 @@ jobs:
         with:
           cache: true
 
-      - run: pnpm install --frozen-lockfile
+      # verify checks and tests the phone app's TypeScript; the crash run never touches it.
+      - if: startsWith(matrix.run, 'verify')
+        run: pnpm install --frozen-lockfile
+      - if: ${{ !startsWith(matrix.run, 'verify') }}
+        run: pnpm install --frozen-lockfile --filter '!@ttasks/phone'
 
       # The process-group tests need real cgroups: transient systemd user units with Delegate=yes,
       # as the service's own unit has. They make such units only where this variable says the user
