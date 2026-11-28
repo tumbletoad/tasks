@@ -308,15 +308,16 @@ export class TreeWriter {
 
   /**
    * Stores the default of each preference a space always holds (PreferenceSpec.stored) where it
-   * holds none or a reset, as the space's system actor, a request each. Safe to call again.
+   * holds none, as the space's system actor, a request each. Safe to call again.
    */
   storeDefaults(): boolean {
     const { missing, system, space } = this.#conn.transaction("deferred", () => ({
-      missing: PREFERENCES.filter((p) => {
-        if (p.scope !== "space" || p.stored !== true) return false;
-        const row = this.#conn.prepare(SQL.preferenceRow).get({ key: p.key });
-        return row === undefined || row["value"] === "null";
-      }),
+      missing: PREFERENCES.filter(
+        (p) =>
+          p.scope === "space" &&
+          p.stored === true &&
+          this.#conn.prepare(SQL.preferenceRow).get({ key: p.key }) === undefined,
+      ),
       system: this.#conn.prepare(SQL.system).get()?.["id"] as Id<"ac">,
       space: this.#space(),
     }));

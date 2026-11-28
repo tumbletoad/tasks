@@ -56,9 +56,12 @@ describe("[S2.tree.actors] a tree space's machine, agents and default preference
         "SELECT count(*) AS n FROM commits WHERE actor_kind = 'system' AND scope_id = 'defaults'",
       ),
     ).toBe(1);
-    // A reset by the person is filled again.
-    expect(fx.send("pref.set", { key: "tasks.effort_scale", value: null }).status).toBe("applied");
-    expect(fx.writer.storeDefaults()).toBe(true);
+    // A reset by the person stores the default itself, as today's writer does: none is left to fill.
+    const levels = { key: "tasks.effort_scale" };
+    expect(fx.send("pref.set", { ...levels, value: [{ key: "Quick" }] }).status).toBe("applied");
+    expect(fx.send("pref.set", { ...levels, value: null }).status).toBe("applied");
+    expect(fx.send("pref.set", { ...levels, value: null }).status).toBe("unchanged");
+    expect(fx.writer.storeDefaults()).toBe(false);
     // The agent's own requests name it as their author.
     const made = fx.send("tasks.add", { tasks: [{ title: "Hi" }] }, { who: fx.agent });
     expect(made.status).toBe("applied");
