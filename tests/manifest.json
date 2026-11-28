@@ -2179,7 +2179,7 @@
     },
     {
       "id": "S2.tree.prefs",
-      "title": "A space's preferences on the tree writer: a person sets and resets a preference and an agent may not set a person's; a value a newer build wrote stays as it is; a preview is decided whole and rolled back, with no commit and no receipt; a task takes a status and a size of the space's lists only, and a status active tasks hold stays; a change of the effort levels moves the tasks on a level it drops, as the person says; a capture counts a finished task as its own within the space's window only",
+      "title": "A stored value held to its base, the same value included, a first setting of the effort levels that needs one, and a change of the levels that moves the tasks on a dropped one also when one changed since the read, as today's writer; A space's preferences on the tree writer: a person sets and resets a preference and an agent may not set a person's; a value a newer build wrote stays as it is; a preview is decided whole and rolled back, with no commit and no receipt; a task takes a status and a size of the space's lists only, and a status active tasks hold stays; a change of the effort levels moves the tasks on a level it drops, as the person says; a capture counts a finished task as its own within the space's window only",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]

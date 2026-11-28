@@ -30,7 +30,6 @@ import {
   EFFORT_NAME_MAX,
   checkEffortMoves,
   effortNamesFit,
-  mayWrite,
   PREFERENCES,
   preferenceSpec,
   samePrefValue,
@@ -55,7 +54,13 @@ import {
   RowReader,
   type SpaceRow,
 } from "../rows.ts";
-import { isScaleKey, listPreference, readSpacePreference, scaleKeys } from "../preferences.ts";
+import {
+  isScaleKey,
+  listPreference,
+  prefSetRule,
+  readSpacePreference,
+  scaleKeys,
+} from "../preferences.ts";
 import { REPLIED_SQL } from "../questions.ts";
 import type { SchemaStep } from "../schema.ts";
 import { indexChanges } from "../search/documents.ts";
@@ -2518,42 +2523,20 @@ export class SpaceWriter {
           // step 4). The admin scope a policy key also needs is the caller's check (A6 3.6.3).
           const spec = must(preferenceSpec(op.key), "A checked pref.set names a declared key");
           const row = conn.prepare(SQL.preferenceRow).get({ id: op.key });
-          // The space's own act (storeDefaults): a value every space holds, where it holds none.
-          const fills =
-            request.actor.actor_kind === "system" &&
-            spec.stored === true &&
-            (row === undefined || row["value"] === "null") &&
-            samePrefValue(op.value, spec.default) &&
-            op.moves === undefined;
-          if (!fills && !mayWrite(spec, request.actor.actor_kind)) {
-            problem("PREFERENCE_FORBIDDEN", "Only the user changes this preference", i, "key");
+          const rule = prefSetRule(
+            spec,
+            row,
+            op,
+            request.actor.actor_kind,
+            request.base !== undefined,
+          );
+          if (rule.refused !== undefined) {
+            problem(rule.refused.code, rule.refused.message, i, rule.refused.field);
           }
-          // A newer build's value is kept unchanged: read-only here (A1 3.16). Said before any
-          // other reason, so nobody changes tasks for a change this build cannot make.
-          if (
-            row !== undefined &&
-            new RowReader("preferences", row).int("schema_ver", "count") > spec.schemaVer
-          ) {
-            problem(
-              "VALIDATION_FAILED",
-              "A newer build wrote this preference: it is read-only here",
-              i,
-              "key",
-            );
-          }
+          const { fills } = rule;
           const start =
             row === undefined ? undefined : rowState("preferences", row, CHILD_FIELDS.preferences);
           const levels = op.key === "tasks.effort_scale" && !fills;
-          // The levels a change replaces are the ones its person read, also on a space that never
-          // stored them: a first setter racing another meets the other's row as a conflict.
-          if (levels && row === undefined && request.base === undefined) {
-            problem(
-              "BASE_REQUIRED",
-              "This change needs the as_of of a read as its base",
-              i,
-              "base",
-            );
-          }
           // A base older than the list's last change is a conflict (preconditions), whatever the
           // change says of a list its person never saw.
           const stale =
