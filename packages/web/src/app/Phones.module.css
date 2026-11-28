@@ -1,0 +1,60 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-self: stretch;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One phone: its name and facts, then its Run switch and Remove, wrapping on a narrow screen. */
+.phone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--k-line);
+}
+
+.who {
+  flex: 1 1 100%;
+  color: var(--k-text);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.facts {
+  flex: 1 1 auto;
+  color: var(--k-muted);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+/* The QR code stays dark on white in both themes: a phone's camera reads that best. */
+.plate {
+  display: grid;
+  place-items: center;
+  margin: 12px 0;
+}
+
+.qr {
+  width: min(240px, 100%);
+  height: auto;
+  border-radius: 8px;
+}
+
+.warning {
+  margin: 0 0 8px;
+  color: var(--k-text);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+@media (forced-colors: active) {
+  .qr {
+    forced-color-adjust: none;
+  }
+}
