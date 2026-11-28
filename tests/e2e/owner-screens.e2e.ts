@@ -82,7 +82,7 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
           for (const [name, path] of [
             ["today", "today"],
             ["open", "open"],
-            ["area", `area/${client.id}`],
+            ["area", `project/${client.id}`],
             ["project", project_path],
           ] as const) {
             await open(page, large, path);

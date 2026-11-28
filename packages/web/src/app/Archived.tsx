@@ -75,7 +75,8 @@ export function ArchivedLine({ project }: { readonly project: string }) {
   const unarchive = useUnarchive();
   const state = useLive();
   const path = trail(state.nodes, project);
-  const at = path.findIndex((node) => node.state === "archived");
+  // The nearest archived one: unarchiving it is what brings this project back.
+  const at = path.findLastIndex((node) => node.state === "archived");
   const shelved = path[at];
   if (shelved === undefined) return null;
   const name = shelved.title;

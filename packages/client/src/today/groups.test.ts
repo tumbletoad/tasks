@@ -246,6 +246,11 @@ describe("[S2.nav.tree] the side menu's tree and a project's groups, at any dept
       "n_portal",
       "n_reports",
     ]);
+    // A task the list keeps though it sits elsewhere now stays with the project's own tasks.
+    const moved = task({ title: "Moved away", parent: "a_internal" });
+    expect(titles(subtreeGroups("n_portal")([moved, ...tasks.slice(3, 4)], nodes))).toEqual([
+      ["flat", undefined, [[undefined, ["Portal plan", "Moved away"]]]],
+    ]);
     // A project below with nothing open has no group.
     expect(titles(subtreeGroups("a_work")(tasks.slice(0, 2), nodes))).toEqual([
       ["project", "Lumen", [[undefined, ["Fix time zones", "Store the zone"]]]],

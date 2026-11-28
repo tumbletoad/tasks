@@ -369,7 +369,7 @@ test.describe("[A7.3.12.m5-05.e2e.screens] the views in both themes at 1,440 and
         for (const [name, path, ref] of [
           ["waiting", "waiting", waiting],
           ["completed", "completed", done],
-          ["area", `area/${areaId}`, undefined],
+          ["area", `project/${areaId}`, undefined],
         ] as const) {
           await page.setViewportSize({ width: 1440, height: 1000 });
           await open(page, world, path);

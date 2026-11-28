@@ -135,14 +135,14 @@ test.describe("[A7.3.12.m5-06.e2e.expanded] The expanded task: each fact once, u
     await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);
     await showsSpace(page, world.mira.name);
 
-    // The link lands on the host view, the area view, with the task expanded in its URL.
+    // The link lands on the host view, its project's screen, with the task expanded in its URL.
     await expect(page).toHaveURL(
       new RegExp(`/s/${world.mira.id}/project/[a-z0-9_]+\\?task=${ref}$`),
       {
         timeout: SLOW_MS,
       },
     );
-    await expect(page.getByRole("link", { name: /^Lumen, / })).toHaveAttribute(
+    await expect(page.getByRole("link", { name: /^Lumen portal, / })).toHaveAttribute(
       "aria-current",
       "page",
     );

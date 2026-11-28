@@ -395,7 +395,7 @@ test.describe("[A7.3.12.m5-01.e2e.add-once] An add on its way is sent once, and 
   });
 });
 
-/** A fixture task's host view with the task expanded: the area view of its area. */
+/** A fixture task's host view with the task expanded: its project's screen. */
 const hostOf = (world: World, ref: string) =>
   new RegExp(`^${world.origin}/s/${world.mira.id}/project/[a-z0-9_]+\\?task=${ref}$`);
 
@@ -436,13 +436,15 @@ test.describe("[A7.3.12.m5-01.e2e.task-links] A route that names a task opens th
     await page.evaluate((path) => {
       history.pushState(null, "", path);
     }, `/s/${world.mira.id}/task/${world.spare.ref}`);
+    // One task is expanded at a time, whether the two share a screen or not.
+    const expanded = page.locator('li[data-task][data-expanded="true"]');
     await expect(second).toHaveAttribute("data-expanded", "true");
-    await expect(first).not.toHaveAttribute("data-expanded", "true");
+    await expect(expanded).toHaveCount(1);
     await expect(page).toHaveURL(hostOf(world, world.spare.ref));
     await page.goBack();
     await expect(page).toHaveURL(hostOf(world, world.task.ref));
     await expect(first).toHaveAttribute("data-expanded", "true");
-    await expect(second).not.toHaveAttribute("data-expanded", "true");
+    await expect(expanded).toHaveCount(1);
   });
 });
 

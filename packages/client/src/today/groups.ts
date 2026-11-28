@@ -9,7 +9,7 @@
 // - Inside a group: open first, then the other statuses, backlog last, then position.
 // Each task appears exactly once.
 import type { NodeRow, TaskRow } from "../store/rows.ts";
-import { childrenOf, topLevel, trail, type Nodes } from "../store/tree.ts";
+import { childrenOf, isUnder, topLevel, trail, type Nodes } from "../store/tree.ts";
 
 export interface Section {
   readonly key: string;
@@ -352,9 +352,12 @@ export function subtreeGroups(project: string): GroupTasks {
   return (tasks, nodes) => {
     const byParent = new Map<string, TaskRow[]>();
     for (const task of tasks) {
-      const list = byParent.get(task.parent) ?? [];
+      // A task the list keeps though it sits elsewhere now (the expanded one) stays with the
+      // project's own tasks.
+      const parent = isUnder(nodes, task.parent, project) ? task.parent : project;
+      const list = byParent.get(parent) ?? [];
       list.push(task);
-      byParent.set(task.parent, list);
+      byParent.set(parent, list);
     }
     const own = (id: string) => [...(byParent.get(id) ?? [])].sort(byStatusThenPosition);
     const groups: Group[] = [];
