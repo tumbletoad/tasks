@@ -5,7 +5,15 @@
 // the phone's last read with its age, or says it has not been loaded.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import type { CardDetail, PageLink, PageText, Read, SpaceSession } from "@ttasks/client/link";
+import {
+  runLine,
+  type CardDetail,
+  type PageLink,
+  type PageText,
+  type PhoneRun,
+  type Read,
+  type SpaceSession,
+} from "@ttasks/client/link";
 import { trail, type NodeRow, type TaskRow } from "@ttasks/client/store";
 import { dueWhen, formatDay, formatWhen, type Clock } from "@ttasks/client/today";
 import { ago } from "./time.ts";
@@ -83,6 +91,13 @@ export function Card(props: {
     task.waiting_on === undefined ? undefined : WORDS.waitingOn(task.waiting_on),
   ].filter((fact): fact is string => fact !== undefined);
   const detail = read?.kind === "read" ? read.value : undefined;
+  // The task's newest run, read again whenever its row says the run moved.
+  const runs = useRead<readonly PhoneRun[]>(
+    () => session.runs(task.id),
+    `${task.id} ${String(task.run?.id)} ${String(task.run?.state)} ${String(live)}`,
+  );
+  const newest = runs?.kind === "read" ? runs.value[0] : undefined;
+  const run = newest === undefined ? undefined : runLine(newest);
 
   return (
     <View style={shared.fill}>
@@ -138,6 +153,29 @@ export function Card(props: {
         )}
         {facts.length === 0 ? null : (
           <Text style={[shared.small, { color: colors.muted }]}>{facts.join(" · ")}</Text>
+        )}
+        {run === undefined ? null : (
+          <Section label={WORDS.runSection} colors={colors}>
+            <Text
+              style={[
+                shared.body,
+                { color: run.tone === "needs_you" ? colors.accent : colors.text },
+              ]}
+            >
+              {WORDS.run[run.tone]}
+            </Text>
+            {run.said === undefined ? null : (
+              <View style={styles.entry}>
+                <Text style={[shared.small, { color: colors.muted }]}>
+                  {WORDS.said[run.said.kind]}
+                </Text>
+                <Text style={[shared.body, { color: colors.text }]}>{run.said.text}</Text>
+                {run.said.cut ? (
+                  <Text style={[shared.small, { color: colors.muted }]}>{WORDS.cut}</Text>
+                ) : null}
+              </View>
+            )}
+          </Section>
         )}
         <Age read={read} clock={clock} colors={colors} />
         {detail?.partial === true ? (

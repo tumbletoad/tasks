@@ -24,8 +24,17 @@ import {
   type SpaceSession,
   type SpaceView,
 } from "@ttasks/client/link";
-import type { NodeRow, TaskRow } from "@ttasks/client/store";
-import { formatDay, todayOf, type Clock } from "@ttasks/client/today";
+import { questionsWaiting, type NodeRow, type PageRow, type TaskRow } from "@ttasks/client/store";
+import {
+  agentPages,
+  CHANGES_DAYS,
+  CHANGES_LIMIT,
+  formatDay,
+  formatWhen,
+  todayOf,
+  type Clock,
+  type TaskChange,
+} from "@ttasks/client/today";
 import { localDate } from "@ttasks/contracts/day";
 import { Card, PageView } from "./Card.tsx";
 import { connectSocket, keep, native } from "./link/socket.ts";
@@ -91,7 +100,7 @@ export function Today(props: {
   const checkedHere = useRef(new Set<string>());
   const [reading, setReading] = useState<PageLink | undefined>(undefined);
   useEffect(() => {
-    if (open === undefined) return undefined;
+    if (open === undefined && reading === undefined) return undefined;
     const back = BackHandler.addEventListener("hardwareBackPress", () => {
       if (reading !== undefined) setReading(undefined);
       else setOpen(undefined);
@@ -143,12 +152,32 @@ export function Today(props: {
   const sections = useMemo(() => {
     const tasks = new Map(view?.tasks ?? []);
     for (const [id, hold] of held) tasks.set(id, hold.task);
-    return todayOf(tasks.values(), clock).sections.map((section) => ({
-      key: section.key,
-      title: WORDS.section[section.key],
-      data: [...section.tasks],
-    }));
+    return todayOf(tasks.values(), clock, { changes: view?.changes ?? [] }).sections.map(
+      (section) => ({
+        key: section.key,
+        title: WORDS.section[section.key],
+        data: [...section.tasks],
+      }),
+    );
   }, [view, held, clock]);
+
+  const changeOf = useMemo(
+    () =>
+      new Map((view?.changes ?? []).map((change): [string, TaskChange] => [change.task, change])),
+    [view],
+  );
+  const changedPages: readonly PageRow[] = useMemo(
+    () => agentPages(view?.pages.values() ?? [], clock.now, CHANGES_DAYS, CHANGES_LIMIT),
+    [view, clock.now],
+  );
+  /** Tasks on which an agent waits for the person: a question, or a run that ended needing them. */
+  const needing = useMemo(
+    () =>
+      [...(view?.tasks.values() ?? [])].filter(
+        (task) => questionsWaiting(task) > 0 || task.run?.state === "needs_you",
+      ).length,
+    [view],
+  );
 
   const check = (task: TaskRow) => {
     const live = session.current;
@@ -231,7 +260,7 @@ export function Today(props: {
 
   return (
     <View style={shared.fill}>
-      {shownCard !== undefined && session.current !== undefined ? (
+      {(shownCard !== undefined || reading !== undefined) && session.current !== undefined ? (
         reading !== undefined ? (
           <PageView
             page={reading}
@@ -243,7 +272,7 @@ export function Today(props: {
               setReading(undefined);
             }}
           />
-        ) : (
+        ) : shownCard === undefined ? null : (
           <Card
             task={shownCard}
             done={openHeld !== undefined}
@@ -270,11 +299,19 @@ export function Today(props: {
           />
         )
       ) : null}
-      <View style={[shared.fill, shownCard === undefined ? null : styles.hidden]}>
+      <View
+        style={[
+          shared.fill,
+          shownCard === undefined && reading === undefined ? null : styles.hidden,
+        ]}
+      >
         <View style={[styles.head, { borderColor: colors.line }]}>
           <Text style={[styles.space, { color: colors.text }]}>
             {space === "" ? PRODUCT_NAME : space}
           </Text>
+          {needing === 0 ? null : (
+            <Text style={[styles.needs, { color: colors.accent }]}>{WORDS.needing(needing)}</Text>
+          )}
           {closed === undefined ? null : (
             <Text style={[shared.small, { color: colors.text }]}>{closed}</Text>
           )}
@@ -322,8 +359,9 @@ export function Today(props: {
           renderSectionHeader={({ section }) => (
             <Text style={[styles.section, { color: colors.muted }]}>{section.title}</Text>
           )}
-          renderItem={({ item }) => (
+          renderItem={({ item, section }) => (
             <Row
+              change={section.key === "changes" ? changeOf.get(item.id) : undefined}
               task={item}
               done={held.has(item.id)}
               colors={colors}
@@ -339,6 +377,27 @@ export function Today(props: {
           }
           ListFooterComponent={
             <View style={styles.footer}>
+              {changedPages.length === 0 ? null : (
+                <View style={styles.pages}>
+                  <Text style={[styles.sectionLabel, { color: colors.muted }]}>
+                    {WORDS.pagesChanged}
+                  </Text>
+                  {changedPages.map((page) => (
+                    <Pressable
+                      key={page.id}
+                      accessibilityRole="link"
+                      onPress={() => {
+                        setReading({ ref: page.ref, title: page.title, brief: page.brief });
+                      }}
+                    >
+                      <Text style={[shared.body, { color: colors.accent }]}>{page.title}</Text>
+                      <Text style={[shared.small, { color: colors.muted }]}>
+                        {`${WORDS.who(page.by)} · ${formatWhen(page.at, clock)}`}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
               <Button label={WORDS.scanNew} onPress={onScan} colors={colors} quiet />
             </View>
           }
@@ -387,6 +446,8 @@ export function Today(props: {
 }
 
 function Row(props: {
+  /** In Changes: who changed it, and when. */
+  change: TaskChange | undefined;
   task: TaskRow;
   done: boolean;
   colors: Colors;
@@ -394,7 +455,8 @@ function Row(props: {
   onCheck: (task: TaskRow) => void;
   onOpen: (task: TaskRow) => void;
 }) {
-  const { task, done, colors, clock, onCheck, onOpen } = props;
+  const { change, task, done, colors, clock, onCheck, onOpen } = props;
+  const needsYou = questionsWaiting(task) > 0 || task.run?.state === "needs_you";
   return (
     <View style={styles.row}>
       <Pressable
@@ -428,6 +490,14 @@ function Row(props: {
         >
           {task.title}
         </Text>
+        {needsYou ? (
+          <Text style={[styles.needs, { color: colors.accent }]}>{WORDS.needsYou}</Text>
+        ) : null}
+        {change === undefined ? null : (
+          <Text style={[shared.small, { color: colors.muted }]}>
+            {`${WORDS.who(change.actor)} · ${formatWhen(change.at, clock)}`}
+          </Text>
+        )}
         {task.due_date === undefined ? null : (
           <Text style={[shared.small, { color: colors.muted }]}>
             {WORDS.due(
@@ -479,6 +549,9 @@ const styles = StyleSheet.create({
   },
   undo: { fontSize: 15, fontWeight: "700" },
   capture: { padding: 16, gap: 6, borderTopWidth: 1 },
+  pages: { gap: 8, paddingBottom: 16 },
+  sectionLabel: { fontSize: 13, fontWeight: "600" },
+  needs: { fontSize: 13, fontWeight: "700" },
   // Kept mounted under a card, so Back finds Today where it was.
   hidden: { display: "none" },
 });
