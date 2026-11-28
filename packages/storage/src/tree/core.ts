@@ -166,12 +166,19 @@ function written(result: TreeResult, space: SpaceState): WriteResult {
               ? {}
               : { field: TODAY_FIELD[error.field] ?? error.field }),
             ...(error.at === undefined ? {} : { at: error.at }),
+            ...holdersOf(error.data),
           },
         }),
     warnings: result.warnings ?? [],
     ...(result.answer === undefined ? {} : { answer: result.answer }),
     ...(result.replayed === true ? { replayed: true } : {}),
   };
+}
+
+/** The tasks that hold a size a refused change of levels drops (prefs.ts). */
+function holdersOf(data: unknown): Pick<WriteProblem, "holders"> {
+  const holders = (data as Pick<WriteProblem, "holders"> | undefined)?.holders;
+  return holders === undefined ? {} : { holders };
 }
 
 interface HistoryFacts {
@@ -421,7 +428,10 @@ export class TreeWriter {
         error: problemOf(error.problem),
       };
     }
-    if (request.dry_run === true) return this.#preview(request);
+    if (request.dry_run === true) {
+      const { versions, ...would } = this.#preview(request, [String(request.input["key"])]);
+      return { ...would, version: versions[0] ?? 0 };
+    }
     return this.#submitted(request);
   }
 
@@ -434,13 +444,6 @@ export class TreeWriter {
     let checked: CheckedRequest;
     try {
       checked = checkRequest(input);
-      if (checked.dry_run === true) {
-        throw new RequestProblem({
-          code: "VALIDATION_FAILED",
-          message: "A tree space previews no request yet",
-          field: "dry_run",
-        });
-      }
     } catch (error) {
       return this.#refused(error);
     }
@@ -460,6 +463,16 @@ export class TreeWriter {
       plan: true,
       ...(intent === undefined ? {} : { entry: intent.entry, intent }),
     };
+    if (checked.dry_run === true) {
+      // As today's preview: each result says the version of the preference it would change.
+      const keys = ops.map((op) => (op.kind === "pref.set" ? op.key : ""));
+      const { versions, ...would } = this.#preview(request, keys);
+      const said = written(
+        would,
+        this.#conn.transaction("deferred", () => this.#space()),
+      );
+      return { ...said, results: said.results.map((r) => ({ ...r, version: versions[r.i] ?? 0 })) };
+    }
     const result = this.#submitted(request);
     if (result.replayed === true && "results" in result) return result as unknown as WriteResult;
     // An Undo's or a Redo's refusal is of its one operation, as today's writer says it.
@@ -517,15 +530,20 @@ export class TreeWriter {
 
   /**
    * A preview: decided whole, its receipt included, then rolled back, so nothing of it stays. Its
-   * answer says the space as it is, and the version of the preference it would change.
+   * answer says the space as it is, and the version of each preference of `keys` as it is, 0 when
+   * the space holds none.
    */
-  #preview(request: CheckedTreeRequest): TreeResult {
-    let would: TreeResult | undefined;
+  #preview(
+    request: CheckedTreeRequest,
+    keys: readonly string[],
+  ): TreeResult & { versions: number[] } {
+    let would: (TreeResult & { versions: number[] }) | undefined;
     try {
       this.#conn.transaction("immediate", () => {
         const asOf = this.#space();
-        const key = String(request.input["key"]);
-        const row = this.#conn.prepare(SQL.preference).get({ key });
+        const versions = keys.map((key) =>
+          Number(this.#conn.prepare(SQL.preference).get({ key })?.["version"] ?? 0),
+        );
         const decided = this.#decide(request);
         would = {
           ...decided,
@@ -535,7 +553,7 @@ export class TreeWriter {
             seq: asOf.lastSeq,
           }),
           seq: asOf.lastSeq,
-          version: row === undefined ? 0 : Number(row["version"]),
+          versions,
         };
         delete would.commit;
         throw PREVIEW;

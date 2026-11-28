@@ -20,8 +20,10 @@ import {
   scaleKeys,
   type Mover,
 } from "../preferences.ts";
+import { canonicalJson } from "../write/canonical.ts";
 import { prefSet, type PrefSet } from "../write/request.ts";
 import { problem, type Check } from "./commands.ts";
+import { TreeProblem } from "./fields.ts";
 import type { Command } from "./tx.ts";
 
 const SQL = {
@@ -53,15 +55,17 @@ const check: Check = (f) => {
 };
 
 const run: Command["run"] = (tx, input) => {
-  const { key, value, moves } = input as unknown as PrefSet;
+  const { key, value: given, moves } = input as unknown as PrefSet;
   const spec = preferenceSpec(key);
   if (spec === undefined)
     return problem("VALIDATION_FAILED", "Not a preference of this build", "key");
+  // A reset of a key a space always holds stores its default, as today's writer does.
+  const value = given === null && spec.stored === true ? spec.default : given;
   const row = tx.get(SQL.row, { key });
   const rule = prefSetRule(
     spec,
     row,
-    { key, value, ...(moves === undefined ? {} : { moves }) },
+    { key, value: given, ...(moves === undefined ? {} : { moves }) },
     tx.request.actor.actor_kind,
     tx.request.base !== undefined,
     false,
@@ -100,7 +104,11 @@ const run: Command["run"] = (tx, input) => {
         trash: Number(r["trash"]),
       }));
       const refused = checkEffortMoves(now, next, held, moves ?? []);
-      if (refused !== undefined) problem("VALIDATION_FAILED", refused.message, refused.field);
+      if (refused !== undefined) {
+        // With the tasks that hold a dropped size, which the answer counts for the person.
+        const { message, field, holders } = refused;
+        throw new TreeProblem("VALIDATION_FAILED", message, field, holders && { holders });
+      }
       // Every mover is read before any is written (preferences.ts `Mover`).
       const from = (moves ?? []).filter((m) => m.to !== m.from).map((m) => m.from);
       movers = tx.all(SQL.movers, { from: JSON.stringify(from) }).map((r) => ({
@@ -115,7 +123,7 @@ const run: Command["run"] = (tx, input) => {
       }
     }
   }
-  const stored = JSON.stringify(value);
+  const stored = value === null ? "null" : canonicalJson(value);
   if (row === undefined) {
     if (value !== null) {
       tx.create("preferences", { key, value: stored, schema_ver: spec.schemaVer }, null);

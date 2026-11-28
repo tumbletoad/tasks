@@ -62,6 +62,7 @@ const SQL = {
     "JOIN nodes o ON o.id = f.owner_id LEFT JOIN tasks t ON t.id = o.id " +
     "WHERE f.machine_id = $machine AND f.is_default = 1 AND f.deleted_at IS NULL",
   folderVersion: "SELECT version FROM folders WHERE id = $id",
+  preference: "SELECT version FROM preferences WHERE key = $key",
   /** Where a task is: its parent's kind and title, and its grandparent's. */
   place:
     "SELECT p.id AS parent, p.kind AS kind, p.title AS title, g.id AS grand, g.kind AS above, " +
@@ -105,6 +106,7 @@ const OPS: ReadonlySet<Operation["kind"]> = new Set([
   "project.folder_set",
   "task.folder_clear",
   "project.folder_clear",
+  "pref.set",
 ]);
 
 /** A task's fields the tree keeps, by today's name, and the tree's node or task column. */
@@ -225,7 +227,7 @@ type Done = Omit<OpResult, "i" | "status" | "version"> & {
   readonly after?: () => Partial<OpResult>;
   /** The row whose version the result gives. */
   readonly row: {
-    readonly entity: "task" | "note" | "source" | "page" | "node" | "folder";
+    readonly entity: "task" | "note" | "source" | "page" | "node" | "folder" | "preference";
     readonly id: string;
   };
 };
@@ -419,6 +421,8 @@ function versionOf(tx: Tx, row: Done["row"], status: string): number {
       return Number(tx.get(SQL.source, { id: row.id })?.["version"] ?? 0);
     case "folder":
       return Number(tx.get(SQL.folderVersion, { id: row.id })?.["version"] ?? 0);
+    case "preference":
+      return Number(tx.get(SQL.preference, { key: row.id })?.["version"] ?? 0);
   }
 }
 
@@ -779,6 +783,16 @@ function runOne(plan: Plan, i: number): Done {
             ...owner.task,
             row: { entity: "folder", id: String(held["id"]) },
           };
+    }
+    case "pref.set": {
+      const { kind, ...set } = op;
+      const said = call(tx, kind, set) as Pick<OpResult, "moved" | "off_list">;
+      return {
+        id: op.key,
+        ...(said.moved === undefined ? {} : { moved: said.moved }),
+        ...(said.off_list === undefined ? {} : { off_list: said.off_list }),
+        row: { entity: "preference", id: op.key },
+      };
     }
     case "page.create": {
       const said = call(tx, "page.create", {

@@ -27,6 +27,7 @@ const ON_TREE: Readonly<Record<string, readonly string[]>> = {
   "task.add": [],
   "task.update": ["add_sources", "remove_sources", "put_back_sources"],
   "folder.manage": [],
+  "prefs.manage": [],
   "task.finish": [],
   "task.reopen": [],
   "task.delete": [],

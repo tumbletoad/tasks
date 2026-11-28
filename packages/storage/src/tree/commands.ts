@@ -264,6 +264,13 @@ const tasksAdd: Run = (tx, input) => {
       const log = str(draft, "log");
       const source = draft["source"] as Input | undefined;
       const match = found[i];
+      // A draft's status and size are the space's, also when it finds its task, as today's writer
+      // stages every draft before it matches one.
+      const status = known(tx, "tasks.statuses", draft["status"] ?? "open", at("status"));
+      const effort =
+        draft["effort"] === undefined
+          ? null
+          : known(tx, "tasks.effort_scale", draft["effort"], at("effort"));
       if (match?.task !== undefined) {
         const id = String(match.task["id"]);
         // As today: the log follows an active match only, and once.
@@ -314,11 +321,8 @@ const tasksAdd: Run = (tx, input) => {
           id,
           ref,
           origin_source_id: origin,
-          status: known(tx, "tasks.statuses", draft["status"] ?? "open", at("status")),
-          effort:
-            draft["effort"] === undefined
-              ? null
-              : known(tx, "tasks.effort_scale", draft["effort"], at("effort")),
+          status,
+          effort,
           inbox: draft["inbox"] === true ? 1 : 0,
           priority,
           ...dueColumns(draft["due"]),
