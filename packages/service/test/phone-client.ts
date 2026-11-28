@@ -26,15 +26,12 @@ export interface Pairing {
   readonly addrs: readonly string[];
   readonly pin: string;
   readonly space: { readonly id: string; readonly name: string };
-  readonly computer: string;
   readonly code: string;
 }
 
 export function readPairing(text: string): Pairing {
   if (!text.startsWith(PAIRING_PREFIX)) throw new Error("not a pairing code");
-  return JSON.parse(
-    Buffer.from(text.slice(PAIRING_PREFIX.length), "base64url").toString("utf8"),
-  ) as Pairing;
+  return JSON.parse(text.slice(PAIRING_PREFIX.length)) as Pairing;
 }
 
 export interface PhoneLink {

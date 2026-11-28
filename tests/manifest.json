@@ -6767,6 +6767,13 @@
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
+    },
+    {
+      "id": "S5.phones.e2e",
+      "title": "Against the real service in Chromium and Firefox: Settings > Phones shows a pairing code as a QR code with its warning, a phone pairs with that code and the dialog says so, the list shows it with its space, Run is switched on and stays after a reload, and Remove asks first; screenshots of the list, the dialog and the confirmation at 1,440 and 390 px in Sumi and Washi, axe clean, no sideways scroll",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
     }
   ]
 }

@@ -22,9 +22,10 @@
 // closes.
 import { randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:https";
-import { hostname, networkInterfaces } from "node:os";
+import { networkInterfaces } from "node:os";
 import type { Socket } from "node:net";
 import type { TLSSocket } from "node:tls";
+import { PRODUCT_NAME } from "@ttasks/brand";
 import { AppError, ERROR_CODES, findEntry, type ErrorBody } from "@ttasks/contracts";
 import { WebSocketServer, type WebSocket } from "ws";
 import { OneTimeSecrets } from "../http/auth.ts";
@@ -285,7 +286,6 @@ export class LinkService {
       addrs: addresses,
       pin: home.pin,
       space: { id: space.id, name: space.name ?? "" },
-      computer: hostname(),
       code,
     };
     const timer = setTimeout(() => {
@@ -293,7 +293,7 @@ export class LinkService {
     }, PAIRING_MS + 1000);
     timer.unref();
     return {
-      code: `${PAIRING_PREFIX}${Buffer.from(JSON.stringify(payload), "utf8").toString("base64url")}`,
+      code: `${PAIRING_PREFIX}${JSON.stringify(payload)}`,
       ticket,
       expires_at: new Date(now + PAIRING_MS).toISOString(),
       addresses: addresses.length,
@@ -656,7 +656,10 @@ export class LinkService {
             ? "space:write"
             : undefined;
       if (needs === undefined || !scopes.includes(needs)) {
-        throw forbidden("A phone cannot do this. Use TTasks on the computer.", "phone_rights");
+        throw forbidden(
+          `A phone cannot do this. Use ${PRODUCT_NAME} on the computer.`,
+          "phone_rights",
+        );
       }
       return opCall(
         this.#options.ops,
@@ -678,7 +681,10 @@ export class LinkService {
     }
     if (path === "/api/v1/launch/runs") {
       if (!scopes.includes("space:read")) {
-        throw forbidden("A phone cannot do this. Use TTasks on the computer.", "phone_rights");
+        throw forbidden(
+          `A phone cannot do this. Use ${PRODUCT_NAME} on the computer.`,
+          "phone_rights",
+        );
       }
       return launches.runs(space, body, copy).then((runs) => ({ runs }));
     }
