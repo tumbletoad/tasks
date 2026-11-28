@@ -31,7 +31,7 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 1.4 | Agent tools: `read`, `write_page`, the trail in `get_task` within one budget, search over pages, `complete_task` asking for pages updated | done (#251) |
 | 1.5 | The skill `keeping-the-library`, and a brief explained as "what this is" | done (#251) |
 | 1.6 | The app: the project screen with its Library, the page screen with History and Restore, page edits under Changes | todo: 1.1 |
-| 1.7 | The trial: twenty scripted tasks with Claude Code and Codex, and the bytes of history per page edit | doing: the script runs against the stand-ins; the runs with real agents wait for the owner |
+| 1.7 | The trial: twenty scripted tasks with Claude Code and Codex, and the bytes of history per page edit | review: ran with real agents, the result is under [Step 1's trial](#step-1s-trial) |
 | 1.8 | The harvest of one real project, and a walk through it as a person | todo: 1.6, 1.7 |
 | 2.1 | The short design for one tree, reviewed before code (#237) | done |
 | 2.2 | (i) The feed sends a tree, today's areas and projects as parent rows at its edge, and the page's store reads it | todo: step 1's page work |
@@ -57,6 +57,30 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 5.3 | The phone app as a development build in the workspace, and its first proof; Today and capture shared with the page once step 1's page work has merged | todo: 5.2, 1.6 |
 | 5.4 | The stores' test tracks, the relay for use away from home, push messages | todo: 5.3 |
 | 6.1 | Differences between versions of a page and of a description | todo: 1.6 |
+
+## Step 1's trial
+
+Run on 2026-11-28 on Windows 11, on the owner's subscriptions, with each agent's own sign-in and
+global instructions, read only: Claude Code with Haiku and Codex with Luna, 45 runs each, and a
+few runs on Sol and Sonnet to settle (a) and (b).
+
+| agent | trail | runs | succeeded | checks passed | (a) applied | (a) read the area page | (b) task 9 | (c) made / edits / same titles | (c) history bytes per edit | (d) median input tokens | (e) both stand | (f) found, searched, on a page |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Claude Code, Haiku | on | 24 | 23/24 | 17/24 | 9/10 | 10/10 | no | 1 / 4 / 0 | 479 | 433,024 | yes | no, yes, no |
+| Claude Code, Haiku | off | 21 | 14/21 | 5/21 | 1/7 | 1/7 | no | 1 / 3 / 0 | 468 | 408,139 | no | no, yes, no |
+| Codex, Luna | on | 24 | 24/24 | 14/24 | 3/10 | 3/10 | no | 3 / 4 / 0 | 351 | 464,129 | yes | yes, yes, no |
+| Codex, Luna | off | 21 | 21/21 | 9/21 | 0/7 | 0/7 | no | 2 / 6 / 0 | 405 | 451,971 | yes | no, yes, no |
+| Codex, Sol (tasks 1, 4, 6) | on | 3 | 3/3 | 0/3 | 0/3 | 0/3 | - | - | - | 371,822 | - | - |
+| Claude Code, Sonnet (tasks 2, 9) | on | 2 | 2/2 | 2/2, task 2 by the corrected check | - | - | yes | 0 / 1 / 0 | 510 | 271,536 | - | - |
+
+The trail works when an agent sees it: Haiku with it applied the area's rule in 9 of 10 runs and
+without it in 1 of 7, and without it went searching the disk instead of the library. Codex
+almost never sees it: it reads `get_task` with `sections` (Luna in 17 of 21 runs, Sol in all 3),
+and only the digest carries the trail, so the trail must reach every `get_task` answer before
+step 2 builds on it. The trail stays whole rather than shrinking to titles: it adds about 940
+characters to a digest, and the runs without it did worse on (a), (e) and (f). The library stayed
+clean (no duplicates, no needless edits), but no agent put the decision found in a finished
+task's log on a page, which is what `keeping-the-library` should ask next.
 
 ## Before 1.0, beside the steps
 
