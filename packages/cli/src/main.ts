@@ -1,7 +1,7 @@
 // `ttasks`: one command. The generated operation verbs come from the registry's
 // `cli-spec.json`; the local commands are routed here.
 //
-// Every operation verb, `ttasks space`, `ttasks roots` and `ttasks view` go through the service: the CLI opens no space database
+// Every operation verb, `ttasks space` and `ttasks view` go through the service: the CLI opens no space database
 // itself. These work without a service, by design: `ttasks` alone and `ttasks help` (they print the
 // service's state from service.json), `ttasks version`, `ttasks doctor` (a stopped or untrusted
 // service is what it diagnoses) and `ttasks serve` (it is the service).
@@ -24,7 +24,6 @@ import type { Io } from "./io.ts";
 import { isBridge, runBridge } from "./mcp.ts";
 import { openCommand, servicePortCommand, type OpenOptions } from "./open.ts";
 import { bodyOf, printError, printUsage } from "./output.ts";
-import { rootsCommand } from "./roots.ts";
 import { runCommand } from "./runs.ts";
 import { refusedArgument, refusedGlobal, serviceCommand, serviceUsage } from "./service.ts";
 import { setupCommand, type SetupOptions } from "./setup.ts";
@@ -132,8 +131,6 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
       // `ttasks recover <space>` is `ttasks space recover <space>` under a second name.
       case "recover":
         return await spaceCommand(io, globals, ["recover", ...args], options);
-      case "roots":
-        return rootsCommand(io, globals, args);
       case "view":
         return await viewCommand(io, globals, args, options);
       case "run":

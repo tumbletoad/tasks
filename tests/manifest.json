@@ -832,7 +832,7 @@
     },
     {
       "id": "A3.3.4.folders.cli",
-      "title": "Folders at the command line: ttasks add and ttasks set give a task its folder with --folder, a folder relative to the working one, folder= and --here, and --clear folder takes it away; --here beside --folder is a usage error; ttasks area create --folder --create makes a folder that is not there and binds it, one undo takes the project, its new area and its folder back and leaves the folder on disk; --folder . --create binds an existing folder; a refused call removes the folder --create made; ttasks area list and ttasks show print the folders; the old --place and place= name --folder",
+      "title": "Folders at the command line: ttasks add and ttasks set give a task its folder with --folder, a folder relative to the working one, folder= and --here, and --clear folder takes it away; --here beside --folder is a usage error; ttasks area create --folder --create makes a folder that is not there and binds it, one undo takes the project, its new area and its folder back and leaves the folder on disk; --folder . --create binds an existing folder; a refused call removes the folder --create made; ttasks area list and ttasks show print the folders",
       "source": "A2 3.10, A3 3.4.13",
       "owner": "M4",
       "kind": "ci",
@@ -3889,7 +3889,7 @@
     },
     {
       "id": "A2.3.2.4.hub.spaces",
-      "title": "The hub hosts the enabled [[spaces]] of machine.toml, takes [log] level from it, names a retired [roots] section once and leaves it and the old roots' revisions as they are, and refuses an invalid machine.toml with 64 and a line that names the key and code but no value",
+      "title": "The hub hosts the enabled [[spaces]] of machine.toml, takes [log] level from it, names a section it does not read and leaves it as it is, and refuses an invalid machine.toml with 64 and a line that names the key and code but no value",
       "source": "A2 3.2.4, A2 3.3.1, A7 3.9 M2.06",
       "owner": "M2",
       "kind": "ci",
@@ -4244,13 +4244,6 @@
       "title": "The in-folder check in real child processes started in the resolved folder: unchanged it passes and an agent the child starts is there too; a swap before the start is refused; a swap between the start and the check leaves the child in the resolved directory (Linux) or is impossible (Windows); A-B-A swaps are refused, except Windows' documented residual through a link taken out again; a changed remote, a removed folder and a folder moved out of the root are refused",
       "source": "A4 3.3",
       "owner": "M2",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A1.3.15.roots.retired",
-      "title": "Roots are retired: a machine.toml with [roots] sections parses, doctor names them once as lines that do nothing, ttasks roots points to where tasks open now and its add fails, and no command changes the file",
-      "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
@@ -6398,14 +6391,6 @@
       "title": "The end of an install whose service runs another version: at a terminal one question that says what a restart ends, and a yes restarts it; otherwise, after a no, a failed restart or in an agent's shell, the last lines name the running version and the one restart command, quoted for the shell",
       "source": "A2 3.12.4, A2 3.3.5",
       "owner": "M6",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A2.3.12.4.install.earlier-folder",
-      "title": "An install that finds the data folder of a build from before the rename names it and how to open a space from it, and says nothing without one",
-      "source": "A2 3.12.4",
-      "owner": "M1",
       "kind": "ci",
       "profiles": ["v1"]
     },

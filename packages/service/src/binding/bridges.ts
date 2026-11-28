@@ -2,8 +2,6 @@
 // The space is settled here and nowhere else, so no call ever picks or pins one for a bridge:
 // - what its process holds from an earlier bind (the bind frame's `held_space`) wins: a space, or
 //   none, which it keeps for its life;
-// - an older bridge that reconnects with a handle and holds nothing is in a space it cannot name:
-//   one its entry names, else none, so it cannot be moved to the default of this moment;
 // - else a session's space is its launch's or run's, whatever its entry names (the grant gate
 //   refuses it there until its home is registered for that space);
 // - else the entry's `--space`, else the machine's default, else the only space. The default and
@@ -103,11 +101,7 @@ export class Bridges {
   /** The space of a connection that is none. */
   #spaceOf(context: JsonObject, held: string | null | undefined): string | undefined {
     if (held !== undefined) return held ?? undefined;
-    const named = word(context["space"]);
-    const resume = context["resume"];
-    const older = isObject(resume) && typeof resume["handle"] === "string";
-    if (older && named === null) return undefined;
-    return this.#settle(named);
+    return this.#settle(word(context["space"]));
   }
 
   /** The space of a connection that is none and holds none: its entry's, the default, the only. */

@@ -34,14 +34,12 @@ const OLD_NAMES: readonly RegExp[] = [
 
 // What keeps the old identifier on purpose: the repository's address and site; the approval hash's
 // domain, which pins every approval in machine.toml; the sample generator's seed, which the frozen
-// sample digests depend on; the folder a machine keeps its test installs in; and the one
-// declaration that names the earlier data folder, so install can say what it is.
+// sample digests depend on; and the folder a machine keeps its test installs in.
 const KEPT: readonly RegExp[] = [
   /tumbletoad(?:\.com)?\/tasks\b/g,
   /tasks-approval\/1/g,
   /tasks-mira:/g,
   /tasks-test\b/g,
-  /^export const EARLIER_DATA_FOLDER = "\.tasks";$/g,
 ];
 
 /** This file, which spells the old forms to test that each is found. */
@@ -140,7 +138,6 @@ describe("[A7.3.2.brand.old-names] the product's earlier names do not come back"
       "tasks-approval/1",
       "`tasks-mira:${String(seed)}`",
       "the tasks-test folder",
-      'export const EARLIER_DATA_FOLDER = ".tasks";',
     ];
     for (const line of current) expect(oldNames("x", line), line).toEqual([]);
   });

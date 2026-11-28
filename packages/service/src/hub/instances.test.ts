@@ -92,12 +92,10 @@ describe("[A4.3.2.setup.instances-service] the service writes and takes back [[i
     await expect(
       add({ entries: [codex({ env: { CODEX_HOME: "codex-b" } })] }, "cli-interactive"),
     ).rejects.toMatchObject({ code: "invalid_input" });
-    // Keys this command never writes (T3's provider instance and model among them: T3 Code opens
-    // on the profile chosen in T3), the hand-made entry's ID.
+    // Keys this command never writes, the hand-made entry's ID.
     for (const entry of [
       codex({ open_permission: "full" }),
-      codex({ target: "t3", t3_environment: "local", t3_provider_instance: "codex" }),
-      codex({ t3_model: "m" }),
+      codex({ not_a_key: "x" }),
       codex({ id: "manual" }),
     ]) {
       await expect(add({ entries: [entry] }, "cli-interactive")).rejects.toMatchObject({
