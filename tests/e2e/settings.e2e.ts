@@ -5,7 +5,6 @@
 // single-letter setting takes the single keys away; the tooltip shows on hover and on keyboard
 // focus. The service's detection sees the same two terminals on every OS (serve-entry.ts).
 import { expect, type Page } from "@playwright/test";
-import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { test } from "./fixture.ts";
 import {
   axeFound,
@@ -18,8 +17,6 @@ import {
   watchViolations,
 } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
-
-const LEGACY_THEME_KEY = `${PRODUCT_ID}.theme`;
 
 async function open(page: Page, world: World, path: string): Promise<void> {
   await signIn(page, world, `/s/${world.mira.id}${path}`);
@@ -46,7 +43,7 @@ async function rest(page: Page): Promise<void> {
 }
 
 test.describe("[A7.3.12.m5-11.e2e.theme] The theme is this machine's: every tab and browser here follows it", () => {
-  test("a choice shows at once, a second tab follows live, a fresh profile paints it first, and the browser keeps nothing", async ({
+  test("a choice shows at once, a second tab follows live, and a fresh profile paints it first", async ({
     page,
     browser,
     world,
@@ -74,9 +71,6 @@ test.describe("[A7.3.12.m5-11.e2e.theme] The theme is this machine's: every tab 
         expect(await response?.text()).toContain('data-theme="washi"');
         await showsSpace(other, world.mira.name);
         await expect(html(other)).toHaveAttribute("data-theme", "washi");
-        expect(await other.evaluate((key) => localStorage.getItem(key), LEGACY_THEME_KEY)).toBe(
-          null,
-        );
         await choose(theme(page), "System");
         await expect(html(other)).toHaveAttribute("data-theme", "system", { timeout: SLOW_MS });
         await expect(html(second)).toHaveAttribute("data-theme", "system", { timeout: SLOW_MS });
@@ -87,34 +81,6 @@ test.describe("[A7.3.12.m5-11.e2e.theme] The theme is this machine's: every tab 
       await expect(html(second)).toHaveAttribute("data-theme", "sumi", { timeout: SLOW_MS });
       expect(await violations(page)).toEqual([]);
     } finally {
-      await world.machine("ui.theme", null);
-    }
-  });
-
-  test("a theme an older build kept in this browser is handed to this machine once", async ({
-    browser,
-    world,
-  }) => {
-    const context = await browser.newContext();
-    try {
-      const page = await context.newPage();
-      await page.addInitScript((key) => {
-        // Only the first load carries it, as an update would find it.
-        if (sessionStorage.getItem("seeded") === null) {
-          sessionStorage.setItem("seeded", "1");
-          localStorage.setItem(key, "washi");
-        }
-      }, LEGACY_THEME_KEY);
-      await open(page, world, "/today");
-      await expect(html(page)).toHaveAttribute("data-theme", "washi", { timeout: SLOW_MS });
-      await expect
-        .poll(() => page.evaluate((key) => localStorage.getItem(key), LEGACY_THEME_KEY))
-        .toBeNull();
-      // This machine holds it now: the shell is served in it.
-      await page.reload();
-      await expect(html(page)).toHaveAttribute("data-theme", "washi");
-    } finally {
-      await context.close();
       await world.machine("ui.theme", null);
     }
   });

@@ -3016,7 +3016,6 @@ Finished tasks, newest first, a page at a time: the page's Completed view.
 | `rows[].run.instance` | string | yes | The run's agent instance |
 | `rows[].last` | object | no | The agent instances it was last opened in and last ran with |
 | `rows[].last.open` | string | no | The instance of its newest Open that was not refused |
-| `rows[].last.open_route` | string | no | How that Open opened: t3-mcp names T3 Code also when its instance is gone |
 | `rows[].last.run` | string | no | The instance of its newest run |
 | `rows[].questions` | object[], max 10 items | no | Questions agents asked that wait for the person, newest first |
 | `rows[].questions[].ref` | string | yes | The log entry, such as l3, or the run that ended with it |
@@ -4012,7 +4011,6 @@ What is in the Trash, newest change first, a page at a time.
 | `rows[].run.instance` | string | yes | The run's agent instance |
 | `rows[].last` | object | no | The agent instances it was last opened in and last ran with |
 | `rows[].last.open` | string | no | The instance of its newest Open that was not refused |
-| `rows[].last.open_route` | string | no | How that Open opened: t3-mcp names T3 Code also when its instance is gone |
 | `rows[].last.run` | string | no | The instance of its newest run |
 | `rows[].questions` | object[], max 10 items | no | Questions agents asked that wait for the person, newest first |
 | `rows[].questions[].ref` | string | yes | The log entry, such as l3, or the run that ended with it |

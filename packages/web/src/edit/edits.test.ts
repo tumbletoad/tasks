@@ -886,7 +886,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     expect(restored.calls).toEqual([]);
     expect(restored.edits.unsaved("t_00001", "priority")).toBe(line);
     expect(saves).toEqual([]);
-    // A failed edit kept with no base (an earlier build) alike.
+    // A failed edit kept with no base alike.
     const old = new World([task(1)], { load: () => [kept(undefined)], save: () => undefined });
     const none = old.edits.unsaved("t_00001", "priority");
     expect(none === undefined ? undefined : old.edits.restored(none)).toBe(true);
@@ -1801,20 +1801,6 @@ describe("[A5.3.12.web.undo-levels] the effort levels beside Undo: a checked row
     await flush();
     expect(w.calls.filter((c) => c.name === "task.update")).toHaveLength(1);
     expect(w.edits.unsaved("t_00001", "effort")?.change.set).toEqual({ effort: "M" });
-  });
-
-  test("a size kept by an earlier build, which does not say its levels, is chosen again", async () => {
-    const w = new World([task(1)]);
-    w.answer("task.update", () => {
-      throw appError("internal", {});
-    });
-    w.edits.edit(task(1), effortChange("M"));
-    await flush();
-    w.edits.apply("t_00001", "effort");
-    await flush();
-    expect(w.calls.filter((c) => c.name === "task.update")).toHaveLength(1);
-    const kept = w.edits.unsaved("t_00001", "effort");
-    expect(kept === undefined ? undefined : w.edits.relevelled(kept)).toBe(true);
   });
 });
 

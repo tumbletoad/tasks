@@ -151,12 +151,12 @@ describe("[A1.5.projection.render] index.md gives a timed deadline the local day
   });
 });
 
-describe("[A1.5.projection.recovery] files an earlier build made say what this one says after its first start", () => {
-  test("a record without a renderer renders every task again, each file replaced in place, none moved aside", async () => {
+describe("[A1.5.projection.recovery] files an earlier renderer made say what this one says after its first start", () => {
+  test("a record of an earlier renderer renders every task again, each file replaced in place, none moved aside", async () => {
     const task = activeTask();
     w.submit([{ kind: "task.patch", task, set: { status: "waiting", waiting_on: "Tomas" } }]);
     await project();
-    // The file as the earlier build wrote it, and its record, which proves it ours.
+    // The file as an earlier renderer wrote it, and its record, which proves it ours.
     const line = catalogOf(w.dir).find((l) => l.id === task);
     if (line === undefined) throw new Error("the task is in the catalogue");
     const abs = join(w.dir, ...line.path.split("/"));
@@ -167,10 +167,10 @@ describe("[A1.5.projection.recovery] files an earlier build made say what this o
     writeFileSync(abs, old);
     chmodSync(abs, 0o444);
     const record = JSON.parse(readFileSync(w.record, "utf8")) as {
-      renderer?: number;
+      renderer: number;
       files: Record<string, { sha256: string; size: number }>;
     };
-    delete record.renderer;
+    record.renderer = 1;
     const file = record.files[line.path];
     if (file === undefined) throw new Error("the record holds the file");
     file.sha256 = createHash("sha256").update(old).digest("hex");

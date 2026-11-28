@@ -24,25 +24,16 @@ export const SUMMARY_MAX = 400;
 export const TEXT_MAX = 65_536;
 
 const draftName = (space: string, task: string) => `draft.${space}.${task}`;
-/** Each note on its way is kept under its own request ID; a name without one is an earlier build's. */
+/** Each note on its way is kept under its own request ID. */
 const notePrefix = (space: string, task: string) => `note.${space}.${task}`;
 const titlePrefix = (space: string, task: string) => `title.${space}.${task}.`;
 const textPrefix = (space: string, task: string) => `text.${space}.${task}.`;
-/**
- * Each refused edit under its own ID. An empty ID is an earlier build's, one per field, under a
- * prefix that build reads and clears of every name it cannot parse: the others stay out of it.
- */
+/** Each refused edit under its own ID. */
 const editPrefix = (space: string) => `edit.${space}.`;
-const legacyPrefix = (space: string) => `unsaved.${space}.`;
 const editName = (space: string, task: string, field: string, id: string) =>
-  id === ""
-    ? `${legacyPrefix(space)}${task}.${field}`
-    : `${editPrefix(space)}${task}.${field}.${id}`;
-const editNames = (space: string): string[] => [
-  ...browserKept.names(editPrefix(space)),
-  ...browserKept.names(legacyPrefix(space)),
-];
-const KINDS = ["draft.", "note.", "title.", "text.", "edit.", "unsaved."] as const;
+  `${editPrefix(space)}${task}.${field}.${id}`;
+const editNames = (space: string): string[] => browserKept.names(editPrefix(space));
+const KINDS = ["draft.", "note.", "title.", "text.", "edit."] as const;
 
 const listeners = new Set<() => void>();
 let hearing: (() => void) | undefined;
@@ -138,13 +129,13 @@ function notesAt(
   task: string,
 ): { readonly name: string; readonly note: NoteRequest }[] {
   const prefix = notePrefix(space, task);
-  return [prefix, ...browserKept.names(`${prefix}.`).sort()].flatMap((name) => {
-    const note = noteOf(browserKept.json(name));
-    // Under its own ID, or under the task's name alone as an earlier build kept it.
-    return note !== undefined && (name === prefix || name === `${prefix}.${note.id}`)
-      ? [{ name, note }]
-      : [];
-  });
+  return browserKept
+    .names(`${prefix}.`)
+    .sort()
+    .flatMap((name) => {
+      const note = noteOf(browserKept.json(name));
+      return note !== undefined && name === `${prefix}.${note.id}` ? [{ name, note }] : [];
+    });
 }
 
 /** The task's notes on their way, in a fixed order. */
@@ -417,7 +408,7 @@ function keptOf(unsaved: Unsaved): string | undefined {
   const source = unsaved.change.source;
   if (source === undefined) return undefined;
   return JSON.stringify({
-    ...(unsaved.id === "" ? {} : { id: unsaved.id }),
+    id: unsaved.id,
     tab: TAB,
     task: unsaved.task,
     ref: unsaved.ref,
@@ -434,7 +425,7 @@ function keptOf(unsaved: Unsaved): string | undefined {
 export function unsavedOf(value: unknown): Unsaved | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const { id, task, ref, field, reason, base, by, at, source } = value as Record<string, unknown>;
-  if (id !== undefined && (typeof id !== "string" || !NOTE_ID.test(id))) return undefined;
+  if (typeof id !== "string" || !NOTE_ID.test(id)) return undefined;
   if (typeof task !== "string" || !TASK_ID.test(task)) return undefined;
   if (typeof ref !== "string" || !REF.test(ref)) return undefined;
   if (typeof field !== "string" || !FIELDS.has(field)) return undefined;
@@ -445,7 +436,7 @@ export function unsavedOf(value: unknown): Unsaved | undefined {
   const change = changeOf(source);
   if (change === undefined || !change.fields.includes(field as Field)) return undefined;
   return {
-    id: id ?? "",
+    id,
     task,
     ref,
     field: field as Field,
@@ -487,7 +478,7 @@ function keptEditsOf(space: string): KeptEdit[] {
 /**
  * The tab's edits that wait, kept for the browser per space. A tab writes only the edits it made,
  * and changes or removes one only while the browser still holds what the tab kept there. An edit
- * another tab kept, or an earlier build, is never this tab's: it is listed (`useKeptEdits`), and
+ * another tab kept is never this tab's: it is listed (`useKeptEdits`), and
  * the person copies or discards it.
  */
 export function unsavedKeeper(space: string): UnsavedKeeper {
@@ -507,7 +498,7 @@ export function unsavedKeeper(space: string): UnsavedKeeper {
         // This tab's own from before a reload, one per field. A copy of this tab keeps the others.
         const { unsaved, value, tab } = kept;
         const field = `${unsaved.task}.${unsaved.field}`;
-        if (tab !== TAB || unsaved.id === "" || fields.has(field)) continue;
+        if (tab !== TAB || fields.has(field)) continue;
         fields.add(field);
         found.push(unsaved);
         known.set(name, { unsaved, value });
@@ -587,7 +578,7 @@ export type Unsent =
       readonly shown: Words;
       readonly field: Field;
       readonly ref: string;
-      /** The edit's own ID; empty for an earlier build's. */
+      /** The edit's own ID. */
       readonly id: string;
       /** The edit as kept: its value. */
       readonly value: string;
@@ -595,13 +586,10 @@ export type Unsent =
 
 const after = (prefix: string): string[] =>
   browserKept.names(prefix).map((name) => name.slice(prefix.length));
-/** The task of a title's name, which ends in its tab. */
+/** The task of a title's or a note's name, which ends in its tab or its request ID. */
 const taskOf = (rest: string): string => rest.slice(0, Math.max(0, rest.lastIndexOf(".")));
 /** The task of an edit's name, which its field and ID follow. */
 const editTask = (rest: string): string => rest.split(".")[0] ?? "";
-/** The task of a note's name, which ends in its request ID, or in the task as an earlier build's. */
-const noteTask = (rest: string): string =>
-  NOTE_ID.test(rest.split(".").pop() ?? "") ? taskOf(rest) : rest;
 
 /** Every kept value of `space`, of every task and kind. */
 export function unsentOf(space: string): Unsent[] {
@@ -610,7 +598,7 @@ export function unsentOf(space: string): Unsent[] {
     const text = readDraft(space, task);
     if (wordsOf(text) !== "") out.push({ kind: "draft", key: `${task}:draft`, task, text });
   }
-  for (const task of new Set(after(`note.${space}.`).map(noteTask))) {
+  for (const task of new Set(after(`note.${space}.`).map(taskOf))) {
     for (const note of readNotes(space, task)) {
       out.push({
         kind: "note",
@@ -739,11 +727,10 @@ export function letGo(space: string, held: Held): void {
 export function unsentTasks(space: string): string[] {
   const tasks = [
     ...after(`draft.${space}.`),
-    ...after(`note.${space}.`).map(noteTask),
+    ...after(`note.${space}.`).map(taskOf),
     ...after(`title.${space}.`).map(taskOf),
     ...after(`text.${space}.`).map(editTask),
     ...after(editPrefix(space)).map(editTask),
-    ...after(legacyPrefix(space)).map(editTask),
   ];
   return [...new Set(tasks.filter((task) => task !== ""))];
 }
@@ -751,7 +738,6 @@ export function unsentTasks(space: string): string[] {
 /** Lets go of everything kept under `task`: a name that is no task's at all (leftovers.ts). */
 export function forgetTask(space: string, task: string): void {
   browserKept.keep(draftName(space, task), undefined);
-  browserKept.keep(notePrefix(space, task), undefined);
   for (const name of browserKept.names(`${notePrefix(space, task)}.`)) {
     browserKept.keep(name, undefined);
   }
@@ -761,10 +747,7 @@ export function forgetTask(space: string, task: string): void {
   ]) {
     browserKept.keep(name, undefined);
   }
-  for (const name of [
-    ...browserKept.names(`${editPrefix(space)}${task}.`),
-    ...browserKept.names(`${legacyPrefix(space)}${task}.`),
-  ]) {
+  for (const name of browserKept.names(`${editPrefix(space)}${task}.`)) {
     browserKept.keep(name, undefined);
   }
   tell();
