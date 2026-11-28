@@ -507,12 +507,13 @@ function target(conn: Connection, kind: "undo" | "redo", principal: string): Row
 
 const FACTS = {
   id: "SELECT id FROM commits WHERE seq = $seq",
+  // In the order the step changed them, as a person selected them.
   tasks:
-    "SELECT DISTINCT t.ref FROM changes c JOIN tasks t ON t.id = c.node_id WHERE c.seq = $seq " +
-    "ORDER BY t.ref",
+    "SELECT t.ref FROM changes c JOIN tasks t ON t.id = c.node_id WHERE c.seq = $seq " +
+    "GROUP BY t.ref ORDER BY min(c.n)",
   lifecycles:
-    "SELECT DISTINCT t.ref FROM changes c JOIN tasks t ON t.id = c.entity_id WHERE c.seq = $seq " +
-    "AND c.entity = 'tasks' AND c.field = 'lifecycle' ORDER BY t.ref",
+    "SELECT t.ref FROM changes c JOIN tasks t ON t.id = c.entity_id WHERE c.seq = $seq " +
+    "AND c.entity = 'tasks' AND c.field = 'lifecycle' GROUP BY t.ref ORDER BY min(c.n)",
 } as const;
 
 /** Most tasks an answer names of a step, as today's answer names them. */

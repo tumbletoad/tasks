@@ -13,6 +13,7 @@ import type { Id } from "../ids.ts";
 import { formatEntryRef, parseTaskRef } from "../refs.ts";
 import {
   NO_SUCH_TASK,
+  NOT_NOW,
   OTHER_SPACE_TASK,
   WRITE_LIMITS,
   type Operation,
@@ -22,9 +23,9 @@ import {
   type TaskLifecycle,
   type TextNode,
 } from "../write/request.ts";
-import { problem, refText } from "./commands.ts";
+import { captured, problem, refText } from "./commands.ts";
 import { TreeProblem } from "./fields.ts";
-import type { Tx } from "./tx.ts";
+import type { TreeConflict, Tx } from "./tx.ts";
 
 const SQL = {
   task:
@@ -37,7 +38,8 @@ const SQL = {
     "SELECT n.id FROM nodes n JOIN nodes p ON p.id = n.parent_id WHERE n.kind = 'project' " +
     "AND n.slug = $slug AND n.deleted_at IS NULL ORDER BY (p.kind = $above) DESC LIMIT 1",
   note: "SELECT id, ordinal, kind, version FROM notes WHERE id = $id",
-  noteAt: "SELECT id, ordinal, kind FROM notes WHERE owner_id = $owner AND ordinal = $ordinal",
+  noteAt:
+    "SELECT id, ordinal, kind, deleted_at FROM notes WHERE owner_id = $owner AND ordinal = $ordinal",
   newestLog:
     "SELECT id, ordinal FROM notes WHERE owner_id = $owner AND body = $body AND deleted_at IS NULL " +
     "ORDER BY ordinal DESC LIMIT 1",
@@ -190,8 +192,9 @@ interface Matched {
   readonly active: boolean;
 }
 
-/** A group the request makes: the tree's ID for it, and whether it was made. */
+/** A group the request makes: its operation, the tree's ID for it, and whether it was made. */
 interface Group {
+  readonly i: number;
   readonly tree: string;
   readonly title: string;
   /** Today's key of its area, for a project in one. */
@@ -228,16 +231,32 @@ class Plan {
 /** Runs today's `ops` on the tree, in order, and gives today's result of each. */
 export function runPlan(tx: Tx, ops: readonly Operation[]): OpResult[] {
   const plan = new Plan(tx, ops);
+  // As today's writer stages a request: every task it names is found before anything is written.
+  const drafts = new Set(ops.flatMap((op) => (op.kind === "task.create" && op.id ? [op.id] : [])));
+  ops.forEach((op, i) => {
+    const key = "task" in op && typeof op.task === "string" ? op.task : undefined;
+    if (key === undefined || drafts.has(key as Id<"t">)) return;
+    try {
+      const task = taskRow(plan, key);
+      // Only the Trash's own operations name a task in it.
+      const trash = op.kind === "task.delete" || op.kind === "task.restore";
+      if (task["deleted_at"] !== null && !trash) problem("DELETED", "The task is deleted", "task");
+    } catch (error) {
+      if (error instanceof TreeProblem) error.op = i;
+      throw error;
+    }
+  });
   const runs: { i: number; from: number; to: number; done: Done }[] = [];
   ops.forEach((_, i) => {
     const from = tx.mark;
     const clashes = tx.conflicts.length;
+    tx.op = i;
     try {
       const done = plan.taken.get(i) ?? runOne(plan, i);
       runs.push({ i, from, to: tx.mark, done });
-      for (const c of tx.conflicts.slice(clashes)) c.op = i;
+      for (const c of tx.conflicts.slice(clashes)) asToday(tx, c, i);
     } catch (error) {
-      for (const c of tx.conflicts.slice(clashes)) c.op = i;
+      for (const c of tx.conflicts.slice(clashes)) asToday(tx, c, i);
       if (error instanceof TreeProblem && error.op === undefined) error.op = i;
       throw error;
     }
@@ -256,6 +275,39 @@ export function runPlan(tx: Tx, ops: readonly Operation[]): OpResult[] {
     if (ops[i]?.kind === "task.wrap_up" && status === "created") result.status = "updated";
     return result;
   });
+}
+
+/**
+ * A conflict as today's writer names it: of operation `i`, and a task's place in the tree as its
+ * area and project (`grouping`).
+ */
+function asToday(tx: Tx, c: TreeConflict, i: number): void {
+  c.op = i;
+  if (c.entity !== "nodes") return;
+  const at = tx.get(SQL.node, { id: c.id });
+  if (at?.["kind"] !== "task") {
+    // A node's texts are today's own row; the rest of a project is an area's or a project's.
+    const texts =
+      ["description", "for_agents"].includes(c.field) ||
+      (at?.["kind"] === "space" && c.field === "brief");
+    const above = texts ? undefined : tx.get(SQL.node, { id: String(at?.["parent_id"]) });
+    c.entity = texts ? "node_texts" : above?.["kind"] === "space" ? "areas" : "projects";
+    return;
+  }
+  if (c.field !== "place") return;
+  const was = (c.value ?? {}) as { parent_id?: unknown; position?: unknown };
+  const parent = typeof was.parent_id === "string" ? was.parent_id : "";
+  const node = tx.get(SQL.node, { id: parent });
+  const above =
+    node === undefined ? undefined : tx.get(SQL.node, { id: String(node["parent_id"]) });
+  const groups =
+    node?.["kind"] !== "project"
+      ? { area_id: null, project_id: null }
+      : above?.["kind"] === "project"
+        ? { area_id: String(above["id"]), project_id: parent }
+        : { area_id: parent, project_id: null };
+  c.field = "grouping";
+  c.value = { ...groups, position: was.position ?? null };
 }
 
 function versionOf(tx: Tx, row: Done["row"], status: string): number {
@@ -277,18 +329,18 @@ function versionOf(tx: Tx, row: Done["row"], status: string): number {
 }
 
 /** A task by today's key (an ID or `M-14`), refused as today's writer refuses one. */
-function taskRow(plan: Plan, key: string): Row {
+function taskRow(plan: Plan, key: string, field = "task"): Row {
   const { tx } = plan;
   const id = plan.matched.get(key)?.task ?? key;
   const parsed = parseTaskRef(id);
   if (parsed !== undefined && parsed.prefix !== tx.space.refPrefix) {
-    problem("SPACE_MISMATCH", OTHER_SPACE_TASK, "task");
+    problem("SPACE_MISMATCH", OTHER_SPACE_TASK, field);
   }
   const found =
     parsed === undefined
       ? tx.get(SQL.task, { id })
       : tx.get(SQL.task, { id: String(tx.get(SQL.byRef, { ref: parsed.ref })?.["id"]) });
-  return found ?? problem("NOT_FOUND", NO_SUCH_TASK, "task");
+  return found ?? problem("NOT_FOUND", NO_SUCH_TASK, field);
 }
 
 const named = (row: Row, tx: Tx) => ({
@@ -339,16 +391,17 @@ function groupInputs(plan: Plan, key: string | undefined): Record<string, unknow
   ];
 }
 
-/** Marks the groups of `inputs` made, after a command made them. */
-function madeAll(plan: Plan, inputs: readonly Record<string, unknown>[]): void {
-  for (const group of plan.groups.values()) {
-    if (inputs.some((p) => p["id"] === group.tree)) group.made = true;
-  }
-}
-
+/** Makes the groups of `inputs`, each as its own operation's change, as today's rows say it. */
 function make(plan: Plan, inputs: readonly Record<string, unknown>[]): void {
-  for (const input of inputs) plan.tx.call("project.create", input);
-  madeAll(plan, inputs);
+  const { tx } = plan;
+  const now = tx.op;
+  for (const input of inputs) {
+    const group = [...plan.groups.values()].find((g) => g.tree === input["id"]);
+    tx.op = group?.i ?? now;
+    tx.call("project.create", input);
+    if (group !== undefined) group.made = true;
+  }
+  tx.op = now;
 }
 
 /** Where today's placement puts a task in the tree, and the groups it needs made first. */
@@ -388,7 +441,7 @@ function ownerOf(tx: Tx, id: string): { kind: PageOwner["kind"]; id: string } {
 }
 
 /** The tree's key for today's node or page owner. */
-function nodeKey(plan: Plan, node: PageOwner | TextNode): string {
+function nodeKey(plan: Plan, node: PageOwner | TextNode, field = "node"): string {
   switch (node.kind) {
     case "space":
       return "space";
@@ -396,8 +449,11 @@ function nodeKey(plan: Plan, node: PageOwner | TextNode): string {
       return groupNode(plan, node.area, "area", "area");
     case "project":
       return groupNode(plan, node.project, "project", "project");
-    case "task":
-      return String(taskRow(plan, node.task)["id"]);
+    case "task": {
+      const task = taskRow(plan, node.task, `${field}.id`);
+      if (task["deleted_at"] !== null) problem("DELETED", "The task is deleted", `${field}.id`);
+      return String(task["id"]);
+    }
   }
 }
 
@@ -446,13 +502,14 @@ function runOne(plan: Plan, i: number): Done {
       const task = taskRow(plan, op.task);
       const id = String(task["id"]);
       const before = groupsOf(tx, id);
+      // As today's: a filing is held to the base, whether or not it moves the task.
+      tx.held("nodes", id, id, ["place"]);
       const where = placement(plan, op.area, op.project);
+      make(plan, where.projects);
       call(tx, "task.move", {
         task: id,
         ...(where.under === undefined ? {} : { under: where.under }),
-        ...(where.projects.length === 0 ? {} : { projects: where.projects }),
       });
-      madeAll(plan, where.projects);
       const now = groupsOf(tx, id);
       const fields = (["area", "project"] as const).filter((f) => before[f] !== now[f]);
       return { ...named(task, tx), ...(fields.length === 0 ? {} : { fields }) };
@@ -461,7 +518,11 @@ function runOne(plan: Plan, i: number): Done {
     case "task.archive": {
       const task = taskRow(plan, op.task);
       if (task["lifecycle"] !== "active" && op.if_active !== true) {
-        problem("INVALID_TRANSITION", "The task is not active", "task");
+        problem(
+          "INVALID_TRANSITION",
+          NOT_NOW[op.kind === "task.archive" ? "archive" : "complete"],
+          "task",
+        );
       }
       const dropped = op.kind === "task.archive";
       call(tx, "task.finish", {
@@ -476,6 +537,7 @@ function runOne(plan: Plan, i: number): Done {
       return wrapUp(plan, op.task, op.outcome, op.once === true);
     case "task.reopen": {
       const task = taskRow(plan, op.task);
+      if (task["lifecycle"] === "active") problem("INVALID_TRANSITION", NOT_NOW.reopen, "task");
       call(tx, "task.reopen", { task: String(task["id"]) });
       return finished(tx, String(task["id"]), true);
     }
@@ -525,7 +587,13 @@ function runOne(plan: Plan, i: number): Done {
       const task = taskRow(plan, op.task);
       const id = String(task["id"]);
       const note = tx.get(SQL.noteAt, { owner: id, ordinal: op.ordinal });
-      if (note === undefined || (note["kind"] === "note") !== op.kind.startsWith("note.")) {
+      // As today's: an edit is of a live entry; a removed one is found only to be put back.
+      const patch = op.kind === "note.patch" || op.kind === "log.patch";
+      if (
+        note === undefined ||
+        (note["kind"] === "note") !== op.kind.startsWith("note.") ||
+        (patch && note["deleted_at"] !== null)
+      ) {
         problem("NOT_FOUND", "The task has no entry with this number", "ordinal");
       }
       const command =
@@ -548,6 +616,7 @@ function runOne(plan: Plan, i: number): Done {
       // An area's ID is today's; the tree names its projects with its own.
       const tree = op.kind === "project.create" ? key : tx.newId("p");
       const group: Group = {
+        i,
         tree,
         title: op.title,
         area: op.kind === "project.create" && typeof op.area === "string" ? op.area : undefined,
@@ -579,7 +648,7 @@ function runOne(plan: Plan, i: number): Done {
     }
     case "page.create": {
       const said = call(tx, "page.create", {
-        on: nodeKey(plan, op.owner),
+        on: nodeKey(plan, op.owner, "owner"),
         title: op.title,
         brief: op.brief,
         body: op.body,
@@ -594,7 +663,9 @@ function runOne(plan: Plan, i: number): Done {
     case "page.restore": {
       const { kind, page, ...rest } = op;
       const input: Record<string, unknown> =
-        op.kind === "page.move" ? { page, on: nodeKey(plan, op.owner) } : { page, ...rest };
+        op.kind === "page.move"
+          ? { page, on: nodeKey(plan, op.owner, "owner") }
+          : { page, ...rest };
       delete input["owner"];
       const said = call(tx, kind, input) as {
         page: { id: string };
@@ -661,7 +732,7 @@ function wrapUp(plan: Plan, key: string, outcome: string | undefined, once: bool
   const task = taskRow(plan, key);
   const id = String(task["id"]);
   if (task["lifecycle"] === "active") {
-    problem("INVALID_TRANSITION", "Only a finished task is wrapped up", "task");
+    problem("INVALID_TRANSITION", NOT_NOW.wrapUp, "task");
   }
   const wrapped = task["wrap_state"] === "wrapped";
   const same = outcome === undefined || outcome === task["outcome"];
@@ -729,19 +800,16 @@ function taskCreate(plan: Plan, i: number, op: TaskCreate): Done {
   }
   if (log !== undefined) draft["log"] = log.body;
   if (source !== undefined) draft["source"] = source.source;
-  const said = call(
-    tx,
-    "tasks.add",
-    { tasks: [draft], ...(where.projects.length === 0 ? {} : { projects: where.projects }) },
-    "tasks.0.",
-  ) as { tasks: Row[] };
+  // The draft's groups are made only when it does not find its task by its source's key.
+  const key = source?.source.key;
+  if (key === undefined || captured(tx, key).task === undefined) make(plan, where.projects);
+  const said = call(tx, "tasks.add", { tasks: [draft] }, "tasks.0.") as { tasks: Row[] };
   const made = said.tasks[0] as Row;
   const task = tx.get(SQL.task, { id: String(made["id"]) }) as Row;
   const exists = made["status"] === "exists";
   if (exists && id !== undefined) {
     plan.matched.set(id, { task: String(task["id"]), active: task["lifecycle"] === "active" });
   }
-  if (!exists) madeAll(plan, where.projects);
   const base = named(task, tx);
   const on = String(task["id"]) as Id<"t">;
   // As today's: a match takes the log while it is open and has none the same, else leaves it out.
