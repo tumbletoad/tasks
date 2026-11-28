@@ -19,6 +19,8 @@
 //   would, and the session ID its `--session-id` names to `<ref>.sessions`, so a test can make
 //   the Agent Monitor report that session.
 // - FAKE_CLI_VERSION: what it answers to `--version` alone (default 2.1.332, which holds a prefill).
+// - FAKE_CLI_SIGNED_OUT=1: its status command (`auth status`, `login status`) exits 1, not signed
+//   in, as Open asks it before it starts the app; otherwise 0.
 // Its stdin is never read. No real agent, account or home is touched. Tests only.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -52,6 +54,14 @@ export interface CliAgentReport {
 const startedIn = statSync(".", { bigint: true });
 const argv = process.argv.slice(2);
 const env = process.env;
+
+if (
+  argv.length === 2 &&
+  argv[1] === "status" &&
+  (argv[0] === "auth" || argv[0] === "login")
+) {
+  process.exit(env["FAKE_CLI_SIGNED_OUT"] === "1" ? 1 : 0);
+}
 
 // `--version` alone, as Open asks it before it starts Claude Code: the version and nothing else.
 if (argv.length === 1 && argv[0] === "--version") {

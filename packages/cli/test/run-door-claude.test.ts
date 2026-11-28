@@ -53,14 +53,14 @@ const codeOf = (result: unknown): string | undefined => {
 };
 
 /** A Claude Code instance whose program is the fake, replaying `scenario`. */
-const claudeInstance = (id: string, scenario: object): string =>
+const claudeInstance = (id: string, scenario: object, env: Record<string, string> = {}): string =>
   instanceToml({
     id,
     target: "claude-cli",
     label: "Claude Code",
     exec: process.execPath,
     args_prefix: [FAKE],
-    env: { FAKE_CLAUDE_SCENARIO: JSON.stringify(scenario) },
+    env: { FAKE_CLAUDE_SCENARIO: JSON.stringify(scenario), ...env },
   });
 
 beforeAll(async () => {
@@ -95,7 +95,12 @@ beforeAll(async () => {
       callTool: { calls: RUN_CALLS, home },
     }) +
       claudeInstance("claude-slow", { fixture: "windows-interrupt", pace: 2 }) +
-      claudeInstance("claude-out", { fixture: "windows-signed-out" }),
+      claudeInstance("claude-out", { fixture: "windows-signed-out" }) +
+      claudeInstance(
+        "claude-says-out",
+        { fixture: "windows-plain" },
+        { FAKE_CLAUDE_SIGNED_OUT: "1" },
+      ),
   );
   service = await startService({
     env: serviceEnv(home),
@@ -295,7 +300,7 @@ describe("[A4.3.11.run.door-claude] ttasks run with a Claude Code instance: the 
     );
   });
 
-  test("a signed-out Claude Code ends the run with its own words and the command to sign in", async () => {
+  test("a Claude Code whose sign-in is gone by its turn ends the run with its own words and the command to sign in", async () => {
     const ran = await user(["run", task, "--instance", "claude-out", "--wait", "--json", "Hi."]);
     const id = (await runsOf()).find((r) => r.instance === "claude-out")?.id ?? "";
     const shown = JSON.parse((await user(["run", "show", id, "--json"])).stdout) as Record<
@@ -304,5 +309,18 @@ describe("[A4.3.11.run.door-claude] ttasks run with a Claude Code instance: the 
     >;
     expect(shown, ran.stdout).toMatchObject({ state: "failed", outcome: "agent_error" });
     expect(JSON.stringify(shown)).toContain("Sign in with: claude auth login");
+  });
+
+  test("a Claude Code that says it is not signed in is not started: Run says so with the line that signs it in", async () => {
+    const before = (await runsOf()).length;
+    const ran = await user(["run", task, "--instance", "claude-says-out", "--json", "Hi."]);
+    expect(ran.code).not.toBe(0);
+    const said = JSON.parse(ran.stdout) as {
+      error: { hint: string; data: Record<string, unknown> };
+    };
+    expect(said.error.data["reason"]).toBe("signed_out");
+    expect(String(said.error.data["login"])).toMatch(/ auth login$/u);
+    expect(said.error.hint).toContain(String(said.error.data["login"]));
+    expect((await runsOf()).length).toBe(before);
   });
 });

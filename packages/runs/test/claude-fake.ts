@@ -431,6 +431,14 @@ async function main(): Promise<void> {
       .unref()
       .on("error", () => undefined);
   }
+  // What Run asks before it starts the app: its version, and signed in as the recordings were made,
+  // or not with FAKE_CLAUDE_SIGNED_OUT=1.
+  const asked = process.argv.slice(2).join(" ");
+  if (asked === "--version") {
+    process.stdout.write("2.1.332 (Claude Code)\n");
+    process.exit(0);
+  }
+  if (asked === "auth status") process.exit(process.env["FAKE_CLAUDE_SIGNED_OUT"] === "1" ? 1 : 0);
   // Never outlives a minute, so a broken process group cannot leave it running for long.
   setTimeout(() => process.exit(124), 60_000).unref();
   // A program that ignores the end of its input needs something to keep it alive.

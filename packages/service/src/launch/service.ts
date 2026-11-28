@@ -62,6 +62,7 @@ import {
   servesSpace,
   sanitiseComposer,
   instanceHome,
+  instanceReadiness,
   instanceVersion,
   inTestedRange,
   isOpenLaunch,
@@ -802,6 +803,7 @@ export class LaunchService {
           this.#options.spaces().find((s) => s.id === elsewhere)?.name,
         );
       }
+      await this.#signedIn(instance);
     }
     // The directory whose marker was checked: the dispatch opens nothing in another.
     const at =
@@ -1469,6 +1471,18 @@ ${instance}`;
       removed: brief?.removed ?? false,
       ...(choice?.briefSent === true ? { briefSent: true as const } : {}),
     };
+  }
+
+  /** An app that says it is not signed in is not started: it would only ask the person to. */
+  async #signedIn(instance: Instance): Promise<void> {
+    const ready = await instanceReadiness(instance, {
+      platform: this.#options.platform,
+      base: this.#options.env,
+      home: this.#options.home,
+    });
+    if (ready?.state !== "signed_out") return;
+    this.#log("launch.unavailable", "signed_out");
+    throw new LaunchUnavailable("signed_out", undefined, undefined, ready.login);
   }
 
   #unavailable(reason: LaunchUnavailable["reason"]): LaunchUnavailable {

@@ -48,7 +48,15 @@ export interface AppRow {
   readonly byName: boolean;
   readonly open: Part | undefined;
   readonly tools: Part | undefined;
+  readonly ready: Ready | undefined;
 }
+
+/** Whether the home's app is installed, its version, its sign-in, and the command or page next. */
+export type Ready =
+  | { readonly state: "not_installed"; readonly install: string }
+  | { readonly state: "signed_in"; readonly version: string | undefined }
+  | { readonly state: "signed_out"; readonly version: string | undefined; readonly login: string }
+  | { readonly state: "unknown"; readonly version: string | undefined; readonly status: string };
 
 export interface AppsView {
   readonly space: string;
@@ -144,6 +152,32 @@ function partOf(value: unknown): Part | undefined {
   };
 }
 
+/** A row's readiness; undefined for another shape, or an install page that is not https. */
+function readyOf(value: unknown): Ready | undefined {
+  if (!isRecord(value)) return undefined;
+  const version = text(value["version"], 64);
+  switch (value["state"]) {
+    case "not_installed": {
+      const install = text(value["install"], 400);
+      return install?.startsWith("https://") === true
+        ? { state: "not_installed", install }
+        : undefined;
+    }
+    case "signed_in":
+      return { state: "signed_in", version };
+    case "signed_out": {
+      const login = text(value["login"]);
+      return login === undefined ? undefined : { state: "signed_out", version, login };
+    }
+    case "unknown": {
+      const status = text(value["status"]);
+      return status === undefined ? undefined : { state: "unknown", version, status };
+    }
+    default:
+      return undefined;
+  }
+}
+
 /** The service's view, or an error when it has another shape. */
 export function viewOf(value: unknown): AppsView {
   if (!isRecord(value) || typeof value["space"] !== "string" || !Array.isArray(value["rows"])) {
@@ -167,6 +201,7 @@ export function viewOf(value: unknown): AppsView {
         byName: row["byName"] === true,
         open: partOf(row["open"]),
         tools: partOf(row["tools"]),
+        ready: readyOf(row["ready"]),
       },
     ];
   });

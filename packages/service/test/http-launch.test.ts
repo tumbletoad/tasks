@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { PRODUCT_NAME } from "@ttasks/brand";
 import type { DispatchOutcome, LaunchIntent, OpenResult } from "@ttasks/launch";
+import { FAKE_CLI_AGENT } from "@ttasks/testkit";
 import type { TerminalStart } from "../src/launch/index.ts";
 import { post } from "./http-client.ts";
 import { httpWorld, openFeed, signIn, type HttpWorld } from "./http-world.ts";
@@ -27,6 +28,7 @@ const TOML = [
     target: "claude-cli",
     label: "Fake agent · test",
     exec: process.execPath,
+    args_prefix: [FAKE_CLI_AGENT],
   }),
   // Off, not built here (T3 opens through its own route), and Codex without an executable.
   instanceToml({
@@ -34,6 +36,7 @@ const TOML = [
     target: "claude-cli",
     label: "Off",
     exec: process.execPath,
+    args_prefix: [FAKE_CLI_AGENT],
     enabled: false,
   }),
   instanceToml({ id: "t3-later", target: "t3", label: "T3 · test" }),
@@ -425,6 +428,46 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
         port,
         OPEN,
         { task: task.id, request_id: "click-0000000000000005" },
+        { token, headers },
+      );
+      expect(copied.status).toBe(200);
+    },
+  );
+
+  test(
+    "an app that says it is not signed in is not started: Open says so with the line that signs it in, and Copy still works",
+    SLOW,
+    async () => {
+      const terminal = recordingTerminal();
+      const signedOut = instanceToml({
+        id: "fake-agent",
+        target: "claude-cli",
+        label: "Fake agent · test",
+        exec: process.execPath,
+        args_prefix: [FAKE_CLI_AGENT],
+        env: { FAKE_CLI_SIGNED_OUT: "1" },
+      });
+      const w = await world(terminal.start, signedOut);
+      const task = await addTask(w, "Answer the landlord");
+      const { token } = await signIn(w);
+      const headers = { "ttasks-space": "Mira", "ttasks-build": "source" };
+      const click = { task: task.id, instance: "fake-agent", request_id: "click-0000000000000009" };
+      const refused = await post(w.port(), OPEN, click, { token, headers });
+      expect(refused.status).toBe(400);
+      const { error } = JSON.parse(refused.body) as {
+        error: { code: string; hint: string; data: Record<string, unknown> };
+      };
+      expect(error).toMatchObject({
+        code: "invalid_input",
+        data: { field: "instance", reason: "signed_out" },
+      });
+      expect(String(error.data["login"])).toMatch(/ auth login$/u);
+      expect(error.hint).toContain(String(error.data["login"]));
+      expect(terminal.started).toEqual([]);
+      const copied = await post(
+        w.port(),
+        OPEN,
+        { task: task.id, request_id: "click-0000000000000010" },
         { token, headers },
       );
       expect(copied.status).toBe(200);

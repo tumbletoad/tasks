@@ -305,6 +305,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   instance's environment. Not protected: a federation profile shared by all homes can still
   outrank a home's own sign-in, and a cloud provider's own credentials (`AWS_*`, `GOOGLE_*`) stay,
   so an instance that selects that provider can use them.
+- Whether Claude Code or Codex is signed in is asked of the app's own status command (`claude auth
+  status`, `codex login status`), run in the instance's home: TTasks keeps only its exit code, and
+  never opens, copies or shows the sign-in file or what the command prints. Open and a background
+  run start nothing in an app that says it is not signed in, and say the command that signs it in.
+  Not protected: a sign-in that ends after the check is met by the app itself.
 - Open puts the brief in the agent's prompt box and waits for you to send it, so you can switch
   the model or add a word first: Claude Code, T3 Code, Claude Desktop and the Codex app. Codex has
   no way to wait, so Open sends the brief there as its first turn. So does a Claude Code older than

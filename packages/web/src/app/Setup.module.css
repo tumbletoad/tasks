@@ -196,6 +196,25 @@
   overflow-wrap: anywhere;
 }
 
+.ready {
+  margin: 0 0 4px;
+  padding-inline: 10px;
+  color: var(--k-muted);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.ready:is([data-state="signed_out"], [data-state="not_installed"]) {
+  color: var(--k-late);
+}
+
+.ready code {
+  color: var(--k-text);
+  font-family: var(--k-font-mono);
+  font-size: 0.75rem;
+}
+
 .why {
   margin: 0 0 4px;
   padding-inline: 52px 10px;

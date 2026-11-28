@@ -871,19 +871,16 @@ async function status(
     views.map((view) => ({ view, answer: toolsOf(input, view, "", refusal(view)) })),
   );
   // Each home's app: installed, its version and its sign-in, by the home's first file.
-  const firsts = answers.flatMap((files) => (files[0] === undefined ? [] : [files[0].view]));
-  const readiness = await homesReadiness(
+  const ready = await homesReadiness(
     input,
-    firsts.map((view) => view.home),
+    answers.map((files) => files[0]?.view.home),
   );
-  const readyOf = (view: HomeView | undefined) =>
-    view === undefined ? undefined : readiness[firsts.indexOf(view)];
   if (globals.json) {
     io.stdout(
       `${JSON.stringify({
-        homes: answers.map((files) => {
+        homes: answers.map((files, i) => {
           const [first] = files;
-          const ready = readyOf(first?.view);
+          const said = ready[i];
           const home = homeAnswer(
             files.map(({ view, answer }) => ({ file: view.home.file, answer })),
           );
@@ -897,7 +894,7 @@ async function status(
                   files: files.map(({ view, answer }) => ({ ...viewJson(view), tools: answer })),
                 }),
             row: first === undefined ? null : (rowOf(first.view)?.grant ?? null),
-            ...(ready === undefined ? {} : { ready }),
+            ...(said === undefined ? {} : { ready: said }),
           };
         }),
         service: rows !== undefined,
@@ -906,7 +903,7 @@ async function status(
     return 0;
   }
   if (answers.length === 0) io.stdout("No agent home was found.\n");
-  for (const files of answers) {
+  for (const [i, files] of answers.entries()) {
     const [first] = files;
     if (first === undefined) continue;
     const row = rowOf(first.view);
@@ -920,7 +917,7 @@ async function status(
           : `, grant row ${row.grant ?? "(no ID)"}`;
     const live = rows === undefined ? undefined : row !== undefined;
     io.stdout(`${title(first.view)}\n`);
-    const said = readyOf(first.view);
+    const said = ready[i];
     if (said !== undefined) io.stdout(`  ${readinessText(said)}\n`);
     if (files.length === 1) {
       io.stdout(`  ${toolsLine(first.view, first.answer, live)}${space}${grant}\n`);
@@ -1038,11 +1035,12 @@ async function preview(
     return 0;
   }
   if (parsed.parts.includes("mcp") && items.length === 0) io.stdout("No agent home was found.\n");
-  const groups = homeGroups(input.platform, items, (item) => item.view.home);
-  const firsts = groups.flatMap((files) => (files[0] === undefined ? [] : [files[0].view]));
+  const firsts = homeGroups(input.platform, items, (item) => item.view.home).map(
+    (files) => files[0]?.view,
+  );
   const readiness = await homesReadiness(
     input,
-    firsts.map((view) => view.home),
+    firsts.map((view) => view?.home),
   );
   const ready = new Map(firsts.map((view, i) => [view, readiness[i]]));
   let n = 0;

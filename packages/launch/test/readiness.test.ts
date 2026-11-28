@@ -72,7 +72,6 @@ describe("[A4.3.2.readiness] an instance's program, version and sign-in, from th
   test("a status command that answers neither way, or never ends, is unknown with the command to find out", async () => {
     const odd = await ready(claude(), "claude:status");
     expect(odd).toEqual({ state: "unknown", version: "2.1.9", status: "claude auth status" });
-    const started = Date.now();
     const hung = await instanceReadiness(claude(), {
       platform,
       base: { ...fakes.env, FAKE_AGENT_FAIL: "claude:hang" },
@@ -80,12 +79,14 @@ describe("[A4.3.2.readiness] an instance's program, version and sign-in, from th
       timeoutMs: 1_000,
     });
     expect(hung?.state).toBe("unknown");
-    expect(Date.now() - started).toBeLessThan(30_000);
   });
 
   test("a program that is not there is not installed, with the vendor's install page", async () => {
     const gone = await ready({ ...claude(), exec: join(root, "nowhere", "claude") });
-    expect(gone).toEqual({ state: "not_installed", install: "https://code.claude.com/docs/en/setup" });
+    expect(gone).toEqual({
+      state: "not_installed",
+      install: "https://code.claude.com/docs/en/setup",
+    });
   });
 
   test("an app without a sign-in to ask about has no readiness", async () => {

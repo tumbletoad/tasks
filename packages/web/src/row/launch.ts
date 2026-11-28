@@ -133,14 +133,20 @@ export function homeRefusal(error: unknown): { readonly works?: string } | undef
  */
 export function instanceRefusal(
   error: unknown,
-): "not_for_space" | "no_terminal" | "own_home" | undefined {
+):
+  | { readonly reason: "not_for_space" | "no_terminal" | "own_home" }
+  | { readonly reason: "signed_out"; readonly login: string }
+  | undefined {
   if (!(error instanceof Error)) return undefined;
   const data = (error as Error & { data?: unknown }).data;
   if (typeof data !== "object" || data === null) return undefined;
-  const { field, reason } = data as Record<string, unknown>;
+  const { field, reason, login } = data as Record<string, unknown>;
   if (field !== "instance") return undefined;
+  if (reason === "signed_out") {
+    return typeof login === "string" ? { reason, login } : undefined;
+  }
   return reason === "not_for_space" || reason === "no_terminal" || reason === "own_home"
-    ? reason
+    ? { reason }
     : undefined;
 }
 

@@ -3683,6 +3683,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.12.m5-12.page-ready",
+      "title": "Settings > Agent apps: each Claude Code and Codex row says whether its app is installed, its version, and whether it is signed in, with the login line or the vendor's install page, and the status command's output never reaches the page",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.14.doctor.readiness",
       "title": "ttasks doctor and ttasks setup agents say per Claude Code or Codex instance whether it is installed, its version, and whether it is signed in from its app's own status command, with the login line for its own home or the vendor's install page, and never show that command's output",
       "owner": "M4",

@@ -5,17 +5,19 @@ const TARGET = { "claude-code": "claude-cli", codex: "codex-cli" } as const;
 
 /**
  * Each home's readiness (instanceReadiness), in order: the program machine.toml's instance for
- * the home runs, else the one detection found for it. Undefined for an app without a sign-in to
- * ask about. The status commands run side by side.
+ * the home runs, else the one detection found for it. Undefined for no home, or an app without a
+ * sign-in to ask about. The status commands run side by side.
  */
 export function homesReadiness(
   input: SetupInput,
-  homes: readonly HomeView["home"][],
+  homes: readonly (HomeView["home"] | undefined)[],
 ): Promise<(Readiness | undefined)[]> {
   const { platform, userHome } = input;
   return Promise.all(
-    homes.map((home) => {
-      if (home.app !== "claude-code" && home.app !== "codex") return undefined;
+    homes.map(async (home) => {
+      if (home === undefined || (home.app !== "claude-code" && home.app !== "codex")) {
+        return undefined;
+      }
       const target = TARGET[home.app];
       const owner = input.instances.find(
         (i) =>

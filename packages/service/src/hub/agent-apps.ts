@@ -37,6 +37,7 @@ import {
   type EnvironmentSource,
   type Instance,
   type Proposal,
+  type Readiness,
 } from "@ttasks/launch";
 import { isId } from "@ttasks/storage";
 import { loadMachineConfig, MACHINE_TOML } from "../config/machine-toml.ts";
@@ -64,6 +65,7 @@ import {
   accessOf,
   homeAnswer,
   homeGroups,
+  homesReadiness,
   toolsOf,
   wireOf,
   withSetupLock,
@@ -161,6 +163,8 @@ export interface AppRow {
   readonly byName?: true;
   readonly open?: Part;
   readonly tools?: Part;
+  /** Claude Code and Codex: the home's app installed, its version, its sign-in (instanceReadiness). */
+  readonly ready?: Readiness;
 }
 
 export interface AppsView {
@@ -496,6 +500,25 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
   return { view, input, items, offers: byRow, owners };
 }
 
+/**
+ * A look's view as the page shows it: each home's readiness added, the apps' status commands run
+ * side by side. Only for a view the page gets: apply's own looks never wait for them.
+ */
+async function readyView(seen: Look): Promise<AppsView> {
+  const { rows } = seen.view;
+  const found = await homesReadiness(
+    seen.input,
+    rows.map((row) => seen.items.get(row.key)?.[0]?.view.home),
+  );
+  return {
+    ...seen.view,
+    rows: rows.map((row, i) => {
+      const ready = found[i];
+      return ready === undefined ? row : { ...row, ready };
+    }),
+  };
+}
+
 /** Setup's refusals of a file it cannot read as it is now, which the page says as one. */
 const UNREADABLE = new Set<string>([
   "unreadable",
@@ -709,7 +732,7 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
         return c.on ? part.more?.plan === c.plan : part.off?.plan === c.plan;
       });
     // Something changed since the person looked: nothing is written, they see it as it is now.
-    if (!fits(first)) return { applied: false, view: first.view };
+    if (!fits(first)) return { applied: false, view: await readyView(first) };
     // What a run that ended midway left is finished first before anything is turned on; turning
     // off needs no such step, and takes the access first (removeFiles). A switch that would then
     // do other than it showed is not applied, and neither is any other.
@@ -727,7 +750,7 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
         ]),
       );
     if (turnsOn.some((c) => writes(first, c) !== writes(now, c))) {
-      return { applied: false, view: now.view };
+      return { applied: false, view: await readyView(now) };
     }
 
     const outcomes: AppsOutcome[] = [];
@@ -874,7 +897,7 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
         ...named,
       };
     });
-    return { applied: true, outcomes, view: (await look(host, space)).view };
+    return { applied: true, outcomes, view: await readyView(await look(host, space)) };
   });
 }
 
@@ -887,7 +910,7 @@ export function agentAppVerbs(host: AgentAppsHost): {
     view: async (params, cls) => {
       userOnly(cls);
       try {
-        return (await look(host, spaceOf(params, host))).view;
+        return await readyView(await look(host, spaceOf(params, host)));
       } catch (error) {
         throw setupError(error);
       }

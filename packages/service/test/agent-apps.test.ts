@@ -13,7 +13,7 @@ import {
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CLI_NAME, MCP_SERVER_KEY } from "@ttasks/brand";
-import { installFakeAgents } from "@ttasks/testkit/fake-agents";
+import { FAKE_SIGNED_IN, installFakeAgents } from "@ttasks/testkit/fake-agents";
 import { FixedEnvironment } from "@ttasks/launch";
 import {
   agentAppVerbs,
@@ -1001,6 +1001,39 @@ describe("[A7.3.12.m5-12.page-files] A damaged record file is named by its own p
         rmSync(inner, { force: true });
         rmSync(plain, { force: true });
       }
+    },
+    SLOW,
+  );
+});
+
+describe("[A7.3.12.m5-12.page-ready] Each Claude Code and Codex row says whether its app is installed and signed in, and what to do next", () => {
+  let w: World;
+  let space: string;
+  beforeAll(async () => {
+    w = await world("ready");
+    const made = await call<{ id: string }>(w, "/api/v1/space/create", {
+      name: "Mira",
+      folder: join(w.home, "mira"),
+    });
+    space = made.result.id;
+  }, SLOW);
+  afterAll(async () => {
+    await w.close();
+  }, SLOW);
+
+  it(
+    "signed in with its version, or not signed in with the login line; the status command's output never reaches the page",
+    async () => {
+      writeFileSync(join(w.user, ".claude", FAKE_SIGNED_IN), "");
+      const reply = await post(w.port, "/api/v1/machine/apps", { space }, { token: w.token });
+      expect(reply.body).not.toContain("FAKE-ACCOUNT-SECRET");
+      const view = (JSON.parse(reply.body) as { result: AppsView }).result;
+      expect(row(view, "claude-code").ready).toEqual({ state: "signed_in", version: "2.1.9" });
+      expect(row(view, "codex").ready).toEqual({
+        state: "signed_out",
+        version: "0.167.2",
+        login: "codex login",
+      });
     },
     SLOW,
   );
