@@ -86,22 +86,6 @@ export function areaSlots(nodes: Nodes): ReadonlyMap<string, number> {
 /** An archived area or project: kept, with its tasks, but out of the places work is filed into. */
 const archived = (node: NodeRow): boolean => node.state === "archived";
 
-/**
- * The group that keeps an area's or project's page archived: the project itself, else its area.
- * None while both are live.
- */
-export function archivedGroup(
-  area: NodeRow | undefined,
-  project?: NodeRow,
-):
-  | { readonly kind: "area"; readonly row: NodeRow }
-  | { readonly kind: "project"; readonly row: NodeRow }
-  | undefined {
-  if (project !== undefined && archived(project)) return { kind: "project", row: project };
-  if (area !== undefined && archived(area)) return { kind: "area", row: area };
-  return undefined;
-}
-
 /** The areas and projects new work can be filed into: live ones, and no project of an archived area. */
 export function liveGroups(nodes: Nodes): {
   readonly areas: NodeRow[];
@@ -112,48 +96,6 @@ export function liveGroups(nodes: Nodes): {
     areas,
     projects: areas.flatMap((a) => childrenOf(nodes, a.id).filter((p) => !archived(p))),
   };
-}
-
-/** An area as the sidebar lists it, with its colour among all areas and the projects beneath it. */
-export interface ListedArea {
-  readonly kind: "area";
-  readonly area: NodeRow;
-  readonly slot: number;
-  readonly projects: readonly NodeRow[];
-}
-
-/** An archived project of a live area, listed on its own under Archived. */
-export interface ListedProject {
-  readonly kind: "project";
-  readonly area: NodeRow;
-  readonly slot: number;
-  readonly project: NodeRow;
-}
-
-/**
- * The sidebar's groups, in the space's order: each live area with its live projects; under
- * Archived each archived area with all its projects, then each archived project of a live area.
- * An area keeps the colour it has among all areas, so archiving one recolours no other.
- */
-export function sidebarAreas(nodes: Nodes): {
-  readonly live: readonly ListedArea[];
-  readonly archived: readonly (ListedArea | ListedProject)[];
-} {
-  const live: ListedArea[] = [];
-  const shelved: (ListedArea | ListedProject)[] = [];
-  topLevel(nodes).forEach((area, index) => {
-    const slot = slotOf(area, index);
-    const own = childrenOf(nodes, area.id);
-    if (archived(area)) {
-      shelved.push({ kind: "area", area, slot, projects: own });
-      return;
-    }
-    live.push({ kind: "area", area, slot, projects: own.filter((p) => !archived(p)) });
-    for (const project of own) {
-      if (archived(project)) shelved.push({ kind: "project", area, slot, project });
-    }
-  });
-  return { live, archived: shelved };
 }
 
 /** A project in the side menu, at its depth (1 at the top), with its colour and what lies under it. */
@@ -320,27 +262,6 @@ export const personGroups: GroupTasks = (tasks) => {
     });
   }
   return groups;
-};
-
-/**
- * The area view: every unfinished status of one area, grouped by project under project
- * labels, with no area heading, because the sidebar's item names the area. Tasks without a project
- * come first; backlog rows sort last in their group.
- */
-export const areaGroups: GroupTasks = (tasks, nodes) =>
-  groupTasks(tasks, nodes).map((group) =>
-    group.kind === "area" ? { ...group, kind: "flat" } : group,
-  );
-
-/**
- * A project's view: its tasks in one list under no label, because the sidebar's item names the
- * project, whether or not it has an area.
- */
-export const projectGroups: GroupTasks = (tasks) => {
-  const list = [...tasks].sort(byStatusThenPosition);
-  return list.length === 0
-    ? []
-    : [{ key: "project", kind: "flat", sections: [{ key: "project", tasks: list }] }];
 };
 
 /**

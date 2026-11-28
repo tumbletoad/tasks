@@ -40,7 +40,7 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 2.5 | (iv) The projector on the tree, the finishing dialog, the new tool shapes with the skills, instructions and hints, behind the tree backend | todo: 2.4, 3.1 |
 | 2.6 | (v) The switch: new spaces are trees, old formats are named before anything changes, the owner's carry-over on a trial copy first | todo: 2.5 |
 | 2.7 | (vi) Deletion: the feed's adapter, today's writer, the old migration chain, the old projector and places | todo: 2.6 |
-| 2.8 | The app: the sidebar tree, the project screen, breadcrumbs, the derived status line, the expanded task's Brief, Description, Knowledge and subtasks | todo: 2.5 |
+| 2.8 | The app: the sidebar tree, the project screen with its Tasks and Library tabs, breadcrumbs, the derived status line and one address for a project, reading only (#284). Waits: the brief in the screen's head (the feed sends no node's brief yet), the expanded task's Brief, Description, Knowledge and subtasks' boxes, the finishing dialog, the Notes tab, and the labels of creating and moving that still say "area" | review (#284) |
 | 2.9 | Folders on any node in the app, Settings > Folders, a project's rename and archive | todo: 2.6 |
 | 2b.1 | The short design for routines | review (#235) |
 | 2b.4 | The schedule calculator: the stored form, the next date and due time through daylight saving, the claim after an absence, and a schedule's words | doing |

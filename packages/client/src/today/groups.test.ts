@@ -1,10 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
-  archivedGroup,
   groupTasks,
   liveGroups,
-  projectGroups,
-  sidebarAreas,
   sidebarTree,
   slotOf,
   subtreeGroups,
@@ -105,55 +102,37 @@ describe("[A5.archived.web.groups] an archived area or project leaves the areas 
   const projects = [portal, shelvedSync, boxes];
   const nodes = treeOf(...areas, ...projects);
 
-  test("the sidebar: live areas with their live projects; Archived in the same order, an archived area with all its projects and an archived project of a live area on its own", () => {
-    const { live, archived } = sidebarAreas(nodes);
-    expect(live.map((a) => [a.area.title, a.projects.map((p) => p.title)])).toEqual([
-      ["Home", []],
-      ["Lumen", ["Lumen portal"]],
-      ["Empty", []],
-    ]);
-    expect(
-      archived.map((g) =>
-        g.kind === "area"
-          ? [g.area.title, g.projects.map((p) => p.title)]
-          : [g.area.title, g.project.title],
-      ),
-    ).toEqual([
-      ["Attic", ["Boxes"]],
-      ["Lumen", "Clinic sync"],
+  const listed = (entries: readonly TreeEntry[]): unknown[] =>
+    entries.map((e) => [e.node.title, ...listed(e.children)]);
+
+  test("the side menu: live projects with their live projects; Archived in the same order, an archived one with all it holds, named by the projects above it", () => {
+    const { live, archived } = sidebarTree(nodes);
+    expect(listed(live)).toEqual([["Home"], ["Lumen", ["Lumen portal"]], ["Empty"]]);
+    expect(archived.map((e) => [e.above.map((n) => n.title), ...listed([e])])).toEqual([
+      [[], ["Attic", ["Boxes"]]],
+      [["Lumen"], ["Clinic sync"]],
     ]);
   });
 
-  test("a project without an area is a project at the top, listed as an area after the areas, an archived one under Archived after the areas' groups", () => {
+  test("a project without an area is a project at the top, after the areas, an archived one under Archived after the others", () => {
     const shed = areaNode({ id: "p_shed", title: "Shed", position: "~d0" });
     const kiln = areaNode({ id: "p_kiln", title: "Kiln", position: "~d1", state: "archived" });
-    const { live, archived } = sidebarAreas(treeOf(...areas, ...projects, kiln, shed));
-    expect(live.map((a) => a.area.title)).toEqual(["Home", "Lumen", "Empty", "Shed"]);
-    expect(archived.map((g) => (g.kind === "area" ? g.area.title : g.project.title))).toEqual([
-      "Attic",
-      "Clinic sync",
-      "Kiln",
-    ]);
+    const { live, archived } = sidebarTree(treeOf(...areas, ...projects, kiln, shed));
+    expect(live.map((e) => e.node.title)).toEqual(["Home", "Lumen", "Empty", "Shed"]);
+    expect(archived.map((e) => e.node.title)).toEqual(["Attic", "Clinic sync", "Kiln"]);
   });
 
-  test("a project's view: its tasks in one list, open first, with or without an area", () => {
-    const kiln = areaNode({ id: "p_kiln", title: "Kiln", position: "~d1" });
-    const rows = [
-      task({ title: "Later", parent: "p_kiln", status: "backlog" }),
-      task({ title: "Fire it", parent: "p_kiln" }),
-    ];
-    expect(titles(projectGroups(rows, treeOf(...areas, kiln)))).toEqual([
-      ["flat", undefined, [[undefined, ["Fire it", "Later"]]]],
-    ]);
-  });
-
-  test("archiving an area recolours no other: each keeps its place among all areas", () => {
-    const before = sidebarAreas(
+  test("archiving a project recolours no other: each keeps its place among all of them", () => {
+    const before = sidebarTree(
       treeOf(...areas.map((a) => ({ ...a, state: "active" })), ...projects),
     );
-    const after = sidebarAreas(nodes);
-    const slots = (listed: ReturnType<typeof sidebarAreas>) =>
-      Object.fromEntries([...listed.live, ...listed.archived].map((g) => [g.area.title, g.slot]));
+    const after = sidebarTree(nodes);
+    const slots = (tree: ReturnType<typeof sidebarTree>) =>
+      Object.fromEntries(
+        [...tree.live, ...tree.archived]
+          .filter((e) => e.depth === 1)
+          .map((e) => [e.node.title, e.slot]),
+      );
     expect(slots(after)).toEqual(slots(before));
   });
 
@@ -161,15 +140,6 @@ describe("[A5.archived.web.groups] an archived area or project leaves the areas 
     const { areas: open, projects: openProjects } = liveGroups(nodes);
     expect(open.map((a) => a.title)).toEqual(["Home", "Lumen", "Empty"]);
     expect(openProjects.map((p) => p.title)).toEqual(["Lumen portal"]);
-  });
-
-  test("a page is archived by its project, else by its area; a live one is not", () => {
-    expect(archivedGroup(lumen, portal)).toBeUndefined();
-    expect(archivedGroup(lumen)).toBeUndefined();
-    expect(archivedGroup(lumen, shelvedSync)).toEqual({ kind: "project", row: shelvedSync });
-    expect(archivedGroup(attic, boxes)).toEqual({ kind: "area", row: attic });
-    expect(archivedGroup(attic)).toEqual({ kind: "area", row: attic });
-    expect(archivedGroup(undefined)).toBeUndefined();
   });
 });
 
