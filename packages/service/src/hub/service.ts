@@ -136,7 +136,7 @@ import { homeGate } from "./home-gate.ts";
 import { homeRows } from "./home-rows.ts";
 import { namedBy } from "./named.ts";
 import { SeenCalls } from "./agent-homes.ts";
-import { agentAppVerbs, personEnv } from "./agent-apps.ts";
+import { agentAppVerbs, personBase } from "./agent-apps.ts";
 import {
   findMonitor,
   heldSessions,
@@ -823,7 +823,14 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       ...(options.monitor?.times === undefined ? {} : { times: options.monitor.times }),
       command: async () => {
         const source = launching.service?.environment;
-        return monitorIn(source === undefined ? env : await personEnv(source).catch(() => env));
+        return monitorIn(
+          source === undefined
+            ? env
+            : await personBase(source).then(
+                (base) => base.env,
+                () => env,
+              ),
+        );
       },
       log: (event, fields) => {
         log.log(event, fields);
@@ -1173,8 +1180,11 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         stateDir: layout.state,
         tasks: join(layout.bin, platform === "win32" ? `${CLI_NAME}.exe` : CLI_NAME),
         userHome: options.agentApps?.home ?? personHome,
-        env: async () =>
-          options.agentApps?.env ?? (await personEnv(launches.environment).catch(() => env)),
+        base: async () => {
+          const given = options.agentApps?.env;
+          if (given !== undefined) return { kind: "user", env: given };
+          return await personBase(launches.environment).catch(() => ({ kind: "service", env }));
+        },
         homes: hub.agentHomes,
         instances: hub.instances,
         spaceName: (id) => made.spaces?.served().find((s) => s.id === id)?.name,

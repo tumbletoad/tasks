@@ -3,25 +3,9 @@
 // it as its context. Only Chromium lets a page make a paste event that carries text. Fixture text
 // only.
 import { expect, type Page } from "@playwright/test";
-import { built, test as base } from "./fixture.ts";
+import { test } from "./fixture.ts";
 import { axeFound, picture, showsSpace, signIn, themes } from "./page.ts";
-import { SLOW_MS, startWorld, type World } from "./world.ts";
-
-/** A world of its own: its tests add tasks no other file's counts may meet. */
-const test = base.extend<object, { pasting: World }>({
-  pasting: [
-    // eslint-disable-next-line no-empty-pattern
-    async ({}, use) => {
-      const world = await startWorld(built());
-      try {
-        await use(world);
-      } finally {
-        await world.close();
-      }
-    },
-    { scope: "worker", timeout: 240_000 },
-  ],
-});
+import { SLOW_MS } from "./world.ts";
 
 const field = (page: Page) => page.getByRole("textbox", { name: "New task" });
 
@@ -49,7 +33,7 @@ test.describe("[A5.top.e2e.paste] a paste that is more than a title loses no wor
 
   test("the first line is the title, the rest is said under the field, kept across a reload, and becomes the task's context", async ({
     page,
-    pasting: world,
+    world,
   }) => {
     await signIn(page, world, `/s/${world.mira.id}/inbox`);
     await showsSpace(page, world.mira.name);
@@ -81,7 +65,7 @@ test.describe("[A5.top.e2e.paste] a paste that is more than a title loses no wor
 
   test("the rest can be left out, and a paste that fits is the field's as it is", async ({
     page,
-    pasting: world,
+    world,
   }) => {
     await signIn(page, world, `/s/${world.mira.id}/inbox`);
     await showsSpace(page, world.mira.name);
@@ -97,7 +81,7 @@ test.describe("[A5.top.e2e.paste] a paste that is more than a title loses no wor
 
   test("the field with the rest of a paste at 1,440 and 390 px in both themes", async ({
     browser,
-    pasting: world,
+    world,
   }) => {
     for (const theme of themes()) {
       await world.machine("ui.theme", theme);

@@ -43,7 +43,7 @@ test.describe("[A7.3.9.m2-13.e2e.races] Late answers and repeated clicks", () =>
     world,
   }) => {
     await signIn(page, world, `/s/${world.mira.id}/area/${world.spare.area}`);
-    // Its own task: the open test launches `world.task`, and a worker's tests share the world.
+    // Its own task: the open test launches `world.task`, and a file's tests share the world.
     world.hold(world.spare.ref);
     const row = page.locator(`li[data-task="${world.spare.ref}"]`);
     const main = row.locator('[data-part="title"]');
