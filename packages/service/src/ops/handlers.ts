@@ -215,6 +215,7 @@ import {
 import { readFinished } from "./task-rows.ts";
 import { readChangeTasks, readTrash } from "./trash.ts";
 import { readActivity } from "./activity.ts";
+import { trailOff } from "../trial.ts";
 import {
   holderName,
   nodeView,
@@ -3270,7 +3271,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (sections.length === 0) {
       const digest = digestOf(read, call.today, await digestFolder(call, read.folder));
       // What is known above the task, and its own pages, in the digest's one budget.
-      const library = await trailOf(reader, read.space, read.row);
+      const library = trailOff() ? undefined : await trailOf(reader, read.space, read.row);
       const more = digest["more"] as Record<string, unknown>;
       answer = {
         view: "digest",

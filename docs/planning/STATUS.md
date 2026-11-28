@@ -31,7 +31,7 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 1.4 | Agent tools: `read`, `write_page`, the trail in `get_task` within one budget, search over pages, `complete_task` asking for pages updated | done (#251) |
 | 1.5 | The skill `keeping-the-library`, and a brief explained as "what this is" | done (#251) |
 | 1.6 | The app: the project screen with its Library, the page screen with History and Restore, page edits under Changes | todo: 1.1 |
-| 1.7 | The trial: twenty scripted tasks with Claude Code and Codex, and the bytes of history per page edit | todo: 1.4, 1.5 |
+| 1.7 | The trial: twenty scripted tasks with Claude Code and Codex, and the bytes of history per page edit | doing: the script runs against the stand-ins; the runs with real agents wait for the owner |
 | 1.8 | The harvest of one real project, and a walk through it as a person | todo: 1.6, 1.7 |
 | 2.1 | The short design for one tree, reviewed before code (#237) | done |
 | 2.2 | (i) The feed sends a tree, today's areas and projects as parent rows at its edge, and the page's store reads it | todo: step 1's page work |
