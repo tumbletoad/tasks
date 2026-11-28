@@ -34,7 +34,7 @@ import {
   type TerminalSettings,
   type Verdict,
 } from "@ttasks/launch";
-import { fitsShape, LATER_PREFERENCES, preferenceSpec, type PrefValue } from "@ttasks/contracts";
+import { fitsShape, preferenceSpec, type PrefValue } from "@ttasks/contracts";
 import { QUEUE_LIMITS, type QueueLimits } from "@ttasks/contracts/runs";
 import { isId, type Id } from "@ttasks/storage";
 import {
@@ -159,16 +159,10 @@ export const DEFAULT_CONFIG: MachineConfig = {
 
 /**
  * `[preferences]` (A1 3.16): each key is a machine preference's whole name, quoted
- * (`"projection.dir" = "/srv/ttasks-view"`), checked by the registry as the writer checks a space
- * preference, and by this platform's rule for a path. A bad entry drops itself; a name the
- * registry does not know is a warning, as a newer build may know it, and so is a key this build
- * does not read yet.
+ * (`"ui.theme" = "washi"`), checked by the registry as the writer checks a space preference. A bad
+ * entry drops itself; a name the registry does not know is a warning, as a newer build may know it.
  */
-function readMachinePreferences(
-  doc: TomlDocument,
-  platform: NodeJS.Platform,
-  problems: Problems,
-): Map<string, PrefValue> {
+function readMachinePreferences(doc: TomlDocument, problems: Problems): Map<string, PrefValue> {
   const out = new Map<string, PrefValue>();
   const table = doc["preferences"];
   if (table === undefined) return out;
@@ -188,19 +182,10 @@ function readMachinePreferences(
       problems.error(key, "invalid_value");
       continue;
     }
-    if (
-      spec.shape.type === "path" &&
-      typeof value === "string" &&
-      !isAbsoluteFor(platform, value)
-    ) {
-      problems.error(key, "not_absolute");
-      continue;
-    }
     if (!fitsShape(spec.shape, value)) {
       problems.error(key, "invalid_value");
       continue;
     }
-    if (LATER_PREFERENCES.some((later) => later.key === name)) problems.warn(key, "not_read");
     out.set(name, value as PrefValue);
   }
   return out;
@@ -332,7 +317,7 @@ export function checkMachineConfig(
     instances: readInstances(doc["instance"], platform, problems),
     approvals: readApprovals(doc["approvals"], problems),
     setup: { managedPaths: readSetup(doc, platform, problems) },
-    preferences: readMachinePreferences(doc, platform, problems),
+    preferences: readMachinePreferences(doc, problems),
     runs: readRuns(doc, problems),
   };
   return { config, problems: problems.list };

@@ -11,7 +11,6 @@ import {
   type PreferenceRead,
   type PrefValue,
 } from "@ttasks/contracts";
-import { isAbsoluteFor } from "@ttasks/launch";
 import { commitEdit, prepareEdit, type EditResult, type EditValue } from "./edit.ts";
 import type { MachineConfig } from "./machine-toml.ts";
 
@@ -40,23 +39,19 @@ function editValue(value: PrefValue): EditValue | undefined {
 /**
  * Sets a machine preference in `<config>/machine.toml`, or resets it to its default with null by
  * removing its line. One splice, every other byte kept (edit.ts). A key that is not a machine
- * preference, or a value outside its shape or not absolute here, is `invalid_value` and nothing is
- * written. A reset of a key that is not set writes nothing.
+ * preference, or a value outside its shape, is `invalid_value` and nothing is written. A reset of
+ * a key that is not set writes nothing.
  */
 export function setMachinePreference(
   configDir: string,
   key: string,
   value: PrefValue | null,
-  platform: NodeJS.Platform = process.platform,
 ): EditResult {
   const spec = preferenceSpec(key);
   if (spec?.scope !== "machine") return { ok: false, reason: "invalid_value" };
   let written: EditValue | undefined;
   if (value !== null) {
-    const fits =
-      fitsShape(spec.shape, value) &&
-      (spec.shape.type !== "path" || isAbsoluteFor(platform, value as string));
-    written = fits ? editValue(value) : undefined;
+    written = fitsShape(spec.shape, value) ? editValue(value) : undefined;
     if (written === undefined) return { ok: false, reason: "invalid_value" };
   }
   const prepared = prepareEdit(configDir, [

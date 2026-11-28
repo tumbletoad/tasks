@@ -4,7 +4,7 @@
 import { connect, type TLSSocket } from "node:tls";
 import { WebSocket } from "ws";
 import { certPin, makeIdentity } from "../src/link/cert.ts";
-import { LINK_PATH, LINK_PROTOCOL, PAIRING_PREFIX } from "../src/link/service.ts";
+import { LINK_PATH, LINK_PROTOCOL, parsePairing, type Pairing } from "@ttasks/contracts/link";
 
 export interface PhoneKey {
   readonly key: string;
@@ -20,18 +20,12 @@ export function phoneKey(): PhoneKey {
   return { ...identity, pin };
 }
 
-/** What the QR code says. */
-export interface Pairing {
-  readonly v: number;
-  readonly addrs: readonly string[];
-  readonly pin: string;
-  readonly space: { readonly id: string; readonly name: string };
-  readonly code: string;
-}
+export type { Pairing };
 
 export function readPairing(text: string): Pairing {
-  if (!text.startsWith(PAIRING_PREFIX)) throw new Error("not a pairing code");
-  return JSON.parse(text.slice(PAIRING_PREFIX.length)) as Pairing;
+  const pairing = parsePairing(text);
+  if (pairing === undefined) throw new Error("not a pairing code");
+  return pairing;
 }
 
 export interface PhoneLink {

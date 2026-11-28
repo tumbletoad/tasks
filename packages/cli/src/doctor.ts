@@ -39,7 +39,6 @@ import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "n
 import { join } from "node:path";
 import { CLI_NAME, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import { PROTOCOL } from "@ttasks/bridge/protocol";
-import { LATER_PREFERENCES } from "@ttasks/contracts";
 import {
   configRefusal,
   fatalProblems,
@@ -177,8 +176,7 @@ export function configCheck(io: Pick<Io, "env" | "platform">): Check {
   const fatal = fatalProblems(loaded.problems);
   if (fatal.length > 0) return { id: "config", status: "fail", detail: configRefusal(fatal) };
   const unknown = loaded.problems.filter((p) => p.code === "unknown_key").map((p) => p.key);
-  const notRead = loaded.problems.filter((p) => p.code === "not_read");
-  const others = loaded.problems.filter((p) => p.code !== "unknown_key" && p.code !== "not_read");
+  const others = loaded.problems.filter((p) => p.code !== "unknown_key");
   if (loaded.problems.length > 0) {
     const keys = others.map((p) => (p.key === "" ? p.code : `${p.key} (${p.code})`));
     const parts = [
@@ -190,21 +188,10 @@ export function configCheck(io: Pick<Io, "env" | "platform">): Check {
         : [
             `machine.toml has keys this build does not read, which change nothing: ${named(unknown)}. ${PRODUCT_NAME} leaves them as they are, and you can remove them.`,
           ]),
-      ...notRead.map((p) => notReadNote(p.key.slice("preferences.".length))),
     ];
     return { id: "config", status: "warn", detail: parts.join(" ") };
   }
   return { id: "config", status: "ok", detail: "machine.toml is valid." };
-}
-
-/** What a person reads about a machine preference this build does not read yet, and what holds. */
-function notReadNote(key: string): string {
-  const inForce = LATER_PREFERENCES.find((later) => later.key === key)?.inForce;
-  const holds =
-    typeof inForce === "string"
-      ? `: ${inForce}`
-      : ` (in force: ${JSON.stringify(inForce ?? null)})`;
-  return `machine.toml sets ${key}, which this build does not read yet, so it changes nothing${holds}.`;
 }
 
 /** The checks that need no service. */
