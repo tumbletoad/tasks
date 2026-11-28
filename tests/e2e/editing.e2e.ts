@@ -643,10 +643,12 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     world,
   }) => {
     const tag = test.info().project.name;
-    const seedlings = `Sedlings ${tag}`;
-    const garden = `Seedling ${tag}`;
-    await world.op(world.mira.id, "group.manage", { action: "create", path: seedlings });
-    const [ref] = await addTasks(world, [{ title: `Water the seedlings (${tag})`, area: "home" }]);
+    // Names no other test uses: the space is shared, and the test above makes and archives areas
+    // close to its own. The new name minus its last letter is not close to the existing area.
+    const existing = `Sapplings ${tag}`;
+    const garden = `Sapling ${tag}`;
+    await world.op(world.mira.id, "group.manage", { action: "create", path: existing });
+    const [ref] = await addTasks(world, [{ title: `Stake the damson (${tag})`, area: "home" }]);
     if (ref === undefined) throw new Error("the task was not added");
     const areaOf = async () =>
       ((await world.op(world.mira.id, "task.get", { task: ref })) as { task: { area?: string } })
@@ -672,7 +674,7 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     await expect(options.first()).toHaveText(`New area “${garden.slice(0, -1)}”`);
     await expect(options.first()).toHaveAttribute("data-focused", "true");
     await page.keyboard.type(garden.slice(-1));
-    await expect(options.first()).toHaveText(seedlings);
+    await expect(options.first()).toHaveText(existing);
     await page.keyboard.press("ArrowDown");
     await expect(options.nth(1)).toHaveText(`New area “${garden}”`);
     await expect(options.nth(1)).toHaveAttribute("data-focused", "true");
