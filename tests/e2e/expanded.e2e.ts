@@ -449,7 +449,7 @@ test.describe("[A7.3.12.m5-06.e2e.screens] The expanded task in both themes: scr
         await context.close();
       }
     }
-    // The tests of a worker share its service: the theme goes back to its default.
+    // The tests of a file share its service: the theme goes back to its default.
     await world.machine("ui.theme", null);
   });
 });

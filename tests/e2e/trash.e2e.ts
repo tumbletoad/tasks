@@ -468,7 +468,7 @@ test.describe("[A5.trash.e2e.screens] The Trash in both themes", () => {
         await world.machine("ui.theme", theme);
         await signIn(shot, world, `/s/${space}/trash`);
         await showsSpace(shot, world.mira.name);
-        // The worker's other tests leave tasks of their own in the Trash: these three are counted.
+        // The file's other tests leave tasks of their own in the Trash: these three are counted.
         await expect(
           shot.locator("main li[data-task]").filter({ hasText: "Screens: " }),
         ).toHaveCount(3, { timeout: SLOW_MS });
@@ -483,7 +483,7 @@ test.describe("[A5.trash.e2e.screens] The Trash in both themes", () => {
         if (pictures()) expect(await axeFound(shot, ["main"]), `axe in ${theme}`).toEqual([]);
       } finally {
         await context.close();
-        // The theme is the machine's, shared by the worker's other tests: back to the default.
+        // The theme is the machine's, shared by the file's other tests: back to the default.
         await world.machine("ui.theme", null);
       }
     }
@@ -719,7 +719,7 @@ test.describe("[A5.trash.e2e.agents] What an agent moved to the Trash", () => {
         await expect(open).toHaveAttribute("aria-current", "page");
       }
     } finally {
-      // The theme is the machine's, shared by the worker's other tests: back to the default.
+      // The theme is the machine's, shared by the file's other tests: back to the default.
       await world.machine("ui.theme", null);
     }
 
