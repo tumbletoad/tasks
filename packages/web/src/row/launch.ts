@@ -213,8 +213,6 @@ export const openers = (instances: readonly Instance[]): Instance[] =>
  * that can: the one the task last used for it, else the one the space last used for it here, else
  * the first in Settings' order. Both come from the launches and runs the service took, so a pick it
  * refused never becomes the default, and a launch from another tab counts as one from this one.
- * An Open in a T3 Code instance machine.toml no longer has (one per T3 profile, before T3 Code
- * became one entry) stays with T3 Code.
  */
 export const agentFor = (
   list: readonly Instance[],
@@ -223,10 +221,7 @@ export const agentFor = (
   space: LastUsed,
 ): Instance | undefined => {
   const found = (last: LastUsed | undefined): Instance | undefined =>
-    list.find((i) => i.key === last?.[kind]) ??
-    (kind === "open" && last?.open_route === "t3-mcp"
-      ? list.find((i) => i.route === "t3-mcp")
-      : undefined);
+    list.find((i) => i.key === last?.[kind]);
   return found(task.last) ?? found(space) ?? list[0];
 };
 
