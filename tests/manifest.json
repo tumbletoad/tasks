@@ -2089,6 +2089,27 @@
       "profiles": ["v1"]
     },
     {
+      "id": "S2.tree.core",
+      "title": "The tree writer's commands in a disposable tree space: a task added under a project path is read with its trail and finished with a follow-up in one commit and one receipt; a follow-up that cannot be made leaves nothing; a resend replays the stored answer and the same ID with another intent is refused; a base is checked against each field's version before the request, so another field and a field written twice in one request do not conflict; a task with open subtasks asks which is meant, keeps an open child's trail under a finished parent, and finishes all on asking; the Trash takes a subtree and Restore brings back what it took; no task goes under itself; a repeat capture finds its task through its origin source; every row is its history played back",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.tree.undo",
+      "title": "Undo and Redo on the tree writer: for a check-off, a drop, a reopen, the Trash, a restore, a removed note, a note put back, a title and a note's words edited twice, out of the Inbox and a dismissal, the action, its opposite by hand, two Undos and two Redos walk the state back and forth exactly; a new project walks back to archived and forth; a change of another kind is passed over; someone else's newer work keeps the step and names them; one Undo takes back a finish of a task and all its subtasks",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.tree.crash",
+      "title": "The tree writer killed for real in a child process before a COMMIT, after one and by a timer, each followed by a resend of the lost request: every acknowledged result stays, a decision killed before its COMMIT leaves no receipt, no request is applied twice, and every row is its history played back with each commit's receipt",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.source.detach",
       "title": "In the page, a source's Remove takes it off the task, with no Undo; after a reload the Removed line lists it with who removed it and Put back; put back while another task holds its key brings it back as context with a link to where its captures go",
       "owner": "M3",

@@ -33,17 +33,20 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 1.6 | The app: the project screen with its Library, the page screen with History and Restore, page edits under Changes | todo: 1.1 |
 | 1.7 | The trial: twenty scripted tasks with Claude Code and Codex, and the bytes of history per page edit | todo: 1.4, 1.5 |
 | 1.8 | The harvest of one real project, and a walk through it as a person | todo: 1.6, 1.7 |
-| 2.1 | The short design for one tree, reviewed before code | todo: 1.7 |
-| 2.2 | Every writer moved to named commands, the old write path deleted, the crash harness on the new path | todo: 2.1 (its design sets their order, in one lane) |
-| 2.3 | The tables of the tree, with the reads ported | todo: 2.1 (its design sets their order, in one lane) |
-| 2.4 | Nested projects, subtasks and the finishing dialog, notes on projects and the space, page comments, links, sources on any node | todo: 2.3 |
-| 2.5 | The app: the sidebar tree, the derived status line, the expanded task's Brief, Description, Knowledge and subtasks | todo: 2.3 |
-| 2.6 | Folders on any node, places retired, folders after a restore, Settings > Folders, a project's rename and archive in the app | todo: 2.3 |
-| 2b.1 | The short design for routines | todo: 2.2 |
+| 2.1 | The short design for one tree, reviewed before code (#237) | done |
+| 2.2 | (i) The feed sends a tree, today's areas and projects as parent rows at its edge, and the page's store reads it | todo: step 1's page work |
+| 2.3 | (ii) The tree's schema and command core beside today's storage, used by nothing yet: add, read and finish in a disposable tree space, Undo's walk, the crash test | review |
+| 2.4 | (iii) The remaining commands in families (tasks, notes and pages, projects, folders, preferences, Open and Run), each tried through its real caller and through both backends; ordinary spaces stay on today's writer | todo: 2.3 |
+| 2.5 | (iv) The projector on the tree, the finishing dialog, the new tool shapes with the skills, instructions and hints, behind the tree backend | todo: 2.4, 3.1 |
+| 2.6 | (v) The switch: new spaces are trees, old formats are named before anything changes, the owner's carry-over on a trial copy first | todo: 2.5 |
+| 2.7 | (vi) Deletion: the feed's adapter, today's writer, the old migration chain, the old projector and places | todo: 2.6 |
+| 2.8 | The app: the sidebar tree, the project screen, breadcrumbs, the derived status line, the expanded task's Brief, Description, Knowledge and subtasks | todo: 2.5 |
+| 2.9 | Folders on any node in the app, Settings > Folders, a project's rename and archive | todo: 2.6 |
+| 2b.1 | The short design for routines | todo: 2.4 |
 | 2b.2 | Tasks that come back on a schedule | todo: 2b.1 |
 | 2b.3 | Agent runs on a schedule (Refresh, tidying), Refresh in the top bar, Continue interactively | todo: 2b.1 |
-| 3.1 | The projector for the tree on disk, built beside step 2 and live with the tree's migration | todo: 2.1 |
-| 3.2 | Inherited default folders, other folders as hints, Open says when a folder is set only on another machine | todo: 2.6 |
+| 3.1 | The projector for the tree on disk, written on the tree schema of 2.3 and switched on in 2.5 | todo: 2.3 |
+| 3.2 | Inherited default folders, other folders as hints, Open says when a folder is set only on another machine | todo: 2.9 |
 | 3.3 | The trial's tasks again, tools only against tools with the tree, and a rename's rebuild timed on Windows | todo: 3.1 |
 | 4.1 | Budgets that speak in a write's answer, and tidying a project's library | todo: 1.4 |
 | 4.2 | Ingestion: a run makes tasks and sources from the person's sources by itself | todo: 2b.3 |
