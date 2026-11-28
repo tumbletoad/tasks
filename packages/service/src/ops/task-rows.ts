@@ -159,7 +159,6 @@ const LAST_OPEN =
   "ORDER BY l.created_at DESC, l.id DESC LIMIT 1";
 const LAST_USED =
   `json_object('open', (SELECT l.instance_id ${LAST_OPEN}), ` +
-  `'open_route', (SELECT l.route ${LAST_OPEN}), ` +
   "'run', (SELECT r.instance_id FROM runs r WHERE r.task_id = t.id " +
   "ORDER BY r.queued_at DESC, r.id DESC LIMIT 1)) AS x_last";
 
@@ -315,11 +314,10 @@ export function runOf(open: unknown, asks?: unknown): CompactRun | undefined {
 function lastOf(value: unknown): LastUsed | undefined {
   const used = parsed(value);
   if (!isPlain(used)) return undefined;
-  const { open, open_route: route, run } = used;
+  const { open, run } = used;
   if (typeof open !== "string" && typeof run !== "string") return undefined;
   return {
     ...(typeof open === "string" ? { open } : {}),
-    ...(typeof route === "string" ? { open_route: route } : {}),
     ...(typeof run === "string" ? { run } : {}),
   };
 }

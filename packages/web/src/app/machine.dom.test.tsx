@@ -21,7 +21,7 @@ let root: Root;
 let control: MachineControl;
 
 function Probe({ api }: { readonly api: Api }) {
-  control = useMachineControl(api, undefined);
+  control = useMachineControl(api);
   return null;
 }
 

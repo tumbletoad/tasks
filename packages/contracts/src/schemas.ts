@@ -500,10 +500,6 @@ export const CompactTaskRow = z.strictObject({
   last: z
     .strictObject({
       open: z.string().describe("The instance of its newest Open that was not refused").optional(),
-      open_route: z
-        .string()
-        .describe("How that Open opened: t3-mcp names T3 Code also when its instance is gone")
-        .optional(),
       run: z.string().describe("The instance of its newest run").optional(),
     })
     .describe("The agent instances it was last opened in and last ran with")
