@@ -93,7 +93,15 @@ jobs:
           api-level: 29
           arch: x86_64
           disable-animations: true
-          script: pnpm phone-emulator --app apps/phone/android/app/build/outputs/apk/release/app-release.apk --test apps/phone/android/app/build/outputs/apk/androidTest/release/app-release-androidTest.apk
+          script: pnpm phone-emulator --app apps/phone/android/app/build/outputs/apk/release/app-release.apk --test apps/phone/android/app/build/outputs/apk/androidTest/release/app-release-androidTest.apk --shots ${{ runner.temp }}/phone-screens
+
+      # The screen in each state the emulator reached, for the pull request.
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: phone-screens
+          path: ${{ runner.temp }}/phone-screens
+          if-no-files-found: ignore
 
       - name: Signed with the owner's key (main only, after the emulator passed)
         id: sign

@@ -7235,7 +7235,7 @@
     },
     {
       "id": "S5.phone.pairing",
-      "title": "The phone app's pairing against the real service: a code pairs the phone by its name and the pairing reopens without the code; an answer lost after the computer saved the phone gets one more open without the code and one phone; another key at the address gets nothing sent and leaves the code unspent; a removed phone is told so when it opens the link again",
+      "title": "The phone app's pairing against the real service: a code pairs the phone by its name and the pairing reopens without the code; an answer lost after the computer saved the phone gets one more open without the code and one phone; another key at the address gets nothing sent and leaves the code unspent; a removed phone is told so when it opens the link again; the link's one owner keeps the pairing while the computer is away and connects again when it is back, and stops for good once the phone was removed; it makes one attempt at a time, and a stop or a new attempt ends the one under way with its walk over the addresses",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

@@ -54,7 +54,7 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 4.3 | The library skill's later versions, from the trial | ready |
 | 5.1 | The phone's listener apart from the page's, in the same process: it reaches only the operations, the feed and a task's runs | done (#245) |
 | 5.2 | An endpoint for paired phones over pinned TLS, with rights per phone and space, and pairing by a QR code from Settings > Phones | done (#245, #252) |
-| 5.3 | The phone app as a development build in the workspace, and its first proof; Today and capture shared with the page once step 1's page work has merged | review: the Android app's pinned link, built in CI and tried on an emulator (#270); Today, capture and the store shared with the page (#264); the first screen next |
+| 5.3 | The phone app as a development build in the workspace, and its first proof; Today and capture shared with the page once step 1's page work has merged | doing: Today, capture and the feed's store shared in `packages/client` (#264); the app with its pinned link, built in CI and tried on an emulator against the real service (#270); scan, name and reopen through the one screen, with one owner of the link, in review (#283); next: Today on the phone |
 | 5.4 | The stores' test tracks, the relay for use away from home, push messages | todo: 5.3 |
 | 6.1 | Differences between versions of a page and of a description | todo: 2.8 |
 
