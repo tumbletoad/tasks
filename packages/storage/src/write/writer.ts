@@ -4770,7 +4770,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         machine: actor.machine_id,
         adapter: op.adapter,
         place: op.place,
-        request: op.request ?? null,
+        request: op.request,
         spec: sortedJson({
           brief_hash: op.brief_hash,
           permission: op.permission,

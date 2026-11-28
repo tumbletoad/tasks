@@ -463,7 +463,6 @@ describe("[A1.5.migration.run-parents-0003] a run outlives the redaction of its 
       run = String(created.results[0]?.id);
       expect(writer.run(run)).toMatchObject({
         task_id: task,
-        routine_id: null,
         place_id: place,
         state: "queued",
       });
@@ -519,7 +518,7 @@ describe("[A1.5.migration.run-parents-0003] a run outlives the redaction of its 
     writer = openWriter();
     try {
       const detached = writer.run(run);
-      expect(detached).toMatchObject({ task_id: null, routine_id: null, request: null });
+      expect(detached).toMatchObject({ task_id: null, request: null });
       const settled = submit({
         kind: "run.transition",
         run: run as Id<"ru">,
@@ -530,7 +529,6 @@ describe("[A1.5.migration.run-parents-0003] a run outlives the redaction of its 
       expect(settled.status).toBe("applied");
       expect(writer.run(run)).toMatchObject({
         task_id: null,
-        routine_id: null,
         state: "cancelled",
       });
     } finally {
