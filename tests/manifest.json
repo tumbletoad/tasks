@@ -551,6 +551,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.backup.old-move",
+      "title": "A space's backups made into its own folder move to its backups folder in two starts: copied without replacing a file, the original removed only at a later start once the copy reads back; listed once and restorable at every step and after a crash at any of them; a copy that does not read back, another file at the name, too little room, an incomplete or another space's backup stays; a backups folder that is the old one or inside the space moves nothing; old daily backups are kept by retention unless pruning is on, then from the run after their move",
+      "source": "A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.backup.outside-home",
       "title": "A space's backups go to a folder per space beside the TTasks home, never inside it; backups made before in the space's own folder stay there untouched, listed with their folder, and restore by name and as latest, also before the first backup beside the home",
       "source": "A1 3.18",

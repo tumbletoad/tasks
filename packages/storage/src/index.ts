@@ -219,6 +219,7 @@ export {
   type ListedState,
 } from "./backup/list.ts";
 export { BUNDLE_POLICY, type BundlePolicy } from "./backup/policy.ts";
+export { moveOldBackups, oldDailies, type MoveResult, type StayReason } from "./backup/move.ts";
 export {
   applyRetention,
   dailyBackupDue,
