@@ -78,8 +78,8 @@ async function agentEdit(world: World, ref: string, old: string, words: string):
   );
 }
 
-const libraryOf = (world: World, area: string, project: string) =>
-  `/s/${world.mira.id}/area/${area}/project/${project}/library`;
+const libraryOf = (world: World, project: string) =>
+  `/s/${world.mira.id}/project/${project}/library`;
 
 async function open(page: Page, world: World, path: string): Promise<void> {
   await signIn(page, world, path);
@@ -97,9 +97,9 @@ test.describe("[A5.pages.e2e.library] the library in the page", () => {
     page,
     library: world,
   }) => {
-    const { area, project } = await place(world);
-    await open(page, world, libraryOf(world, area.id, project.id));
-    await expect(page.locator('[data-part="node-path"]')).toContainText(project.name);
+    const { project } = await place(world);
+    await open(page, world, libraryOf(world, project.id));
+    await expect(page.locator('[data-part="crumbs"]')).toContainText(project.name);
     const ref = await makePage(
       world,
       project.id,
@@ -175,8 +175,8 @@ test.describe("[A5.pages.e2e.library] the library in the page", () => {
     page,
     library: world,
   }) => {
-    const { area, project } = await place(world);
-    await open(page, world, libraryOf(world, area.id, project.id));
+    const { project } = await place(world);
+    await open(page, world, libraryOf(world, project.id));
     await page.locator('[data-part="own-pages"] [data-part="new-page"]').click();
     await page.locator('[data-part="new-page-title"]').fill("Fixture visit notes");
     await page.locator('[data-part="new-page-title"]').press("Enter");
@@ -210,7 +210,7 @@ test.describe("[A5.pages.e2e.library] the library in the page", () => {
     )) as { tasks: { ref: string }[] };
     const task = added.tasks[0]?.ref ?? "";
     const ref = await makePage(world, task, "Fixture task notes", "Fixture words.");
-    await open(page, world, libraryOf(world, area.id, project.id));
+    await open(page, world, libraryOf(world, project.id));
     await expect(row(page, ref)).toBeVisible({ timeout: SLOW_MS });
     const { as_of } = (await world.op(world.mira.id, "task.get", { task })) as { as_of: string };
     await world.op(
@@ -226,7 +226,7 @@ test.describe("[A5.pages.e2e.library] the library in the page", () => {
     page,
     library: world,
   }) => {
-    const { area, project } = await place(world);
+    const { project } = await place(world);
     const ref = await makePage(world, project.id, "Fixture old notes", "Fixture words.");
     await open(page, world, `/s/${world.mira.id}/page/${ref}`);
     await page.locator('[data-part="page-trash"]').click();
@@ -245,7 +245,7 @@ test.describe("[A5.pages.e2e.library] the library in the page", () => {
     await expect(trashed).toContainText(project.name);
     await trashed.locator('[data-part="restore-page"]').click();
     await expect(trashed).toHaveCount(0, { timeout: SLOW_MS });
-    await page.goto(`${world.origin}${libraryOf(world, area.id, project.id)}`);
+    await page.goto(`${world.origin}${libraryOf(world, project.id)}`);
     await expect(row(page, ref)).toBeVisible();
   });
 
@@ -270,7 +270,7 @@ test.describe("[A5.pages.e2e.library] the library in the page", () => {
     library: world,
   }) => {
     test.setTimeout(300_000);
-    const { area, project } = await place(world);
+    const { project } = await place(world);
     const ref = await makePage(
       world,
       project.id,
@@ -287,7 +287,7 @@ test.describe("[A5.pages.e2e.library] the library in the page", () => {
         });
         try {
           const page = await context.newPage();
-          await open(page, world, libraryOf(world, area.id, project.id));
+          await open(page, world, libraryOf(world, project.id));
           if (width !== 1440) await page.setViewportSize({ width, height: 844 });
           await expect(row(page, ref)).toBeVisible({ timeout: SLOW_MS });
           await picture(page, `library-${theme}-${String(width)}.png`, { fullPage: true });

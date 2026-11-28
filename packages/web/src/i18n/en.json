@@ -974,7 +974,7 @@
   "project.status.hours": "about {count} h",
   "project.status.unsized": "{count, plural, other {# not sized}}",
   "project.status.due": "next due {date}",
-  "project.status.late": "due since {date}",
+  "project.status.late": "late since {date}",
   "project.new": "New project",
   "project.newIn": "New project in {area}",
   "project.lead": "Choose the folder its work is in. The project takes the folder's name unless you give it another.",
