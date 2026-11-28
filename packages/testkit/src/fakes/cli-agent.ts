@@ -55,11 +55,7 @@ const startedIn = statSync(".", { bigint: true });
 const argv = process.argv.slice(2);
 const env = process.env;
 
-if (
-  argv.length === 2 &&
-  argv[1] === "status" &&
-  (argv[0] === "auth" || argv[0] === "login")
-) {
+if (argv.length === 2 && argv[1] === "status" && (argv[0] === "auth" || argv[0] === "login")) {
   process.exit(env["FAKE_CLI_SIGNED_OUT"] === "1" ? 1 : 0);
 }
 
