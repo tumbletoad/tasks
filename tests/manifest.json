@@ -167,6 +167,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.pages.trail",
+      "title": "get_task's first answer lists what is known above the task, nearest first, within its budget: older log entries go before page rows above, every level keeps its count and read target, and the user's texts for agents stand outside the data block under an ID",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.restore.every-revision",
       "title": "A backup of every revision with a search index, 0.4 to this build's, passes this build's trial restore, restores searchable, and upgrades with its references, counter and history kept; a 0.6 space's live pages are search documents",
       "source": "A1 3.12, 3.17; step 1 design, pull request 228",

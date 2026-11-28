@@ -135,7 +135,7 @@ export const pageWrite = defineEntry({
   output: PageWriteResult,
   faces: {
     ui: true,
-    cli: { verb: "page", positional: ["action", "target"] },
+    cli: { verb: "page", positional: ["action", "target"], exclude: ["task", "base"] },
     mcp: {
       tool: "write_page",
       title: "Write a page",
@@ -160,15 +160,15 @@ export const pageWrite = defineEntry({
   ],
   examples: [
     {
-      title: "The person makes a page with a title only",
+      title: "The person makes a page on the space with a title only",
       actor: "user",
       input: {
         action: "create",
-        on: LUMEN.project,
+        on: "space",
         title: "Clinic visit, 2 Dec",
         request_id: requestId(89),
       },
-      output: { result: "created", target: "M-231", on: "Lumen Health", as_of: AS_OF_NEXT },
+      output: { result: "created", target: "M-231", on: "Mira", as_of: AS_OF_NEXT },
     },
     {
       title: "Create a page on M-14's project",

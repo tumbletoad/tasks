@@ -89,7 +89,7 @@ export interface SpaceFacts {
 
 const SPACE: Statement = { sql: "SELECT * FROM space WHERE one = 1", mode: "get" };
 
-function spaceFacts(row: unknown): SpaceFacts {
+export function spaceFacts(row: unknown): SpaceFacts {
   const space = decodeSpaceRow(row as Row);
   return {
     id: space.spaceId,
@@ -1633,6 +1633,24 @@ export async function hasFolderTable(reader: WorkerConnection): Promise<boolean>
   const [found] = await snapshot(reader, [HAS_FOLDERS]);
   if (Number((found as Row | null)?.["n"] ?? 0) === 0) return false;
   folderReaders.add(reader);
+  return true;
+}
+
+const HAS_PAGES: Statement = {
+  sql: "SELECT count(*) AS n FROM sqlite_schema WHERE type = 'table' AND name = 'pages'",
+  mode: "get",
+};
+const pageReaders = new WeakSet<WorkerConnection>();
+
+/**
+ * Whether the reader's space has pages and a node's texts: schema 0.6 on. A space served read-only
+ * at an older revision until its migration runs has none, and lists none.
+ */
+export async function hasPageTable(reader: WorkerConnection): Promise<boolean> {
+  if (pageReaders.has(reader)) return true;
+  const [found] = await snapshot(reader, [HAS_PAGES]);
+  if (Number((found as Row | null)?.["n"] ?? 0) === 0) return false;
+  pageReaders.add(reader);
   return true;
 }
 
