@@ -1,4 +1,4 @@
-// How each CLI's events become normalised run events and an outcome (A4 3.11.1, 3.11.4). The
+// How each CLI's events become normalised run events and an outcome. The
 // inputs are small synthetic events; assertions are on kinds, labels, counts and reasons.
 import { describe, expect, test } from "vitest";
 import {
@@ -175,7 +175,7 @@ describe("[A4.5.parsers.events] claude-print events", () => {
       reason: "exit_status",
     });
     expect(judge({}, { code: null, signal: "SIGTERM" }).reason).toBe("exit_status");
-    // An invalid model: subtype success, is_error true, exit 1 (A4 3.11.3).
+    // An invalid model: subtype success, is_error true, exit 1.
     expect(judge({ is_error: true, result: "e" }, { code: 1, signal: null })).toMatchObject({
       ok: false,
       reason: "agent_error",

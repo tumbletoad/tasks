@@ -1,4 +1,4 @@
-// Splits a byte stream into lines, incrementally and in bounded memory (A4 3.11.4).
+// Splits a byte stream into lines, incrementally and in bounded memory.
 //
 // - A line ends at LF. A CR before the LF is dropped, so CRLF streams parse the same.
 // - A line longer than the cap is dropped whole: once the buffer would pass the cap, the bytes

@@ -1,4 +1,4 @@
-// The recorded stream fixtures of lab run N (fixtures/streams/, M0.11) for tests and fake agents:
+// The recorded stream fixtures of lab run N (fixtures/streams/) for tests and fake agents:
 // each stream with its index entry, which states how the recorded process ended.
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve, sep } from "node:path";

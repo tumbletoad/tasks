@@ -1,4 +1,4 @@
-// Fake agents replay a recording as the real child process did (M6.05, A4 5.1 "Fake agents").
+// Fake agents replay a recording as the real child process did.
 // Stdout is compared as bytes and parsed into shapes and counts; nothing of it is printed.
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { createHash } from "node:crypto";
