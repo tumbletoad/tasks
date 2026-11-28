@@ -171,7 +171,6 @@
   "activity.sourceUnlinked": "a source unlinked",
   "activity.folder": "folder set",
   "activity.folderCleared": "folder cleared",
-  "activity.reported": "reported on its run",
   "activity.setting": "a setting changed",
   "activity.renamed": "renamed",
   "activity.summary": "summary changed",

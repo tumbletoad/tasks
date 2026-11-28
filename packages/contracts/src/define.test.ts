@@ -219,7 +219,7 @@ describe("[A3.5.registry.agent-projection] agent projection and the MCP tool lis
       .map((e) => e.faces.mcp?.tool)
       .sort();
     expect(tools.map((t) => t.name)).toEqual(expected);
-    // The tools of every connection: run_report comes with run bindings.
+    // The tools of every connection.
     expect(tools.map((t) => t.name)).toEqual([
       "add_entry",
       "add_tasks",
