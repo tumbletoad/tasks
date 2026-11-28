@@ -6758,6 +6758,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.tree.http.feed",
+      "title": "The feed sends the space as a tree beside its areas and projects: the space, each area as a top-level project and each project under its area or the space, with the IDs they have, a project without an area after every area, a parent on every task row, a node row in each batch that creates, moves or archives a group, and the same tree to a phone",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.archived.web.groups",
       "title": "The sidebar lists each live area with its live projects, and under Archived each archived area with all its projects and each archived project of a live area, in the space's order; archiving recolours no other area; new work is offered only live groups; an archived group's page knows which group keeps it archived; a project without an area is listed after the areas, or under Archived after the areas' groups; a project's view is one list, open first, with or without an area",
       "owner": "M5",

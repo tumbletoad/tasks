@@ -30,6 +30,10 @@ If the git-ignored `local/AGENTS.md` exists, read it first: it holds this checko
 - Fewer concepts, fewer steps, fewer refusals. Before you add a rule, a check, a setting or a
   warning that a person meets, ask who it helps in ordinary use and what it costs everyone else.
 - Fix the cause. A workaround with a comment that explains it is still a defect.
+- No legacy or compatibility code before 1.0.0. Until then nothing has to keep working with an
+  older build, format or name: a change of format is the new format, with at most a one-time
+  conversion that is run once and not kept in the repository. Remove a reader, a fallback or an
+  alias for something older when you meet it, and say so.
 - When a mistake keeps coming back, make it impossible, or make a type, a lint rule or a test catch
   it. A written rule is the last resort.
 - When a second review finds more of the same kind of defect, change the design. After a second
