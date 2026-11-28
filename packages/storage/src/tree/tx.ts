@@ -10,9 +10,7 @@ import { takeTaskRef } from "../refs.ts";
 import { columnsValue, fieldJson } from "../write/fields.ts";
 import { provenanceOf, rowState, versionOf, type RowState } from "../write/row-state.ts";
 import { columnsOf, FIELDS, KEYS, TreeProblem, type Entity, type FieldOf } from "./fields.ts";
-
-/** Columns a create change leaves out: each follows from the change's seq. */
-const DERIVED = new Set(["created_seq", "version", "touched", "fv", "fp"]);
+import { DERIVED } from "./schema.ts";
 
 const SQL = {
   affected: "UPDATE commits SET affected = $n WHERE seq = $seq",
@@ -128,7 +126,7 @@ export class Tx {
     return takeTaskRef(this.conn);
   }
 
-  newId<P extends "t" | "p" | "n">(prefix: P): Id<P> {
+  newId<P extends "t" | "p" | "n" | "pg">(prefix: P): Id<P> {
     return newId(prefix, this.random);
   }
 

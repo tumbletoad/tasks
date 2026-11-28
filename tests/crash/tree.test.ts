@@ -50,10 +50,14 @@ async function round(plan: TreePlan, afterMs?: number): Promise<RoundEnd> {
   return { messages, killed };
 }
 
-/** The requests of round `n`: adds, a finish with follow-ups, edits on fresh and stale bases. */
+/**
+ * The requests of round `n`: adds, a finish with follow-ups, edits on fresh and stale bases, an
+ * Undo, a page with an edit of its words, and a note on the page.
+ */
 function requests(n: number): TreePlanned[] {
   const id = (k: number) => `r${String(n)}-${String(k)}`;
   const parent = `t_${String(n + 1).padStart(26, "0")}`;
+  const page = `pg_${String(n + 1).padStart(26, "0")}`;
   return [
     {
       request_id: id(1),
@@ -91,6 +95,32 @@ function requests(n: number): TreePlanned[] {
       input: { task: parent, subtasks: "all", outcome: "Done", follow_ups: [{ title: "Next" }] },
     },
     { request_id: id(6), agent: false, base: "none", command: "undo", input: {} },
+    {
+      request_id: id(7),
+      agent: true,
+      base: "fresh",
+      command: "page.create",
+      input: {
+        id: page,
+        on: "space",
+        title: `Notes ${String(n)}`,
+        body: "First line. Second line.",
+      },
+    },
+    {
+      request_id: id(8),
+      agent: true,
+      base: "none",
+      command: "page.edit",
+      input: { page, old: "First line.", new: "The first line." },
+    },
+    {
+      request_id: id(9),
+      agent: false,
+      base: "fresh",
+      command: "note.add",
+      input: { on: page, body: "Read it" },
+    },
   ];
 }
 

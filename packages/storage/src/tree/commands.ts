@@ -1,29 +1,28 @@
-// The tree's named commands. Each reads what it needs and writes through its Tx, statement by
-// statement, so every statement sees the ones before it; nothing is predicted in memory. A command
-// returns what it did, which the receipt stores. Input is checked here as well as by the service:
-// storage never trusts a caller with the space.
-import type { Row, SqlValue } from "../driver.ts";
-import { isId } from "../ids.ts";
-import { formatTaskRef, parseTaskRef } from "../refs.ts";
-import { positionBetween } from "../write/positions.ts";
+// The tree's named commands for tasks, the Trash and projects. Each reads what it needs and writes
+// through its Tx, statement by statement, so every statement sees the ones before it; nothing is
+// predicted in memory. A command returns what it did, which the receipt stores. Input is checked
+// here as well as by the service: storage never trusts a caller with the space.
+import type { SqlValue } from "../driver.ts";
 import { freeSlug } from "../write/slugs.ts";
+import {
+  addNote,
+  endOf,
+  findNode,
+  givenId,
+  liveTask,
+  parentFor,
+  problem,
+  refText,
+  text,
+  title,
+  type Input,
+} from "./inputs.ts";
+import { KNOWLEDGE } from "./knowledge.ts";
 import type { Command, Tx } from "./tx.ts";
-import { TreeProblem } from "./fields.ts";
-
-type Input = Record<string, unknown>;
-
-const NOTE_KINDS = ["note", "progress", "evidence", "blocker", "decision", "question", "handoff"];
 
 const SQL = {
   node: "SELECT * FROM nodes WHERE id = $id",
-  taskByRef: "SELECT id FROM tasks WHERE ref = $ref",
-  child:
-    "SELECT * FROM nodes WHERE parent_id = $parent AND kind = 'project' AND (slug = $slug OR lower(title) = $title)",
-  lastPosition: "SELECT max(position) AS p FROM nodes WHERE parent_id = $parent AND kind = $kind",
   slugTaken: "SELECT 1 FROM nodes WHERE parent_id = $parent AND kind = 'project' AND slug = $slug",
-  task:
-    "SELECT n.id, n.parent_id, n.title, n.deleted_at, n.fp AS node_fp, n.created_seq AS node_seq, " +
-    "t.ref, t.lifecycle, t.wrap_state, t.outcome FROM nodes n JOIN tasks t ON t.id = n.id WHERE n.id = $id",
   /** The live tasks below a node, at any depth, nearest first. */
   subtree:
     "WITH RECURSIVE down(id, depth) AS (SELECT id, 1 FROM nodes WHERE parent_id = $id AND kind = 'task' " +
@@ -41,122 +40,7 @@ const SQL = {
   below:
     "WITH RECURSIVE up(id) AS (SELECT $under UNION ALL SELECT n.parent_id FROM nodes n JOIN up " +
     "ON n.id = up.id WHERE n.parent_id IS NOT NULL) SELECT 1 FROM up WHERE id = $id",
-  lastOrdinal: "SELECT max(ordinal) AS o FROM notes WHERE owner_id = $owner",
-  note: "SELECT * FROM notes WHERE id = $id",
-  noteAt: "SELECT * FROM notes WHERE owner_id = $owner AND ordinal = $ordinal",
 } as const;
-
-const problem = (code: string, message: string, field?: string, data?: unknown): never => {
-  throw new TreeProblem(code, message, field, data);
-};
-
-const text = (input: Input, field: string, max: number, oneLine = true): string | undefined => {
-  const value = input[field];
-  if (value === undefined) return undefined;
-  if (typeof value !== "string" || value.length > max || (oneLine && value.includes("\n"))) {
-    return problem(
-      "VALIDATION_FAILED",
-      `Expected ${field} as text of at most ${String(max)}`,
-      field,
-    );
-  }
-  return value;
-};
-
-const title = (input: Input): string => {
-  const value = text(input, "title", 300);
-  if (value === undefined || value.trim() === "")
-    problem("VALIDATION_FAILED", "A title is needed", "title");
-  return value as string;
-};
-
-/** An ID the caller chose for a new row: one of its kind that the space does not hold yet. */
-function givenId(value: unknown, prefix: "t" | "p", field: string): string | undefined {
-  if (value === undefined) return undefined;
-  if (!isId(value, prefix)) return problem("VALIDATION_FAILED", "Not an ID of that kind", field);
-  return value;
-}
-
-/** A node by ID, or a task by its reference (`M-14`). Undefined when the space has none. */
-function findNode(tx: Tx, key: unknown): Row | undefined {
-  if (typeof key !== "string") return undefined;
-  const ref = parseTaskRef(key);
-  if (ref !== undefined) {
-    if (ref.prefix !== tx.space.refPrefix) return undefined;
-    const id = tx.get(SQL.taskByRef, { ref: ref.ref })?.["id"];
-    return typeof id === "string" ? tx.get(SQL.node, { id }) : undefined;
-  }
-  if (key === "space") return tx.get(SQL.node, { id: tx.space.spaceId });
-  const byId = tx.get(SQL.node, { id: key });
-  if (byId !== undefined) return byId;
-  // A project path: each part is a project's slug or title, ignoring case.
-  let at: Row | undefined = tx.get(SQL.node, { id: tx.space.spaceId });
-  for (const part of key.split("/")) {
-    const wanted = part.trim().toLowerCase();
-    at = tx.get(SQL.child, { parent: String(at?.["id"]), slug: wanted, title: wanted });
-    if (at === undefined) return undefined;
-  }
-  return at;
-}
-
-/** A task by its key: live, in the Trash (`deleted` true), or either. */
-function liveTask(tx: Tx, key: unknown, field = "task", deleted: boolean | "either" = false): Row {
-  const found = findNode(tx, key);
-  if (found?.["kind"] !== "task") return problem("NOT_FOUND", "The space has no such task", field);
-  const task = tx.get(SQL.task, { id: String(found["id"]) }) as Row;
-  if (deleted !== "either" && (task["deleted_at"] !== null) !== deleted) {
-    problem(
-      deleted ? "INVALID_TRANSITION" : "DELETED",
-      deleted ? "The task is not in the Trash" : "The task is in the Trash",
-      field,
-    );
-  }
-  return task;
-}
-
-/** The end of a parent's children of one kind. */
-const endOf = (tx: Tx, parent: string, kind: string): string => {
-  const last = tx.get(SQL.lastPosition, { parent, kind })?.["p"];
-  return positionBetween(typeof last === "string" ? last : undefined, undefined);
-};
-
-const refText = (tx: Tx, ref: unknown): string => formatTaskRef(tx.space.refPrefix, Number(ref));
-
-/** Where a new or moved task goes: a live project, a live task, or the space. */
-function parentFor(tx: Tx, under: unknown, field: string): Row {
-  const found =
-    under === undefined ? tx.get(SQL.node, { id: tx.space.spaceId }) : findNode(tx, under);
-  if (found === undefined)
-    return problem("NOT_FOUND", "Nothing of that name to put it under", field);
-  if (found["deleted_at"] !== null) problem("DELETED", "That task is in the Trash", field);
-  if (found["archived_at"] !== null && found["archived_at"] !== undefined) {
-    problem("INVALID_TRANSITION", "That project is archived", field);
-  }
-  return found;
-}
-
-function addNote(tx: Tx, owner: string, node: string, body: string, kind = "note", agents = false) {
-  const last = tx.get(SQL.lastOrdinal, { owner })?.["o"];
-  const ordinal = (typeof last === "number" ? last : 0) + 1;
-  const id = tx.newId("n");
-  tx.create(
-    "notes",
-    {
-      id,
-      owner_id: owner,
-      ordinal,
-      kind,
-      for_agents: agents ? 1 : 0,
-      author_id: tx.author,
-      session_id: tx.request.actor.session_id ?? null,
-      run_id: tx.request.actor.run_id ?? null,
-      body,
-      created_at: tx.at,
-    },
-    node,
-  );
-  return { id, ordinal };
-}
 
 const tasksAdd: Command = (tx, input) => {
   const drafts = input["tasks"];
@@ -363,61 +247,6 @@ const nodesRestore: Command = (tx, input) => {
   return { task: { id, ref: refText(tx, task["ref"]) }, tasks: ids.length };
 };
 
-/** A note by ID, or by its owner and ordinal. */
-function findNote(tx: Tx, input: Input): Row {
-  const row =
-    typeof input["note"] === "string"
-      ? tx.get(SQL.note, { id: input["note"] })
-      : tx.get(SQL.noteAt, {
-          owner: String(findNode(tx, input["on"])?.["id"]),
-          ordinal: Number(input["ordinal"]),
-        });
-  return row ?? problem("NOT_FOUND", "The space has no such note", "note");
-}
-
-const noteAdd: Command = (tx, input) => {
-  const owner = findNode(tx, input["on"]);
-  if (owner === undefined || owner["deleted_at"] !== null)
-    problem("NOT_FOUND", "Nothing of that name to write on", "on");
-  const kind = input["kind"] ?? "note";
-  if (typeof kind !== "string" || !NOTE_KINDS.includes(kind))
-    problem("VALIDATION_FAILED", "Not a kind of note", "kind");
-  const body = text(input, "body", 16_000, false);
-  if (body === undefined || body.trim() === "")
-    return problem("VALIDATION_FAILED", "A note needs words", "body");
-  const id = String(owner?.["id"]);
-  return { note: addNote(tx, id, id, body, kind as string, input["for_agents"] === true) };
-};
-
-/** A note's words, and its removal, are the person's to correct: an agent writes a new note. */
-function personsNote(tx: Tx, input: Input): Row {
-  if (tx.request.actor.actor_kind !== "human") {
-    problem("USER_ONLY", "Only a person corrects or removes a note", "note");
-  }
-  return findNote(tx, input);
-}
-
-const noteEdit: Command = (tx, input) => {
-  const note = personsNote(tx, input);
-  const body = text(input, "body", 16_000, false);
-  if (body === undefined || body.trim() === "")
-    return problem("VALIDATION_FAILED", "A note needs words", "body");
-  if (note["body"] !== body) {
-    tx.set("notes", String(note["id"]), String(note["owner_id"]), {
-      body: { body, edited_at: tx.at },
-    });
-  }
-  return { note: { id: note["id"], ordinal: note["ordinal"] } };
-};
-
-const noteGone =
-  (gone: boolean): Command =>
-  (tx, input) => {
-    const note = personsNote(tx, input);
-    tx.set("notes", String(note["id"]), String(note["owner_id"]), { deleted: gone ? tx.at : null });
-    return { note: { id: note["id"], ordinal: note["ordinal"] } };
-  };
-
 const projectCreate: Command = (tx, input) => {
   const parent = parentFor(tx, input["under"], "under");
   if (parent["kind"] === "task")
@@ -468,11 +297,8 @@ export const COMMANDS: Readonly<Record<string, Command>> = {
   "task.reopen": taskReopen,
   "nodes.trash": nodesTrash,
   "nodes.restore": nodesRestore,
-  "note.add": noteAdd,
-  "note.edit": noteEdit,
-  "note.remove": noteGone(true),
-  "note.put_back": noteGone(false),
   "project.create": projectCreate,
   "project.archive": projectArchived(true),
   "project.unarchive": projectArchived(false),
+  ...KNOWLEDGE,
 };

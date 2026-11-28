@@ -23,7 +23,8 @@ describe("[S2.tree.core] the tree writer's commands in a disposable tree space",
   });
 
   const count = (sql: string): number => Number(fx.conn.prepare(sql).get()?.["n"]);
-  const commits = () => count("SELECT count(*) AS n FROM commits");
+  /** The requests' commits: the space's own first one has no receipt. */
+  const commits = () => count("SELECT count(*) AS n FROM commits WHERE scope_id <> 'system'");
   const project = (title: string, under?: string): string => {
     const made = fx.send("project.create", { title, ...(under === undefined ? {} : { under }) });
     expect(made.status).toBe("applied");

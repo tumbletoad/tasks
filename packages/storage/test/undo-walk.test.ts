@@ -47,8 +47,27 @@ interface Walker {
   redo(): void;
   seen(task: string): Seen;
   archived(project: string): boolean;
+  /** A new page on the space: "Passport", no brief, "Bring a photo.". */
+  page(): string;
+  pageAct(page: string, act: PageAct): void;
+  seenPage(page: string): unknown;
+  /** The space's brief, description or text for agents. */
+  texts(act: TextAct): void;
+  seenTexts(): unknown;
   close(): void;
 }
+
+type PageAct =
+  { do: "set"; title?: string; brief?: string; body?: string } | { do: "trash" | "restore" };
+
+type TextAct = { brief?: string; description?: string } | { forAgents: string };
+
+const pageSeen = (p: Record<string, unknown>) => ({
+  title: p["title"],
+  brief: p["brief"],
+  body: p["body"],
+  trash: p["deleted_at"] !== null,
+});
 
 /** Today's writer, on its fixture space. */
 async function today(): Promise<Walker> {
@@ -146,6 +165,46 @@ async function today(): Promise<Walker> {
       fx.reader.prepare("SELECT lifecycle FROM projects WHERE id = $id").get({ id })?.[
         "lifecycle"
       ] === "archived",
+    page: () => {
+      const result = fx.writer.submit(
+        fx.request(fx.human, [
+          {
+            kind: "page.create",
+            owner: { kind: "space" },
+            title: "Passport",
+            brief: "",
+            body: "Bring a photo.",
+          },
+        ]),
+      );
+      expectStatus(result, "applied");
+      return result.results[0]?.id ?? "";
+    },
+    pageAct: (page, act) => {
+      if (act.do === "set") {
+        const { do: _, ...set } = act;
+        send([{ kind: "page.set", page, ...set }]);
+      } else send([{ kind: act.do === "trash" ? "page.trash" : "page.restore", page }]);
+    },
+    seenPage: (id) =>
+      pageSeen(fx.reader.prepare("SELECT * FROM pages WHERE id = $id").get({ id }) ?? {}),
+    texts: (act) => {
+      send([
+        "forAgents" in act
+          ? { kind: "node.instruct", node: { kind: "space" }, text: act.forAgents }
+          : { kind: "node.set", node: { kind: "space" }, ...act },
+      ]);
+    },
+    seenTexts: () => {
+      const t = fx.reader
+        .prepare("SELECT * FROM node_texts WHERE owner_id = $id")
+        .get({ id: fx.spaceId });
+      return {
+        brief: t?.["brief"] ?? "",
+        description: t?.["description"] ?? "",
+        forAgents: t?.["for_agents"] ?? "",
+      };
+    },
     close: () => {
       checkHistory(fx.reader);
       fx.close();
@@ -252,6 +311,33 @@ async function tree(): Promise<Walker> {
       fx.conn.prepare("SELECT archived_at FROM nodes WHERE id = $id").get({ id })?.[
         "archived_at"
       ] !== null,
+    page: () =>
+      String(
+        (
+          send("page.create", {
+            on: "space",
+            title: "Passport",
+            brief: "",
+            body: "Bring a photo.",
+          }) as { page: { id: string } }
+        ).page.id,
+      ),
+    pageAct: (page, act) => {
+      if (act.do === "set") {
+        const { do: _, ...set } = act;
+        send("page.set", { page, ...set });
+      } else send(act.do === "trash" ? "page.trash" : "page.restore", { page });
+    },
+    seenPage: (id) =>
+      pageSeen(fx.conn.prepare("SELECT * FROM pages WHERE id = $id").get({ id }) ?? {}),
+    texts: (act) => {
+      if ("forAgents" in act) send("node.instruct", { node: "space", text: act.forAgents });
+      else send("node.set", { node: "space", ...act });
+    },
+    seenTexts: () => {
+      const t = fx.conn.prepare("SELECT * FROM nodes WHERE id = $id").get({ id: fx.spaceId }) ?? {};
+      return { brief: t["brief"], description: t["description"], forAgents: t["for_agents"] };
+    },
     close: () => {
       const problems = treeHistoryProblems(fx.conn);
       fx.close();
@@ -259,6 +345,39 @@ async function tree(): Promise<Walker> {
     },
   };
 }
+
+/** A page's kinds: its words, and the Trash and out of it. */
+const PAGE_WALKS: [string, PageAct, PageAct, PageAct[]][] = [
+  [
+    "a page's body set twice",
+    { do: "set", body: "Bring two photos." },
+    { do: "set", body: "Bring two photos and the old passport." },
+    [],
+  ],
+  [
+    "a page's title and brief",
+    { do: "set", title: "Passport renewal", brief: "What to bring" },
+    { do: "set", brief: "What to bring, and when" },
+    [],
+  ],
+  ["a page to the Trash", { do: "trash" }, { do: "restore" }, []],
+  ["a page out of the Trash", { do: "restore" }, { do: "trash" }, [{ do: "trash" }]],
+];
+
+/** The space's texts: a first description, a brief, the text for agents. */
+const TEXT_WALKS: [string, TextAct, TextAct][] = [
+  [
+    "the space's first description, then another",
+    { description: "Home and paperwork." },
+    { description: "Home, paperwork and travel." },
+  ],
+  ["the space's brief", { brief: "Home" }, { brief: "Home and travel" }],
+  [
+    "the text for agents",
+    { forAgents: "Ask before you book anything." },
+    { forAgents: "Ask before you pay for anything." },
+  ],
+];
 
 const NOTE: Act = { do: "note", body: "Ask for the old one back" };
 
@@ -331,6 +450,46 @@ describe.each([
       for (const at of [1, 2]) {
         w.redo();
         expect(w.seen(id)).toEqual(states[at]);
+      }
+    },
+  );
+
+  test.each(PAGE_WALKS)(
+    "%s, its opposite by hand, two Undos and two Redos walk the page back and forth exactly",
+    (_, action, opposite, setup) => {
+      const page = w.page();
+      for (const act of setup) w.pageAct(page, act);
+      const states = [w.seenPage(page)];
+      w.pageAct(page, action);
+      states.push(w.seenPage(page));
+      w.pageAct(page, opposite);
+      states.push(w.seenPage(page));
+      for (const at of [1, 0]) {
+        w.undo();
+        expect(w.seenPage(page)).toEqual(states[at]);
+      }
+      for (const at of [1, 2]) {
+        w.redo();
+        expect(w.seenPage(page)).toEqual(states[at]);
+      }
+    },
+  );
+
+  test.each(TEXT_WALKS)(
+    "%s, its opposite by hand, two Undos and two Redos walk the texts back and forth exactly",
+    (_, action, opposite) => {
+      const states = [w.seenTexts()];
+      w.texts(action);
+      states.push(w.seenTexts());
+      w.texts(opposite);
+      states.push(w.seenTexts());
+      for (const at of [1, 0]) {
+        w.undo();
+        expect(w.seenTexts()).toEqual(states[at]);
+      }
+      for (const at of [1, 2]) {
+        w.redo();
+        expect(w.seenTexts()).toEqual(states[at]);
       }
     },
   );
