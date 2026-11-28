@@ -26,6 +26,7 @@ import { useNavigate, useParams, useRouter, useRouterState } from "@tanstack/rea
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "react-aria-components";
 import {
+  captureGroups,
   HERE_KEY,
   groupSuggestions,
   groupTyped,
@@ -35,8 +36,8 @@ import {
 import { joinRest, splitPaste } from "../capture/paste.ts";
 import { requestId } from "../api.ts";
 import { Session } from "../context.ts";
-import { topLevel, trail } from "@ttasks/client/store";
-import { liveGroups, formatDay, LANDING } from "@ttasks/client/today";
+import { trail } from "@ttasks/client/store";
+import { formatDay, LANDING } from "@ttasks/client/today";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { tabKept } from "../kept.ts";
 import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
@@ -364,21 +365,7 @@ export function TopBar({
 
   // New work goes to live groups only: an archived one is neither suggested nor taken, and its name
   // is said to be archived rather than read as another group's.
-  const { areas, projects, archived } = useMemo(() => {
-    const open = liveGroups(state.nodes);
-    const liveIds = new Set([...open.areas, ...open.projects].map((g) => g.id));
-    const tops = topLevel(state.nodes);
-    const shelved = [...state.nodes.values()].filter(
-      (n) => n.kind === "project" && !liveIds.has(n.id),
-    );
-    return {
-      ...open,
-      archived: {
-        areas: shelved.filter((n) => tops.includes(n)),
-        projects: shelved.filter((n) => !tops.includes(n)),
-      },
-    };
-  }, [state.nodes]);
+  const { areas, projects, archived } = useMemo(() => captureGroups(state.nodes), [state.nodes]);
   // Only an area's and a project's routes have these. On a project's page a capture goes where the
   // project is now, whatever area its address names.
   const hereProject = params.project;
