@@ -28,8 +28,8 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 1.1 | The contract for pages, the trail, `read` and `write_page` | done (#229, #231) |
 | 1.2 | Storage: the migration step for pages and the new fields, the search tables rebuilt, an older backup's index rebuilt by its own version | done (#240) |
 | 1.3 | The page edit as the first named command of the new write path | done (#240) |
-| 1.4 | Agent tools: `read`, `write_page`, the trail in `get_task` within one budget, search over pages, `complete_task` asking for pages updated | done (#250) |
-| 1.5 | The skill `keeping-the-library`, and a brief explained as "what this is" | done (#250) |
+| 1.4 | Agent tools: `read`, `write_page`, the trail in `get_task` within one budget, search over pages, `complete_task` asking for pages updated | done (#251) |
+| 1.5 | The skill `keeping-the-library`, and a brief explained as "what this is" | done (#251) |
 | 1.6 | The app: the project screen with its Library, the page screen with History and Restore, page edits under Changes | todo: 1.1 |
 | 1.7 | The trial: twenty scripted tasks with Claude Code and Codex, and the bytes of history per page edit | todo: 1.4, 1.5 |
 | 1.8 | The harvest of one real project, and a walk through it as a person | todo: 1.6, 1.7 |
