@@ -1,4 +1,4 @@
-// The frame every view sits in (A5 3.3): the sidebar of views and areas, the top bar, the status
+// The frame every view sits in: the sidebar of views and areas, the top bar, the status
 // bar for service problems, and the routed view. No border between the sidebar and the view:
 // spacing separates them. Views have no heading; the active sidebar item and the tab's title name
 // the view. Below 1,024 px the sidebar becomes a drawer behind a Menu button.

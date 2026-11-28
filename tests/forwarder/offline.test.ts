@@ -1,6 +1,6 @@
-// Forwarder conformance (A2 3.7.3, 3.7.4, 3.7.6): the offline responder for both MCP eras, with
+// Forwarder conformance: the offline responder for both MCP eras, with
 // and without the cache; the same tools offline and online; and a session that starts offline
-// and goes on online once the service comes, without restarting the client (A2 5).
+// and goes on online once the service comes, without restarting the client.
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";

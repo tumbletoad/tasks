@@ -1,4 +1,4 @@
-// Today (A5 3.4): today's date and a few numbers about the day, then Focus, This week, Next and
+// Today: today's date and a few numbers about the day, then Focus, This week, Next and
 // Changes, with no heading above them, and after the tasks the pages agents changed (PageChanges).
 // The sections and their membership are `todayOf` (@ttasks/client/today), a pure function of the
 // live rows; this component hands their rows to the one list (TaskList), which draws every row and
@@ -69,7 +69,7 @@ export function TodayPage({ task, onExpand }: TodayProps) {
   const finished = useFinished(clock);
 
   // The sections of the rows the list hands over: the live rows and the rows in their check-off
-  // hold (A5 3.12), so a checked-off task stays at its place for the hold here too.
+  // hold, so a checked-off task stays at its place for the hold here too.
   const groups = useCallback<GroupsOf>(
     (tasks, held) => {
       const sections = holdExpanded(

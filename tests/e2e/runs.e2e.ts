@@ -1,4 +1,4 @@
-// Run from the page (M6), in Chromium and Firefox against the real service process with fixture
+// Run from the page, in Chromium and Firefox against the real service process with fixture
 // data: the fake Codex (fake-codex.ts) replays a real `codex app-server` recording as the
 // instance's program, in the case each test picks. No real agent program is started.
 //

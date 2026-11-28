@@ -1,4 +1,4 @@
-// Markdown from a task (A5 3.26): context, notes, log entries, outcome and learnings are written by
+// Markdown from a task: context, notes, log entries, outcome and learnings are written by
 // agents and arrive from emails, tickets and chats, so they are untrusted text. They are parsed
 // here into React elements from a small subset: paragraphs with their line breaks, `#` lines as
 // strong lines (no heading elements in the task), lists, quotes, fenced code, inline code,
@@ -9,7 +9,7 @@
 import type { ReactNode } from "react";
 import { safeHref } from "../row/model.ts";
 
-/** A source or content link opens with no opener and no referrer (A5 3.26). */
+/** A source or content link opens with no opener and no referrer. */
 export const LINK_REL = ["noopener", "noreferrer"].join(" ");
 
 /** Inline tokens are looked for in this order at each place; the earliest match wins. */

@@ -174,7 +174,7 @@ describe("[A4.5.brief.sanitiser] the brief's sanitiser: properties and hostile t
 });
 
 describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, nothing truncated", () => {
-  test("the sent brief is A4 3.15.2's five lines; prefilled ends empty; the pointer adds the folder and the context-pack lines", () => {
+  test("the sent brief is five lines; prefilled ends empty; the pointer adds the folder and the context-pack lines", () => {
     expect(okText(base()).split("\n")).toEqual([
       `${PRODUCT_NAME} task M-14 (launch ${REF}).`,
       ...fixedLines(REF),

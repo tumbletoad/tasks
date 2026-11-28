@@ -1,4 +1,4 @@
-// The area and project control (A5 3.7, 3.11): a pill button with the area's dot that opens a
+// The area and project control: a pill button with the area's dot that opens a
 // type-ahead over the area tree. Typing filters the areas and their projects; the arrows move in
 // the list while focus stays in the field, Enter or a click moves the task. The first choice is
 // what Enter takes, so a live area whose name is close to what was typed comes first and a typo

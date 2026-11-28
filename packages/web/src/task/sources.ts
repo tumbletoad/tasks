@@ -1,4 +1,4 @@
-// A source as the row and the expanded task show it (A5 3.6, 3.7): its own text, never a label.
+// A source as the row and the expanded task show it: its own text, never a label.
 // "Wrong appointment times since Sunday · Ana Reyes" for a mail, "LUM-212 Appointments off by one
 // hour" for a ticket, its key first. The words around the parts come from the catalogue.
 import type { Translate } from "../i18n/intl.tsx";

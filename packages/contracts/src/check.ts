@@ -1,6 +1,6 @@
-// The registry check: the lint rules for entries (A3 3.2.1), exposure (3.2.3), naming (3.2.4),
-// result budgets (3.2.5) and A6 3.3's metadata. A tool definition's size is reported, not
-// checked (A3 3.2.5: `mcp-definitions.json`). `pnpm gen` refuses to write output for a
+// The registry check: the lint rules for entries, exposure, naming,
+// result budgets and metadata. A tool definition's size is reported in `mcp-definitions.json`,
+// not checked. `pnpm gen` refuses to write output for a
 // registry that fails it, so `pnpm verify` runs it in its generated-files step. Each rule has a
 // failing fixture in check.test.ts. The schema rules are a closed grammar (`checkSchemas`).
 import { z } from "zod";
@@ -36,23 +36,22 @@ import { Base, GroupBase, RequestId, SessionTask } from "./schemas.ts";
 const OWN_TASK_CHOICE: ReadonlySet<string> = new Set(["folder.manage"]);
 
 export const LIMITS = {
-  /** A field description (A3 3.2.1). */
+  /** A field description. */
   description: 80,
   summary: 120,
   toolName: 24,
   toolTitle: 60,
-  /** A3 3.2.5. */
   toolDescription: 280,
   /**
-   * Any result, in estimated tokens (A3 3.2.5). A tool definition has no cap: its size is
-   * reported in `mcp-definitions.json`, so growth is a reviewed change (A3 3.2.5).
+   * Any result, in estimated tokens. A tool definition has no cap: its size is
+   * reported in `mcp-definitions.json`, so growth is a reviewed change.
    */
   result: 4000,
 } as const;
 
 export interface CheckOptions {
   /**
-   * The MCP server key (A3 3.2.4), from the brand package. The client puts it before every tool
+   * The MCP server key, from the brand package. The client puts it before every tool
    * name (`mcp__ttasks__search`), so no tool name starts with it as its first word.
    */
   readonly serverKey?: string;
@@ -160,12 +159,12 @@ function checkMetadata(entry: AnyEntry, say: Say): void {
     if (requestId === undefined) say("a write entry requires request_id");
     else if (mixed) {
       // A read action takes none, so the field is optional; the request path requires it for a
-      // write action (A3 3.2.3).
+      // write action.
       if (requestId === RequestId || !isShared(requestId, RequestId, true)) {
-        say("request_id of an entry with read actions is RequestId.optional() (A3 3.2.3)");
+        say("request_id of an entry with read actions is RequestId.optional()");
       }
     } else if (!isShared(requestId, RequestId, false)) {
-      say("request_id must be the shared RequestId schema from schemas.ts (A3 3.4.1)");
+      say("request_id must be the shared RequestId schema from schemas.ts");
     }
     checkBase(entry, say);
     if (!entry.errors.includes("request_id_conflict")) {
@@ -190,7 +189,7 @@ function checkMetadata(entry: AnyEntry, say: Say): void {
       say(`an agent-allowed entry cannot need scope "${entry.scope}" (R7)`);
     }
     const budget = entry.budget;
-    if (budget === undefined) say("an agent-allowed entry declares a budget (A3 3.2.5)");
+    if (budget === undefined) say("an agent-allowed entry declares a budget");
     else if (!(budget.typical > 0 && budget.typical <= budget.max && budget.max <= LIMITS.result)) {
       say(
         `budget: typical ${String(budget.typical)} must not exceed max ${String(budget.max)}, and max must not exceed ${String(LIMITS.result)}`,
@@ -243,7 +242,7 @@ function checkOps(entry: AnyEntry, say: Say): void {
         `an agent-allowed entry cannot emit "${op}" (R7: launches, runs and routines are the user's)`,
       );
     } else if (isAgentAllowed(entry) && spec.class === "user") {
-      say(`an agent-allowed entry cannot emit the user-only "${op}" (A3 3.2.3)`);
+      say(`an agent-allowed entry cannot emit the user-only "${op}"`);
     }
   }
 }
@@ -267,29 +266,28 @@ function isShared(schema: z.ZodType, shared: z.ZodType, optional: boolean): bool
 /**
  * `base` is a shared base schema (`Base`, or `GroupBase` for a group), or one of them made
  * optional. A write that may emit an operation that
- * always needs a base takes it, and requires it when every operation it emits does (A1 3.5,
- * A3 3.4.1).
+ * always needs a base takes it, and requires it when every operation it emits does.
  */
 function checkBase(entry: AnyEntry, say: Say): void {
   const base = entry.input.shape["base"] as z.ZodType | undefined;
   const guarded = entry.ops.filter((op) => opSpec(op)?.base === true);
   if (base === undefined) {
     if (guarded.length > 0) {
-      say(`a write entry that may emit ${guarded.join(", ")} takes base (A1 3.5)`);
+      say(`a write entry that may emit ${guarded.join(", ")} takes base`);
     }
   } else if (!isShared(base, Base, true) && !isShared(base, GroupBase, true)) {
-    say("base must be a shared base schema from schemas.ts, or one made optional (A3 3.4.1)");
+    say("base must be a shared base schema from schemas.ts, or one made optional");
   } else if (entry.actions !== undefined) {
-    // A read action takes no base: the request path requires it for a write action (A3 3.2.3).
+    // A read action takes no base: the request path requires it for a write action.
     if (base === Base || base === GroupBase)
-      say("base of an entry with read actions is Base.optional() (A3 3.2.3)");
+      say("base of an entry with read actions is Base.optional()");
   } else if (base !== Base && guarded.length > 0 && guarded.length === entry.ops.length) {
-    say("base is required: every operation of the entry changes existing fields (A1 3.5)");
+    say("base is required: every operation of the entry changes existing fields");
   }
 }
 
 /**
- * A mixed entry (A3 3.2.3): a write entry whose required enum `field` picks the action, `reads`
+ * A mixed entry: a write entry whose required enum `field` picks the action, `reads`
  * naming some of its values but not all of them. An entry that only reads is a read entry.
  */
 function checkActions(entry: AnyEntry, say: Say): void {
@@ -323,7 +321,7 @@ function checkActions(entry: AnyEntry, say: Say): void {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The schema grammar (A3 3.2.1). An allow-list over the whole tree of an entry's
+// The schema grammar. An allow-list over the whole tree of an entry's
 // input and output. Every node must be one of the shapes in SHAPES, and may carry only the
 // definition options and checks its row lists. Anything else fails with the node's path. Each
 // shape is one that Zod and the generated JSON Schema judge alike, and that parses to a value the
@@ -340,7 +338,7 @@ interface At {
   readonly path: string;
   readonly side: Side;
   readonly say: Say;
-  /** The node is an option of a union, where `null` may stand (A3 3.4.11). */
+  /** The node is an option of a union, where `null` may stand. */
   readonly option?: boolean;
 }
 
@@ -511,7 +509,7 @@ const SHAPES: Readonly<Record<string, Shape>> = {
   number: { keys: [], checks: ["greater_than", "less_than"], sides: ALL, inspect: bounds },
   boolean: { keys: [], checks: [], sides: ALL, inspect: () => undefined },
   // Only as a union option (`node` refuses it elsewhere): a preference value's reset to its
-  // default (A3 3.4.11). Never a field of its own, so no field is "absent or null".
+  // default. Never a field of its own, so no field is "absent or null".
   null: { keys: [], checks: [], sides: ALL, inspect: () => undefined },
   union: { keys: ["options"], checks: [], sides: ALL, inspect: inspectUnion },
   optional: {
@@ -548,7 +546,7 @@ function node(schema: z.ZodType, at: At): void {
   const shape = Object.hasOwn(SHAPES, name) ? SHAPES[name] : undefined;
   if (shape === undefined) {
     at.say(
-      `${at.path}: type "${def.type}" is not in the schema grammar (A3 3.2.1)${TYPE_HINTS[def.type] ?? ""}`,
+      `${at.path}: type "${def.type}" is not in the schema grammar${TYPE_HINTS[def.type] ?? ""}`,
     );
     return;
   }
@@ -557,9 +555,7 @@ function node(schema: z.ZodType, at: At): void {
     return;
   }
   if (name === "null" && at.option !== true) {
-    at.say(
-      `${at.path}: null stands only as a union option, such as a preference value (A3 3.4.11)`,
-    );
+    at.say(`${at.path}: null stands only as a union option, such as a preference value`);
     return;
   }
   // Every own key, symbols too.
@@ -605,7 +601,7 @@ function checkChecks(def: LooseDef, name: string, shape: Shape, at: At): void {
   }
 }
 
-/** The description is the only metadata (A3 3.2.1). */
+/** The description is the only metadata. */
 function checkMeta(schema: z.ZodType, at: At): void {
   for (const [key, value] of Object.entries(z.globalRegistry.get(schema) ?? {})) {
     if (key !== "description" || typeof value !== "string") {
@@ -722,7 +718,7 @@ function inspectUnion(def: LooseDef, at: At): void {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The agent rules and the defaults (A3 3.2.1): plain data on the entry, keyed by path. Each
+// The agent rules and the defaults: plain data on the entry, keyed by path. Each
 // path must name a node of the input that its rule fits. The audience inputs are built from them
 // (define.ts), so what is written here is what the generated files and parseInput() apply.
 
@@ -902,7 +898,7 @@ function checkFaces(
     say("an entry has at least one face");
   }
   if (faces.mcp !== undefined && !isAgentAllowed(entry)) {
-    say("only agent-allowed entries have an MCP face (A3 3.2.3)");
+    say("only agent-allowed entries have an MCP face");
   }
   if (entry.actors === "ui" && clis.length > 0) say("a UI-only entry has no CLI face");
 
@@ -920,7 +916,7 @@ function checkFaces(
       (tool === options.serverKey || tool.startsWith(`${options.serverKey}_`))
     ) {
       // The client namespaces every tool by the server key (mcp__ttasks__search), so a name that
-      // starts with it says it twice. A later word may be the key's word: add_tasks (A3 3.2.4).
+      // starts with it says it twice. A later word may be the key's word: add_tasks.
       say(`a tool name does not start with the MCP server key ("${options.serverKey}")`);
     }
     if (seen.tools.has(tool)) say(`tool name "${tool}" is used twice`);
@@ -1037,7 +1033,7 @@ function firstIssue(error: z.ZodError): string {
  * audience inputs are built only from rules that passed the check (`schemasOk`).
  */
 function checkExamples(entry: AnyEntry, say: Say, schemasOk: boolean): void {
-  if (entry.examples.length === 0) say("needs at least one example (A3 3.2.1)");
+  if (entry.examples.length === 0) say("needs at least one example");
   for (const example of entry.examples) {
     const at = `example "${example.title}"`;
     const actor = example.actor ?? (isAgentAllowed(entry) ? "agent" : "user");

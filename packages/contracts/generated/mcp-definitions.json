@@ -1,6 +1,6 @@
 {
   "bytes_per_token": 2,
-  "estimator": "ceil(utf8 bytes of the compact JSON / bytes_per_token), per tool (A3 3.2.5)",
+  "estimator": "ceil(utf8 bytes of the compact JSON / bytes_per_token), per tool",
   "tools": [
     {
       "bytes": 1416,

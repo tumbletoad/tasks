@@ -1,5 +1,5 @@
 /*
- * The list (A5 3.5, 3.25): area headings (14 px, weight 600, the area dot), project labels (13 px,
+ * The list: area headings (14 px, weight 600, the area dot), project labels (13 px,
  * muted, a hairline to the end), then rows. Items keep their room in padding, never in margins,
  * so an item measures the same laid out in flow or placed by the virtualiser. Tokens only.
  */
@@ -44,7 +44,7 @@
 }
 
 /*
- * Today's sections (A5 3.4, 3.20 `t-section`): 12.5 px, muted, weight 500, aligned with the
+ * Today's sections: 12.5 px, muted, weight 500, aligned with the
  * titles. 28 px above it, 6 px below: never shorter than the list's estimate (List.tsx).
  */
 .head[data-kind="section"],

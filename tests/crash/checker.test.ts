@@ -573,7 +573,7 @@ describe(
     test("a restore that swapped in a copy it had not claimed", async () => {
       // A fresh backup of the live incarnation, swapped in without its claim, then the kill: no
       // acknowledged result is lost and no counter goes back, but the old incarnation now has
-      // the space's name and the folder it replaced (A1 3.18).
+      // the space's name and the folder it replaced.
       const built = await build();
       const record = await backupSpace(built.checked, built.folder, {
         kind: "manual",

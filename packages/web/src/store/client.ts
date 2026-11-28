@@ -1,5 +1,4 @@
-// The tab's feed client (A5 3.15; A2 3.8.4): the WebSocket to the service's change feed (A2
-// 3.8), feeding the live store (store.ts). All task data comes this way; there is no polling
+// The tab's feed client: the WebSocket to the service's change feed, feeding the live store (store.ts). All task data comes this way; there is no polling
 // beside it and no second path for data.
 //
 // - `machine`: this machine's settings of the page, handed to the page as they come.

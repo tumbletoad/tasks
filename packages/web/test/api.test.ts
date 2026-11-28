@@ -1,4 +1,4 @@
-// The page's API calls (A2 3.8.3, 3.8.4): each carries the build the page was served with and the
+// The page's API calls: each carries the build the page was served with and the
 // tab's space, in the header names the service reads. The names derive from the identifier: a
 // display name with a space is no header name, and fetch refuses the whole request (the rename to
 // "TTasks" did that once). Node's Headers checks names as a browser's does.

@@ -1,4 +1,4 @@
-// A model of the service's change feed (A5 3.15; A1 3.7) for the live store's property tests:
+// A model of the service's change feed for the live store's property tests:
 // a space whose commits change tasks, nodes and children, a filter that hides some commits, and a
 // subscription that sends what the service's feed sends, `snapshot` and `batch` with coverage
 // intervals, as packages/service/src/http/feed.ts and ws.ts build them:
@@ -10,13 +10,13 @@
 // - a subscription with a cursor resumes from it when the authority is the same and the cursor is
 //   not ahead of the head, and takes a snapshot otherwise;
 // - an authority change (a new epoch and incarnation) makes the next read a snapshot;
-// - an entity's `changed` names logical fields, as the service's change rows do (A1 3.4): `lifecycle`
+// - an entity's `changed` names logical fields, as the service's change rows do: `lifecycle`
 //   stands for its completion columns too, `deleted` for `deleted_at`. The task map is the page's
 //   TASK_FIELD_COLUMNS, which the real-feed test (live-store.test.ts) holds equal to storage's
 //   TASK_FIELDS; this file stays free of storage's Node code, since the page's tests import it.
 //
 // Hidden commits touch only tasks of the hidden audience, and a subscriber's snapshot leaves those
-// tasks out: the row-level rule of A5 3.15, built in M3.12. So "the snapshot at that point" is the
+// tasks out: the row-level rule. So "the snapshot at that point" is the
 // visible state at a seq. Tests only.
 import {
   TASK_FIELD_COLUMNS,
@@ -244,7 +244,7 @@ export class FeedModel {
         if (id === undefined) return false;
         const row = rows.get(key("task", id));
         if (row === undefined) return false;
-        // A child changes: the task's row moves only its `touched` (A1 3.5).
+        // A child changes: the task's row moves only its `touched`.
         rows.set(key("task", id), { ...row, fields: { ...row.fields, touched: seq } });
         entities.push({
           type: "note",
@@ -480,8 +480,8 @@ export class ModelSubscription {
   }
 
   /**
-   * A batch that starts `back` commits behind what this subscription sent (A1 3.7's "from is
-   * behind the cursor"): the service never sends one, and the store must take it all the same.
+   * A batch that starts `back` commits behind what this subscription sent (`from` is
+   * behind the cursor): the service never sends one, and the store must take it all the same.
    */
   rewind(back: number, limit: number): BatchMessage[] {
     const cursor = this.cursor;

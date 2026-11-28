@@ -1,4 +1,4 @@
-// The short deterministic slice of the crash harness that runs in pnpm verify (A7 3.18.1): a few
+// The short deterministic slice of the crash harness that runs in pnpm verify: a few
 // rounds whose kills are fixed, one at each kind of named point, then one by timer and one that
 // runs to the end, so a regression in a crash window is caught without the long run (pnpm crash).
 // Each round starts a real child process, kills it for real and checks every invariant.

@@ -1,9 +1,9 @@
-// The page's entry (A2 3.8.4): before any request, the fragment is read and removed from the URL,
+// The page's entry: before any request, the fragment is read and removed from the URL,
 // so the one-time code never reaches the server, the history or a log. Then the code is redeemed
 // for a token, the token is kept (and a stored one is read as untrusted), and the router takes the
 // tab's route, which names its space.
 //
-// The styles, in order: the bundled faces (A5 3.20; fetched only from this origin), the theme
+// The styles, in order: the bundled faces (fetched only from this origin), the theme
 // tokens the build writes from the theme data, the global sheet. The components' CSS Modules follow
 // with their components.
 import "@fontsource-variable/inter/wght.css";

@@ -1,4 +1,4 @@
-// The live store in the page (A7 3.12 M5.02; A5 3.15), in Chromium and Firefox against the real
+// The live store in the page, in Chromium and Firefox against the real
 // service process with fixture data. Every change is made outside the page, by an agent or at the
 // terminal, and reaches the page only through the feed.
 //

@@ -6,7 +6,7 @@
 // creates with client IDs (some with initial children in the same request), patches with fresh,
 // stale and missing bases, two patches of one field in one request (one change row), moves,
 // completes, reopens, notes, log entries and sources by key, recent patches and links sent again
-// under a new request ID (mostly no-ops), and requests for tasks that do not exist. The requests come from ten writer scopes (A1 5's "10-session workload"), several in
+// under a new request ID (mostly no-ops), and requests for tasks that do not exist. The requests come from ten writer scopes, several in
 // flight at once; two of them write as agent actors, which join the space on their first act. Each
 // round first retries the requests the last kill left unanswered, and a few answered ones, whose
 // replays must match.
@@ -21,7 +21,7 @@ export const SESSIONS = 10;
 
 /**
  * The sessions that write as an agent actor, as the service's `cli-script` and `cli-agent` classes
- * do (decision M1.10): the actor joins the space on its first act in an `actor.register` system
+ * do: the actor joins the space on its first act in an `actor.register` system
  * commit, which the checker must account for. The other sessions write as the space's human.
  */
 export const AGENT_SESSIONS: ReadonlyMap<number, string> = new Map([
@@ -104,7 +104,7 @@ function newRequest(rng: Rng, ledger: Ledger, round: number, n: number): Planned
     ];
   } else if (roll < 30) {
     // A task and its first children in one request: all of it commits, or none. It asks for a new
-    // task whatever its source's key matches (A1 3.6), so the task is always created, as the
+    // task whatever its source's key matches, so the task is always created, as the
     // checker expects.
     const id = taskId();
     ledger.tasks.push(id);
@@ -172,7 +172,7 @@ function newRequest(rng: Rng, ledger: Ledger, round: number, n: number): Planned
     ];
   } else if (roll < 97 && ledger.recent.length > 0) {
     // A recent request's operations again under a new request ID: usually a no-op by now, a
-    // decision whose receipt is its only trace (A1 3.8).
+    // decision whose receipt is its only trace.
     base = "fresh";
     ops = structuredClone(rng.pick(ledger.recent));
   } else {

@@ -1,4 +1,4 @@
-// SafeText (A3 3.10 item 4). Strings are built from code points, so this file stays ASCII and
+// SafeText. Strings are built from code points, so this file stays ASCII and
 // shows every hidden character it tests.
 import { Ajv2020 } from "ajv/dist/2020.js";
 import fc from "fast-check";
@@ -38,7 +38,7 @@ const cases: [label: string, input: string, output: string][] = [
   ],
   ["CRLF and CR become LF", "one\r\ntwo\rthree", "one\ntwo\nthree"],
   ["NFC", t("cafe", 0x0301), t("caf", 0x00e9)],
-  // As the writer stores them (A1 3.7): UTF-8 has no lone surrogate.
+  // As the writer stores them: UTF-8 has no lone surrogate.
   ["a lone surrogate becomes U+FFFD", t("a", 0xd800, "b", 0xdc00), t("a", 0xfffd, "b", 0xfffd)],
   ["a surrogate pair stays", t("a", 0xd83d, 0xde00, "b"), t("a", 0x1f600, "b")],
 ];

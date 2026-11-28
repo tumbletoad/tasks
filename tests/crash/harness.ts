@@ -1,4 +1,4 @@
-// The crash harness (A1 5 "Crash injection", A7 3.8 M1.07, 3.18.1): a child process does real
+// The crash harness: a child process does real
 // work on a real space folder and is killed, again and again, at random times and at the named
 // fault points; after each kill the harness repairs as the service's start does and checks every
 // invariant (checker.ts). `pnpm crash --minutes N` runs it (cli.ts), and a short slice runs in
@@ -314,7 +314,7 @@ export async function runCrash(options: CrashOptions): Promise<CrashReport> {
       options.afterRound?.(round, ledger.folder);
 
       const violations = [...end.violations, ...checkFolders(ledger)];
-      // What the service runs before a space opens (A1 3.18): complete an interrupted swap.
+      // What the service runs before a space opens: complete an interrupted swap.
       try {
         finishInterruptedRestore(ledger.folder);
       } catch (error) {

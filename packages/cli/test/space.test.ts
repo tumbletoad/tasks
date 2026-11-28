@@ -278,7 +278,7 @@ describe("[A2.3.10.cli.space] ttasks space through the service", () => {
     expect((await user(["space", "open", lifeFolder])).code).toBe(0);
   }, 180_000);
 
-  test("an entry the verbs add opens only as its own space, as a [[spaces]] entry does (A2 3.2.4)", async () => {
+  test("an entry the verbs add opens only as its own space, as a [[spaces]] entry does", async () => {
     const [a, b, aside] = ["swap-a", "swap-b", "swap-aside"].map((n) => join(world.root, "s", n));
     for (const [name, folder] of [
       ["Swap A", a],

@@ -1,14 +1,14 @@
-// A request the edit queue waits on (A5 3.11 "No request holds the queue"): a person's edit, a
+// A request the edit queue waits on: a person's edit, a
 // check-off, an undo or a redo. Plain code without React.
 //
 // The queue keeps the order the person acted in, so it waits for each request's outcome. An
 // outcome is known once the service decided the request: its answer, a refusal it decided, or the
-// request's receipt (A1 3.8). It is not known while no answer has come, or when the call failed on
+// request's receipt. It is not known while no answer has come, or when the call failed on
 // the way: the request may be in the service's queue still, and apply later.
 //
 // - No answer after `ASK_MS`, or a failure on the way: the page asks for the outcome by the
 //   request's own ID (`receipt.get`, a read the service answers even while its writer is busy) and
-//   sends the request again with the same ID and input, which applies it at most once (A1 3.8: the
+//   sends the request again with the same ID and input, which applies it at most once (the
 //   writer replays a decided request, and one that races its first call). The first decision of
 //   any of them is the outcome.
 // - No decision within `ASK_MS` more (the service is down, or hangs): the outcome is unknown. The

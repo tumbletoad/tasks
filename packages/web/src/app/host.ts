@@ -1,4 +1,4 @@
-// A task link's host view (A5 3.3 "Task links", U26): `/s/:space/task/:id` names a task in any
+// A task link's host view: `/s/:space/task/:id` names a task in any
 // lifecycle, and the route shows it expanded in the view that holds it. Pure, so every row of the
 // table is a unit test.
 //

@@ -1,6 +1,5 @@
 // The signed-in page: the router inside the browser's sign-in and this machine's settings. When
-// the service refuses the token, the page forgets it and shows the signed-out page (A2 3.8.4
-// step 5).
+// the service refuses the token, the page forgets it and shows the signed-out page.
 import { RouterProvider } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import { Api } from "../api.ts";
@@ -47,7 +46,7 @@ export function App({
   );
 }
 
-/** The page a browser without a token sees (A2 3.8.4 step 5). */
+/** The page a browser without a token sees. */
 export function SignedOutPage() {
   const t = useT();
   return (

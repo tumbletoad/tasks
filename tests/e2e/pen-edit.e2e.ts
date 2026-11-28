@@ -1,4 +1,4 @@
-// The person corrects what an agent wrote (A5 3.7), against the real service process with fixture
+// The person corrects what an agent wrote, against the real service process with fixture
 // data: the pen on the summary, the context, an agent's note and log entry, and the person's own
 // note; Enter saves, the toast's Undo puts the words before back, Escape lets go, and words typed
 // and not sent come back after a reload. Screenshots at 1,440 and 390 px in both themes, axe clean.

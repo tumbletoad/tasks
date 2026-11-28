@@ -1,5 +1,4 @@
-// The content check on the committed stream fixtures (A7 3.7: M0.11 "Fixtures pass the content
-// check", N05). Runs in CI on every machine, with a deny-list built from that machine. The text
+// The content check on the committed stream fixtures. Runs in CI on every machine, with a deny-list built from that machine. The text
 // scan finds shapes and this machine's names; the structural assertions are the guarantee.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";

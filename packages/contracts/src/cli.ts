@@ -1,4 +1,4 @@
-// How a CLI face maps onto an entry's input (A2 3.10, A3 3.2.2, 3.4.13). The registry check and
+// How a CLI face maps onto an entry's input. The registry check and
 // the `cli-spec.json` generator both use it.
 import type { z } from "zod";
 import { coreOf, defOf, descriptionOf, type AnyEntry, type CliFace } from "./define.ts";
@@ -7,7 +7,7 @@ import { inputJsonSchema, type JsonSchema } from "./json-schema.ts";
 /**
  * Fields the CLI fills itself and never offers as arguments: `base` from a read just before the
  * write, `cwd` from its working folder and `request_id` from the global `--request-id` or a fresh
- * one (A3 3.4.1, 3.4.13).
+ * one.
  */
 export const AUTO_FIELDS = ["base", "cwd", "request_id"] as const;
 
@@ -127,7 +127,7 @@ export function keyValueFields(entry: AnyEntry, field: string): Map<string, Fiel
   return infos(entry, shape, json, `${field}.`);
 }
 
-/** `waiting_on` becomes `waiting-on` (A3 3.2.2). */
+/** `waiting_on` becomes `waiting-on`. */
 export function kebab(name: string): string {
   return name.replaceAll("_", "-");
 }
