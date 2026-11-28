@@ -2240,6 +2240,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "S3.files.service",
+      "title": "The service keeps a tree space's readable files in the tree's layout: open as this machine's it gets README.md and _index.md and nothing of today's layout, with its record beside the space's settings; a task added through the request path shows; view/rebuild reads every file and puts back a person's edit after rescuing it to rescued/",
+      "source": "PLAN step 3",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "S3.files.content",
       "title": "What a tree space's readable files hold: a task's fixed front-matter keys, title, brief, subtasks, knowledge, links and fenced notes, without its reference or project again; a project's index with its projects, open tasks, library and the person's text for agents marked as theirs; the node's own folders on this machine only; a page's Markdown as written with raw HTML and images turned to text outside code blocks, and its comments; the README's commit; the same rows give the same bytes",
       "source": "PLAN step 3",

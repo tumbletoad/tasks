@@ -424,6 +424,27 @@ export const EVENTS = {
       forgotten: "int",
     },
   },
+  // A tree space's readable files (@ttasks/projection's pass): counts and codes, never a path.
+  "space.files_started": {
+    lvl: "info",
+    c: "space",
+    fields: { entry: "int", space: "space", recovered: "int", temps: "int", suspect: "int" },
+  },
+  "space.files_passed": {
+    lvl: "debug",
+    c: "space",
+    fields: {
+      entry: "int",
+      space: "space",
+      seq: "int",
+      written: "int",
+      removed: "int",
+      rescued: "int",
+      failed: "int",
+      stamped: "bool",
+      ms: "int",
+    },
+  },
   "space.projection_rescued": {
     lvl: "warn",
     c: "space",
