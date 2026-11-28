@@ -4561,6 +4561,319 @@
     },
     {
       "actorKinds": [
+        "human"
+      ],
+      "actors": "user",
+      "audience": "none",
+      "errors": [
+        "invalid_input",
+        "not_found",
+        "conflict",
+        "forbidden",
+        "space_unavailable",
+        "read_only",
+        "request_id_conflict",
+        "applied_earlier",
+        "op_unknown"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "What to do",
+            "enum": [
+              "make",
+              "change",
+              "pause",
+              "resume",
+              "done",
+              "skip",
+              "extra",
+              "finish",
+              "reopen"
+            ],
+            "type": "string"
+          },
+          "base": {
+            "description": "as_of: the get_task that showed the field, the add that made it, your set of it",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "context": {
+            "description": "make, change: Markdown",
+            "maxLength": 65536,
+            "type": "string"
+          },
+          "from_task": {
+            "description": "make: the open task that becomes the routine",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "priority": {
+            "description": "make, change: 1 highest, 4 none",
+            "maximum": 4,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "routine": {
+            "description": "Every action but make: the routine, such as M-21",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "rule": {
+            "description": "make, change: the schedule, RRULE text",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "start": {
+            "description": "make, change: the first date it may fall on",
+            "maxLength": 10,
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "type": "string"
+          },
+          "summary": {
+            "description": "make, change: one line",
+            "maxLength": 400,
+            "type": "string"
+          },
+          "title": {
+            "description": "make, change: its title",
+            "maxLength": 300,
+            "type": "string"
+          },
+          "tz": {
+            "description": "make, change: the IANA time zone",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "under": {
+            "description": "make: the project's ID or path; default the space",
+            "maxLength": 250,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "routine.manage",
+      "ops": [
+        "routine.set",
+        "routine.pause",
+        "routine.resume",
+        "routine.done",
+        "routine.skip",
+        "routine.finish",
+        "routine.reopen"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "The action",
+            "enum": [
+              "make",
+              "change",
+              "pause",
+              "resume",
+              "done",
+              "skip",
+              "extra",
+              "finish",
+              "reopen"
+            ],
+            "type": "string"
+          },
+          "as_of": {
+            "description": "This write's position: your next base. Names and lists here may be newer",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "replayed": {
+            "description": "True on a retry: what the write did, with names and lists as of now",
+            "type": "boolean"
+          },
+          "result": {
+            "description": "Applied, or nothing changed",
+            "enum": [
+              "applied",
+              "no_change"
+            ],
+            "type": "string"
+          },
+          "routine": {
+            "additionalProperties": false,
+            "description": "The routine",
+            "properties": {
+              "by": {
+                "const": "you",
+                "description": "Who does it: you",
+                "type": "string"
+              },
+              "entries": {
+                "description": "How many times it was done or skipped",
+                "maximum": 1000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "id": {
+                "description": "Task ID",
+                "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+                "type": "string"
+              },
+              "last": {
+                "additionalProperties": false,
+                "description": "Its newest entry",
+                "properties": {
+                  "at": {
+                    "description": "When it was logged",
+                    "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                    "type": "string"
+                  },
+                  "by": {
+                    "description": "Who logged it: user, or agent:<label>",
+                    "type": "string"
+                  },
+                  "due": {
+                    "additionalProperties": false,
+                    "description": "The time it was for; absent for an extra time",
+                    "properties": {
+                      "at": {
+                        "description": "Its time, in UTC, when it has a time of day",
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                        "type": "string"
+                      },
+                      "date": {
+                        "description": "Its date, on the routine's calendar",
+                        "maxLength": 10,
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "date"
+                    ],
+                    "type": "object"
+                  },
+                  "note": {
+                    "description": "What was done",
+                    "type": "string"
+                  },
+                  "state": {
+                    "description": "Done, or skipped",
+                    "enum": [
+                      "done",
+                      "skipped"
+                    ],
+                    "type": "string"
+                  },
+                  "why": {
+                    "description": "A skip's: by you, or its run failed",
+                    "enum": [
+                      "you",
+                      "run_failed"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "state",
+                  "at",
+                  "by"
+                ],
+                "type": "object"
+              },
+              "next": {
+                "additionalProperties": false,
+                "description": "Its open time: the next, or the one still to do",
+                "properties": {
+                  "at": {
+                    "description": "Its time, in UTC, when it has a time of day",
+                    "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                    "type": "string"
+                  },
+                  "date": {
+                    "description": "Its date, on the routine's calendar",
+                    "maxLength": 10,
+                    "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "date"
+                ],
+                "type": "object"
+              },
+              "ref": {
+                "description": "Task reference",
+                "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                "type": "string"
+              },
+              "repeat": {
+                "description": "Its schedule in words: \"Every Saturday\"",
+                "type": "string"
+              },
+              "rule": {
+                "description": "Its schedule as stored: RRULE text",
+                "maxLength": 200,
+                "type": "string"
+              },
+              "state": {
+                "description": "Coming back, paused, or finished",
+                "enum": [
+                  "active",
+                  "paused",
+                  "finished"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "description": "Title",
+                "type": "string"
+              },
+              "tz": {
+                "description": "The IANA time zone its days are counted in",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "ref",
+              "title",
+              "repeat",
+              "rule",
+              "tz",
+              "by",
+              "state",
+              "next",
+              "entries"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "action",
+          "result",
+          "routine",
+          "as_of"
+        ],
+        "type": "object"
+      },
+      "remote": "never",
+      "scope": "space:write",
+      "summary": "Make, change, pause, check off, skip or finish a routine: a task that comes back."
+    },
+    {
+      "actorKinds": [
         "human",
         "agent",
         "routine"
@@ -5270,6 +5583,11 @@
                   "maxLength": 120,
                   "type": "string"
                 },
+                "repeat": {
+                  "description": "Makes it a routine you do: \"every saturday\"; alone in its call",
+                  "maxLength": 120,
+                  "type": "string"
+                },
                 "sources": {
                   "description": "Where it came from",
                   "items": {
@@ -5370,7 +5688,8 @@
         "source.add",
         "task.folder_set",
         "area.create",
-        "project.create"
+        "project.create",
+        "routine.set"
       ],
       "output": {
         "additionalProperties": false,
@@ -5473,6 +5792,10 @@
                 "ref": {
                   "description": "Task reference",
                   "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                },
+                "repeats": {
+                  "description": "A routine's schedule in words: Every Saturday",
                   "type": "string"
                 },
                 "result": {
@@ -8995,6 +9318,820 @@
               "sections"
             ],
             "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "as_of": {
+                "description": "The space's position when this answer was made",
+                "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+                "type": "string"
+              },
+              "history": {
+                "description": "Its newest entries, newest first",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": {
+                      "description": "When it was logged",
+                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                      "type": "string"
+                    },
+                    "by": {
+                      "description": "Who logged it: user, or agent:<label>",
+                      "type": "string"
+                    },
+                    "due": {
+                      "additionalProperties": false,
+                      "description": "The time it was for; absent for an extra time",
+                      "properties": {
+                        "at": {
+                          "description": "Its time, in UTC, when it has a time of day",
+                          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                          "type": "string"
+                        },
+                        "date": {
+                          "description": "Its date, on the routine's calendar",
+                          "maxLength": 10,
+                          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "date"
+                      ],
+                      "type": "object"
+                    },
+                    "note": {
+                      "description": "What was done",
+                      "type": "string"
+                    },
+                    "state": {
+                      "description": "Done, or skipped",
+                      "enum": [
+                        "done",
+                        "skipped"
+                      ],
+                      "type": "string"
+                    },
+                    "why": {
+                      "description": "A skip's: by you, or its run failed",
+                      "enum": [
+                        "you",
+                        "run_failed"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "at",
+                    "by"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 10,
+                "type": "array"
+              },
+              "routine": {
+                "additionalProperties": false,
+                "description": "The routine",
+                "properties": {
+                  "by": {
+                    "const": "you",
+                    "description": "Who does it: you",
+                    "type": "string"
+                  },
+                  "context": {
+                    "description": "Markdown context",
+                    "type": "string"
+                  },
+                  "entries": {
+                    "description": "How many times it was done or skipped",
+                    "maximum": 1000000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "id": {
+                    "description": "Task ID",
+                    "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+                    "type": "string"
+                  },
+                  "last": {
+                    "additionalProperties": false,
+                    "description": "Its newest entry",
+                    "properties": {
+                      "at": {
+                        "description": "When it was logged",
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                        "type": "string"
+                      },
+                      "by": {
+                        "description": "Who logged it: user, or agent:<label>",
+                        "type": "string"
+                      },
+                      "due": {
+                        "additionalProperties": false,
+                        "description": "The time it was for; absent for an extra time",
+                        "properties": {
+                          "at": {
+                            "description": "Its time, in UTC, when it has a time of day",
+                            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                            "type": "string"
+                          },
+                          "date": {
+                            "description": "Its date, on the routine's calendar",
+                            "maxLength": 10,
+                            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "date"
+                        ],
+                        "type": "object"
+                      },
+                      "note": {
+                        "description": "What was done",
+                        "type": "string"
+                      },
+                      "state": {
+                        "description": "Done, or skipped",
+                        "enum": [
+                          "done",
+                          "skipped"
+                        ],
+                        "type": "string"
+                      },
+                      "why": {
+                        "description": "A skip's: by you, or its run failed",
+                        "enum": [
+                          "you",
+                          "run_failed"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "at",
+                      "by"
+                    ],
+                    "type": "object"
+                  },
+                  "next": {
+                    "additionalProperties": false,
+                    "description": "Its open time: the next, or the one still to do",
+                    "properties": {
+                      "at": {
+                        "description": "Its time, in UTC, when it has a time of day",
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                        "type": "string"
+                      },
+                      "date": {
+                        "description": "Its date, on the routine's calendar",
+                        "maxLength": 10,
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "date"
+                    ],
+                    "type": "object"
+                  },
+                  "ref": {
+                    "description": "Task reference",
+                    "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                    "type": "string"
+                  },
+                  "repeat": {
+                    "description": "Its schedule in words: \"Every Saturday\"",
+                    "type": "string"
+                  },
+                  "rule": {
+                    "description": "Its schedule as stored: RRULE text",
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  "state": {
+                    "description": "Coming back, paused, or finished",
+                    "enum": [
+                      "active",
+                      "paused",
+                      "finished"
+                    ],
+                    "type": "string"
+                  },
+                  "summary": {
+                    "description": "One line",
+                    "type": "string"
+                  },
+                  "title": {
+                    "description": "Title",
+                    "type": "string"
+                  },
+                  "tz": {
+                    "description": "The IANA time zone its days are counted in",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "ref",
+                  "title",
+                  "repeat",
+                  "rule",
+                  "tz",
+                  "by",
+                  "state",
+                  "next",
+                  "entries"
+                ],
+                "type": "object"
+              },
+              "say": {
+                "description": "What it is, and what you may do with it",
+                "type": "string"
+              },
+              "sections": {
+                "additionalProperties": false,
+                "description": "The sections asked for that a routine has: its notes, log and description",
+                "properties": {
+                  "context": {
+                    "description": "Markdown context",
+                    "type": "string"
+                  },
+                  "context_slice": {
+                    "additionalProperties": false,
+                    "description": "Only this part of the text is on this page",
+                    "properties": {
+                      "from": {
+                        "description": "First character here, counted from 0",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "of": {
+                        "description": "Characters in all",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "to": {
+                        "description": "The character after the last one here",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "from",
+                      "to",
+                      "of"
+                    ],
+                    "type": "object"
+                  },
+                  "history": {
+                    "description": "The task's own changes, newest first: before reads the older ones",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "actor": {
+                          "description": "Actor that wrote it, from history",
+                          "type": "string"
+                        },
+                        "seq": {
+                          "description": "Commit sequence number",
+                          "maximum": 9007199254740991,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "what": {
+                          "description": "Operation kind and the fields it changed",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "actor",
+                        "what"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 64,
+                    "type": "array"
+                  },
+                  "instructions": {
+                    "description": "Notes from the user to agents, newest first, each whole",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "type": "string"
+                        },
+                        "author": {
+                          "description": "Actor that wrote it, from history",
+                          "type": "string"
+                        },
+                        "cut": {
+                          "description": "Characters left out; a sections read has them",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "edited": {
+                          "additionalProperties": false,
+                          "description": "Its words were corrected since it was written",
+                          "properties": {
+                            "at": {
+                              "description": "When, ISO date and time",
+                              "type": "string"
+                            },
+                            "by": {
+                              "description": "Who corrected it",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "by"
+                          ],
+                          "type": "object"
+                        },
+                        "for_agents": {
+                          "description": "A note from the user addressed to agents",
+                          "type": "boolean"
+                        },
+                        "ref": {
+                          "description": "Note ordinal, such as n2",
+                          "pattern": "^[nl][1-9][0-9]{0,5}$",
+                          "type": "string"
+                        },
+                        "request_for": {
+                          "description": "The user's request for these launches, oldest first: history, not yours to do",
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "instance": {
+                                "description": "The agent instance it opened",
+                                "maxLength": 64,
+                                "type": "string"
+                              },
+                              "launch": {
+                                "description": "The launch reference",
+                                "pattern": "^L[0-9A-HJKMNP-TV-Z]{5}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "launch",
+                              "instance"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "slice": {
+                          "additionalProperties": false,
+                          "description": "Only this part of the text is on this page",
+                          "properties": {
+                            "from": {
+                              "description": "First character here, counted from 0",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "of": {
+                              "description": "Characters in all",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "to": {
+                              "description": "The character after the last one here",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to",
+                            "of"
+                          ],
+                          "type": "object"
+                        },
+                        "text": {
+                          "description": "Note text",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "author",
+                        "for_agents",
+                        "at",
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "log": {
+                    "description": "Log entries, newest first, up to log_limit",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "type": "string"
+                        },
+                        "author": {
+                          "description": "Actor that wrote it, from history",
+                          "type": "string"
+                        },
+                        "cut": {
+                          "description": "Characters left out; a sections read has them",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "edited": {
+                          "additionalProperties": false,
+                          "description": "Its words were corrected since it was written",
+                          "properties": {
+                            "at": {
+                              "description": "When, ISO date and time",
+                              "type": "string"
+                            },
+                            "by": {
+                              "description": "Who corrected it",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "by"
+                          ],
+                          "type": "object"
+                        },
+                        "kind": {
+                          "description": "Entry kind",
+                          "enum": [
+                            "progress",
+                            "evidence",
+                            "blocker",
+                            "decision",
+                            "question",
+                            "handoff"
+                          ],
+                          "type": "string"
+                        },
+                        "ref": {
+                          "description": "Log ordinal, such as l3",
+                          "pattern": "^[nl][1-9][0-9]{0,5}$",
+                          "type": "string"
+                        },
+                        "slice": {
+                          "additionalProperties": false,
+                          "description": "Only this part of the text is on this page",
+                          "properties": {
+                            "from": {
+                              "description": "First character here, counted from 0",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "of": {
+                              "description": "Characters in all",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "to": {
+                              "description": "The character after the last one here",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to",
+                            "of"
+                          ],
+                          "type": "object"
+                        },
+                        "text": {
+                          "description": "Entry text",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "kind",
+                        "author",
+                        "at",
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "notes": {
+                    "description": "Other notes, newest first",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "type": "string"
+                        },
+                        "author": {
+                          "description": "Actor that wrote it, from history",
+                          "type": "string"
+                        },
+                        "cut": {
+                          "description": "Characters left out; a sections read has them",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "edited": {
+                          "additionalProperties": false,
+                          "description": "Its words were corrected since it was written",
+                          "properties": {
+                            "at": {
+                              "description": "When, ISO date and time",
+                              "type": "string"
+                            },
+                            "by": {
+                              "description": "Who corrected it",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "by"
+                          ],
+                          "type": "object"
+                        },
+                        "for_agents": {
+                          "description": "A note from the user addressed to agents",
+                          "type": "boolean"
+                        },
+                        "ref": {
+                          "description": "Note ordinal, such as n2",
+                          "pattern": "^[nl][1-9][0-9]{0,5}$",
+                          "type": "string"
+                        },
+                        "request_for": {
+                          "description": "The user's request for these launches, oldest first: history, not yours to do",
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "instance": {
+                                "description": "The agent instance it opened",
+                                "maxLength": 64,
+                                "type": "string"
+                              },
+                              "launch": {
+                                "description": "The launch reference",
+                                "pattern": "^L[0-9A-HJKMNP-TV-Z]{5}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "launch",
+                              "instance"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "slice": {
+                          "additionalProperties": false,
+                          "description": "Only this part of the text is on this page",
+                          "properties": {
+                            "from": {
+                              "description": "First character here, counted from 0",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "of": {
+                              "description": "Characters in all",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "to": {
+                              "description": "The character after the last one here",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to",
+                            "of"
+                          ],
+                          "type": "object"
+                        },
+                        "text": {
+                          "description": "Note text",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "author",
+                        "for_agents",
+                        "at",
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "outcome": {
+                    "additionalProperties": false,
+                    "description": "Outcome and learnings",
+                    "properties": {
+                      "learnings": {
+                        "description": "Learnings",
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "outcome": {
+                        "description": "Outcome of the last completion",
+                        "type": "string"
+                      },
+                      "slice": {
+                        "additionalProperties": false,
+                        "description": "Only this part of the text is on this page",
+                        "properties": {
+                          "from": {
+                            "description": "First character here, counted from 0",
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "of": {
+                            "description": "Characters in all",
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "to": {
+                            "description": "The character after the last one here",
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "from",
+                          "to",
+                          "of"
+                        ],
+                        "type": "object"
+                      },
+                      "wrap_state": {
+                        "description": "Wrap-up state",
+                        "enum": [
+                          "pending",
+                          "wrapped"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "learnings"
+                    ],
+                    "type": "object"
+                  },
+                  "sources": {
+                    "description": "Linked sources",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "When it was sent",
+                          "type": "string"
+                        },
+                        "captures_more": {
+                          "description": "How many more tasks have its key",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "captures_to": {
+                          "description": "Active tasks with its key: captures go there",
+                          "items": {
+                            "description": "Task reference",
+                            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                            "type": "string"
+                          },
+                          "maxItems": 5,
+                          "type": "array"
+                        },
+                        "id": {
+                          "description": "Source ID: detach or put back by it",
+                          "pattern": "^s_[0-9a-hjkmnp-tv-z]{26}$",
+                          "type": "string"
+                        },
+                        "key": {
+                          "description": "Source key",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "description": "Source kind",
+                          "enum": [
+                            "email",
+                            "chat",
+                            "ticket",
+                            "pr",
+                            "issue",
+                            "doc",
+                            "calendar",
+                            "crash",
+                            "session",
+                            "book",
+                            "web",
+                            "other"
+                          ],
+                          "type": "string"
+                        },
+                        "ref": {
+                          "description": "Its key, held by another task",
+                          "type": "string"
+                        },
+                        "removed": {
+                          "additionalProperties": false,
+                          "description": "Detached from the task; put_back_sources brings it back",
+                          "properties": {
+                            "at": {
+                              "description": "When, ISO date and time",
+                              "type": "string"
+                            },
+                            "by": {
+                              "description": "Actor that detached it",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "by"
+                          ],
+                          "type": "object"
+                        },
+                        "title": {
+                          "description": "Title",
+                          "type": "string"
+                        },
+                        "url": {
+                          "description": "Link",
+                          "type": "string"
+                        },
+                        "who": {
+                          "description": "Sender or counterpart",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "title"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "view": {
+                "const": "routine",
+                "description": "A routine: one task that comes back on a schedule",
+                "type": "string"
+              }
+            },
+            "required": [
+              "view",
+              "as_of",
+              "say",
+              "routine",
+              "history"
+            ],
+            "type": "object"
           }
         ]
       },
@@ -10169,6 +11306,11 @@
             "maxItems": 10,
             "type": "array"
           },
+          "repeat": {
+            "description": "A routine you do: \"every saturday\" makes or changes one; \"\" pauses it",
+            "maxLength": 120,
+            "type": "string"
+          },
           "request_id": {
             "description": "New per intended change; reuse it only to retry that call",
             "maxLength": 64,
@@ -10271,7 +11413,9 @@
         "task.folder_set",
         "task.folder_clear",
         "area.create",
-        "project.create"
+        "project.create",
+        "routine.set",
+        "routine.pause"
       ],
       "output": {
         "additionalProperties": false,

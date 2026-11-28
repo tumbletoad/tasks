@@ -244,6 +244,14 @@
             "add_sources",
             "create_new"
           ]
+        },
+        {
+          "field": "tasks[].repeat",
+          "flag": "--repeat",
+          "help": "Makes it a routine you do: \"every saturday\"; alone in its call",
+          "repeat": false,
+          "required": false,
+          "type": "string"
         }
       ],
       "inputOnly": [
@@ -1139,6 +1147,14 @@
           "flag": "--put-back-source",
           "help": "Detached sources to link again; refused on an active task if another has the key",
           "repeat": true,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "repeat",
+          "flag": "--repeat",
+          "help": "A routine you do: \"every saturday\" makes or changes one; \"\" pauses it",
+          "repeat": false,
           "required": false,
           "type": "string"
         },

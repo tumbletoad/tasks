@@ -2553,7 +2553,7 @@ function checkBase(value: unknown): Base {
  * The caller's intent: an entry name and plain JSON data, which the fingerprint hashes as it is.
  * The registry normalised the input before (A3 3.10), so the writer neither reads nor changes it.
  */
-function checkIntent(value: unknown): Intent {
+export function checkIntent(value: unknown): Intent {
   const f = fields(value, "intent");
   const entry = f.raw("entry");
   if (typeof entry !== "string" || entry.length > 64 || !ENTRY_NAME.test(entry)) {

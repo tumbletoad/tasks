@@ -53,6 +53,8 @@ import {
   type PrefValue,
 } from "@ttasks/contracts";
 import { isTimeZone, localDate } from "@ttasks/contracts/day";
+import { parseRepeat } from "@ttasks/contracts/repeat";
+import { formatRule, parseRule } from "@ttasks/contracts/schedule";
 import {
   byFolder,
   folderKey,
@@ -218,7 +220,8 @@ import { readFinished } from "./task-rows.ts";
 import { readChangeTasks, readTrash } from "./trash.ts";
 import { readActivity } from "./activity.ts";
 import { digestFolderOf } from "./digest-folder.ts";
-import { checkOnTree, checkPlan, isTree } from "./tree.ts";
+import { checkOnToday, checkOnTree, checkPlan, isTree } from "./tree.ts";
+import { noRoutine, readRoutine, readTaskId, routineGet, routineView } from "./routines.ts";
 import { readTreeTask, treeTrail } from "./tree-read.ts";
 import {
   holderName,
@@ -354,6 +357,12 @@ interface Call {
    * rules say of its input.
    */
   readonly sent: string;
+}
+
+/** A command of the tree's own, sent in place of operations for what they have no form of. */
+interface TreeCommand {
+  readonly command: string;
+  readonly input: Record<string, unknown>;
 }
 
 /** What a write's answer is built from besides the stored record: never the call's input. */
@@ -494,7 +503,7 @@ async function callWith(
     if (space === undefined) throw unpicked;
     return space;
   };
-  if (space !== undefined && isTree(space)) checkOnTree(entry, input);
+  if (space !== undefined) (isTree(space) ? checkOnTree : checkOnToday)(entry, input);
   const requestId = input["request_id"];
   // A launch is the user's record of its own, which answers a repeated click itself.
   if (
@@ -982,11 +991,12 @@ function intentInput(input: Record<string, unknown>): Record<string, unknown> {
  * found, where each operation came from in the input): the writer keeps them with an accepted
  * result, so they come back in `result.warnings` and `result.answer` and the answer is built from
  * them (ANSWERS). With no operation, the request changes nothing and its receipt is kept all the
- * same, with its record.
+ * same, with its record. On a tree space, a command of the tree's own (`TreeCommand`) goes in place
+ * of the operations, for what today's operations have no form of.
  */
 async function submit(
   call: Call,
-  ops: Operation[],
+  sent: Operation[] | TreeCommand,
   options: {
     readonly active?: boolean;
     /** The base when the caller gave none: the handler's own read that decided a value. */
@@ -1012,11 +1022,13 @@ async function submit(
 ): Promise<WriteResult> {
   const writer = writerOf(call.space);
   const { principal, input } = call;
+  const ops = Array.isArray(sent) ? sent : [];
+  const kinds = Array.isArray(sent) ? sent.map((op) => op.kind) : [sent.command];
   // A handler sends only the operations its entry declares, so contracts' rules on an entry's
   // operations hold on this path: an entry an agent may call never declares one of R7's launches,
   // runs or routines (check.ts, A1 3.6), and a launch request carries no registry intent,
   // which every request here does. A broken handler writes nothing.
-  if (ops.some((op) => !call.entry.ops.includes(op.kind))) {
+  if (kinds.some((kind) => !call.entry.ops.includes(kind))) {
     throw new AppError({
       code: "internal",
       message: "The service built an operation its entry does not declare.",
@@ -1030,7 +1042,7 @@ async function submit(
     // writer gets the request.
     checkGrant(call.host, call.caller, call.space.id);
     const principalId = await actorOf(writer, principal);
-    const request: WriteRequest = {
+    const envelope: Omit<WriteRequest, "ops"> = {
       space_id: writer.spaceId,
       request_id: String(input["request_id"]),
       actor: {
@@ -1064,8 +1076,10 @@ async function submit(
         version: RECORD_VERSION,
       },
       intent: { entry: call.entry.name, input: intentInput(input) },
-      ops,
     };
+    const request: WriteRequest | (typeof envelope & TreeCommand) = Array.isArray(sent)
+      ? { ...envelope, ops }
+      : { ...envelope, ...sent };
     // The last step before the writer: no write is handed over after the revoke took effect. Only
     // a request the writer holds already can still commit.
     checkGrant(call.host, call.caller, call.space.id);
@@ -2264,6 +2278,252 @@ function skillRow(skill: Skill): Record<string, unknown> {
 type Handler = (call: Call) => Promise<unknown>;
 
 // ---------------------------------------------------------------------------------------------
+// Routines: one task that comes back on a schedule, on a tree space (ops/routines.ts). Each call
+// sends the tree's own command: today's operations have no form of a routine.
+
+/** The zone a routine made here counts its days in, unless the call names one. */
+const zoneOf = (call: Call): string => (call.host.timeZone ?? localTimeZone)();
+
+/** A schedule's stored rule, refused by name when it is none. */
+function ruleOf(text: unknown, field: string): string {
+  if (typeof text !== "string" || parseRule(text) === undefined) {
+    throw invalid(field, "Not a schedule", "Pass a rule such as FREQ=WEEKLY;BYDAY=SA.");
+  }
+  return text;
+}
+
+/**
+ * The rule `repeat`'s words say, read on the calendar of the routine's own zone, so "every week"
+ * is its today's weekday there; refused by name when they say none.
+ */
+function repeatRule(call: Call, words: unknown, field: string, zone: string): string {
+  const today = localDate((call.host.now ?? Date.now)(), zone);
+  const rule = typeof words === "string" ? parseRepeat(words, today) : undefined;
+  if (rule === undefined) {
+    throw invalid(
+      field,
+      "Not a schedule",
+      'Say it as "every saturday", "weekdays at 7" or "the first monday of every month".',
+    );
+  }
+  return formatRule(rule);
+}
+
+/** A routine's row by the key the call names. */
+async function routineOf(call: Call, key: unknown): Promise<Row> {
+  if (typeof key !== "string") {
+    throw invalid("routine", "Name the routine", "Pass routine, such as M-21.");
+  }
+  const found = await readRoutine(readerOf(call.space), key);
+  if (found === undefined) throw noRoutine(key);
+  return found.row;
+}
+
+/** The fields each action of routine.manage takes besides the routine. */
+const ROUTINE_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  make: ["from_task", "title", "summary", "context", "under", "priority", "rule", "start", "tz"],
+  change: ["title", "summary", "context", "priority", "rule", "start", "tz"],
+};
+
+/** The command routine.manage's call sends, with the routine it is for. */
+async function routineCommand(call: Call): Promise<{ id: string; sent: TreeCommand }> {
+  const { input } = call;
+  const action = String(input["action"]);
+  const takes = ROUTINE_FIELDS[action] ?? [];
+  const extra = Object.keys(input).find(
+    (k) => !["action", "routine", "base", "request_id", ...takes].includes(k),
+  );
+  if (extra !== undefined) throw invalid(extra, `${action} does not take ${extra}`);
+  const given = (k: string, as = k) => (input[k] === undefined ? {} : { [as]: input[k] });
+  if (typeof input["tz"] === "string" && !isTimeZone(input["tz"])) {
+    throw invalid("tz", "Not a time zone", "Pass an IANA time zone, such as Europe/Amsterdam.");
+  }
+  const rule = input["rule"] === undefined ? undefined : ruleOf(input["rule"], "rule");
+  const schedule = { ...(rule === undefined ? {} : { rule }), ...given("start"), ...given("tz") };
+  const words = {
+    ...given("title"),
+    ...given("summary", "brief"),
+    ...given("context", "description"),
+    ...given("priority"),
+  };
+  if (action === "make") {
+    if (rule === undefined) throw invalid("rule", "make takes a schedule");
+    const made = { ...schedule, tz: typeof input["tz"] === "string" ? input["tz"] : zoneOf(call) };
+    const from = input["from_task"];
+    if (typeof from === "string") {
+      const named = Object.keys({ ...words, ...given("under") });
+      if (named[0] !== undefined) throw invalid(named[0], "A task becomes a routine as it is");
+      const id = await readTaskId(readerOf(call.space), from);
+      if (id === undefined) throw invalid("from_task", "The space has no such task");
+      return { id, sent: { command: "routine.set", input: { task: id, ...made } } };
+    }
+    if (input["title"] === undefined) throw invalid("title", "make takes a title");
+    const id = newId("t");
+    return {
+      id,
+      sent: { command: "routine.set", input: { id, ...words, ...given("under"), ...made } },
+    };
+  }
+  const id = String((await routineOf(call, input["routine"]))["id"]);
+  const sent =
+    action === "change"
+      ? { command: "routine.set", input: { routine: id, ...words, ...schedule } }
+      : action === "extra"
+        ? { command: "routine.done", input: { routine: id, extra: true } }
+        : { command: `routine.${action}`, input: { routine: id } };
+  return { id, sent };
+}
+
+/** A draft that repeats: a routine you do, added alone. */
+async function addRoutine(call: Call): Promise<Record<string, unknown>> {
+  const list = call.input["tasks"] as Record<string, unknown>[];
+  if (list.length > 1) {
+    throw invalid("tasks.1", "A draft that repeats is added alone", "Add it in a call of its own.");
+  }
+  const draft = list[0] ?? {};
+  const kept = ["title", "summary", "context", "area", "project", "priority", "repeat"];
+  const other = Object.keys(draft).find((k) => !kept.includes(k));
+  if (other !== undefined) {
+    throw invalid(`tasks.0.${other}`, `A routine takes no ${other}`, "Leave it out.");
+  }
+  const zone = zoneOf(call);
+  const rule = repeatRule(call, draft["repeat"], "tasks.0.repeat", zone);
+  const { area, project } = draft;
+  const under =
+    typeof project === "string"
+      ? typeof area === "string"
+        ? `${area}/${project}`
+        : project
+      : area;
+  const id = newId("t");
+  const sent = {
+    command: "routine.set",
+    input: {
+      id,
+      title: draft["title"],
+      ...(draft["summary"] === undefined ? {} : { brief: draft["summary"] }),
+      ...(draft["context"] === undefined ? {} : { description: draft["context"] }),
+      ...(draft["priority"] === undefined ? {} : { priority: draft["priority"] }),
+      ...(typeof under === "string" ? { under } : {}),
+      rule,
+      tz: zone,
+    },
+  };
+  let result: WriteResult;
+  try {
+    result = await submit(call, sent, { answer: { routine: id } });
+  } catch (error) {
+    // The tree names where a routine goes `under`; the caller named its area and project.
+    if (error instanceof AppError && error.data["field"] === "under") {
+      throw invalid(
+        typeof project === "string" ? "tasks.0.project" : "tasks.0.area",
+        "No project of that name",
+      );
+    }
+    throw error;
+  }
+  return answerOf(call, result);
+}
+
+/** update_task with `repeat`: the task becomes a routine, or the routine's schedule changes. */
+async function updateRepeat(call: Call): Promise<Record<string, unknown>> {
+  const { input } = call;
+  const other = ["set", "clear", "context", "add_sources", "remove_sources", "put_back_sources"];
+  const named = other.find((k) => input[k] !== undefined);
+  if (named !== undefined) {
+    throw invalid(named, "repeat goes in a call of its own", "Send the other changes apart.");
+  }
+  const key = await taskOf(call);
+  const reader = readerOf(call.space);
+  const routine = await readRoutine(reader, key);
+  const words = String(input["repeat"]);
+  if (routine !== undefined) {
+    const id = String(routine.row["id"]);
+    const sent =
+      words === ""
+        ? { command: "routine.pause", input: { routine: id } }
+        : {
+            command: "routine.set",
+            input: {
+              routine: id,
+              rule: repeatRule(call, words, "repeat", String(routine.row["tz"])),
+            },
+          };
+    return answerOf(call, await submit(call, sent, { answer: { routine: id } }));
+  }
+  if (words === "") {
+    throw invalid("repeat", "The task does not repeat", "Pass a schedule, such as every saturday.");
+  }
+  const id = await readTaskId(reader, key);
+  if (id === undefined) throw noRoutine(key);
+  const sent = {
+    command: "routine.set",
+    input: { task: id, rule: repeatRule(call, words, "repeat", zoneOf(call)), tz: zoneOf(call) },
+  };
+  return answerOf(call, await submit(call, sent, { answer: { routine: id } }));
+}
+
+/** The routine a write's record names, as it is now. */
+async function routineNow(view: View, stored: WriteResult) {
+  const id = String(stored.answer?.["routine"]);
+  const reader = readerOf(view.space);
+  const found = await readRoutine(reader, id);
+  if (found === undefined) throw noRoutine(id);
+  return { reader, ...found };
+}
+
+const routineAnswer: Answer = async (view, stored) => {
+  const { reader, row, prefix } = await routineNow(view, stored);
+  return {
+    action: stored.answer?.["action"],
+    result: stored.status === "applied" ? "applied" : "no_change",
+    routine: await routineView(reader, row, prefix),
+    as_of: stored.as_of,
+    ...replayed(stored),
+  };
+};
+
+/** add_tasks's answer for a draft that repeats. */
+async function routineAdded(view: View, stored: WriteResult): Promise<Record<string, unknown>> {
+  const { reader, row, prefix } = await routineNow(view, stored);
+  const said = await routineView(reader, row, prefix);
+  return {
+    as_of: stored.as_of,
+    tasks: [
+      {
+        result: "created",
+        id: said["id"],
+        ref: said["ref"],
+        title: said["title"],
+        lifecycle: "active",
+        log_added: false,
+        repeats: said["repeat"],
+      },
+    ],
+    warnings: [],
+    ...replayed(stored),
+  };
+}
+
+/** update_task's answer for `repeat`. */
+async function repeatUpdated(view: View, stored: WriteResult): Promise<Record<string, unknown>> {
+  const { reader, row, prefix } = await routineNow(view, stored);
+  const said = await routineView(reader, row, prefix);
+  const updated = stored.status === "applied";
+  return {
+    result: updated ? "updated" : "no_change",
+    task: said["ref"],
+    fields: updated ? ["repeat"] : [],
+    as_of: stored.as_of,
+    warnings: [],
+    ...replayed(stored),
+  };
+}
+
+const isRoutineRecord = (stored: WriteResult): boolean =>
+  typeof stored.answer?.["routine"] === "string";
+
+// ---------------------------------------------------------------------------------------------
 // Answers: what a write did, from what it stored (A3 3.4.1)
 
 /**
@@ -2392,6 +2652,7 @@ function draftWarnings(
 }
 
 const addAnswer: Answer = async (view, stored) => {
+  if (isRoutineRecord(stored)) return routineAdded(view, stored);
   const result = ownResults(stored);
   const drafts = draftsOf(result, "tasks");
   const rows = await draftRows(view, result, drafts);
@@ -2421,6 +2682,7 @@ function changedOf(result: WriteResult, paths: readonly string[], named: readonl
 }
 
 const updateAnswer: Answer = async (view, stored) => {
+  if (isRoutineRecord(stored)) return repeatUpdated(view, stored);
   const result = ownResults(stored);
   const updated = result.status === "applied";
   const record = stored.answer ?? {};
@@ -2882,6 +3144,7 @@ const ANSWERS: Readonly<Record<string, Answer>> = {
   "group.manage": groupAnswer,
   "folder.manage": folderAnswer,
   "prefs.manage": prefsAnswer,
+  "routine.manage": routineAnswer,
 };
 
 /** Each operation's input path, for the request's record: where a draft's answer finds it. */
@@ -3241,6 +3504,14 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     } else {
       task = await taskOf(call);
     }
+    // A routine reads as what it is: its schedule, its open time and its last entries.
+    if (launch === undefined && isTree(call.space)) {
+      const routine = await readRoutine(reader, task);
+      if (routine !== undefined) {
+        const { asOf } = await readSpace(reader);
+        return routineGet(reader, routine.row, routine.prefix, asOf, sections);
+      }
+    }
     const machine = call.host.machine.id;
     const ranges =
       sections.length === 0
@@ -3347,6 +3618,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 
   "task.add": async (call) => {
     const { input } = call;
+    if ((input["tasks"] as Record<string, unknown>[]).some((d) => d["repeat"] !== undefined)) {
+      return addRoutine(call);
+    }
     const agent = call.principal.actorKind !== "human";
     const at = (k: number): string => `tasks.${String(k)}`;
     const named = await resolvedDrafts(call, drafts(input["tasks"]), at);
@@ -3376,6 +3650,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 
   "task.update": async (call) => {
     const { input, today } = call;
+    if (input["repeat"] !== undefined) return updateRepeat(call);
     const task = await taskOf(call);
     const ops: Operation[] = [];
     /** The groups a new area or project name creates, before the task moves into them. */
@@ -3682,6 +3957,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     });
     await markersAfter(call, ops, ownResults(submitted));
     return answerOf(call, submitted);
+  },
+
+  "routine.manage": async (call) => {
+    const { id, sent } = await routineCommand(call);
+    const action = String(call.input["action"]);
+    return answerOf(call, await submit(call, sent, { answer: { routine: id, action } }));
   },
 
   "task.reopen": async (call) => {

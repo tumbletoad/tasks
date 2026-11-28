@@ -76,6 +76,8 @@ export interface ServeOptions {
    * request, setting or environment variable turns them on.
    */
   faults?: WorkerFaults;
+  /** The time a tree space's writer decides by. Only a test worker entry passes one. */
+  clock?: () => number;
 }
 
 /** The named points of the work a storage worker does, for a test worker entry (ServeOptions). */
@@ -240,6 +242,7 @@ export function serve(
 ): void {
   const steps = options.steps ?? SCHEMA_STEPS;
   const faults = options.faults ?? {};
+  const clock = options.clock;
   const writeSeams: WriteSeams = faults.write === undefined ? {} : { at: faults.write };
   const migrateSeams: MigrateSeams = {
     steps,
@@ -392,7 +395,7 @@ export function serve(
         }
         if (encodeRevision(ready.revision) === TREE_USER_VERSION) {
           // A tree space keeps its index in every commit: nothing to repair on open.
-          writers.set(handle, new TreeSpaceWriter(ready.conn, machine));
+          writers.set(handle, new TreeSpaceWriter(ready.conn, machine, clock));
           return spaceInfo(handle, ready);
         }
         // A migration made the index just now. Otherwise the owner's open repairs or refreshes it

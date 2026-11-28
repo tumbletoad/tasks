@@ -198,6 +198,11 @@ export const TaskDraft = z.strictObject({
     .optional(),
 });
 
+/** A schedule in words (repeat.ts), for a routine you do on a space on the new storage. */
+export const RepeatWords = safeLine(120).describe(
+  'A routine you do: "every saturday", "weekdays at 7", "the first monday of every month"',
+);
+
 /** The agent limits of a source's fields, for an entry's `agent.max` through `under()`. */
 export const SOURCE_AGENT_MAX: Pairs<number> = [["title", AGENT_LIMITS.sourceTitle]];
 

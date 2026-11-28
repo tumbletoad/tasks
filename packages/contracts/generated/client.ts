@@ -63,6 +63,10 @@ export function createClient(transport: ClientTransport) {
       /** The stored result of a write, by its request_id, in the caller's own writer scope. */
       get: (input: InputOf<"receipt.get">): Promise<OutputOf<"receipt.get">> => call("receipt.get", input),
     },
+    routine: {
+      /** Make, change, pause, check off, skip or finish a routine: a task that comes back. */
+      manage: (input: InputOf<"routine.manage">): Promise<OutputOf<"routine.manage">> => call("routine.manage", input),
+    },
     space: {
       /** Orientation: date, autonomy, whether this is a task's session, a folder's tasks, counts. */
       status: (input: InputOf<"space.status">): Promise<OutputOf<"space.status">> => call("space.status", input),

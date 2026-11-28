@@ -425,6 +425,60 @@ describe("[S2.tree.routines] routines on the tree writer, by a person and by the
     ok(send("routine.done", { routine: id }));
   });
 
+  test("a task becomes a routine you do with its reference and notes, unless it has subtasks or a task above", () => {
+    const made = ok(
+      send("tasks.add", {
+        tasks: [
+          { title: "Water the plants", due: { date: "2026-12-03" }, inbox: true },
+          { title: "Plan the garden" },
+        ],
+      }),
+    ) as { tasks: { id: string; ref: string }[] };
+    const [plants, garden] = made.tasks.map((x) => x.id) as [string, string];
+    ok(send("note.add", { on: plants, body: "The fern needs less." }));
+    ok(send("tasks.add", { tasks: [{ title: "Buy seeds", under: garden }] }));
+    const said = ok(
+      send("routine.set", { task: made.tasks[0]?.ref, rule: "FREQ=WEEKLY;BYDAY=SA", tz: ZONE }),
+    ) as { routine: { id: string; ref: string; due: unknown } };
+    expect(said.routine).toEqual({
+      id: plants,
+      ref: made.tasks[0]?.ref,
+      due: { due_date: "2026-12-05", due_at: null },
+    });
+    expect(
+      fx.conn
+        .prepare(
+          "SELECT n.kind, t.due_date, t.inbox FROM nodes n JOIN tasks t ON t.id = n.id WHERE n.id = $id",
+        )
+        .get({ id: plants }),
+    ).toEqual({ kind: "routine", due_date: null, inbox: 0 });
+    expect(
+      fx.conn.prepare("SELECT count(*) AS n FROM notes WHERE owner_id = $id").get({ id: plants }),
+    ).toEqual({ n: 1 });
+    ok(send("routine.done", { routine: plants }));
+    holds(plants, "2026-12-12", ["2026-12-05 done"]);
+    const refused = (task: unknown) =>
+      send("routine.set", { task, rule: "FREQ=DAILY", tz: ZONE }).error;
+    expect(refused(garden)).toMatchObject({ code: "VALIDATION_FAILED", field: "task" });
+    const below = String(
+      fx.conn.prepare("SELECT id FROM nodes WHERE parent_id = $id").get({ id: garden })?.["id"],
+    );
+    expect(refused(below)).toMatchObject({ code: "VALIDATION_FAILED", field: "task" });
+    expect(refused(plants)).toMatchObject({ code: "NOT_FOUND", field: "task" });
+  });
+
+  test("an extra time is an entry without a due time, and the open time stays", () => {
+    const id = chore();
+    now = t(3);
+    ok(send("routine.done", { routine: id, extra: true }));
+    expect(entries(id)).toEqual([
+      { due_date: null, due_at: null, state: "done", why: null, run_id: null, note: null },
+    ]);
+    expect(open(id)).toEqual({ due_date: "2026-12-05", due_at: null });
+    ok(send("routine.done", { routine: id }));
+    expect(open(id)).toEqual({ due_date: "2026-12-12", due_at: null });
+  });
+
   test("the Trash pauses a routine, and Restore or Undo brings it back paused", () => {
     const id = chore();
     ok(send("nodes.trash", { task: id }));

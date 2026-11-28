@@ -283,9 +283,9 @@ export interface Cursor {
 }
 
 /** The kinds of row the open working set holds. */
-export type RowType = "task" | "node" | "page";
+export type RowType = "task" | "node" | "page" | "routine";
 
-export type AnyRow = TaskRow | NodeRow | PageRow;
+export type AnyRow = TaskRow | NodeRow | PageRow | RoutineRow;
 
 export interface FeedEntity {
   readonly type: string;
@@ -340,6 +340,8 @@ export interface SnapshotMessage {
   readonly nodes: readonly NodeRow[];
   /** Every page of the space that is shown; none from a service before pages. */
   readonly pages?: readonly PageRow[];
+  /** A tree space's routines that are not finished; none on today's storage. */
+  readonly routines?: readonly RoutineRow[];
   readonly instances: readonly Instance[];
   /** The space's statuses and effort scale; the defaults when the snapshot carries none. */
   readonly scales?: Scales;
@@ -564,23 +566,88 @@ export function pageRow(value: unknown): PageRow | undefined {
   return v as unknown as PageRow;
 }
 
+/**
+ * A routine as the feed sends it on a tree space: one task that comes back on a schedule, with its
+ * open time (the next, or the one still to do), whether it is paused, who does it (`you`, or an
+ * agent instance) and its newest entry.
+ */
+export interface RoutineRow {
+  readonly id: string;
+  readonly ref: string;
+  readonly kind: "routine";
+  readonly title: string;
+  readonly summary?: string;
+  readonly parent: string;
+  readonly position: string;
+  readonly priority: number;
+  readonly lifecycle: string;
+  /** Its schedule as stored: RRULE text (contracts' schedule.ts). */
+  readonly rule: string;
+  readonly start: string;
+  readonly tz: string;
+  /** Its open time's date, on its own calendar. */
+  readonly due_date: string;
+  /** Its open time, when it has a time of day: milliseconds since the epoch. */
+  readonly due_at?: number;
+  readonly paused: boolean;
+  readonly by: string;
+  readonly entries: number;
+  readonly version: number;
+  readonly deleted_at?: number;
+  readonly last_state?: "done" | "skipped";
+  readonly last_at?: number;
+  readonly last_due?: string;
+}
+
+export function routineRow(value: unknown): RoutineRow | undefined {
+  if (!isRecord(value)) return undefined;
+  const v = value;
+  if (
+    v["kind"] !== "routine" ||
+    !isString(v["id"]) ||
+    !isString(v["ref"]) ||
+    !isString(v["title"]) ||
+    !isString(v["parent"]) ||
+    !isString(v["position"]) ||
+    !isNumber(v["priority"]) ||
+    !isString(v["lifecycle"]) ||
+    !isString(v["rule"]) ||
+    !isString(v["start"]) ||
+    !isString(v["tz"]) ||
+    !isString(v["due_date"]) ||
+    typeof v["paused"] !== "boolean" ||
+    !isString(v["by"]) ||
+    !isNumber(v["entries"]) ||
+    !isNumber(v["version"]) ||
+    !optional(v["due_at"], isNumber) ||
+    !optional(v["deleted_at"], isNumber) ||
+    !optional(v["last_at"], isNumber)
+  ) {
+    return undefined;
+  }
+  return v as unknown as RoutineRow;
+}
+
 /** The checker for each kind of row the working set holds. */
 export const ROW_OF: Readonly<Record<RowType, (value: unknown) => AnyRow | undefined>> = {
   task: taskRow,
   node: nodeRow,
   page: pageRow,
+  routine: routineRow,
 };
 
 export const isRowType = (type: string): type is RowType =>
-  type === "task" || type === "node" || type === "page";
+  type === "task" || type === "node" || type === "page" || type === "routine";
 
 /**
  * Whether a row belongs to the open working set, exactly as the service's snapshot chooses it:
- * active tasks that are not deleted, and live nodes and pages.
+ * active tasks and routines that are not deleted, and live nodes and pages.
  */
 export function inWorkingSet(type: RowType, row: AnyRow): boolean {
   if (row.deleted_at !== undefined) return false;
-  return type !== "task" || (row as TaskRow).lifecycle === "active";
+  return (
+    (type !== "task" && type !== "routine") || (row as TaskRow | RoutineRow).lifecycle === "active"
+  );
 }
 
 export function cursorOf(value: unknown): Cursor | undefined {
@@ -726,6 +793,7 @@ export function messageOf(value: unknown): FeedMessage | { type: "unreadable" } 
         asking: rowsOf(value["asking"], taskRow),
         nodes: rowsOf(value["nodes"], nodeRow),
         pages: rowsOf(value["pages"], pageRow),
+        routines: rowsOf(value["routines"], routineRow),
         instances: instancesOf(value["instances"]),
         scales: scalesOf(value["preferences"]),
       };
