@@ -159,6 +159,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.restore.every-revision",
+      "title": "A backup of every revision with a search index, 0.4 to this build's, passes this build's trial restore, restores searchable, and upgrades with its references, counter and history kept; a 0.6 space's live pages are search documents",
+      "source": "A1 3.12, 3.17; step 1 design, pull request 228",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.pages.contract",
       "title": "The page entries pass the registry check beside the registry, and the feed's page rows, a page leaving the live lists and the conflict of a Restore match their shapes",
       "source": "Step 1 design, pull request 228",
