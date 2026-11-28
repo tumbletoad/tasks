@@ -8,8 +8,6 @@
   position: relative;
   /* Rows drop columns by the list's own width (Row.module.css). */
   container-type: inline-size;
-  /* The list anchors its own scroll (List.tsx): the browser's anchoring would move it twice. */
-  overflow-anchor: none;
 }
 
 .list[data-virtual="true"] {

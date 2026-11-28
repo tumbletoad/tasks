@@ -5631,6 +5631,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.12.m5-06.e2e.settled",
+      "title": "In Chromium and Firefox against the real service: while an expanded card's detail is held, after a reload and after a click on its row, at 1,440 px and 390 px with the list's end in view, the card's star and the page's scroll are where they were once the detail arrives",
+      "source": "A5 3.7, A5 3.15, A7 3.12 M5.06",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.11.web.edits",
       "title": "Every person's edit takes one path: it shows at once as an overlay, carries the applied cursor (or its editor's opening one) as its base, and its toast's Undo names the commit the feed confirmed; two quick edits of one task go out in turn with the newer answer's as_of; a conflict or a failed call keeps the person's value under the field with who changed it, through feed updates, until Apply mine sends it again with a fresh base; an editor hears others' changes after it opened and never the tab's own",
       "source": "A5 3.11, A5 3.15, A7 3.12 M5.08",
