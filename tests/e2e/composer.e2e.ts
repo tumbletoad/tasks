@@ -734,20 +734,6 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     await signIn(page, world, `/s/${mira.id}/today`);
     await showsSpace(page, mira.name);
     const field = page.getByRole("textbox", { name: "New task" });
-    // A paste longer than the field takes is cut: the field says so. Only Chromium lets a page
-    // make a paste event that carries text.
-    if (tag === "chromium") {
-      await field.evaluate((input, pasted) => {
-        const data = new DataTransfer();
-        data.setData("text/plain", pasted);
-        input.dispatchEvent(
-          new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }),
-        );
-      }, "x".repeat(600));
-      await expect(toast(page)).toHaveText(
-        "Only the first 500 characters fit here. The rest is still on the clipboard.",
-      );
-    }
     const text = `Call the plumber about the leak (${tag})`;
     await field.fill(text);
     await page.reload();

@@ -42,7 +42,6 @@ export const ERROR_CODES = {
   conflict: { class: "conflict", http: 409, when: "base older than a touched field" },
   wrong_tool: { class: "usage", http: 400, when: "Completing or reopening with the wrong tool" },
   forbidden: { class: "forbidden", http: 403, when: "User-only, policy, grant or limit rule" },
-  not_permitted: { class: "forbidden", http: 403, when: "The session does not allow this tool" },
   request_id_conflict: { class: "conflict", http: 409, when: "Same request_id, different intent" },
   applied_earlier: {
     class: "conflict",

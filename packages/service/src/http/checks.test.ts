@@ -64,7 +64,7 @@ const PATHS = {
   ticket: "/api/v1/ws-ticket",
   ws: "/api/v1/ws",
   op: "/api/v1/op/task.get",
-  unknownOp: "/api/v1/op/run.report",
+  unknownOp: "/api/v1/op/task.unknown",
   launch: "/api/v1/launch/list",
   unknownLaunch: "/api/v1/launch/open",
   space: "/api/v1/space/default",
