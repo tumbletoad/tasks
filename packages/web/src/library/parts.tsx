@@ -180,10 +180,11 @@ export function noteFollowed(ref: string): void {
 
 /**
  * Back on the address a page was opened from: focus goes to the link the person followed, or to
- * the fold that holds it when that is closed (`data-holds`), within `root`.
+ * the fold that holds it when that is closed (`data-holds`), within `root`, once it is `drawn`.
  */
-export function useFocusReturn(root: RefObject<HTMLElement | null>): void {
+export function useFocusReturn(root: RefObject<HTMLElement | null>, drawn = true): void {
   useEffect(() => {
+    if (!drawn) return;
     const last = followed;
     if (last === undefined || last.path !== `${location.pathname}${location.search}`) return;
     const within = root.current;
@@ -196,7 +197,7 @@ export function useFocusReturn(root: RefObject<HTMLElement | null>): void {
     if (target === undefined) return;
     followed = undefined;
     target.focus();
-  }, [root]);
+  }, [root, drawn]);
 }
 
 /**

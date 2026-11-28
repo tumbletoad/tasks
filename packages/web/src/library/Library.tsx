@@ -331,8 +331,8 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
   const from = t("library.of", { name: title });
   const changed = useChanged();
   const root = useRef<HTMLDivElement>(null);
-  useFocusReturn(root);
   const [read, setRead] = useState<NodeView | "failed" | undefined>(undefined);
+  useFocusReturn(root, read !== undefined);
   // Newer texts the feed brought while the person reads these: offered, never put in their place.
   const [newer, setNewer] = useState<NodeView | undefined>(undefined);
   const shown = useRef(read);
