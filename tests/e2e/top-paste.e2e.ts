@@ -41,7 +41,7 @@ test.describe("[A5.top.e2e.paste] a paste that is more than a title loses no wor
     await paste(page, MAIL);
     await expect(field(page)).toHaveValue("Fixture: the clinic's export shifts by an hour");
     const rest = page.locator('[data-part="top-rest"]');
-    await expect(rest).toContainText("The rest goes in the task's context:");
+    await expect(rest).toContainText("The rest goes in the task's description:");
     await expect(rest).toContainText("The times in the weekly export");
 
     await page.reload();
