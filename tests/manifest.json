@@ -5399,6 +5399,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.12.6.update.retire",
+      "title": "an update, a rollback, an install and the service once ready remove the old version folders install.json names, keeping current, the way back, newer and pinned versions; a folder that is a link, holds anything its manifest does not name or belongs to another install stays whole; a removal cut off on either side of its rename is finished by the next pass, and a folder with the prefix that install.json does not name is never touched",
+      "source": "A2 3.12.6, A2 3.2.3",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.retire-probe",
+      "title": "a version whose runtime or native helper a process runs keeps every file, and goes once nothing runs it (Windows and Linux)",
+      "source": "A2 3.12.6",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.12.6.update.installed",
       "title": "ttasks update --from, --rollback and --repair through an installed stable command: a second update waits for the lock, the same archive again is current already, the data folders are byte-identical after an update and a rollback, doctor's update row passes, and without a terminal or --yes, or in an agent's shell, nothing is changed",
       "source": "A2 3.12.6, A2 3.13, A7 3.13 M6.12",

@@ -648,7 +648,37 @@ export interface InstallRecord {
    */
   readonly seen_working?: readonly string[];
   readonly last_update?: LastUpdate;
+  /** Versions kept whatever else is installed: nothing writes this list yet (retire.ts). */
+  readonly pinned?: readonly string[];
+  /** A version folder being removed: renamed to `versions/<folder>`, then deleted (retire.ts). */
+  readonly retiring?: Retiring;
 }
+
+/** The rename of a version folder that a removal makes, recorded before it is made. */
+export interface Retiring {
+  readonly version: string;
+  readonly folder: string;
+}
+
+/** The name a version folder is renamed to before it is deleted: no launcher starts it. */
+export const retiringName = (version: string, hex: string): string => `.retiring-${version}-${hex}`;
+
+const retiringOf = (value: unknown): Retiring | undefined => {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { version, folder } = value as Record<string, unknown>;
+  return typeof version === "string" &&
+    isVersionName(version) &&
+    typeof folder === "string" &&
+    folder.startsWith(retiringName(version, "")) &&
+    /^[0-9a-f]{16}$/.test(folder.slice(retiringName(version, "").length))
+    ? { version, folder }
+    : undefined;
+};
+
+/** install.json's pending removal, when it names one this build would make. */
+export const pendingRetiring = (
+  record: Record<string, unknown> | undefined,
+): Retiring | undefined => retiringOf(record?.["retiring"]);
 
 /** install.json as an object, or undefined when it is missing or not one. */
 export function readInstallRecord(state: string): Record<string, unknown> | undefined {
@@ -692,6 +722,10 @@ export interface RecordChange {
   /** Versions a service of this install was seen ready on: added to `seen_working`. */
   readonly seen?: readonly (string | undefined)[];
   readonly lastUpdate?: LastUpdate;
+  /** A version folder about to be renamed and deleted, or null once that is over. */
+  readonly retiring?: Retiring | null;
+  /** A version whose folder is gone: out of `versions`, and its folder out of `created`. */
+  readonly retired?: string;
 }
 
 /**
@@ -747,6 +781,14 @@ export function writeInstallRecord(
       ? had
       : wayBack(root, change.switched.from, change.switched.to, seen ?? [], had);
   const lastUpdate = change.lastUpdate ?? lastUpdateOf(before?.["last_update"]);
+  const retiring =
+    change.retiring === undefined
+      ? retiringOf(before?.["retiring"])
+      : (change.retiring ?? undefined);
+  const pinned = Array.isArray(before?.["pinned"]) ? strings(before["pinned"]) : undefined;
+  const gone = (entry: string) =>
+    change.retired !== undefined &&
+    (entry === change.retired || entry === `${VERSIONS}/${change.retired}`);
   const record: InstallRecord = {
     format: INSTALL_FORMAT,
     method: "script",
@@ -755,11 +797,15 @@ export function writeInstallRecord(
     install_id: id,
     versions: [
       ...new Set([...versions, ...(change.installed === undefined ? [] : [change.installed])]),
-    ],
-    created: [...new Set([...strings(before?.["created"]), ...(change.created ?? [])])].sort(),
+    ].filter((v) => !gone(v)),
+    created: [...new Set([...strings(before?.["created"]), ...(change.created ?? [])])]
+      .filter((path) => !gone(path))
+      .sort(),
     ...(previous === undefined ? {} : { previous }),
     ...(seen === undefined ? {} : { seen_working: seen }),
     ...(lastUpdate === undefined ? {} : { last_update: lastUpdate }),
+    ...(pinned === undefined ? {} : { pinned }),
+    ...(retiring === undefined ? {} : { retiring }),
   };
   atomicWrite(join(state, INSTALL_FILE), `${JSON.stringify(record, null, 2)}\n`, 0o600);
   return record;

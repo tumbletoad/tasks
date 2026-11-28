@@ -14,7 +14,7 @@
 //      version's `ttasks.exe` and `ttasksw.exe` in `<root>\bin\` (Windows),
 //   6. writes `<state>/install.json` (A2 3.2.3): the method, the root, the install ID, the versions
 //      installed, the version current named before, and what the installer created, so an
-//      uninstall can remove exactly that; then the journal goes.
+//      uninstall can remove exactly that; then the journal goes, and old versions (retire.ts).
 // M1.14 makes separate installs only (A2 3.2.2 rule 3): the launcher's TTASKS_HOME must be this
 // version's install root, which holds home.marker. Nothing is written outside the root.
 import { existsSync, realpathSync } from "node:fs";
@@ -34,6 +34,7 @@ import {
 import { isVersionName, readVersionManifest, type VersionManifest } from "./folder.ts";
 import { JOURNAL_FORMAT, removeJournal, writeJournal, type Journal } from "./journal.ts";
 import { repairLocked } from "./repair.ts";
+import { retireLocked } from "./retire.ts";
 import {
   checkStable,
   currentFor,
@@ -333,6 +334,7 @@ export async function finishInstall(options: FinishOptions): Promise<Finished> {
       // then switched past, and a journal no repair could finish, are all done with.
       removeJournal(state, "install");
       if (repair.kind === "stuck") removeJournal(state);
+      retireLocked({ root: target.root, state, platform });
       return {
         root: target.root,
         version: target.version,
