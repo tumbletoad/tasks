@@ -1,4 +1,4 @@
-// Today's selection (A5 3.4) as plain data: the fixture example of A5 3.4, the orders, the Next
+// Today's selection as plain data: the fixture example, the orders, the Next
 // limit, Changes, the day's numbers, and a property over generated tasks that no task is in two
 // sections, every selected task meets its section's rule and the numbers count what they say.
 // Fixture data only.
@@ -401,7 +401,7 @@ function daysOf(t: TaskRow, clock: Clock): string[] {
 }
 
 /**
- * The oracle: A5 3.4's table written again from the specification, not from views.ts. The section
+ * The oracle: Today's sections written again from their rules, not from views.ts. The section
  * whose rule selects a task before Next's limit and Changes, or none.
  */
 function ruleOf(t: TaskRow, clock: Clock): "focus" | "week" | "next" | undefined {

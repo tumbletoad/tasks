@@ -1,5 +1,5 @@
-// The live store's core against a model of the service (A7 3.12 M5.02's Verify line: any
-// interleaving applied in order equals the snapshot at that point). The model (test/feed-model.ts)
+// The live store's core against a model of the service: any
+// interleaving applied in order equals the snapshot at that point. The model (test/feed-model.ts)
 // makes commits, hides some, and sends snapshots and batches as the service's feed does: capped
 // batches with withheld rows, empty heartbeats, resumed and fresh subscriptions, authority changes.
 // The network between them loses, repeats, reorders and replays messages, and slips in another
