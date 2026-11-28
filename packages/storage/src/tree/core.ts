@@ -580,7 +580,7 @@ export class TreeWriter {
             : { target: plan.target, work: [], reason: error.message };
       if (kept !== undefined) {
         this.#conn.prepare(SQL.markDead).run({ target: kept.target });
-        return now("applied", { result: { kept } });
+        return now("unchanged", { result: { kept } });
       }
       return now("rejected", {
         error: {

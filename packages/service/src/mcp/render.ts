@@ -19,6 +19,7 @@ import {
   entryLines,
   fit,
   fitsWhole,
+  floorTokens,
   fixed,
   textLines,
   type Part,
@@ -28,8 +29,11 @@ import {
 
 /** A3 3.2.5: an error, with up to three candidate rows. */
 export const ERROR_TOKENS = 300;
-/** A3 3.9.6: the digest of `get_task` without sections. */
-export const DIGEST_TOKENS = 1_200;
+/**
+ * The first answer of `get_task` without sections: the task's digest and the trail above it
+ * together. A target: the request and the user's texts for agents get room of their own above it.
+ */
+export const DIGEST_TOKENS = 2_500;
 
 type Status = OutputOf<"space.status">;
 type TaskGet = OutputOf<"task.get">;
@@ -435,10 +439,86 @@ const requestTokens = (request: Request | undefined, getTask: string, ref: strin
           .join("\n"),
       ) + 1;
 
-function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: string): Rendered {
+type Digest = Extract<TaskGet, { view: "digest" }>;
+type Level = NonNullable<Digest["trail"]>[number];
+type PageLine = Level["pages"][number];
+
+const readTool = toolOf("page.read");
+
+const LEVEL_WORD: Readonly<Record<Level["kind"], string>> = {
+  project: "Project",
+  area: "Area",
+  space: "Space",
+};
+
+const pageLine = (page: PageLine): string =>
+  `- ${page.ref} ${page.title}${page.brief === "" ? "" : `: ${page.brief}`} · ${page.by} ${day(page.at)}`;
+
+/**
+ * The user's texts for agents on the levels above the task, outside the data block: a fixed label
+ * and the level's ID only, never its title, which an agent can edit, so no stored name reads as
+ * the user's instruction.
+ */
+function levelInstructions(trail: readonly Level[]): string[] {
+  return trail.flatMap((level) =>
+    level.for_agents === undefined
+      ? []
+      : [
+          `For agents, from the user, on ${level.kind === "space" ? "the space" : level.id} (${day(level.for_agents.at)}):`,
+          ...entryLines("- ", level.for_agents.text),
+        ],
+  );
+}
+
+/**
+ * One level of the trail: its head line with how many pages it holds and how to read them all,
+ * whatever is cut, so the level is never lost from sight; then its pages.
+ */
+function levelPart(level: Level): Part {
+  const brief = level.brief === "" ? "no brief" : level.brief;
+  const described = level.has_description ? " · description: read it" : "";
+  const count = `${String(level.count)} page${level.count === 1 ? "" : "s"}`;
+  return {
+    data: true,
+    total: level.count,
+    title: () =>
+      `${LEVEL_WORD[level.kind]} ${level.title}: ${brief}${described} · ${count}, ${readTool} target "${level.read}"`,
+    units: level.pages.map((page) => [pageLine(page)]),
+    overflow: (kept, total) => [
+      `+${String(total - kept)} more: ${readTool} target "${level.read}"`,
+    ],
+  };
+}
+
+/**
+ * The task's pages and the levels above it, nearest first. `fit` cuts lower parts first, so the
+ * far level's pages go before the near ones, and the task's log, sources and learnings, which come
+ * below, go before any of them.
+ */
+function trailParts(result: Digest): Part[] {
+  const trail = result.trail ?? [];
+  const pages = result.task.pages ?? [];
+  const total = pages.length + (result.task.more.pages ?? 0);
+  return [
+    {
+      data: true,
+      total,
+      title: (kept, all) =>
+        all === 0 ? undefined : `Pages on this task (${String(kept)} of ${String(all)})`,
+      units: pages.map((page) => [pageLine(page)]),
+    },
+    ...(trail.length === 0
+      ? []
+      : [{ data: true, fixed: true, units: [["Known above this task, nearest first:"]] }]),
+    ...trail.map(levelPart),
+  ];
+}
+
+function digestRendered(result: Digest, getTask: string): Rendered {
   const task = result.task;
   const { more } = task;
   const cut = task.cut ?? {};
+  const forAgents = levelInstructions(result.trail ?? []);
   const parts: Part[] = [
     fixed(
       headerLine(task, result.as_of),
@@ -452,6 +532,7 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
       getTask,
       task.ref,
     ),
+    ...(forAgents.length === 0 ? [] : [{ fixed: true, whole: true, units: [forAgents] }]),
     {
       data: true,
       fixed: true,
@@ -484,6 +565,7 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
       title: (_kept, total) => (total === 0 ? undefined : "Context"),
       units: task.context === "" ? [] : [textLines(withCut(task.context, cut.context), "  ")],
     },
+    ...trailParts(result),
     {
       data: true,
       total: task.log.length + more.log,
@@ -630,6 +712,8 @@ function searchLine(row: SearchRow): string {
       return `${row.ref} · ${row.kind} since this search`;
     case "learning":
       return `${join(row.task, row.date, group(row), `"${clip(row.text, SEARCH_CUTS.learning)}"`)}${changed}`;
+    case "page":
+      return `${join(`${row.ref} ${row.title}`, row.brief === "" ? undefined : row.brief, `on ${row.on}`, `${row.by} ${day(row.at)}`, row.snippet === undefined ? undefined : `"${row.snippet}"`)}${changed}`;
     default: {
       const state =
         row.lifecycle === "active"
@@ -954,14 +1038,258 @@ type Renderer = (
   extra?: number;
 };
 
+// ---------------------------------------------------------------------------------------------
+// read: sized before its cursor is issued, so the cursor reads on after the last row or character
+// the answer showed and nothing between is skipped.
+
+type PageRead = OutputOf<"page.read">;
+type PageView = Extract<PageRead, { view: "page" }>;
+type NodeView = Extract<PageRead, { view: "node" }>;
+
+/** The largest n from `low` to `high` for which `fits(n)`, with `fits` true up to some n; `low` when none. */
+function largest(low: number, high: number, fits: (n: number) => boolean): number {
+  let lo = low;
+  let hi = high;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (fits(mid)) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
+const readTail = (cursor: string | undefined, target: string, section: boolean): Part[] =>
+  cursor === undefined
+    ? []
+    : [
+        // The heading's words are stored text: the way on names the section only as the same one.
+        fixed(
+          `More: ${readTool} target "${target}"${section ? " with the same section" : ""} cursor "${cursor}"`,
+        ),
+      ];
+
+function pageRendered(result: PageView): Rendered {
+  const changed = `Changed by ${result.last.by} ${day(result.last.at)}`;
+  return {
+    parts: [
+      fixed(
+        `${result.ref} · page on ${result.owner.kind} ${result.owner.read} · as_of ${result.as_of}`,
+      ),
+      {
+        data: true,
+        fixed: true,
+        units: [
+          [`Title: ${result.title}`],
+          [`Brief: ${result.brief === "" ? "none" : result.brief}`],
+          [`On: ${result.owner.title}`],
+          [result.last.why === undefined ? changed : `${changed}: ${result.last.why}`],
+        ],
+      },
+      ...(result.headings === undefined
+        ? []
+        : [
+            fixed("No heading matched. Its headings:"),
+            { data: true, units: result.headings.map((h) => [`- ${h}`]) },
+          ]),
+      ...(result.body === undefined
+        ? []
+        : [
+            {
+              data: true,
+              title: () =>
+                `${result.section === undefined ? "Body" : `Section ${result.section}`} ${rangeOf(result.slice)}`.trimEnd(),
+              units: [textLines(result.body, "  ")],
+            },
+          ]),
+      ...readTail(result.cursor, result.ref, result.section !== undefined),
+    ],
+    more: `Read it in parts with ${readTool} section or cursor.`,
+  };
+}
+
+/** A text's first `n` characters as this answer's part of it, and the cursor after them. */
+function firstChars<T extends { slice?: Slice | undefined; cursor?: string | undefined }>(
+  result: T,
+  chars: readonly string[],
+  n: number,
+  key: "body" | "description",
+): T {
+  const from = result.slice?.from ?? 0;
+  const of = result.slice?.of ?? chars.length;
+  return {
+    ...result,
+    [key]: chars.slice(0, n).join(""),
+    slice: { from, to: from + n, of },
+    cursor: `b${String(from + n)}`,
+  };
+}
+
+/** A page's answer within the tool's budget, its body cut where the answer ends. */
+function pageSized(result: PageView): Rendered {
+  const max = budgetOf("page.read");
+  const whole = pageRendered(result);
+  if (result.body === undefined || fitsWhole(whole, max)) return whole;
+  const chars = Array.from(result.body);
+  const shown = (n: number) => pageRendered(firstChars(result, chars, n, "body"));
+  return shown(
+    Math.max(
+      1,
+      largest(0, chars.length - 1, (n) => fitsWhole(shown(n), max)),
+    ),
+  );
+}
+
+/**
+ * A level above a node: its head line only, with how many pages it holds and how to read them.
+ * Its rows are read with it, so the node's own rows have the answer's room.
+ */
+const levelHead = (level: Level): Part => ({ ...levelPart(level), units: [], total: 0 });
+
+function nodeRendered(result: NodeView): Rendered {
+  const target = result.kind === "space" ? "space" : result.id;
+  return {
+    parts: [
+      fixed(`${LEVEL_WORD[result.kind]} ${target} · as_of ${result.as_of}`),
+      ...(result.for_agents === undefined
+        ? []
+        : [
+            {
+              fixed: true,
+              whole: true,
+              units: [
+                [
+                  `For agents, from the user, on ${result.kind === "space" ? "the space" : result.id} (${day(result.for_agents.at)}):`,
+                  ...entryLines("- ", result.for_agents.text),
+                ],
+              ],
+            } satisfies Part,
+          ]),
+      {
+        data: true,
+        fixed: true,
+        units: [
+          [`Title: ${result.title}`],
+          [`Brief: ${result.brief === "" ? "none" : result.brief}`],
+        ],
+      },
+      {
+        data: true,
+        title: (_kept, total) =>
+          total === 0 ? undefined : `Description ${rangeOf(result.slice)}`.trimEnd(),
+        units: result.description === "" ? [] : [textLines(result.description, "  ")],
+      },
+      {
+        data: true,
+        total: result.pages.length + result.more.pages,
+        title: (kept, all) =>
+          all === 0 ? "Pages: none" : `Pages (${String(kept)} of ${String(all)})`,
+        units: result.pages.map((page) => [pageLine(page)]),
+      },
+      {
+        data: true,
+        total: result.task_pages.length + result.more.task_pages,
+        title: (kept, all) =>
+          all === 0 ? undefined : `Pages of its tasks (${String(kept)} of ${String(all)})`,
+        units: result.task_pages.map((page) => [`${pageLine(page)} · on ${page.task}`]),
+      },
+      ...(result.above.length === 0
+        ? []
+        : [
+            {
+              data: true,
+              fixed: true,
+              units: [["Known above it, nearest first:"]],
+            } satisfies Part,
+          ]),
+      ...result.above.map(levelHead),
+      ...readTail(result.cursor, target, false),
+    ],
+    more: `Read the rest with ${readTool} target "${target}" and the cursor.`,
+  };
+}
+
+/**
+ * A node's answer within the tool's budget: as many rows of both lists as fit, the same number of
+ * each, so one cursor reads both on; when no row fits, the description is cut instead.
+ */
+function nodeSized(result: NodeView): Rendered {
+  const max = budgetOf("page.read");
+  const whole = nodeRendered(result);
+  if (fitsWhole(whole, max)) return whole;
+  const offset = result.offset ?? 0;
+  const rows = Math.max(result.pages.length, result.task_pages.length);
+  const described = result.cursor?.startsWith("b") === true;
+  const withRows = (k: number): NodeView => ({
+    ...result,
+    pages: result.pages.slice(0, k),
+    task_pages: result.task_pages.slice(0, k),
+    more: {
+      pages: result.more.pages + Math.max(0, result.pages.length - k),
+      task_pages: result.more.task_pages + Math.max(0, result.task_pages.length - k),
+    },
+    ...(described ? {} : { cursor: `l${String(offset + k)}` }),
+  });
+  const k = largest(0, rows - 1, (n) => fitsWhole(nodeRendered(withRows(n)), max));
+  if (k > 0 || fitsWhole(nodeRendered(withRows(0)), max)) return nodeRendered(withRows(k));
+  const chars = Array.from(result.description);
+  const bare = withRows(0);
+  const shown = (n: number) => nodeRendered(firstChars(bare, chars, n, "description"));
+  return shown(
+    Math.max(
+      1,
+      largest(0, chars.length - 1, (n) => fitsWhole(shown(n), max)),
+    ),
+  );
+}
+
 const RENDERERS: Readonly<Record<string, Renderer>> = {
+  "page.read": (result: PageRead) =>
+    result.view === "page" ? pageSized(result) : nodeSized(result),
+  // The acknowledgement stands outside the data markers: it names the page by its reference and
+  // nothing an agent can write, such as the title of what holds it.
+  "page.write": (result: OutputOf<"page.write">) => {
+    if (result.result === "stale" || result.result === "ambiguous") {
+      return {
+        parts: [
+          fixed(
+            result.result === "stale"
+              ? `nothing written: the old words are not in ${result.target} now`
+              : `nothing written: the old words stand ${String(result.found ?? 0)} times in ${result.target}: give more of them`,
+            `The page as it is now${result.cursor === undefined ? "" : `, its start (read the rest: ${readTool} target "${result.target}")`}:`,
+          ),
+          { data: true, clip: true, units: [textLines(result.excerpt ?? "", "  ")] },
+        ],
+        more: `Read the page with ${readTool} target "${result.target}".`,
+      };
+    }
+    const word = result.result === "no_change" ? "no change" : result.result;
+    return {
+      parts: [fixed(`${word} ${result.target} · as_of ${result.as_of}${replayed(result)}`)],
+      more: "",
+    };
+  },
+  "node.instruct": (result: OutputOf<"node.instruct">) => ({
+    parts: [
+      fixed(
+        `${result.result === "set" ? "set the text for agents on" : "no change"} ${result.target} · as_of ${result.as_of}${replayed(result)}`,
+      ),
+    ],
+    more: "",
+  }),
   "space.status": (result: Status) => ({ parts: statusParts(result), more: STATUS_MORE }),
   "task.get": (result: TaskGet, { getTask }) => {
-    const extra = requestTokens(result.request, getTask, result.task.ref);
+    const request = requestTokens(result.request, getTask, result.task.ref);
     if (result.view === "digest") {
-      return { ...digestRendered(result, getTask), max: DIGEST_TOKENS, extra };
+      // The user's request has room of its own on top of the budget. Inside it, the user's texts
+      // for agents and the other lines never cut count first: only they take it past its target.
+      const shaped = digestRendered(result, getTask);
+      return {
+        ...shaped,
+        max: DIGEST_TOKENS,
+        extra: Math.max(request, floorTokens(shaped) - DIGEST_TOKENS),
+      };
     }
-    return { ...sectionsRendered(result, getTask), extra };
+    return { ...sectionsRendered(result, getTask), extra: request };
   },
   "task.update": (result: OutputOf<"task.update">) => {
     const fields = result.fields.length === 0 ? "" : `: ${result.fields.join(", ")}`;
@@ -1005,7 +1333,12 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
             `completed ${result.task}`,
             result.lifecycle !== "completed" && result.lifecycle,
             result.wrap_state,
-            `${String(result.learnings)} learning${result.learnings === 1 ? "" : "s"}`,
+            // Lessons now come only from a session that began before the library.
+            result.learnings > 0 &&
+              `${String(result.learnings)} learning${result.learnings === 1 ? "" : "s"}`,
+            // References or the fixed words only: nothing an agent can write stands here.
+            result.library !== undefined &&
+              `library: ${typeof result.library === "string" ? result.library : result.library.join(", ")}`,
           )
         : result.result === "no_change"
           ? `no change ${result.task} (already ${result.lifecycle})`

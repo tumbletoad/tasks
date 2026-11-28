@@ -5,6 +5,7 @@
 // the source it came from (`tasks.origin_source_id`), so a repeat capture finds the task wherever
 // the source has moved since (commands.ts, `tasks.add`).
 import type { Row } from "../driver.ts";
+import { alreadyThere } from "../write/pages.ts";
 import { positionBetween } from "../write/positions.ts";
 import { sourceFields, type Fields } from "../write/request.ts";
 import {
@@ -91,36 +92,41 @@ const sourceAdd: Run = (tx, input) => {
   return { status: "created", source: { id, ref: refText(tx, ref) } };
 };
 
-/** A source that is shown: removed ones only when `removed`. */
+/** A source that is shown; a removed one too when `removed`. */
 function liveSource(tx: Tx, key: unknown, removed = false): Row {
   const source =
     findSource(tx, key) ?? problem("NOT_FOUND", "The space has no source there", "source");
-  if ((source["deleted_at"] !== null) !== removed) {
-    problem(
-      "INVALID_TRANSITION",
-      removed ? "The source is not removed" : "The source was removed",
-      "source",
-    );
+  if (source["deleted_at"] !== null && !removed) {
+    problem("DELETED", "The source was removed", "source");
   }
   return source;
 }
 
-/** A source moves to another node; its change rows belong to where it goes. */
+/**
+ * A source moves to another node; its change rows belong to where it goes. Like a page's move, it
+ * says where the source goes, whatever else changed: held to no base.
+ */
 const sourceMove: Run = (tx, input) => {
   const source = liveSource(tx, input["source"]);
   const to = String(liveNode(tx, input["on"], "on")["id"]);
-  if (source["owner_id"] !== to) tx.set("sources", String(source["id"]), to, { owner: to });
+  if (source["owner_id"] !== to) {
+    tx.set("sources", String(source["id"]), to, { owner: to }, false);
+  }
   return sourceAnswer(tx, source);
 };
 
-/** A source removed, or put back; put back only while no other live source holds its key. */
+/**
+ * A source removed, or put back, against a base as today's link is (`source.unlink`); one already
+ * there changes nothing. Put back only while no other live source holds its key.
+ */
 const sourceGone =
   (gone: boolean): Run =>
   (tx, input) => {
-    const source = liveSource(tx, input["source"], !gone);
+    const source = liveSource(tx, input["source"], true);
+    if (alreadyThere(source["deleted_at"] !== null, !gone)) return sourceAnswer(tx, source);
     const key = source["source_key"];
     if (!gone && typeof key === "string" && tx.get(SQL.liveKey, { key }) !== undefined) {
-      problem("KEY_HELD", "Another source holds its key now", "source");
+      problem("INVALID_TRANSITION", "Another source holds its key now", "source");
     }
     const id = String(source["id"]);
     tx.set("sources", id, String(source["owner_id"]), { deleted: gone ? tx.at : null });

@@ -46,6 +46,43 @@ describe("[S2.tree.prefs] a space's preferences on the tree", () => {
     expect(fx.send("pref.set", { key: "no.such.key", value: 1 }).error?.field).toBe("key");
   });
 
+  test("a stored value is held to its base, the same value included; a first setting of the levels needs one", () => {
+    expect(
+      fx.send("pref.set", { key: "tasks.effort_scale", value: LEVELS }, { base: null }).error?.code,
+    ).toBe("BASE_REQUIRED");
+    const seen = fx.asOf();
+    ok(fx.send("pref.set", { key: "tasks.dedupe_window_days", value: 7 }));
+    const stale = fx.send(
+      "pref.set",
+      { key: "tasks.dedupe_window_days", value: 7 },
+      { base: seen },
+    );
+    expect(stale.status).toBe("conflict");
+    expect(
+      fx.send("pref.set", { key: "tasks.dedupe_window_days", value: 7 }, { base: null }).error
+        ?.code,
+    ).toBe("BASE_REQUIRED");
+  });
+
+  test("a change of the levels moves the tasks on a dropped one, also one changed since the read", () => {
+    ok(fx.send("pref.set", { key: "tasks.effort_scale", value: LEVELS }));
+    ok(fx.send("tasks.add", { tasks: [{ title: "A", effort: "S" }] }));
+    const seen = fx.asOf();
+    ok(fx.send("task.update", { task: "M-1", set: { effort: "L" } }, { who: fx.agent }));
+    const moved = fx.send(
+      "pref.set",
+      {
+        key: "tasks.effort_scale",
+        value: [{ key: "S" }, { key: "M" }],
+        moves: [{ from: "L", to: "M" }],
+      },
+      { base: seen },
+    );
+    // The levels changed nothing since the read: the move goes ahead.
+    expect(moved.status).toBe("applied");
+    expect(fx.conn.prepare("SELECT effort FROM tasks").get()?.["effort"]).toBe("M");
+  });
+
   test("a value a newer build wrote stays as it is here", () => {
     fx.conn
       .prepare(
