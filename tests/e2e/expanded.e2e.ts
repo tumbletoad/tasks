@@ -339,7 +339,9 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
 
     // Tab walks the header's controls, the brief's Add among them, then the card: its facts, the
     // composer, then the strip, which is one stop (the arrows walk it from Note to Copy), the
-    // description's Add, then its source link.
+    // description's Add, then its source link. The description's Add comes with the task's
+    // detail, so the walk starts once it is there.
+    await expect(row.locator('[data-part="add-context"]')).toBeVisible();
     const active = () =>
       page.evaluate(() => {
         const e = document.activeElement;
