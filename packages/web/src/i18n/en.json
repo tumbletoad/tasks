@@ -72,6 +72,8 @@
   "top.added": "Added to {where}",
   "top.needsTitle": "Add a title: the rest are shortcuts.",
   "top.title": "Title: {title}",
+  "top.rest": "The rest goes in the task's context:",
+  "top.restLeave": "Leave the rest of the paste out",
   "top.keepText": "Keep {text} as text",
   "top.keepView": "Do not put it in {where}",
   "top.suggestions": "Areas and projects",

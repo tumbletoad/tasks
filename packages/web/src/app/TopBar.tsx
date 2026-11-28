@@ -32,6 +32,7 @@ import {
   parseCapture,
   type Chip,
 } from "../capture/parse.ts";
+import { joinRest, splitPaste } from "../capture/paste.ts";
 import { requestId } from "../api.ts";
 import { Session } from "../context.ts";
 import { liveGroups } from "../groups.ts";
@@ -65,6 +66,9 @@ const styles = classes(css, [
   "keep",
   "mode",
   "panel",
+  "rest",
+  "restLabel",
+  "restText",
   "suggestion",
   "suggestions",
   "title",
@@ -72,6 +76,8 @@ const styles = classes(css, [
 
 /** The field's limit: more than any title, so the shortcuts have room. */
 const FIELD_MAX = 500;
+/** What a paste may keep for the new task's context: a context's own limit. */
+const REST_MAX = 65_536;
 
 /**
  * The field's draft of a space, with the shortcuts the person kept as text: without them a word
@@ -85,6 +91,8 @@ interface Draft {
    * reload, carries it, so the service gives back the task it made instead of a second.
    */
   readonly request?: string;
+  /** What a paste brought beyond the title: the new task's context. */
+  readonly rest?: string;
 }
 
 const REQUEST_ID = /^[0-9a-f-]{36}$/u;
@@ -98,8 +106,16 @@ function readTop(space: string): Draft | undefined {
 /** A kept draft, read by its shape. */
 function draftOf(value: unknown): Draft | undefined {
   if (typeof value !== "object" || value === null) return undefined;
-  const { text, kept, request } = value as { text?: unknown; kept?: unknown; request?: unknown };
-  if (typeof text !== "string" || text === "" || text.length > FIELD_MAX) return undefined;
+  const { text, kept, request, rest } = value as {
+    text?: unknown;
+    kept?: unknown;
+    request?: unknown;
+    rest?: unknown;
+  };
+  const more = typeof rest === "string" && rest.length <= REST_MAX ? rest : "";
+  if (typeof text !== "string" || (text === "" && more === "") || text.length > FIELD_MAX) {
+    return undefined;
+  }
   const keys = Array.isArray(kept)
     ? kept.filter((k): k is string => typeof k === "string" && k.length <= 100).slice(0, 50)
     : [];
@@ -107,6 +123,7 @@ function draftOf(value: unknown): Draft | undefined {
     text,
     kept: new Set(keys),
     ...(typeof request === "string" && REQUEST_ID.test(request) ? { request } : {}),
+    ...(more === "" ? {} : { rest: more }),
   };
 }
 
@@ -115,22 +132,23 @@ function keepTop(space: string, draft: Draft | undefined): void {
   const before = readTop(space);
   const request = draft?.request ?? (before?.text === draft?.text ? before?.request : undefined);
   const value =
-    draft === undefined || draft.text === ""
+    draft === undefined || (draft.text === "" && (draft.rest ?? "") === "")
       ? undefined
       : JSON.stringify({
           text: draft.text,
           kept: [...draft.kept],
           ...(request === undefined ? {} : { request }),
+          ...((draft.rest ?? "") === "" ? {} : { rest: draft.rest }),
         });
   if (tabKept.read(draftName(space)) !== value) tabKept.keep(draftName(space), value);
 }
 
 /** The request ID for an add of `text`: its unanswered one's, else a new one, kept with it. */
-function requestFor(space: string, text: string, kept: ReadonlySet<string>): string {
+function requestFor(space: string, text: string, kept: ReadonlySet<string>, rest: string): string {
   const before = readTop(space);
   if (before?.text === text && before.request !== undefined) return before.request;
   const request = requestId();
-  keepTop(space, { text, kept, request });
+  keepTop(space, { text, kept, request, rest });
   return request;
 }
 
@@ -138,7 +156,14 @@ function requestFor(space: string, text: string, kept: ReadonlySet<string>): str
 function dropRequest(space: string, text: string): void {
   const before = readTop(space);
   if (before?.text !== text || before.request === undefined) return;
-  tabKept.keep(draftName(space), JSON.stringify({ text, kept: [...before.kept] }));
+  tabKept.keep(
+    draftName(space),
+    JSON.stringify({
+      text,
+      kept: [...before.kept],
+      ...(before.rest === undefined ? {} : { rest: before.rest }),
+    }),
+  );
 }
 
 /** How long the search waits for typing to pause before it reads. */
@@ -200,6 +225,8 @@ export function TopBar({
   const routeQuery = searching ? searchQueryOf(location) : "";
 
   const [text, setText] = useState(() => readTop(space)?.text ?? "");
+  /** What pastes brought beyond the title, for the new task's context. */
+  const [rest, setRest] = useState(() => readTop(space)?.rest ?? "");
   const [query, setQuery] = useState(routeQuery);
   /** The keys of shortcuts the person kept as text, for as long as the draft lasts. */
   const [kept, setKept] = useState<ReadonlySet<string>>(() => readTop(space)?.kept ?? new Set());
@@ -231,9 +258,9 @@ export function TopBar({
   }, [space]);
 
   useEffect(() => {
-    keepTop(space, text === "" ? undefined : { text, kept });
+    keepTop(space, text === "" && rest === "" ? undefined : { text, kept, rest });
     if (text.trim() === "") setKept((known) => (known.size === 0 ? known : new Set()));
-  }, [space, text, kept]);
+  }, [space, text, kept, rest]);
 
   // Back, Forward, a reload or a link changed the route's query: the field follows it. Leaving the
   // search route by any way ends the search.
@@ -387,9 +414,11 @@ export function TopBar({
       field.current?.focus();
       return;
     }
-    const draft = capture.draft;
+    const title = capture.draft;
     // Shortcuts alone: the panel says a title is missing.
-    if (draft === undefined) return;
+    if (title === undefined) return;
+    const context = rest;
+    const draft = context === "" ? title : { ...title, context };
     if (!live || sending.current.has(submitted)) return;
     sending.current.add(submitted);
     const area = capture.chips.find((chip) => chip.kind === "area");
@@ -405,7 +434,7 @@ export function TopBar({
     const sent = feed.write(
       (request_id) => api.client.task.add({ tasks: [draft], request_id }),
       undefined,
-      requestFor(space, submitted, kept),
+      requestFor(space, submitted, kept, context),
     );
     void sent.settled.then((settled) => {
       sending.current.delete(submitted);
@@ -414,6 +443,7 @@ export function TopBar({
       forget(space, submitted);
       if (mounted.current) say(t("top.added", { where }));
       setText((current) => (current === submitted ? "" : current));
+      setRest((current) => (current === context ? "" : current));
     });
     sent.answer.then(
       () => {
@@ -441,7 +471,10 @@ export function TopBar({
   const value = searching ? query : text;
   const label = searching ? t("top.search") : t("top.newTask");
   const showPanel =
-    within && !ended && !searching && text.trim() !== "" && (read || suggestions.length > 0);
+    within &&
+    !ended &&
+    !searching &&
+    (rest !== "" || (text.trim() !== "" && (read || suggestions.length > 0)));
 
   return (
     <div className={styles.bar}>
@@ -497,13 +530,25 @@ export function TopBar({
             setCaret(event.currentTarget.selectionStart ?? 0);
           }}
           onPaste={(event) => {
-            // The field takes what fits and drops the rest: say so, the clipboard still has it.
-            const pasted = event.clipboardData.getData("text/plain").length;
+            const pasted = event.clipboardData.getData("text/plain");
             const input = event.currentTarget;
-            const chosen = (input.selectionEnd ?? 0) - (input.selectionStart ?? 0);
-            if (input.value.length - chosen + pasted > FIELD_MAX) {
-              say(t("top.pasteCut", { count: FIELD_MAX }));
+            const start = input.selectionStart ?? input.value.length;
+            const end = input.selectionEnd ?? start;
+            if (searching) {
+              // A search takes what fits and drops the rest: say so, the clipboard still has it.
+              if (input.value.length - (end - start) + pasted.length > FIELD_MAX) {
+                say(t("top.pasteCut", { count: FIELD_MAX }));
+              }
+              return;
             }
+            // More than a title: its first line is the title, and the rest is kept for the task's
+            // context, where a person looks for it, and said so under the field.
+            const split = splitPaste(input.value, start, end, pasted, FIELD_MAX);
+            if (split === undefined) return;
+            event.preventDefault();
+            placeCaret.current = split.caret;
+            setText(split.text);
+            if (split.rest !== "") setRest((kept) => joinRest(kept, split.rest).slice(0, REST_MAX));
           }}
           onKeyDown={(event) => {
             const action = actionOf(event.nativeEvent, "field", singleKeys);
@@ -601,7 +646,30 @@ export function TopBar({
                 )}
               </ul>
             )}
-            {!read ? null : (
+            {rest === "" ? null : (
+              <p className={styles.rest} data-part="top-rest">
+                <span className={styles.restLabel}>{t("top.rest")}</span>
+                <span className={styles.restText} dir="auto">
+                  {rest}
+                </span>
+                <button
+                  type="button"
+                  className={styles.keep}
+                  aria-label={t("top.restLeave")}
+                  data-tip={t("top.restLeave")}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                  }}
+                  onClick={() => {
+                    setRest("");
+                    field.current?.focus();
+                  }}
+                >
+                  <CrossIcon />
+                </button>
+              </p>
+            )}
+            {!read && rest === "" ? null : (
               <p className={styles.title}>
                 {capture.draft === undefined ? (
                   t("top.needsTitle")
