@@ -82,7 +82,18 @@ import {
   type FolderOs,
 } from "./folders.ts";
 import { brokenIn, groupBreaks, type GroupTouch } from "./groups.ts";
-import { appended, excerptOf, findPage, finishedBody, occurrences, PAGE_SQL } from "./pages.ts";
+import {
+  appended,
+  excerptOf,
+  findPage,
+  finishedBody,
+  nodeTexts,
+  occurrences,
+  PAGE_SQL,
+  pageInTrashAlready,
+  pageSetTexts,
+  textWrite,
+} from "./pages.ts";
 import {
   newerOn,
   oppositeOf,
@@ -2683,8 +2694,7 @@ export class SpaceWriter {
           const row = pageOf(op.page, restoring);
           const id = new RowReader("pages", row).id("id", "pg");
           const record = { ...inputOf(op, "page"), page: id };
-          // Already where it asks for: nothing to write.
-          const done = (row["deleted_at"] !== null) !== restoring;
+          const done = pageInTrashAlready(row["deleted_at"] !== null, restoring);
           return {
             i,
             op,
@@ -2728,18 +2738,18 @@ export class SpaceWriter {
             }
             body = version;
           }
-          const given: [string, string][] = [];
-          if (op.title !== undefined) given.push(["title", op.title]);
-          if (op.brief !== undefined) given.push(["brief", op.brief]);
-          if (body !== undefined) given.push(["body", body]);
-          const set = Object.fromEntries(given.filter(([field, value]) => row[field] !== value));
+          const { held, set } = textWrite(
+            pageSetTexts(op, op.from_seq === undefined ? undefined : body),
+            (field) => String(row[field]),
+            true,
+          );
           starts.set(rowKey("pages", id), rowState("pages", row, CHILD_FIELDS.pages));
           return {
             i,
             op,
             target: id,
             task: null,
-            touches: given.map(([field]): Touch => ({ entity: "pages", id, field, task: null })),
+            touches: held.map((field): Touch => ({ entity: "pages", id, field, task: null })),
             record: { ...inputOf(op, "page"), page: id },
             page: { set },
             ...(Object.keys(set).length === 0 ? { skip: true } : {}),
@@ -2752,26 +2762,24 @@ export class SpaceWriter {
           }
           const node = holderOf(op.node, "node") as { kind: TextNode["kind"]; id: string };
           const row = conn.prepare(PAGE_SQL.text).get({ id: node.id });
-          const given: [string, string][] = [];
-          if (op.kind === "node.instruct") given.push(["for_agents", op.text]);
-          else {
-            if (op.brief !== undefined) given.push(["brief", op.brief]);
-            if (op.description !== undefined) given.push(["description", op.description]);
-          }
-          const set = Object.fromEntries(
-            given.filter(([field, value]) => (row?.[field] ?? "") !== value),
+          const { held, set } = textWrite(
+            nodeTexts(op),
+            (field) => {
+              const value = row?.[field];
+              return typeof value === "string" ? value : "";
+            },
+            row !== undefined,
           );
-          let touches: Touch[] = [];
           if (row !== undefined) {
             const key = rowKey("node_texts", node.id);
             starts.set(key, rowState("node_texts", row, CHILD_FIELDS.node_texts));
-            touches = given.map(([field]): Touch => ({
-              entity: "node_texts",
-              id: node.id,
-              field,
-              task: null,
-            }));
           }
+          const touches = held.map((field): Touch => ({
+            entity: "node_texts",
+            id: node.id,
+            field,
+            task: null,
+          }));
           return {
             i,
             op,

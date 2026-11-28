@@ -19,6 +19,8 @@ export interface TreeFixture {
   spaceId: Id<"sp">;
   human: TreeActor;
   agent: TreeActor;
+  /** The space's as_of now, wire form. */
+  asOf(): string;
   /** Sends one command as `who` (the person by default) with a fresh request ID. */
   send(command: string, input: Record<string, unknown>, more?: Partial<Send>): TreeResult;
   close(): void;
@@ -92,6 +94,7 @@ export function openTree(
     spaceId,
     human,
     agent,
+    asOf,
     send: (command, input, more = {}) =>
       writer.submit({
         space_id: spaceId,
@@ -130,7 +133,7 @@ export function treeHistoryProblems(conn: Connection): string[] {
   if (seqs.length !== last || seqs.some((s, i) => s !== i + 1)) problems.push("seq-gapless");
   const unreceipted = conn
     .prepare(
-      "SELECT count(*) AS n FROM commits k WHERE NOT EXISTS (SELECT 1 FROM receipts r WHERE " +
+      "SELECT count(*) AS n FROM commits k WHERE k.scope_id <> 'system' AND NOT EXISTS (SELECT 1 FROM receipts r WHERE " +
         "r.scope_id = k.scope_id AND r.request_id = k.request_id AND r.status = 'applied' AND r.seq = k.seq)",
     )
     .get()?.["n"];
@@ -193,7 +196,6 @@ export function treeHistoryProblems(conn: Connection): string[] {
   for (const entity of Object.keys(FIELDS)) {
     for (const live of conn.prepare(`SELECT * FROM ${entity}`).all()) {
       stored.add(`${entity}|${String(live["id"])}`);
-      if (Number(live["created_seq"]) === 0) continue; // the space's own root, made with it
       const key = `${entity}|${String(live["id"])}`;
       const played = rows.get(key);
       const v = versions.get(key);
