@@ -1138,6 +1138,9 @@ const HISTORY_TABLES: readonly { table: string; key: string; fields: Fields }[] 
   { table: "runs", key: "id", fields: CHILD_FIELDS.runs },
   // Schema 0.5: there from that revision on. The workload writes none yet.
   { table: "folders", key: "id", fields: CHILD_FIELDS.folders },
+  // Schema 0.6: there from that revision on. The workload writes none yet.
+  { table: "pages", key: "id", fields: CHILD_FIELDS.pages },
+  { table: "node_texts", key: "owner_id", fields: CHILD_FIELDS.node_texts },
 ];
 
 const DERIVED = new Set<string>([...DERIVED_COLUMNS, "entity_id"]);

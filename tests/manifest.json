@@ -159,6 +159,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.pages.write",
+      "title": "A page takes the space's next reference; two edits of different passages both stand, and words gone or standing twice write nothing; a set and a Restore meet newer words as a conflict; a page leaves with its task unwritten; only a person writes a node's text for agents",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.restore.every-revision",
       "title": "A backup of every revision with a search index, 0.4 to this build's, passes this build's trial restore, restores searchable, and upgrades with its references, counter and history kept; a 0.6 space's live pages are search documents",
       "source": "A1 3.12, 3.17; step 1 design, pull request 228",
