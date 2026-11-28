@@ -12,7 +12,7 @@ import type { Connection, Row } from "../driver.ts";
 import { misuse } from "../errors.ts";
 import { formatTaskRef } from "../refs.ts";
 import { columnsValue, fieldJson } from "../write/fields.ts";
-import type { HistoryRun, Tx } from "./core.ts";
+import type { HistoryRun, Tx } from "./tx.ts";
 import { columnsOf, isEntity, TreeProblem } from "./fields.ts";
 
 /** A change row `c` of commit `c.seq` whose node the same commit also changed `field` of. */

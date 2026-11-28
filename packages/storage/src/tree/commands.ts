@@ -7,7 +7,7 @@ import type { Row, SqlValue } from "../driver.ts";
 import { formatTaskRef, parseTaskRef } from "../refs.ts";
 import { positionBetween } from "../write/positions.ts";
 import { freeSlug } from "../write/slugs.ts";
-import type { Command, Tx } from "./core.ts";
+import type { Command, Tx } from "./tx.ts";
 import { TreeProblem } from "./fields.ts";
 
 type Input = Record<string, unknown>;

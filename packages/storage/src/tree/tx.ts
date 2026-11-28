@@ -1,0 +1,302 @@
+// What a command writes through: the request's one transaction, seen as rows and fields. A
+// command reads with get and all, makes rows with create, changes fields with set and calls
+// another command with call; finish then coalesces what the request wrote into change rows and
+// sets each changed row's versions. The base is checked against each field's version as it stood
+// before the request, so a request's second write to a field never conflicts with its first.
+import type { Connection, Row, SqlValue } from "../driver.ts";
+import { misuse } from "../errors.ts";
+import { newId, type Id, type RandomSource } from "../ids.ts";
+import { takeTaskRef } from "../refs.ts";
+import { columnsValue, fieldJson } from "../write/fields.ts";
+import { provenanceOf, rowState, versionOf, type RowState } from "../write/row-state.ts";
+import { columnsOf, FIELDS, KEYS, type Entity, type FieldOf } from "./fields.ts";
+
+/** Columns a create change leaves out: each follows from the change's seq. */
+const DERIVED = new Set(["created_seq", "version", "touched", "fv", "fp"]);
+
+const SQL = {
+  affected: "UPDATE commits SET affected = $n WHERE seq = $seq",
+  touched: "UPDATE nodes SET touched = $seq WHERE id = $id",
+} as const;
+
+const rowSql = (entity: Entity): string => `SELECT * FROM ${entity} WHERE id = $id`;
+
+export type ActorKind = "human" | "agent" | "routine" | "system" | "import";
+
+export interface TreeActor {
+  scope_id: string;
+  principal_id: Id<"ac">;
+  /** Who wrote it, when another than the principal: an agent acting on the person's authority. */
+  author_id?: Id<"ac">;
+  actor_kind: ActorKind;
+  machine_id: string;
+  origin: "ui" | "cli" | "mcp" | "http" | "import" | "system";
+  session_id?: string;
+  run_id?: string;
+}
+
+export interface TreeRequest {
+  space_id: string;
+  request_id: string;
+  actor: TreeActor;
+  /** The `as_of` of the read the request was made from: a field changed after it conflicts. */
+  base?: string;
+  /** One line of what changed and why. */
+  reason?: string;
+  /** The tool entry the request comes from: its refusals store no receipt. */
+  entry?: string;
+  command: string;
+  input: Record<string, unknown>;
+}
+
+export interface TreeConflict {
+  entity: Entity;
+  id: string;
+  field: string;
+  version: number;
+}
+
+/** The rows a request wrote, in order, with what they were before it. */
+interface Written {
+  entity: Entity;
+  id: string;
+  node: string | null;
+  created: boolean;
+  start: RowState | undefined;
+  fields: Set<string>;
+  order: number;
+}
+
+export interface SpaceState {
+  spaceId: string;
+  refPrefix: string;
+  lastSeq: number;
+  epoch: number;
+  incarnation: Id<"ai">;
+  machine: string;
+}
+
+/** What a command writes through, inside the request's transaction. */
+export class Tx {
+  readonly conn: Connection;
+  readonly seq: number;
+  readonly at: number;
+  readonly request: TreeRequest;
+  readonly space: SpaceState;
+  readonly random: RandomSource;
+  readonly #commands: Readonly<Record<string, Command>>;
+  readonly #base: number | undefined;
+  readonly #rows = new Map<string, Written>();
+  readonly conflicts: TreeConflict[] = [];
+
+  constructor(
+    conn: Connection,
+    seq: number,
+    at: number,
+    request: TreeRequest,
+    space: SpaceState,
+    base: number | undefined,
+    random: RandomSource,
+    commands: Readonly<Record<string, Command>>,
+  ) {
+    this.conn = conn;
+    this.seq = seq;
+    this.at = at;
+    this.request = request;
+    this.space = space;
+    this.#base = base;
+    this.random = random;
+    this.#commands = commands;
+  }
+
+  /** The person or agent the request writes as. */
+  get author(): Id<"ac"> {
+    return this.request.actor.author_id ?? this.request.actor.principal_id;
+  }
+
+  get(sql: string, params: Record<string, SqlValue> = {}): Row | undefined {
+    return this.conn.prepare(sql).get(params);
+  }
+
+  all(sql: string, params: Record<string, SqlValue> = {}): Row[] {
+    return this.conn.prepare(sql).all(params);
+  }
+
+  /** The next reference of the space's one counter. */
+  ref(): number {
+    return takeTaskRef(this.conn);
+  }
+
+  newId<P extends "t" | "p" | "n" | "s">(prefix: P): Id<P> {
+    return newId(prefix, this.random);
+  }
+
+  /** Runs another command in this request: its writes are this commit's. */
+  call(command: string, input: Record<string, unknown>): unknown {
+    const run = this.#commands[command];
+    if (run === undefined) throw misuse("No command of that name");
+    return run(this, input);
+  }
+
+  /** Inserts a new row. `node` is the node it belongs to. */
+  create(entity: Entity, values: Record<string, SqlValue>, node: string | null): void {
+    const allowed = new Set([
+      ...KEYS[entity],
+      ...Object.values(FIELDS[entity] as Record<string, readonly string[]>).flat(),
+    ]);
+    const columns = Object.keys(values);
+    if (columns.some((c) => !allowed.has(c))) throw misuse("A column the table does not have");
+    const all = [...columns, "created_seq", "version", ...(entity === "nodes" ? ["touched"] : [])];
+    const sql =
+      `INSERT INTO ${entity} (${all.join(", ")}) VALUES (` +
+      `${[...columns.map((c) => `$${c}`), "$seq", "$seq", ...(entity === "nodes" ? ["$seq"] : [])].join(", ")})`;
+    this.conn.prepare(sql).run({ ...values, seq: this.seq });
+    const id = String(values["id"]);
+    this.#rows.set(`${entity}|${id}`, {
+      entity,
+      id,
+      node,
+      created: true,
+      start: undefined,
+      fields: new Set(),
+      order: this.#rows.size,
+    });
+  }
+
+  /**
+   * Sets fields of an existing row, each as an object of its columns (a one-column field may be
+   * given as its value). A field whose version before the request is newer than the base is a
+   * conflict: it is collected and not written, and the request writes nothing.
+   */
+  set<E extends Entity>(
+    entity: E,
+    id: string,
+    node: string | null,
+    fields: Partial<Record<FieldOf<E>, SqlValue | Record<string, SqlValue>>>,
+  ): void {
+    const key = `${entity}|${id}`;
+    let row = this.#rows.get(key);
+    if (row === undefined) {
+      const raw = this.conn.prepare(rowSql(entity)).get({ id });
+      if (raw === undefined) throw misuse("A command set a row it did not read");
+      row = {
+        entity,
+        id,
+        node,
+        created: false,
+        start: rowState(entity, raw, FIELDS[entity]),
+        fields: new Set(),
+        order: this.#rows.size,
+      };
+      this.#rows.set(key, row);
+    }
+    const assign: string[] = [];
+    const params: Record<string, SqlValue> = { id };
+    for (const [field, given] of Object.entries<unknown>(fields)) {
+      const columns = columnsOf(entity, field);
+      if (row.start !== undefined && this.#base !== undefined) {
+        const version = versionOf(row.start, field);
+        if (version > this.#base) {
+          if (
+            !this.conflicts.some((c) => c.entity === entity && c.id === id && c.field === field)
+          ) {
+            this.conflicts.push({ entity, id, field, version });
+          }
+          continue;
+        }
+      }
+      const value =
+        columns.length === 1 && (typeof given !== "object" || given === null)
+          ? { [columns[0] ?? ""]: given as SqlValue }
+          : (given as Record<string, SqlValue>);
+      for (const column of columns) {
+        if (!(column in value)) continue;
+        assign.push(`${column} = $${column}`);
+        params[column] = value[column] ?? null;
+      }
+      row.fields.add(field);
+    }
+    if (assign.length > 0) {
+      this.conn.prepare(`UPDATE ${entity} SET ${assign.join(", ")} WHERE id = $id`).run(params);
+    }
+  }
+
+  /** The change rows of the request, coalesced; sets the versions of each changed row. */
+  finish(): ChangeRow[] {
+    const changes: ChangeRow[] = [];
+    const nodes = new Set<string>();
+    const tasks = new Set<string>();
+    for (const row of [...this.#rows.values()].sort((a, b) => a.order - b.order)) {
+      const final = this.conn.prepare(rowSql(row.entity)).get({ id: row.id });
+      if (final === undefined) throw misuse("A written row is gone");
+      if (row.created) {
+        const after = Object.fromEntries(Object.entries(final).filter(([c]) => !DERIVED.has(c)));
+        changes.push({
+          ...head(row),
+          action: "create",
+          field: null,
+          before: null,
+          after: fieldJson(after),
+          beforeVer: null,
+          beforeProv: null,
+        });
+      } else {
+        const start = row.start;
+        if (start === undefined) throw misuse("A written row has no start");
+        const fv = { ...start.fv };
+        const fp = { ...start.fp };
+        for (const field of row.fields) {
+          const columns = columnsOf(row.entity, field);
+          const before = fieldJson(columnsValue(start.raw, columns));
+          const after = fieldJson(columnsValue(final, columns));
+          if (before === after) continue;
+          changes.push({
+            ...head(row),
+            action: "set",
+            field,
+            before,
+            after,
+            beforeVer: versionOf(start, field),
+            beforeProv: provenanceOf(start, field),
+          });
+          fv[field] = this.seq;
+          fp[field] = this.seq;
+        }
+        if (!changes.some((c) => c.entity === row.entity && c.entityId === row.id)) continue;
+        this.conn
+          .prepare(`UPDATE ${row.entity} SET version = $seq, fv = $fv, fp = $fp WHERE id = $id`)
+          .run({ seq: this.seq, fv: JSON.stringify(fv), fp: JSON.stringify(fp), id: row.id });
+      }
+      if (row.node !== null) nodes.add(row.node);
+      if (row.entity === "tasks") tasks.add(row.id);
+    }
+    for (const id of nodes) this.conn.prepare(SQL.touched).run({ id, seq: this.seq });
+    this.conn.prepare(SQL.affected).run({ n: tasks.size, seq: this.seq });
+    return changes;
+  }
+}
+
+export interface ChangeRow {
+  entity: Entity;
+  entityId: string;
+  node: string | null;
+  action: "create" | "set";
+  field: string | null;
+  before: string | null;
+  after: string;
+  beforeVer: number | null;
+  beforeProv: number | null;
+}
+
+const head = (row: Written) => ({ entity: row.entity, entityId: row.id, node: row.node });
+
+/** A command: it reads and writes through its Tx and returns what it did. */
+export type Command = (tx: Tx, input: Record<string, unknown>) => unknown;
+
+/** What Undo and Redo ask the core for: the commit they answer, and what to run. */
+export interface HistoryRun {
+  kind: "undo" | "redo";
+  target: number;
+  /** The opposite commands, in order. */
+  calls: { command: string; input: Record<string, unknown> }[];
+}
