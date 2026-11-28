@@ -362,6 +362,20 @@ const where = fc.constantFrom("{dir:a}", "{dir:a/inner}", "{dir:b}", "{dir:c}");
 /** A project a folder call names: by its name, which two areas may both have, or by its path. */
 const holder = fc.constantFrom("Holder", "Second", "Home/Holder", "Garden/Second", "Home/Papers");
 
+/** A draft filed by its folder, or by the caller's working folder, sometimes sent twice. */
+const filed = fc
+  .record({ as: task, title, folder: where, cwd: fc.boolean(), who, retry: fc.boolean() })
+  .map((r): Step => ({
+    op: "task.add",
+    input: {
+      tasks: [{ title: r.title, folder: r.cwd ? "cwd" : r.folder }],
+      ...(r.cwd ? { cwd: r.folder } : {}),
+    },
+    as: r.as,
+    ...r.who,
+    ...(r.retry ? { retry: true } : {}),
+  }));
+
 /**
  * Folders: a project made for a folder, always in an area as the page makes one; a project's or a
  * task's set and cleared, also after the person moved the folder on disk; a draft filed by its
@@ -417,15 +431,7 @@ const folders = fc.oneof(
     ...r.who,
     ...r.sent,
   })),
-  fc.record({ as: task, title, folder: where, cwd: fc.boolean(), who }).map((r): Step => ({
-    op: "task.add",
-    input: {
-      tasks: [{ title: r.title, folder: r.cwd ? "cwd" : r.folder }],
-      ...(r.cwd ? { cwd: r.folder } : {}),
-    },
-    as: r.as,
-    ...r.who,
-  })),
+  filed,
   fc
     .record({
       q: fc.constantFrom("has:folder", "on:this-machine", "on:cwd", "folder:cwd", "folder:{dir:a}"),
@@ -455,10 +461,21 @@ const VOCABULARY: fc.Arbitrary<Step>[] = [
   folders,
 ];
 
+/** Steps that come together: a draft filed by its folder and sent twice, then Undo or Redo. */
+const filedThenHistory: fc.Arbitrary<Step[]> = fc
+  .tuple(filed, history)
+  .map(([draft, after]) => [{ ...draft, retry: true }, after]);
+
 /** A sequence starts by making something to act on. */
 const sequence: fc.Arbitrary<Step[]> = fc
-  .tuple(add, fc.array(fc.oneof(...VOCABULARY), { minLength: 3, maxLength: 16 }))
-  .map(([first, rest]) => [first, ...rest]);
+  .tuple(
+    add,
+    fc.array(fc.oneof(...VOCABULARY.map((one) => one.map((step) => [step])), filedThenHistory), {
+      minLength: 3,
+      maxLength: 16,
+    }),
+  )
+  .map(([first, rest]) => [first, ...rest.flat()]);
 
 describe("[S2.replay.generated] random ordinary sequences of the tree's families through both backends", () => {
   test(

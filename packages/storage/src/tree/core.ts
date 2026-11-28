@@ -22,6 +22,7 @@ import {
   checkRequest,
   Fields,
   formatAsOf,
+  keptResult,
   RequestProblem,
   type CheckedRequest,
   type FieldConflict,
@@ -869,11 +870,15 @@ function problemOf(problem: WriteProblem): NonNullable<TreeResult["error"]> {
 
 /** The result as a receipt stores it: a conflict's values left out, its attribution kept. */
 function storedResult(result: TreeResult): TreeResult {
-  if (result.conflicts === undefined) return result;
+  // A plan's results, with of a move's folders those today's receipt keeps.
+  const said = Array.isArray(result.result)
+    ? { result: (result.result as OpResult[]).map(keptResult) }
+    : {};
+  if (result.conflicts === undefined) return { ...result, ...said };
   const conflicts = result.conflicts.map((c) => {
     const kept = { ...c };
     delete kept.value;
     return kept;
   });
-  return { ...result, conflicts };
+  return { ...result, ...said, conflicts };
 }

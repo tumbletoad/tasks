@@ -7,7 +7,13 @@
 // Fixture text only.
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { CheckedDriver, createSpace, loadDriver, DEFAULT_DRIVER } from "@ttasks/storage";
+import {
+  CheckedDriver,
+  createSpace,
+  loadDriver,
+  DEFAULT_DRIVER,
+  NO_TOP_FOLDER,
+} from "@ttasks/storage";
 import { both, type Sequence } from "../../storage/test/both-helpers.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 import { classSession } from "./ops-helpers.ts";
@@ -967,6 +973,82 @@ describe("[S2.replay.folders] today's service requests through both backends: fo
         await side.step(session, { op: "page.read", input: { target: "Alone" } }),
       ).toMatchObject({ status: "error", code: "not_found" });
       expect(await side.seen(session)).toEqual({ "marker alone": [] });
+      // One it has already, made by a draft that names no area: the same sentence, and no folder.
+      await side.step(session, {
+        op: "task.add",
+        input: { tasks: [{ title: "x", project: "Sole" }] },
+      });
+      for (const step of [
+        manage(alone),
+        manage({ action: "set", project: "Sole", folder: "{dir:alone}" }, { base: true }),
+      ]) {
+        const refused = await side.step(session, step);
+        expect(refused).toMatchObject({ status: "error", code: "invalid_input" });
+        expect((refused.said as { message: string }).message).toContain(NO_TOP_FOLDER);
+      }
+      expect(((await side.seen(session)) as Record<string, unknown>)["marker alone"]).toEqual([]);
+    },
+    LONG,
+  );
+});
+
+/** A sequence in a new space of each backend: what it sets is the space's, for every later read. */
+async function replayIn(name: string, steps: Sequence<Step>): Promise<void> {
+  const spaces = await newSpaces(w, name);
+  try {
+    await both(
+      {
+        today: backend(w.service.ops, () => spaces.today),
+        tree: backend(w.service.ops, () => spaces.tree),
+      },
+      steps,
+    );
+  } finally {
+    await spaces.close();
+  }
+}
+
+const two = (n: number): string => String(n).padStart(2, "0");
+
+/**
+ * More folders inside a moved one than an answer names, made in another order than their paths,
+ * and four tasks that share one folder: the answer names the first twenty by path, the tasks of
+ * one folder by their references, and the same ones when the request is sent again.
+ */
+const MANY: Sequence<Step> = [
+  manage({ action: "add_project", project: "Big", area: "Home", folder: "{dir:big}" }),
+  {
+    op: "task.add",
+    input: {
+      tasks: [
+        ...Array.from({ length: 21 }, (_, k) => ({
+          title: `Part ${two(21 - k)}`,
+          folder: `{dir:big/sub${two(21 - k)}}`,
+        })),
+        ...Array.from({ length: 4 }, (_, k) => ({
+          title: `Shared ${String(k + 1)}`,
+          folder: "{dir:big/shared}",
+        })),
+      ],
+    },
+    user: true,
+  },
+  // Moved on disk: all of them move along. Then set elsewhere: all of them stay.
+  manage(
+    { action: "set", project: "Home/Big", folder: "{dir:bigger}" },
+    { base: true, retry: true, moved: ["big", "bigger"] },
+  ),
+  manage(
+    { action: "set", project: "Home/Big", folder: "{dir:big-elsewhere}" },
+    { base: true, retry: true },
+  ),
+];
+
+describe("[S2.replay.folders] today's service requests through both backends: many folders inside one", () => {
+  test(
+    "a move with more folders inside than an answer names, taken along and left: the same twenty by path when it is sent again, and the tasks of one folder by their references",
+    async () => {
+      await replayIn("many-folders", MANY);
     },
     LONG,
   );

@@ -294,7 +294,14 @@ export const backend = (ops: OpsHost, space: () => string): Side<Step, Session> 
         string,
       ];
       // A folder that is there moves to a place that is free; else the person moved nothing.
-      if (existsSync(from) && !existsSync(to)) renameSync(from, to);
+      if (existsSync(from) && !existsSync(to)) {
+        renameSync(from, to);
+        // What was inside it is inside the new one: its markers are read there too.
+        const [was, now] = step.moved;
+        for (const name of [...s.dirs]) {
+          if (name.startsWith(`${was}/`)) s.dirs.add(`${now}${name.slice(was.length)}`);
+        }
+      }
       s.dirs.add(step.moved[1]);
     }
     const input = {

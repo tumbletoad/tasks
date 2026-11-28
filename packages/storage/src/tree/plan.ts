@@ -831,9 +831,10 @@ function folderOwner(
 
 /**
  * Under today's names a project at the top of the tree reads as an area, which has no folder: it
- * takes one with the tree's own names.
+ * takes one with the tree's own names. The service refuses a folder for one it finds by name with
+ * the same sentence.
  */
-const NO_TOP_FOLDER = "A project at the top of a tree space takes no folder yet";
+export const NO_TOP_FOLDER = "On this space a folder goes on a project inside an area";
 
 /** A group an operation names: one the request makes is made now, as that operation uses it. */
 function madeGroup(plan: Plan, key: string, kind: "area" | "project"): string {

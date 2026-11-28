@@ -2399,7 +2399,7 @@
     },
     {
       "id": "S2.replay.folders",
-      "title": "Today's service requests through both backends: a project made for a folder in an area, another for the same folder and its retry, drafts filed by their folders, an agent's working folder, the searches that read folders, a project's folder set elsewhere with what stayed inside it and moved on disk with what moved along, a task's folder set and cleared twice, a stale set, Undo and Redo, with each folder's marker on disk; and a project at the top of a tree space refused a folder by name",
+      "title": "Today's service requests through both backends: a project made for a folder in an area, another for the same folder and its retry, drafts filed by their folders, an agent's working folder, the searches that read folders, a project's folder set elsewhere with what stayed inside it and moved on disk with what moved along, a task's folder set and cleared twice, a stale set, Undo and Redo, with each folder's marker on disk, also of the folders inside one moved on disk; a move with more folders inside than an answer names, taken along and left, naming the same twenty by path when it is sent again and the tasks of one folder by their references; and a project at the top of a tree space refused a folder in one sentence, when it is made for one and when it is there already",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
