@@ -32,14 +32,12 @@ const weekdayName = (day: Weekday, locale: string): string =>
 const monthName = (month: number, locale: string): string =>
   formatDay(`${String(LEAP_YEAR)}-${pad(month)}-01`, locale, { month: "long" });
 
-/** A date of a month in a leap year, so every day of every month has a name. */
-function dateName(month: number, day: number, locale: string): string {
-  const length = new Date(Date.UTC(LEAP_YEAR, month, 0)).getUTCDate();
-  return formatDay(`${String(LEAP_YEAR)}-${pad(month)}-${pad(Math.min(day, length))}`, locale, {
+/** A date of a month before its last day, such as "14 December". */
+const dateName = (month: number, day: number, locale: string): string =>
+  formatDay(`${String(LEAP_YEAR)}-${pad(month)}-${pad(day)}`, locale, {
     day: "numeric",
     month: "long",
   });
-}
 
 function monthWords(on: MonthDay, interval: number, w: ScheduleWording): string {
   switch (on.kind) {
@@ -61,11 +59,18 @@ function monthWords(on: MonthDay, interval: number, w: ScheduleWording): string 
   }
 }
 
+/**
+ * The date of a month from which a yearly schedule falls on its last day every year: the 29th of
+ * February, which an ordinary year moves to the 28th, else the month's own length.
+ */
+const lastDayFrom = (month: number): number =>
+  month === 2 ? 29 : new Date(Date.UTC(LEAP_YEAR, month, 0)).getUTCDate();
+
 function yearWords(month: number, on: MonthDay, interval: number, w: ScheduleWording): string {
   const name = monthName(month, w.locale);
   switch (on.kind) {
     case "date":
-      return on.day === -1
+      return on.day === -1 || on.day >= lastDayFrom(month)
         ? w.t("schedule.yearLast", { interval, month: name })
         : w.t("schedule.yearDate", { interval, date: dateName(month, on.day, w.locale) });
     case "weekday":

@@ -40,6 +40,13 @@ describe("[A5.routines.web.schedule-words] a schedule in the words a person read
     expect(words(presets.monthlyOn(-1, "FR"))).toBe("The last Friday of every month");
     expect(words(presets.monthlyOn(1, "MO"))).toBe("The first Monday of every month");
     expect(words(presets.yearly(12, 14))).toBe("Every year on 14 December");
+    // 29, 30 and 31 February fall on the 28th in an ordinary year: the words say so for both.
+    for (const day of [29, 30, 31, -1]) {
+      expect(words(presets.yearly(2, day))).toBe("Every year on the last day of February");
+    }
+    expect(words(presets.yearly(2, 28))).toBe("Every year on 28 February");
+    expect(words(presets.yearly(4, 30))).toBe("Every year on the last day of April");
+    expect(words(presets.yearly(4, 29))).toBe("Every year on 29 April");
     expect(words(parseRule("FREQ=YEARLY;BYMONTH=11;BYDAY=4TH") ?? presets.daily())).toBe(
       "The fourth Thursday of November, every year",
     );

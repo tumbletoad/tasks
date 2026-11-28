@@ -6694,7 +6694,7 @@
     },
     {
       "id": "A4.routines.schedule.rule",
-      "title": "A schedule's stored form, a subset of RFC 5545 RRULE, reads back as itself for every rule of the subset; the presets write the rules the design names; a text outside the subset (an unknown, repeated or out-of-bounds part, a combination it does not have) is no rule",
+      "title": "A schedule's stored form, a subset of RFC 5545 RRULE, reads back as itself for every rule of the subset; the presets write the rules the design names; a text outside the subset (an unknown, repeated or out-of-bounds part, a combination it does not have) is no rule, and a start that is no date of the calendar (30 February) makes no schedule",
       "source": "Routines design, pull request 235",
       "owner": "M6",
       "kind": "ci",
@@ -6734,7 +6734,7 @@
     },
     {
       "id": "A5.routines.web.schedule-words",
-      "title": "A schedule reads in the catalogue's words: every Saturday, every Monday and Thursday, every weekday at 07:00, the first working day of every month, every 3 months on the 15th, the last Friday of every month, every year on 14 December; every rule of the stored form has words with nothing of the message left in them",
+      "title": "A schedule reads in the catalogue's words: every Saturday, every Monday and Thursday, every weekday at 07:00, the first working day of every month, every 3 months on the 15th, the last Friday of every month, every year on 14 December, every year on the last day of February for the 29th to the 31st; every rule of the stored form has words with nothing of the message left in them",
       "source": "Routines design, pull request 235",
       "owner": "M6",
       "kind": "ci",
