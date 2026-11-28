@@ -7,7 +7,7 @@ import { SLOW } from "./scripts/check-plan.ts";
 /** Every test file in the repository, so none can escape the manifest check. */
 export const testFiles = {
   include: ["**/*.test.{ts,tsx}"],
-  exclude: ["**/node_modules/**", "**/dist/**", "planning/**", "local/**", ".claude/**"],
+  exclude: ["**/node_modules/**", "**/dist/**", "local/**", ".claude/**"],
 };
 
 /**

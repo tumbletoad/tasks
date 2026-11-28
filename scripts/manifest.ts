@@ -164,7 +164,7 @@ export function checkManifest(entries: readonly ManifestEntry[], tests: readonly
 const TEST_LIKE = /\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)__tests__\/.*\.[cm]?[jt]sx?$/;
 /** Folders never searched for tests. The first three at any depth, the rest at the root only. */
 const SKIP_ANYWHERE = new Set(["node_modules", "dist", "coverage"]);
-const SKIP_AT_ROOT = new Set(["planning", "local", ".claude", ".git"]);
+const SKIP_AT_ROOT = new Set(["local", ".claude", ".git"]);
 
 /** Every file in the repository whose name marks it as a test, as a path relative to `root`. */
 export function testLikeFiles(root: string = repoRoot): string[] {

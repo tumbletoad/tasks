@@ -233,7 +233,6 @@ const stdoutImports = ["process", "node:process"].map((name) => ({
 
 export default defineConfig([
   globalIgnores([
-    "planning/",
     "local/",
     ".claude/",
     "**/node_modules/",

@@ -188,7 +188,6 @@ describe("[A7.3.18.6.manifest-check] the test-manifest check", () => {
       "a/node_modules/x/h.test.js": "",
       "a/dist/h.test.js": "",
       "coverage/h.spec.ts": "",
-      "planning/h.spec.ts": "",
       "local/notes/h.spec.ts": "",
       ".claude/worktrees/x/h.spec.ts": "",
     });
@@ -274,7 +273,6 @@ describe("[A7.3.18.6.manifest-check] the test-manifest check", () => {
       "a/old.test.js": 'test("never runs", () => {});\n',
       "a/__tests__/helper.ts": "export const h = 1;\n",
       "dist/built.test.js": "",
-      "planning/notes.spec.ts": "",
     });
     try {
       const result = spawnSync(process.execPath, [join(repoRoot, "scripts", "manifest.ts"), root], {

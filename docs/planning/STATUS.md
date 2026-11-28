@@ -24,8 +24,8 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 0.3 | The rest of the feedback from use: card controls (#216), Open with the brief waiting (#217), search keeps an opened result (#219), edits outlast a stalled page (#222) | done |
 | 0.4 | Undo thinned in the service: only kept kinds become steps, older steps of other kinds are passed over, each kept kind undone by its opposite operation | doing (#225) |
 | 0.5 | The general inversion engine and `partial` removed from the service, the contract, the command line and the app | doing (#225) |
-| 1b | The Activity log (#224) | review |
-| 1.1 | The contract for pages, the trail, `read` and `write_page` | doing (#228) |
+| 1b | The Activity log (#224) | done |
+| 1.1 | The contract for pages, the trail, `read` and `write_page` | done (#229, #231) |
 | 1.2 | Storage: the migration step for pages and the new fields, the search tables rebuilt, an older backup's index rebuilt by its own version | todo: 1.1 |
 | 1.3 | The page edit as the first named command of the new write path | todo: 1.2 |
 | 1.4 | Agent tools: `read`, `write_page`, the trail in `get_task` within one budget, search over pages, `complete_task` asking for pages updated | todo: 1.3 |

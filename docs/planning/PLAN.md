@@ -2,7 +2,7 @@
 
 TTasks grows from a task list that agents keep up to date into a task list with a library of
 knowledge that agents keep current. This file says what the product becomes and in which order
-it is built. [`VISION.md`](../VISION.md) says how it should feel. [`STATUS.md`](STATUS.md) holds
+it is built. [`VISION.md`](../../VISION.md) says how it should feel. [`STATUS.md`](STATUS.md) holds
 the state of each step. The code and its tests are the record of what is built.
 
 Words used here: a *node* is the space, a project or a task. A *brief* is a node's one-line
