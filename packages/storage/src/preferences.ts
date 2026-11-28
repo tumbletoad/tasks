@@ -5,14 +5,18 @@
 // and never read (an older build never drops a newer build's settings). Call these inside a read
 // or write transaction.
 import {
+  mayWrite,
   PREFERENCES,
   preferenceSpec,
   preferenceValue,
+  samePrefValue,
   type PreferenceRead,
   type StoredPreference,
 } from "@ttasks/contracts/preferences";
 import type { Connection, Row } from "./driver.ts";
 import { misuse } from "./errors.ts";
+import { formatTaskRef } from "./refs.ts";
+import type { EffortCount, EffortMove, OffList } from "./write/request.ts";
 
 const SQL = {
   one: "SELECT value, schema_ver FROM preferences WHERE key = $key",
@@ -44,4 +48,134 @@ export function readSpacePreferences(conn: Connection): PreferenceRead[] {
   return PREFERENCES.filter((spec) => spec.scope === "space").map((spec) =>
     preferenceValue(spec, storedPreference(rows.get(spec.key))),
   );
+}
+
+export type ScaleKey = "tasks.statuses" | "tasks.effort_scale";
+
+export const isScaleKey = (key: string): key is ScaleKey =>
+  key === "tasks.statuses" || key === "tasks.effort_scale";
+
+/** A scale's keys from its value: a list of keys, or of `{key}` objects. */
+export function scaleKeys(value: unknown): string[] {
+  if (!Array.isArray(value)) throw misuse("A list preference reads as a list");
+  return value.map((item: unknown) =>
+    typeof item === "string" ? item : String((item as { key?: unknown }).key),
+  );
+}
+
+/** The keys of `tasks.statuses` or `tasks.effort_scale` as the registry reads them (A1 3.16). */
+export function listPreference(conn: Connection, key: ScaleKey): string[] {
+  return scaleKeys(readSpacePreference(conn, key).value);
+}
+
+type PrefSpec = NonNullable<ReturnType<typeof preferenceSpec>>;
+
+/** A refusal of a preference's change, as both writers say it. */
+export interface PrefRefusal {
+  code: "PREFERENCE_FORBIDDEN" | "VALIDATION_FAILED" | "BASE_REQUIRED";
+  message: string;
+  field: "key" | "base";
+}
+
+/**
+ * What decides a preference's change before anything it changes is read, for today's writer and
+ * the tree's: whether it is the space's own filling of a default (a value every space holds,
+ * where it holds none), and why it is refused. Who may write the key comes first; then a newer
+ * build's value, read-only here, said before any other reason so nobody changes tasks for a change
+ * this build cannot make; then a first setting of the effort levels without a base, which would
+ * race the person who read the levels it replaces. A stored value is held to the base whatever the
+ * change writes (`held`).
+ */
+export function prefSetRule(
+  spec: PrefSpec,
+  row: Row | undefined,
+  op: { key: string; value: unknown; moves?: readonly unknown[] },
+  actorKind: string,
+  based: boolean,
+  /** Today's writer keeps a newer build's value as it is; the tree reads no other build's rows. */
+  newerBuilds: boolean,
+): { fills: boolean; held: boolean; refused?: PrefRefusal } {
+  const fills =
+    actorKind === "system" &&
+    spec.stored === true &&
+    (row === undefined || row["value"] === "null") &&
+    samePrefValue(op.value, spec.default) &&
+    op.moves === undefined;
+  const held = row !== undefined;
+  const refuse = (refused: PrefRefusal) => ({ fills, held, refused });
+  if (!fills && !mayWrite(spec, actorKind)) {
+    return refuse({
+      code: "PREFERENCE_FORBIDDEN",
+      message: "Only the user changes this preference",
+      field: "key",
+    });
+  }
+  if (newerBuilds && row !== undefined && Number(row["schema_ver"]) > spec.schemaVer) {
+    return refuse({
+      code: "VALIDATION_FAILED",
+      message: "A newer build wrote this preference: it is read-only here",
+      field: "key",
+    });
+  }
+  if (op.key === "tasks.effort_scale" && !fills && row === undefined && !based) {
+    return refuse({
+      code: "BASE_REQUIRED",
+      message: "This change needs the as_of of a read as its base",
+      field: "base",
+    });
+  }
+  return { fills, held };
+}
+
+/**
+ * A task a change of the effort levels moves: the size it held before the change, and where it is.
+ * Each writer reads every mover before it writes any, so two moves of one request never move a
+ * task twice (S to M, and M to L, leaves a task of S on M).
+ */
+export interface Mover {
+  id: string;
+  from: string;
+  state: keyof EffortCount;
+}
+
+/** Where each mover goes, a size or none: the tasks of a move to the same name stay. */
+export function levelMoves(
+  moves: readonly EffortMove[],
+  movers: readonly Mover[],
+): { id: string; effort: string | null }[] {
+  const to = new Map(moves.map((move) => [move.from, move.to]));
+  return movers.flatMap((mover) => {
+    const effort = to.get(mover.from);
+    if (effort === undefined) throw misuse("A mover follows a move");
+    return effort === mover.from ? [] : [{ id: mover.id, effort }];
+  });
+}
+
+/** How many tasks each move moved, by state, in the order of the moves. */
+export const movedOf = (moves: readonly EffortMove[], movers: readonly Mover[]) =>
+  moves.map((move) => {
+    const count: EffortCount = { active: 0, finished: 0, trash: 0 };
+    for (const m of movers) if (m.from === move.from) count[m.state] += 1;
+    return { ...move, ...count };
+  });
+
+/** Most references of tasks on one size off the levels that an answer names. */
+const OFF_LIST_TASKS = 10;
+
+/**
+ * The live tasks on a size the effort levels lack now, by size (OpResult.off_list), from each
+ * writer's rows of them: their size and reference, by size and reference.
+ */
+export function offListOf(rows: readonly Row[], refPrefix: string): { off_list?: OffList[] } {
+  const found = new Map<string, OffList>();
+  for (const r of rows) {
+    const effort = String(r["effort"]);
+    const entry = found.get(effort) ?? { effort, tasks: [], count: 0 };
+    found.set(effort, entry);
+    entry.count += 1;
+    if (entry.tasks.length < OFF_LIST_TASKS) {
+      entry.tasks.push(formatTaskRef(refPrefix, Number(r["ref"])));
+    }
+  }
+  return found.size === 0 ? {} : { off_list: [...found.values()] };
 }

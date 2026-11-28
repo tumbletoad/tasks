@@ -7,8 +7,9 @@ import { openSpaceConnection } from "../src/open.ts";
 import type { CheckedDriver } from "../src/startup-check.ts";
 import { TreeWriter, type TreeActor, type TreeResult } from "../src/tree/core.ts";
 import { formatAsOf } from "../src/write/request.ts";
-import { columnsOf, FIELDS, isEntity } from "../src/tree/fields.ts";
+import { columnsOf, FIELDS, isEntity, keyOf, type Entity } from "../src/tree/fields.ts";
 import { createTreeSpace } from "../src/tree/schema.ts";
+import { storedTreeDocuments, treeDocuments } from "../src/tree/search.ts";
 import { TEST_MACHINE } from "./space-helpers.ts";
 
 export const TREE_FILE = "tree.db";
@@ -60,17 +61,16 @@ export function openTree(
       human: "user",
       at: 1_794_000_000_000,
     });
-    conn
-      .prepare(
-        "INSERT INTO actors (id, kind, label, created_at) VALUES ($id, 'agent', 'agent:codex', 0)",
-      )
-      .run({ id: newId("ac") });
   }
   const spaceId = conn.prepare("SELECT space_id FROM space").get()?.["space_id"] as Id<"sp">;
-  const id = (kind: string) =>
-    conn.prepare("SELECT id FROM actors WHERE kind = $kind").get({ kind })?.["id"] as Id<"ac">;
-  const human = actor(id("human"), "human", "ui:test");
-  const agent = actor(id("agent"), "agent", "mcp:codex");
+  const writer = new TreeWriter(conn, {
+    machineId: TEST_MACHINE,
+    ...(at === undefined ? {} : { at }),
+  });
+  // The machine and the agent join the space as the service has them join: by system commits.
+  if (create) writer.registerMachine({ name: "test", os: "windows" });
+  const human = actor(writer.actor("human", "user"), "human", "ui:test");
+  const agent = actor(writer.actor("agent", "agent:codex"), "agent", "mcp:codex");
   const asOf = (): string => {
     const r =
       conn
@@ -84,10 +84,6 @@ export function openTree(
       incarnation: String(r["i"]) as Id<"ai">,
     });
   };
-  const writer = new TreeWriter(conn, {
-    machineId: TEST_MACHINE,
-    ...(at === undefined ? {} : { at }),
-  });
   return {
     conn,
     writer,
@@ -144,6 +140,26 @@ export function treeHistoryProblems(conn: Connection): string[] {
     )
     .get()?.["n"];
   if (unreceipted !== 0 || orphan !== 0) problems.push("receipt-per-commit");
+  // A system commit holds exactly what it writes: the space's root, a machine's create row, or no
+  // change row at all for an actor joining.
+  const system = conn
+    .prepare(
+      "SELECT k.kind AS kind, (SELECT count(*) FROM changes c WHERE c.seq = k.seq) AS n, " +
+        "(SELECT group_concat(c.entity || ':' || c.action) FROM changes c WHERE c.seq = k.seq) AS rows " +
+        "FROM commits k WHERE k.scope_id = 'system'",
+    )
+    .all();
+  const holds: Record<string, string | null> = {
+    "space.create": "nodes:create",
+    "machine.register": "machines:create",
+    "actor.register": null,
+  };
+  for (const k of system) {
+    const kind = String(k["kind"]);
+    if (!(kind in holds) || (holds[kind] ?? null) !== (k["rows"] ?? null)) {
+      problems.push(`system-commit: ${kind} holds what it should not`);
+    }
+  }
   const rows = new Map<string, Record<string, unknown>>();
   const versions = new Map<
     string,
@@ -195,8 +211,9 @@ export function treeHistoryProblems(conn: Connection): string[] {
   const stored = new Set<string>();
   for (const entity of Object.keys(FIELDS)) {
     for (const live of conn.prepare(`SELECT * FROM ${entity}`).all()) {
-      stored.add(`${entity}|${String(live["id"])}`);
-      const key = `${entity}|${String(live["id"])}`;
+      const named = String(live[keyOf(entity as Entity)]);
+      stored.add(`${entity}|${named}`);
+      const key = `${entity}|${named}`;
       const played = rows.get(key);
       const v = versions.get(key);
       if (played === undefined || v === undefined) {
@@ -228,6 +245,18 @@ export function treeHistoryProblems(conn: Connection): string[] {
     {};
   if (refs["top"] !== null && Number(refs["next"]) <= Number(refs["top"])) {
     problems.push("counters: the counter is behind a reference");
+  }
+  // The search index equals a fresh rebuild of what the space holds.
+  const index = storedTreeDocuments(conn);
+  const want = treeDocuments(conn);
+  if (index.stray !== 0) problems.push("search: a text no document names");
+  for (const [id, doc] of want) {
+    if (JSON.stringify(index.docs.get(id)) !== JSON.stringify(doc)) {
+      problems.push(`search: the ${doc.kind} document of ${id} is not the space's`);
+    }
+  }
+  for (const [id, doc] of index.docs) {
+    if (!want.has(id)) problems.push(`search: a ${doc.kind} document of nothing live (${id})`);
   }
   return problems;
 }
