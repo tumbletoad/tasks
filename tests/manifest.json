@@ -6402,14 +6402,6 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A2.3.12.4.install.earlier-folder",
-      "title": "An install that finds the data folder of a build from before the rename names it and how to open a space from it, and says nothing without one",
-      "source": "A2 3.12.4",
-      "owner": "M1",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A2.3.12.4.install.restart",
       "title": "Through a real install script over a real running service: the script's last lines name the pending restart, service status names the installed version, and service restart brings it up and says so",
       "source": "A2 3.12.4, A2 3.3.5",
