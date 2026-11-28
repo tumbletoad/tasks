@@ -133,3 +133,31 @@ export {
   TaskSearchResult,
 } from "./entries/task-search.ts";
 export { taskUpdate, TaskUpdateInput, TaskUpdateResult } from "./entries/task-update.ts";
+// Step 1's pages: shapes and examples first; each entry joins the registry with its handler.
+export * from "./pages.ts";
+export { NodeInstructInput, NodeInstructResult, nodeInstruct } from "./entries/node-instruct.ts";
+export {
+  PAGE_CONFLICT_EXAMPLE,
+  PAGE_ENTRIES,
+  PAGE_FEED_EXAMPLES,
+} from "./entries/page-examples.ts";
+export {
+  HISTORY_CURSOR,
+  PageHistoryInput,
+  PageHistoryResult,
+  pageHistory,
+} from "./entries/page-history.ts";
+export { PageReadInput, PageReadResult, pageRead } from "./entries/page-read.ts";
+export {
+  PageTrashedInput,
+  PageTrashedResult,
+  TrashedPage,
+  pageTrashed,
+} from "./entries/page-trashed.ts";
+export {
+  PAGE_ACTIONS,
+  PAGE_RESULTS,
+  PageWriteInput,
+  PageWriteResult,
+  pageWrite,
+} from "./entries/page-write.ts";
