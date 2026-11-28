@@ -9,6 +9,7 @@
     "./query-terms": "./src/query-terms.ts",
     "./day": "./src/day.ts",
     "./day-cases": "./src/day-cases.ts",
+    "./schedule": "./src/schedule.ts",
     "./monitor": "./src/monitor.ts",
     "./runs": "./src/runs.ts",
     "./pages": "./src/pages.ts",
