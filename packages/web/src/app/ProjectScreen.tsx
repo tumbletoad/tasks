@@ -36,7 +36,7 @@ const styles = classes(css, [
   "line",
 ]);
 
-/** A tab is current only on its own address: Tasks is not current under `/library`. */
+/** A tab is current only on its own address: the task list's is not current under `/library`. */
 const EXACT = { exact: true, includeSearch: false } as const;
 
 /** The status line's words: each part that is there, in its order. */
