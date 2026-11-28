@@ -49,8 +49,8 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 4.1 | Budgets that speak in a write's answer, and tidying a project's library | todo: 1.4 |
 | 4.2 | Ingestion: a run makes tasks and sources from the person's sources by itself | todo: 2b.3 |
 | 4.3 | The library skill's later versions, from the trial | todo: 1.7 |
-| 5.1 | The phone's listener apart from the page's, in the same process: it reaches only the operations, the feed and a task's runs | review: the listener in this pull request |
-| 5.2 | An endpoint for paired phones over pinned TLS, with rights per phone and space, and pairing by a QR code from Settings > Phones | review: the listener, rights and pairing in this pull request; Settings > Phones in the next |
+| 5.1 | The phone's listener apart from the page's, in the same process: it reaches only the operations, the feed and a task's runs | done (#245) |
+| 5.2 | An endpoint for paired phones over pinned TLS, with rights per phone and space, and pairing by a QR code from Settings > Phones | review: the listener, rights and pairing done (#245); Settings > Phones in this pull request |
 | 5.3 | The phone app as a development build in the workspace, and its first proof; Today and capture shared with the page once step 1's page work has merged | todo: 5.2, 1.6 |
 | 5.4 | The stores' test tracks, the relay for use away from home, push messages | todo: 5.3 |
 | 6.1 | Differences between versions of a page and of a description | todo: 1.6 |
