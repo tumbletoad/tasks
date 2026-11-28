@@ -87,11 +87,7 @@ class LinkTest {
   @Test
   fun pairsThroughTheScreen() {
     val text = pairingText()
-    val device = UiDevice.getInstance(instrumentation)
-    val context = instrumentation.targetContext
-    val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
-      ?: throw AssertionError("the app has no launcher activity")
-    context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+    val device = launch()
     shown(device, "Scan the code").click()
     shown(device, "Cancel")
     // The scanner listens from its first frame on: hand the code in until the name screen shows.
@@ -100,10 +96,64 @@ class LinkTest {
       device.wait(Until.findObject(By.clazz("android.widget.EditText")), 1_000L)
     } ?: throw AssertionError("no field for the phone's name")
     name.text = "Emulator"
-    // For the pull request's pictures; the harness pulls it.
-    context.getExternalFilesDir(null)?.let { device.takeScreenshot(java.io.File(it, "name.png")) }
+    picture(device, "name.png")
     shown(device, "Pair").click()
     shown(device, "Connected")
+  }
+
+  /** Today: the task the computer added is checked off on the phone, and Undo shows for a moment. */
+  @Test
+  fun checksOff() {
+    checkOff("Water the plants")
+  }
+
+  /** The same while the computer is away: the check-off waits, and says so. */
+  @Test
+  fun checksOffAway() {
+    val device = launch()
+    // The line goes on with how old the rows are.
+    device.wait(Until.findObject(By.textStartsWith("Can't reach the computer.")), WAIT_MS)
+      ?: throw AssertionError("the app did not say the computer is away")
+    checkOff("Call the vet", device)
+    shown(device, "1 change waits for the computer.")
+  }
+
+  /** A capture: a title and Enter. The task goes to the computer, which puts it in the Inbox. */
+  @Test
+  fun captures() {
+    val device = launch()
+    shown(device, "Connected")
+    val field = device.wait(Until.findObject(By.desc("New task")), WAIT_MS)
+      ?: throw AssertionError("no capture field")
+    field.text = "Buy milk"
+    device.pressEnter()
+    shown(device, "Added to the Inbox.")
+    picture(device, "capture.png")
+  }
+
+  private fun checkOff(title: String, device: UiDevice = launch()) {
+    shown(device, title)
+    val box = device.wait(Until.findObject(By.desc("Done: $title")), WAIT_MS)
+      ?: throw AssertionError("no box for \"$title\"")
+    box.click()
+    shown(device, "Undo")
+    picture(device, "checked.png")
+    // The hold ends and the row goes: time enough for the link to send it while it is up.
+    if (!device.wait(Until.gone(By.text("Undo")), WAIT_MS)) throw AssertionError("Undo stayed")
+  }
+
+  /** The app started as a person starts it, in a fresh task. */
+  private fun launch(): UiDevice {
+    val context = instrumentation.targetContext
+    val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
+      ?: throw AssertionError("the app has no launcher activity")
+    context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+    return UiDevice.getInstance(instrumentation)
+  }
+
+  /** For the pull request's pictures; the harness pulls them. */
+  private fun picture(device: UiDevice, name: String) {
+    instrumentation.targetContext.getExternalFilesDir(null)?.let { device.takeScreenshot(java.io.File(it, name)) }
   }
 
   private fun shown(device: UiDevice, text: String): UiObject2 =
