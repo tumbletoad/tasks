@@ -190,6 +190,15 @@ export function linkWords(url: unknown): string | null {
   return decoded(address.replace(/^www\./iu, ""));
 }
 
+/** A source's words in the document of a task it is linked to: its title, who, ref, key and link. */
+export const sourceWords = (s: {
+  title: unknown;
+  who: unknown;
+  ref: unknown;
+  key: unknown;
+  url: unknown;
+}): unknown[] => [s.title, s.who, s.ref, s.key, linkWords(s.url)];
+
 function taskDocument(
   row: Row,
   prefix: string,
@@ -206,13 +215,15 @@ function taskDocument(
     title: str(row["title"]),
     body: lines([row["summary"], row["context"], row["outcome"]]),
     extra: lines([
-      ...sources.flatMap((s) => [
-        s["title"],
-        s["who"],
-        s["ref"],
-        s["source_key"],
-        linkWords(s["url"]),
-      ]),
+      ...sources.flatMap((s) =>
+        sourceWords({
+          title: s["title"],
+          who: s["who"],
+          ref: s["ref"],
+          key: s["source_key"],
+          url: s["url"],
+        }),
+      ),
       ...labels.map((l) => l["title"]),
       row["project_title"],
       row["area_title"],

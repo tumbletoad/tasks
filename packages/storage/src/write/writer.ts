@@ -57,8 +57,12 @@ import {
 } from "../rows.ts";
 import {
   isScaleKey,
+  levelMoves,
   listPreference,
+  movedOf,
+  offListOf,
   prefSetRule,
+  type Mover,
   readSpacePreference,
   scaleKeys,
 } from "../preferences.ts";
@@ -167,7 +171,6 @@ import {
   type CheckedRequest,
   type ConflictEntity,
   type Due,
-  type EffortCount,
   type EffortMove,
   type FieldConflict,
   type NewerWork,
@@ -954,13 +957,6 @@ export function readAsOf(conn: Connection): AsOf {
   };
 }
 
-/** A task a change of levels moves: the size it held, and where it is. */
-interface Mover {
-  id: Id<"t">;
-  from: string;
-  state: keyof EffortCount;
-}
-
 /**
  * The tasks a change of the effort levels moves, each by the size it held before the change, as
  * the rules of a change of levels allow it (checkEffortMoves). A move to the same name moves none.
@@ -997,31 +993,10 @@ function stageMoves(
     }));
 }
 
-/** How many tasks each move moved, by state, in the order of the moves. */
-const movedOf = (moves: readonly EffortMove[], movers: readonly Mover[]) =>
-  moves.map((move) => {
-    const count: EffortCount = { active: 0, finished: 0, trash: 0 };
-    for (const m of movers) if (m.from === move.from) count[m.state] += 1;
-    return { ...move, ...count };
-  });
-
-/** Most references of tasks on one size off the levels that an answer names. */
-const OFF_LIST_TASKS = 10;
-
 /** The live tasks on a size the effort levels lack now, by size (OpResult.off_list). */
 export function offList(conn: Connection, refPrefix: string): { off_list?: OffList[] } {
   const keys = listPreference(conn, "tasks.effort_scale");
-  const found = new Map<string, OffList>();
-  for (const r of conn.prepare(SQL.offList).all({ keys: JSON.stringify(keys) })) {
-    const effort = String(r["effort"]);
-    const entry = found.get(effort) ?? { effort, tasks: [], count: 0 };
-    found.set(effort, entry);
-    entry.count += 1;
-    if (entry.tasks.length < OFF_LIST_TASKS) {
-      entry.tasks.push(formatTaskRef(refPrefix, new RowReader("tasks", r).int("ref", "taskRef")));
-    }
-  }
-  return found.size === 0 ? {} : { off_list: [...found.values()] };
+  return offListOf(conn.prepare(SQL.offList).all({ keys: JSON.stringify(keys) }), refPrefix);
 }
 
 /**
@@ -5032,14 +5007,11 @@ function changeLevels(
       .run({ id: op.key, value: canonicalJson(value), schema_ver: spec.schemaVer });
     wrote(run, i, "preferences", op.key, null, ["value"]);
   }
-  const to = new Map((op.moves ?? []).map((move) => [move.from, move.to]));
-  for (const mover of change.movers) {
-    const effort = to.get(mover.from);
-    if (effort === undefined) throw misuse("A mover follows a move");
-    if (effort === mover.from) continue;
-    ensureStart(conn, run, "tasks", mover.id);
-    update(conn, mover.id, { effort });
-    wrote(run, i, "tasks", mover.id, mover.id, ["effort"]);
+  for (const { id, effort } of levelMoves(op.moves ?? [], change.movers)) {
+    const task = id as Id<"t">;
+    ensureStart(conn, run, "tasks", task);
+    update(conn, task, { effort });
+    wrote(run, i, "tasks", task, task, ["effort"]);
   }
 }
 

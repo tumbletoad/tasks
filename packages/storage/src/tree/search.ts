@@ -15,7 +15,7 @@
 import type { Connection, Row } from "../driver.ts";
 import { misuse } from "../errors.ts";
 import { formatTaskRef } from "../refs.ts";
-import { lines, linkWords } from "../search/documents.ts";
+import { lines, sourceWords } from "../search/documents.ts";
 import type { ChangeRow } from "./tx.ts";
 
 export interface TreeDocument {
@@ -39,9 +39,12 @@ const SQL = {
     "SELECT n.*, t.ref, t.outcome, p.kind AS parent_kind, p.title AS parent_title FROM nodes n " +
     "LEFT JOIN tasks t ON t.id = n.id LEFT JOIN nodes p ON p.id = n.parent_id WHERE n.id = $id",
   live: "SELECT id FROM nodes WHERE deleted_at IS NULL ORDER BY id",
+  /** A node's sources: those it holds, and those its live links point at, as today's links. */
   sources:
-    "SELECT title, who, outside_ref, source_key, url FROM sources WHERE owner_id = $id " +
-    "AND deleted_at IS NULL ORDER BY ref",
+    "SELECT title, who, outside_ref, source_key, url FROM sources s WHERE s.deleted_at IS NULL " +
+    "AND (s.owner_id = $id OR EXISTS (SELECT 1 FROM links l WHERE l.owner_id = $id " +
+    "AND l.target_id = s.id AND l.removed_at IS NULL)) ORDER BY s.ref",
+  linkedTo: "SELECT owner_id AS id FROM links WHERE target_id = $id AND removed_at IS NULL",
   pages: "SELECT * FROM pages WHERE owner_id = $id AND deleted_at IS NULL ORDER BY ref",
   notes:
     `SELECT e.id, e.kind, e.body, ${AUTHOR} AS author FROM notes e ` +
@@ -68,7 +71,8 @@ const SQL = {
   under:
     "AND d.node_id IN (WITH RECURSIVE sub(id) AS (SELECT $under UNION ALL " +
     "SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id) SELECT id FROM sub)",
-  ranked: "ORDER BY bm25(search_fts), d.doc LIMIT $limit",
+  // Equal ranks are ordered by what they are, so a rebuild orders them as the commits did.
+  ranked: "ORDER BY bm25(search_fts), d.entity_id LIMIT $limit",
 } as const;
 
 const str = (value: unknown): string => (typeof value === "string" ? value : "");
@@ -106,13 +110,15 @@ function nodeDocuments(conn: Connection, prefix: string, id: string): TreeDocume
       title,
       body: lines([node["brief"], node["description"], node["outcome"]]),
       extra: lines([
-        ...sources.flatMap((s: Row) => [
-          s["title"],
-          s["who"],
-          s["outside_ref"],
-          s["source_key"],
-          linkWords(s["url"]),
-        ]),
+        ...sources.flatMap((s: Row) =>
+          sourceWords({
+            title: s["title"],
+            who: s["who"],
+            ref: s["outside_ref"],
+            key: s["source_key"],
+            url: s["url"],
+          }),
+        ),
         node["parent_kind"] === "space" ? null : node["parent_title"],
         formatTaskRef(prefix, Number(node["ref"])),
       ]),
@@ -216,12 +222,20 @@ function remove(conn: Connection, doc: number): void {
 }
 
 /** The tables whose rows search documents show. */
-const SHOWN: ReadonlySet<string> = new Set(["nodes", "tasks", "notes", "pages", "sources"]);
+const SHOWN: ReadonlySet<string> = new Set([
+  "nodes",
+  "tasks",
+  "notes",
+  "pages",
+  "sources",
+  "links",
+]);
 
 /**
  * Brings the documents a commit's change rows reach up to date, inside its transaction: those of
- * each node a change row names, of the node a page or a source left, and of the tasks under a node
- * whose title changed, which their documents show.
+ * each node a change row names, of the node a page or a source left, of the tasks under a node
+ * whose title changed, and of the nodes linked to a source that changed, which their documents
+ * show.
  */
 export function indexTreeChanges(conn: Connection, seq: number, changes: readonly ChangeRow[]) {
   if (!conn.inTransaction) throw misuse("The search index changes inside a write transaction");
@@ -234,6 +248,12 @@ export function indexTreeChanges(conn: Connection, seq: number, changes: readonl
     }
     if (change.entity === "nodes" && change.field === "title") {
       for (const row of conn.prepare(SQL.childTasks).all({ id: change.node })) {
+        nodes.add(str(row["id"]));
+      }
+    }
+    // A source's words show in the documents of the nodes that link to it too.
+    if (change.entity === "sources") {
+      for (const row of conn.prepare(SQL.linkedTo).all({ id: change.entityId })) {
         nodes.add(str(row["id"]));
       }
     }

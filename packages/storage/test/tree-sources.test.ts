@@ -68,8 +68,11 @@ describe("[S2.tree.sources] sources, links and the capture by source on the tree
       status: "exists",
       ref: "M-1",
     });
-    // Finished long ago: a new task from the same source, and the next capture finds that one.
+    // A completion dated long ago counts from when this space recorded it: the task is found.
     ok(fx.send("task.finish", { task: "M-1", at: 1 }));
+    expect(capture("Fix the export, again")).toMatchObject({ status: "exists", ref: "M-1" });
+    // Outside the window: a new task from the same source, and the next capture finds that one.
+    ok(fx.send("pref.set", { key: "tasks.dedupe_window_days", value: 0 }));
     const second = capture("Fix the export, part two");
     expect(second).toMatchObject({ status: "created" });
     expect(capture("Once more")).toMatchObject({ status: "exists", ref: second?.ref });

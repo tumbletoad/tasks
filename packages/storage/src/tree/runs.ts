@@ -225,6 +225,8 @@ const folderSet: Run = (tx, input) => {
 const folderClear: Run = (tx, input) => {
   const node = findNode(tx, input["node"]);
   if (node === undefined) return problem("NOT_FOUND", "The space has nothing of that name", "node");
+  // A task in the Trash keeps its folder for its restore, as today's writer refuses the clear.
+  if (node["deleted_at"] !== null) problem("DELETED", "That task is in the Trash", "node");
   const owner = String(node["id"]);
   const held = tx.get(SQL.defaultFolder, { owner, machine: tx.request.actor.machine_id });
   if (held === undefined) return { folder: null };

@@ -10,7 +10,16 @@ import {
   preferenceSpec,
   samePrefValue,
 } from "@ttasks/contracts/preferences";
-import { isScaleKey, listPreference, prefSetRule, scaleKeys } from "../preferences.ts";
+import {
+  isScaleKey,
+  levelMoves,
+  listPreference,
+  movedOf,
+  offListOf,
+  prefSetRule,
+  scaleKeys,
+  type Mover,
+} from "../preferences.ts";
 import { prefSet, type PrefSet } from "../write/request.ts";
 import { problem, type Check } from "./commands.ts";
 import type { Command } from "./tx.ts";
@@ -26,7 +35,15 @@ const SQL = {
     "sum(n.deleted_at IS NULL AND t.lifecycle <> 'active') AS finished, " +
     "sum(n.deleted_at IS NOT NULL) AS trash FROM tasks t JOIN nodes n ON n.id = t.id " +
     "WHERE t.effort IS NOT NULL GROUP BY t.effort",
-  movers: "SELECT id FROM tasks WHERE effort = $from",
+  /** Every task a change of levels moves, with the size it holds and where it is. */
+  movers:
+    "SELECT t.id AS id, t.effort AS effort, n.deleted_at IS NOT NULL AS trash, " +
+    "t.lifecycle = 'active' AS active FROM tasks t JOIN nodes n ON n.id = t.id " +
+    "WHERE t.effort IN (SELECT value FROM json_each($from)) ORDER BY t.id",
+  offList:
+    "SELECT t.effort AS effort, t.ref AS ref FROM tasks t JOIN nodes n ON n.id = t.id " +
+    "WHERE n.deleted_at IS NULL AND t.effort IS NOT NULL " +
+    "AND t.effort NOT IN (SELECT value FROM json_each($keys)) ORDER BY t.effort, t.ref",
 } as const;
 
 const check: Check = (f) => {
@@ -55,7 +72,7 @@ const run: Command["run"] = (tx, input) => {
   // A stored value is held to the base whatever the change writes; a stale request is a conflict,
   // whatever it says of a list its person never saw.
   if (rule.held && tx.held("preferences", key, null, ["value"])) return { key };
-  let moved: { from: string; to: string | null; tasks: number }[] = [];
+  let movers: Mover[] | undefined;
   if (isScaleKey(key)) {
     const next = scaleKeys(value ?? spec.default);
     const now = listPreference(tx.conn, key);
@@ -84,14 +101,18 @@ const run: Command["run"] = (tx, input) => {
       }));
       const refused = checkEffortMoves(now, next, held, moves ?? []);
       if (refused !== undefined) problem("VALIDATION_FAILED", refused.message, refused.field);
-      moved = (moves ?? [])
-        .filter((m) => m.to !== m.from)
-        .map((m) => {
-          const ids = tx.all(SQL.movers, { from: m.from }).map((r) => String(r["id"]));
-          // The tasks on a dropped level go where the person says, whatever else changed on them.
-          for (const id of ids) tx.set("tasks", id, id, { effort: m.to }, false);
-          return { from: m.from, to: m.to, tasks: ids.length };
-        });
+      // Every mover is read before any is written (preferences.ts `Mover`).
+      const from = (moves ?? []).filter((m) => m.to !== m.from).map((m) => m.from);
+      movers = tx.all(SQL.movers, { from: JSON.stringify(from) }).map((r) => ({
+        id: String(r["id"]),
+        from: String(r["effort"]),
+        state:
+          Number(r["trash"]) === 1 ? "trash" : Number(r["active"]) === 1 ? "active" : "finished",
+      }));
+      // The tasks on a dropped level go where the person says, whatever else changed on them.
+      for (const { id, effort } of levelMoves(moves ?? [], movers)) {
+        tx.set("tasks", id, id, { effort }, false);
+      }
     }
   }
   const stored = JSON.stringify(value);
@@ -108,7 +129,13 @@ const run: Command["run"] = (tx, input) => {
       false,
     );
   }
-  return { key, ...(moved.length === 0 ? {} : { moved }) };
+  if (movers === undefined) return { key };
+  const keys = listPreference(tx.conn, "tasks.effort_scale");
+  return {
+    key,
+    moved: movedOf(moves ?? [], movers),
+    ...offListOf(tx.all(SQL.offList, { keys: JSON.stringify(keys) }), tx.space.refPrefix),
+  };
 };
 
 export const PREFS: Readonly<Record<string, Command>> = { "pref.set": { check, run } };

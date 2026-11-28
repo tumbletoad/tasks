@@ -15,6 +15,8 @@ import {
 } from "@ttasks/contracts/preferences";
 import type { Connection, Row } from "./driver.ts";
 import { misuse } from "./errors.ts";
+import { formatTaskRef } from "./refs.ts";
+import type { EffortCount, EffortMove, OffList } from "./write/request.ts";
 
 const SQL = {
   one: "SELECT value, schema_ver FROM preferences WHERE key = $key",
@@ -123,4 +125,57 @@ export function prefSetRule(
     });
   }
   return { fills, held };
+}
+
+/**
+ * A task a change of the effort levels moves: the size it held before the change, and where it is.
+ * Each writer reads every mover before it writes any, so two moves of one request never move a
+ * task twice (S to M, and M to L, leaves a task of S on M).
+ */
+export interface Mover {
+  id: string;
+  from: string;
+  state: keyof EffortCount;
+}
+
+/** Where each mover goes, a size or none: the tasks of a move to the same name stay. */
+export function levelMoves(
+  moves: readonly EffortMove[],
+  movers: readonly Mover[],
+): { id: string; effort: string | null }[] {
+  const to = new Map(moves.map((move) => [move.from, move.to]));
+  return movers.flatMap((mover) => {
+    const effort = to.get(mover.from);
+    if (effort === undefined) throw misuse("A mover follows a move");
+    return effort === mover.from ? [] : [{ id: mover.id, effort }];
+  });
+}
+
+/** How many tasks each move moved, by state, in the order of the moves. */
+export const movedOf = (moves: readonly EffortMove[], movers: readonly Mover[]) =>
+  moves.map((move) => {
+    const count: EffortCount = { active: 0, finished: 0, trash: 0 };
+    for (const m of movers) if (m.from === move.from) count[m.state] += 1;
+    return { ...move, ...count };
+  });
+
+/** Most references of tasks on one size off the levels that an answer names. */
+const OFF_LIST_TASKS = 10;
+
+/**
+ * The live tasks on a size the effort levels lack now, by size (OpResult.off_list), from each
+ * writer's rows of them: their size and reference, by size and reference.
+ */
+export function offListOf(rows: readonly Row[], refPrefix: string): { off_list?: OffList[] } {
+  const found = new Map<string, OffList>();
+  for (const r of rows) {
+    const effort = String(r["effort"]);
+    const entry = found.get(effort) ?? { effort, tasks: [], count: 0 };
+    found.set(effort, entry);
+    entry.count += 1;
+    if (entry.tasks.length < OFF_LIST_TASKS) {
+      entry.tasks.push(formatTaskRef(refPrefix, Number(r["ref"])));
+    }
+  }
+  return found.size === 0 ? {} : { off_list: [...found.values()] };
 }
