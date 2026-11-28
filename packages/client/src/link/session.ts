@@ -22,9 +22,12 @@ import {
   type Cursor,
   type Held,
   type NodeRow,
+  type PageRow,
   type TaskRow,
 } from "../store/index.ts";
 import type { Connect, Saved } from "./open.ts";
+import { ChangeLog, type ChangeFrame } from "../today/changes.ts";
+import type { TaskChange } from "../today/views.ts";
 import {
   CARD_READ,
   cardOf,
@@ -34,8 +37,11 @@ import {
   pageOf,
   PARTS,
   Reads,
+  RUNS_READ,
+  runsOf,
   type CardDetail,
   type PageText,
+  type PhoneRun,
   type Part,
   type Read,
 } from "./card.ts";
@@ -46,6 +52,8 @@ export interface SpaceView {
   readonly link: LinkState;
   /** The tasks to show: the feed's, less those checked off on this phone. */
   readonly tasks: ReadonlyMap<string, TaskRow>;
+  /** Finished and dropped tasks on which an agent's question waits for the person. */
+  readonly asking: ReadonlyMap<string, TaskRow>;
   readonly nodes: ReadonlyMap<string, NodeRow>;
   /** Whether any rows are known: the feed's or the ones kept from before. */
   readonly loaded: boolean;
@@ -61,6 +69,10 @@ export interface SpaceView {
   readonly added: { readonly request: string; readonly draft: CaptureDraft } | undefined;
   /** How each task that left lately went, as the feed showed it: finished, or to the Trash. */
   readonly left: ReadonlyMap<string, "done" | "trash">;
+  /** What agents changed lately, newest first, as the page's Changes reads it. */
+  readonly changes: readonly TaskChange[];
+  /** The space's pages, without their text: who changed each last, and when. */
+  readonly pages: ReadonlyMap<string, PageRow>;
 }
 
 export interface SpaceSession {
@@ -83,6 +95,8 @@ export interface SpaceSession {
   card(task: string): Promise<Read<CardDetail>>;
   /** A page, opened from a card, as `card` reads it. */
   page(ref: string): Promise<Read<PageText>>;
+  /** A task's runs, newest first, as `card` reads it. */
+  runs(task: string): Promise<Read<readonly PhoneRun[]>>;
   /** The person read a refusal. */
   dismiss(request: string): void;
 }
@@ -123,19 +137,25 @@ interface Kept {
   readonly copy?: string;
   readonly cursor?: Cursor;
   readonly tasks: readonly TaskRow[];
+  readonly asking?: readonly TaskRow[];
   readonly nodes: readonly NodeRow[];
+  readonly pages?: readonly PageRow[];
+  readonly changes?: readonly TaskChange[];
 }
 
 function keptOf(value: unknown): Kept | undefined {
   if (!isRecord(value) || typeof value["at"] !== "number") return undefined;
-  const { tasks, nodes, copy, cursor } = value;
+  const { tasks, asking, nodes, copy, cursor, pages, changes } = value;
   if (!Array.isArray(tasks) || !Array.isArray(nodes)) return undefined;
   return {
     at: value["at"],
     ...(typeof copy === "string" ? { copy } : {}),
     ...(isRecord(cursor) ? { cursor: cursor as unknown as Cursor } : {}),
     tasks: tasks as TaskRow[],
+    ...(Array.isArray(asking) ? { asking: asking as TaskRow[] } : {}),
     nodes: nodes as NodeRow[],
+    ...(Array.isArray(pages) ? { pages: pages as PageRow[] } : {}),
+    ...(Array.isArray(changes) ? { changes: changes as TaskChange[] } : {}),
   };
 }
 
@@ -222,6 +242,23 @@ export function spaceSession(options: SessionOptions): SpaceSession {
   let fresh: number | undefined;
   let added: SpaceView["added"];
   const left = new Map<string, "done" | "trash">();
+  const frames = new Set<(frame: ChangeFrame) => void>();
+  const log = new ChangeLog(
+    {
+      onChanges: (listener) => {
+        frames.add(listener);
+        return () => {
+          frames.delete(listener);
+        };
+      },
+    },
+    now,
+  );
+  const frame = (f: ChangeFrame) => {
+    for (const listener of frames) listener(f);
+  };
+  // Without the computer, what agents changed is what the phone last kept.
+  if (kept?.changes !== undefined) frame({ changes: [], reset: true, agentChanges: kept.changes });
   /** This run's check-offs, for their Undo. */
   const taps = new Map<string, { task: string; title: string }>();
 
@@ -244,6 +281,9 @@ export function spaceSession(options: SessionOptions): SpaceSession {
     return {
       link,
       tasks,
+      asking:
+        held?.asking ??
+        new Map((kept?.asking ?? []).map((task): [string, TaskRow] => [task.id, task])),
       nodes,
       loaded: held !== undefined || kept !== undefined,
       live: isLive,
@@ -253,6 +293,10 @@ export function spaceSession(options: SessionOptions): SpaceSession {
       settling: outbox.settling,
       added,
       left,
+      changes: log.getEntries(),
+      pages:
+        held?.pages ??
+        new Map((kept?.pages ?? []).map((page): [string, PageRow] => [page.id, page])),
     };
   };
   const tell = () => {
@@ -266,7 +310,10 @@ export function spaceSession(options: SessionOptions): SpaceSession {
       ...(held.space.copy === undefined ? {} : { copy: held.space.copy }),
       cursor: held.cursor,
       tasks: [...held.tasks.values()],
+      asking: [...held.asking.values()],
       nodes: [...held.nodes.values()],
+      pages: [...held.pages.values()],
+      changes: log.getEntries(),
     };
     const all = rowsFile();
     all[key] = kept;
@@ -317,7 +364,11 @@ export function spaceSession(options: SessionOptions): SpaceSession {
       subscribe(true);
     }
     if (outcome.kind === "snapshot") subscribed = true;
+    if (outcome.kind === "snapshot") {
+      frame({ changes: [], reset: true, agentChanges: outcome.agentChanges });
+    }
     if (outcome.kind === "applied") {
+      frame({ changes: outcome.changes, reset: false });
       for (const change of outcome.changes) {
         const after = change.after as TaskRow | undefined;
         if (change.type !== "task" || change.before === undefined || after === undefined) continue;
@@ -424,6 +475,9 @@ export function spaceSession(options: SessionOptions): SpaceSession {
     { retryMs, message },
   );
 
+  // A change that turns seven days old leaves Changes by itself.
+  log.subscribe(tell);
+
   const act = (request: string) => {
     tell();
     void pump();
@@ -476,6 +530,16 @@ export function spaceSession(options: SessionOptions): SpaceSession {
         () => reads.card(task),
         (value, at) => {
           reads.keepCard(task, value, at);
+        },
+      ),
+    runs: (task) =>
+      read(
+        () => ({ path: RUNS_READ.path, body: RUNS_READ.body(task) }),
+        runsOf,
+        (first) => first,
+        () => reads.runs(task),
+        (value, at) => {
+          reads.keepRuns(task, value, at);
         },
       ),
     page: (ref) =>

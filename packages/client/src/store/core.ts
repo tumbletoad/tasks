@@ -262,6 +262,14 @@ export class LiveCore {
     const changes: Change[] = [];
     const requests: string[] = [];
     const commits = new Map<string, string>();
+    // A task's `touched` becomes the commit's seq when a row under it changes, and nothing else of
+    // the task does. The feed carries that row, not the task's, so the held row takes the mark here.
+    const touch = (task: string | undefined, seq: number) => {
+      const held = task === undefined ? undefined : (maps.task.get(task) as TaskRow | undefined);
+      if (held === undefined || (held.touched ?? 0) >= seq) return;
+      maps.task.set(held.id, { ...held, touched: seq });
+      this.#dirty.add("task");
+    };
     for (const event of batch.events) {
       if (event.seq <= cursor.seq) continue;
       if (event.request_id !== "") {
@@ -285,17 +293,8 @@ export class LiveCore {
             continue;
           }
           changes.push({ ...base, task: entity.task });
-          // A task's `touched` becomes the commit's seq when a child row changes, and
-          // nothing else of the task does. The feed carries the child, not the task's row, so the
-          // held row takes the mark here. A launch or a run is no child (it moves no `touched`).
-          const held =
-            entity.type === "launch" || entity.type === "run"
-              ? undefined
-              : maps.task.get(entity.task);
-          if (held !== undefined && ((held as TaskRow).touched ?? 0) < event.seq) {
-            maps.task.set(entity.task, { ...held, touched: event.seq });
-            this.#dirty.add("task");
-          }
+          // A launch or a run is no child: it moves no `touched`.
+          if (entity.type !== "launch" && entity.type !== "run") touch(entity.task, event.seq);
           continue;
         }
         const type = entity.type;
@@ -312,9 +311,16 @@ export class LiveCore {
           else maps.asking.delete(row.id);
           this.#askingDirty = true;
         }
+        // A page belongs to the task it lies on; a page moved off a task touches both tasks.
+        const task = type === "task" ? entity.id : type === "page" ? entity.task : undefined;
+        if (type === "page") {
+          touch(entity.task, event.seq);
+          touch((after as PageRow).owner_id, event.seq);
+          if (before !== undefined) touch((before as PageRow).owner_id, event.seq);
+        }
         changes.push({
           ...base,
-          ...(type === "task" ? { task: entity.id } : {}),
+          ...(task === undefined ? {} : { task }),
           ...(before === undefined ? {} : { before }),
           after,
         });

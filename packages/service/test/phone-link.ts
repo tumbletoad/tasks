@@ -21,6 +21,7 @@ import { certPin } from "../src/link/cert.ts";
 import { post } from "./http-client.ts";
 import { LiveCore, messageOf, type TaskRow } from "@ttasks/client/store";
 import { httpWorld, openFeed, signIn, type HttpWorld } from "./http-world.ts";
+import { classSession } from "./ops-helpers.ts";
 import { phoneKey, type PhoneKey } from "./phone-client.ts";
 
 export interface Phone {
@@ -327,6 +328,21 @@ export async function phoneWorld(label: string) {
     /** How many tasks the computer finds for these words. */
     found: async (words: string) =>
       (await op("task.search", { q: words, scope: "active" })).result?.["total"],
+    /** An operation as an agent calls it in Mira, from its terminal (Claude Code's marker). */
+    asAgent: async (op: string, input: Record<string, unknown>) => {
+      const agent = await classSession(world.home, world.service.endpoint.path, "cli-agent", {
+        CLAUDECODE: "1",
+      });
+      try {
+        return (await agent.call(
+          "op/call",
+          { op, input: { ...input, request_id: randomUUID() }, space: "Mira" },
+          { timeoutMs: 60_000 },
+        )) as Record<string, unknown>;
+      } finally {
+        agent.close();
+      }
+    },
     /** The space's tasks as the computer holds them now: a snapshot of the page's own feed. */
     rows: async (): Promise<ReadonlyMap<string, TaskRow>> => {
       const feed = await openFeed(world.port(), token);
