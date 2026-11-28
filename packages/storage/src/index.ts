@@ -310,6 +310,7 @@ export {
   type FolderView,
   type LaunchFolder,
 } from "./write/folders.ts";
+export { PAGE_SHOWN } from "./write/pages.ts";
 export {
   ADDRESSEES,
   checkRequest,
@@ -364,6 +365,7 @@ export {
   type LogKind,
   type NoteAdd,
   type Operation,
+  type PageOwner,
   type OperationKind,
   type OpResult,
   type Origin,

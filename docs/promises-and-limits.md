@@ -232,6 +232,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 
 - An agent that uses TTasks cannot start other agents, raise its own permissions or change your
   settings for what agents may do.
+- An agent that loads a task is shown what is known above it: the pages of its project, its area
+  and the space, with who changed each and when, and your texts for agents there, which are the
+  only words of the library it takes as instructions. Pages and descriptions are read as data.
 - An agent that TTasks opened in a terminal, and a background run, works on its task without naming
   it. What it changes through its tools and through `ttasks` in its shell is that task's session,
   also across a restart of TTasks.
