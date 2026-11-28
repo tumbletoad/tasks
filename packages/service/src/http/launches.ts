@@ -235,7 +235,7 @@ export interface UiReceipt {
   /**
    * A Confirmed launch's session: `running` while this service follows it and it runs, or while
    * T3 Code has the task's thread; `ended` once its agent's end was reported or T3 Code no longer
-   * has the thread; `restored` once a claim or a restore in place ended it as a backup's. Absent
+   * has the thread, whose entry then offers no link to it; `restored` once a claim or a restore in place ended it as a backup's. Absent
    * when the service does not know: a link, a shim that went without a word, a launch of another
    * computer or of an earlier build, an earlier thread of the task.
    */
@@ -364,10 +364,12 @@ export function receiptOf(
   const recorded = restored && isOpenLaunch({ state, route, evidence });
   const record = state === "confirmed" && !recorded ? sessionRecord(evidence) : undefined;
   const activity = record === "open" ? thread(id) : undefined;
+  // A T3 thread recorded lost is one T3 no longer has: it ended. A terminal's lost shim tells nothing.
+  const gone = activity === "gone" || (record === "lost" && route === "t3-mcp");
   const session =
     record === "ended" || record === "restored"
       ? record
-      : activity === "gone"
+      : gone
         ? "ended"
         : record === "open" && (runs(id) || activity !== undefined)
           ? "running"

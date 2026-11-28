@@ -3493,7 +3493,7 @@
     },
     {
       "id": "A4.3.4.1.t3.thread",
-      "title": "A task's T3 Code thread as T3 Code tells it: its entry shows it running with what its agent does (working, needs you, idle) while T3 has it and ended once T3 no longer has it; the Agents page shows it as an agent of its task in that state",
+      "title": "A task's T3 Code thread as T3 Code tells it: its entry shows it running with what its agent does (working, needs you, idle) while T3 has it and ended once T3 no longer has it; the Agents page shows it as an agent of its task in that state, also while the Agent Monitor is missing; a card opened while T3 Code did not answer shows the state once it does; a thread recorded lost reads ended and offers no link",
       "source": "A4 3.4.1, A5 3.9",
       "owner": "M2",
       "kind": "ci",

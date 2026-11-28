@@ -355,10 +355,12 @@ export function Thread({
             onOpenAgain(asked, instance);
           }
         : undefined;
-    // A T3 thread T3 Code made stays there: it can be brought up again.
+    // A T3 thread T3 Code made stays there and can be brought up again, until T3 Code no longer has
+    // it.
     const inT3 =
       receipt.route === "t3-mcp" &&
       (receipt.state === "confirmed" || receipt.state === "dispatched") &&
+      receipt.session !== "ended" &&
       onOpenInT3 !== undefined
         ? () => {
             onOpenInT3(receipt.id);

@@ -67,10 +67,11 @@ describe("[A4.3.4.1.t3.thread] a task's T3 Code thread on its entry: what T3 Cod
     expect(gone).not.toHaveProperty("activity");
     // T3 cannot be asked, or this is an earlier thread of the task: only that it opened.
     expect(receiptOf(t3({}))).not.toHaveProperty("session");
-    // A thread the service found gone stays so, whatever T3 says.
-    expect(receiptOf(t3({ lost_at: 5 }), undefined, false, told("working"))).not.toHaveProperty(
-      "activity",
-    );
+    // A thread the service found gone has ended, whatever T3 says, also when T3 says nothing.
+    const lost = receiptOf(t3({ lost_at: 5 }), undefined, false, told("working"));
+    expect(lost).toMatchObject({ session: "ended" });
+    expect(lost).not.toHaveProperty("activity");
+    expect(receiptOf(t3({ lost_at: 5 }))).toMatchObject({ session: "ended" });
   });
 });
 

@@ -6,7 +6,7 @@
 // then Open makes one thread with the brief in its composer, at a project root and in a folder
 // inside it, and the thread's entry brings it up again. That thread is the task's: Open again
 // brings it forward, its entry and the Agents page say what its agent does as T3 tells, and a
-// thread deleted in T3 is made again at the next Open. Fixture data.
+// thread deleted in T3 is made again at the next Open, its entry ended. Fixture data.
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
@@ -191,6 +191,11 @@ test.describe("[A4.3.4.1.t3.e2e] Open in T3 Code from the page", () => {
     const remade = [...fake.threads.values()].filter((t) => t.title.startsWith(`${ref} `));
     expect(remade.map((t) => t.id)).not.toContain(made.id);
     expect(remade).toHaveLength(1);
+    // The deleted thread's entry says it ended and offers no way back to it.
+    const ended = p.opened.and(page.locator('[data-state="ended"]'));
+    await expect(ended).toHaveCount(1, { timeout: SLOW_MS });
+    await expect(ended).toContainText("· ended");
+    await expect(ended.getByRole("button", { name: "Open in T3" })).toHaveCount(0);
 
     // A folder inside the project becomes a project of its own: the thread runs exactly there.
     const inside = await newTask(
