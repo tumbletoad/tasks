@@ -10,6 +10,7 @@ import { defineEntry } from "../define.ts";
 import { safeLine } from "../safe-text.ts";
 import { CompactTaskRow, patterns, TaskId } from "../schemas.ts";
 import { CommitId } from "./history-undo.ts";
+import { SPACE_ID } from "./fixture.ts";
 
 /** Where the next page starts: the last row's change seq and its reference's number. */
 export const TRASH_CURSOR = /^[0-9]{1,16}\.[0-9]{1,10}$/u;
@@ -85,6 +86,7 @@ export const taskTrash = defineEntry({
             lifecycle: "active",
             status: "open",
             inbox: false,
+            parent: SPACE_ID,
             position: "a1",
             deleted_at: 1_778_580_000_000,
             created_at: 1_778_000_000_000,

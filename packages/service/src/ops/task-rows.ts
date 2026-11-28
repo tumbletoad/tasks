@@ -175,6 +175,10 @@ export function taskColumns(folders: boolean): string {
     "t.id, t.ref, t.title, t.summary, t.lifecycle, t.status, t.inbox, t.priority, t.effort, " +
     "t.due_date, t.due_at, t.due_tz, t.planned_for, t.focus_on, t.owner, t.waiting_on, t.area_id, " +
     "t.project_id, t.parent_id, t.position, t.wrap_state, t.completed_at, t.deleted_at, " +
+    // The tree's parent, from today's columns (the feed's adapter, feed.ts): a task sits under its
+    // project, else its area, else the space.
+    "COALESCE(t.parent_id, t.project_id, t.area_id, (SELECT space_id FROM space WHERE one = 1)) " +
+    "AS parent, " +
     "t.created_at, t.version, t.touched, " +
     `CASE WHEN t.lifecycle <> 'active' THEN ${FINISHED_AT_SQL} END AS finished_at, ` +
     // When a waiting task's wait began (the Waiting view's age): the commit whose write its status
