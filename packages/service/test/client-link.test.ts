@@ -5,7 +5,16 @@
 import { parsePairing, type Pairing } from "@ttasks/contracts/link";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { WebSocket } from "ws";
-import { openLink, pairWith, type Connect, type LinkSocket, type Saved } from "@ttasks/client/link";
+import { createServer } from "node:net";
+import {
+  linkOwner,
+  openLink,
+  pairWith,
+  type Connect,
+  type LinkSocket,
+  type LinkState,
+  type Saved,
+} from "@ttasks/client/link";
 import { post } from "./http-client.ts";
 import { httpWorld, signIn, type HttpWorld } from "./http-world.ts";
 import { phoneKey, tlsTo, type PhoneKey } from "./phone-client.ts";
@@ -92,6 +101,7 @@ let token = "";
 
 const machine = async (action: string, body: unknown) => {
   const reply = await post(world.port(), `/api/v1/machine/${action}`, body, { token });
+  if (reply.status !== 200) throw new Error(`${action}: ${String(reply.status)} ${reply.body}`);
   return (JSON.parse(reply.body) as { result: Record<string, unknown> }).result;
 };
 const phones = async () =>
@@ -102,18 +112,63 @@ const code = async (): Promise<Pairing> => {
   return pairing;
 };
 
+/** A port free now, so the service comes back on the same one after a restart. */
+const freePort = () =>
+  new Promise<number>((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      server.close(() => {
+        resolve(typeof address === "object" && address !== null ? address.port : 0);
+      });
+    });
+  });
+
+let link: NonNullable<Parameters<typeof httpWorld>[1]>;
+
 beforeAll(async () => {
-  world = await httpWorld("phone-pairing", {
+  link = {
     link: {
       host: "127.0.0.1",
-      ports: [0],
+      ports: [await freePort()],
       addresses: () => ["127.0.0.1"],
       peerAllowed: () => true,
       refuseMs: 10,
     },
-  });
+  };
+  world = await httpWorld("phone-pairing", link);
   ({ token } = await signIn(world));
 }, 300_000);
+
+/** An owner whose states are kept, and a wait for the next of a kind. */
+function owned(connect: Connect, saved: Saved) {
+  const states: LinkState[] = [];
+  let wake: (() => void) | undefined;
+  const owner = linkOwner(
+    connect,
+    saved,
+    (state) => {
+      states.push(state);
+      wake?.();
+    },
+    50,
+  );
+  let read = 0;
+  const next = async (kind: LinkState["kind"]): Promise<LinkState> => {
+    for (;;) {
+      while (read < states.length) {
+        const state = states[read];
+        read += 1;
+        if (state?.kind === kind) return state;
+      }
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+      });
+    }
+  };
+  return { owner, states, next };
+}
 
 afterAll(async () => {
   await world.close();
@@ -177,6 +232,37 @@ describe(
       await machine("phone_remove", { phone: id });
       const saved: Saved = paired.saved;
       expect(await openLink(p.connect, saved)).toEqual({ kind: "removed" });
+    });
+
+    test("the owner stops for good when the computer says the phone was removed", async () => {
+      const p = phone();
+      const paired = await pairWith(p.connect, await code(), "Gone");
+      if (paired.kind !== "served") throw new Error(`not paired: ${paired.kind}`);
+      paired.socket.close();
+      const { owner, next, states } = owned(p.connect, paired.saved);
+      owner.start();
+      await next("connected");
+      const id = (await phones()).find((x) => x.name === "Gone")?.id;
+      await machine("phone_remove", { phone: id });
+      await next("removed");
+      owner.now();
+      expect(states.at(-1)?.kind).toBe("removed");
+    });
+    // Last: it restarts the service, after which the space opens again in its own time.
+    test("the owner keeps the pairing while the computer is away and connects again when it is back", async () => {
+      const p = phone();
+      const paired = await pairWith(p.connect, await code(), "Owned");
+      if (paired.kind !== "served") throw new Error(`not paired: ${paired.kind}`);
+      paired.socket.close();
+      const { owner, next } = owned(p.connect, paired.saved);
+      owner.start();
+      await next("connected");
+      await world.restart(link.link === undefined ? {} : { link: link.link });
+      ({ token } = await signIn(world));
+      await next("offline");
+      await next("connected");
+      owner.stop();
+      expect(p.opens.every((o) => !("pair" in o) || o === p.opens[0])).toBe(true);
     });
   },
 );
