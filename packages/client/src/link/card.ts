@@ -188,6 +188,7 @@ interface Kept<T> {
 interface Box {
   readonly cards: Readonly<Record<string, Kept<CardDetail>>>;
   readonly pages: Readonly<Record<string, Kept<PageText>>>;
+  readonly runs: Readonly<Record<string, Kept<readonly PhoneRun[]>>>;
 }
 
 /** The newest `KEPT` of `all`. */
@@ -225,6 +226,7 @@ export class Reads {
     return {
       cards: isRecord(box) && isRecord(box["cards"]) ? (box["cards"] as Box["cards"]) : {},
       pages: isRecord(box) && isRecord(box["pages"]) ? (box["pages"] as Box["pages"]) : {},
+      runs: isRecord(box) && isRecord(box["runs"]) ? (box["runs"] as Box["runs"]) : {},
     };
   }
 
@@ -240,6 +242,15 @@ export class Reads {
 
   page(ref: string): Kept<PageText> | undefined {
     return this.#box().pages[ref];
+  }
+
+  runs(task: string): Kept<readonly PhoneRun[]> | undefined {
+    return this.#box().runs[task];
+  }
+
+  keepRuns(task: string, value: readonly PhoneRun[], at: number): void {
+    const box = this.#box();
+    this.#save({ ...box, runs: newest({ ...box.runs, [task]: { at, value } }) });
   }
 
   keepCard(task: string, value: CardDetail, at: number): void {
@@ -267,3 +278,80 @@ export class Reads {
     this.#keep.write(FILE, JSON.stringify(all));
   }
 }
+
+/** A run of a task as a phone reads it (the listener's RUN fields). */
+export interface PhoneRun {
+  readonly id: string;
+  readonly state: string;
+  readonly reason: string | null;
+  readonly queued_at: number;
+  /** The agent's answer, or its question when it needs the person. Untrusted text. */
+  readonly answer: string | null;
+  readonly answer_final: boolean;
+  readonly answer_cut: boolean;
+}
+
+/** How a run stands, in one of a few words the app says, as the page's run view sorts them. */
+export type RunTone =
+  "waiting" | "working" | "stopping" | "done" | "needs_you" | "failed" | "stopped" | "unknown";
+
+/** A run's one line and what its agent said: the answer, the question it stopped on, or its last words. */
+export interface RunLine {
+  readonly tone: RunTone;
+  readonly said?: {
+    readonly kind: "answer" | "question" | "last";
+    readonly text: string;
+    readonly cut: boolean;
+  };
+}
+
+const TONES: Readonly<Record<string, RunTone>> = {
+  queued: "waiting",
+  starting: "working",
+  running: "working",
+  waiting_for_input: "working",
+  reconciling: "working",
+  cancelling: "stopping",
+  succeeded: "done",
+  cancelled: "stopped",
+  timed_out: "failed",
+  failed: "failed",
+};
+
+export function runLine(run: PhoneRun): RunLine {
+  const tone: RunTone =
+    run.state === "failed" && run.reason === "needs_input"
+      ? "needs_you"
+      : (TONES[run.state] ?? "unknown");
+  const text = run.answer ?? "";
+  if (text.trim() === "" || tone === "waiting" || tone === "stopping" || tone === "unknown")
+    return { tone };
+  const kind =
+    tone === "needs_you" ? "question" : tone === "done" && run.answer_final ? "answer" : "last";
+  return { tone, said: { kind, text, cut: run.answer_cut } };
+}
+
+/** The task's runs from `launch/runs`' answer, newest first, or undefined. */
+export function runsOf(body: unknown): Part<readonly PhoneRun[]> | undefined {
+  const result = isRecord(body) ? body["result"] : undefined;
+  if (!isRecord(result) || !Array.isArray(result["runs"])) return undefined;
+  const runs = result["runs"]
+    .filter(isRecord)
+    .filter((r) => typeof r["id"] === "string" && typeof r["state"] === "string")
+    .map((r) => ({
+      id: text(r["id"]),
+      state: text(r["state"]),
+      reason: typeof r["reason"] === "string" ? r["reason"] : null,
+      queued_at: typeof r["queued_at"] === "number" ? r["queued_at"] : 0,
+      answer: typeof r["answer"] === "string" ? r["answer"] : null,
+      answer_final: r["answer_final"] === true,
+      answer_cut: r["answer_cut"] === true,
+    }))
+    .sort((a, b) => b.queued_at - a.queued_at);
+  return { value: runs, next: undefined };
+}
+
+export const RUNS_READ = {
+  path: "/api/v1/launch/runs",
+  body: (task: string) => ({ task }),
+} as const;
