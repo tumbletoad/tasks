@@ -18,6 +18,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   themselves. At the command line, repeat the command with the `--request-id` that the failed
   command named. A change that was refused saved nothing: sent again, it is decided again.
 - Every change keeps what changed and who made it: you, an agent, or a script.
+- Activity lists every change an agent or a routine made, newest first, and one they make while it
+  is open without a reload. A line names a task by its title now, and says that a text changed,
+  not what it says.
 - Undo and redo never replace someone else's work that came in between, also when that work set a
   value and set it back. Redo passes over a change of yours it cannot bring back and redoes the
   next one. The change it passed over stays, and a later Redo tries it again.

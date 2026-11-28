@@ -20,18 +20,21 @@ const page = (order: "before" | "after") =>
   `ORDER BY c.seq ${order === "before" ? "DESC" : "ASC"} LIMIT $limit`;
 
 const SEQS = "SELECT value FROM json_each($seqs)";
-const OPS = `SELECT c.seq, j.key AS i, json_extract(j.value, '$.op') AS op FROM commits c, json_each(c.ops) j WHERE c.seq IN (${SEQS})`;
+const OPS =
+  "SELECT c.seq, j.key AS i, json_extract(j.value, '$.op') AS op FROM commits c, " +
+  `json_each(c.ops) j WHERE c.seq IN (${SEQS})`;
+/** A task's field set by a change, when it holds no text. */
+const VALUED = `entity = 'tasks' AND action = 'set' AND field NOT IN ${TEXT_FIELDS}`;
 /**
  * The changes of the page's commits, without their values of text: of a task's field that holds
- * no text its value, of a created task or a moved one its place, of a created area or project
- * its name.
+ * no text its value, of a created task its place, of a created area or project its name.
  */
 const CHANGES =
   "SELECT seq, op, entity, task_id, action, field, " +
-  `CASE WHEN entity = 'tasks' AND action = 'set' AND field NOT IN ${TEXT_FIELDS} THEN before END AS before, ` +
-  `CASE WHEN entity = 'tasks' AND action = 'set' AND field NOT IN ${TEXT_FIELDS} THEN after ` +
-  "WHEN entity = 'tasks' THEN json_object('project_id', json_extract(after, '$.project_id'), " +
-  "'area_id', json_extract(after, '$.area_id')) " +
+  `CASE WHEN ${VALUED} THEN before END AS before, ` +
+  `CASE WHEN ${VALUED} THEN after ` +
+  "WHEN entity = 'tasks' AND action = 'create' THEN json_object('project_id', " +
+  "json_extract(after, '$.project_id'), 'area_id', json_extract(after, '$.area_id')) " +
   "WHEN entity IN ('areas', 'projects') AND action = 'create' THEN json_object('title', " +
   "json_extract(after, '$.title')) END AS after " +
   `FROM changes WHERE seq IN (${SEQS}) ORDER BY seq, n`;
