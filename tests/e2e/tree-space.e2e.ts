@@ -204,6 +204,9 @@ test.describe("[S2.tree.e2e] a space on the new storage, four levels deep, as a 
 
     // The Library of the third level, and its page.
     await page.goto(`${world.origin}${at(tree, tree.kitchen)}/library`);
+    // Its texts are read after its lists are drawn and move them down: a person clicks once the
+    // screen has settled.
+    await expect(page.locator('[data-part="description"]')).toBeVisible({ timeout: SLOW_MS });
     await page.getByRole("link", { name: new RegExp(tree.page) }).click();
     await expect(page.getByRole("heading", { name: tree.page })).toBeVisible();
     await expect(page.locator('[data-part="page-brief"]')).toContainText(
