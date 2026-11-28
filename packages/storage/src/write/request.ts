@@ -2104,44 +2104,18 @@ function checkOperation(value: unknown, i: number): Operation {
       }
       break;
     }
-    case "page.create": {
-      op = {
-        kind,
-        owner: pageOwner(f, "owner"),
-        title: f.text("title", { chars: WRITE_LIMITS.title, line: true }),
-        brief: f.has("brief") ? f.text("brief", BRIEF) : "",
-        body: f.has("body") ? f.text("body", BODY) : "",
-      };
+    case "page.create":
+      op = { kind, ...pageCreateFields(f, (g) => pageOwner(g, "owner")) };
       break;
-    }
-    case "page.edit": {
-      op = {
-        kind,
-        page: f.reference("page"),
-        old: f.text("old", { bytes: WRITE_LIMITS.note }),
-        new: f.text("new", { ...BODY, empty: true }),
-      };
+    case "page.edit":
+      op = { kind, ...pageEditFields(f, pageRef) };
       break;
-    }
-    case "page.append": {
-      op = { kind, page: f.reference("page"), text: f.text("text", { bytes: WRITE_LIMITS.note }) };
+    case "page.append":
+      op = { kind, ...pageAppendFields(f, pageRef) };
       break;
-    }
-    case "page.set": {
-      const set: PageSet = { kind, page: f.reference("page") };
-      if (f.has("title")) set.title = f.text("title", { chars: WRITE_LIMITS.title, line: true });
-      if (f.has("brief")) set.brief = f.text("brief", BRIEF);
-      if (f.has("body")) set.body = f.text("body", BODY);
-      if (f.has("from_seq")) set.from_seq = f.int("from_seq", RANGES.seq.min, RANGES.seq.max);
-      if (set.body !== undefined && set.from_seq !== undefined) {
-        f.fail("VALIDATION_FAILED", "Give the body or the version it comes from, not both", "body");
-      }
-      if (Object.keys(set).length === 2) {
-        f.fail("VALIDATION_FAILED", "A set gives a title, a brief, a body or a version", "body");
-      }
-      op = set;
+    case "page.set":
+      op = { kind, ...pageSetFields(f, pageRef) };
       break;
-    }
     case "page.move": {
       op = { kind, page: f.reference("page"), owner: pageOwner(f, "owner") };
       break;
@@ -2151,23 +2125,19 @@ function checkOperation(value: unknown, i: number): Operation {
       op = { kind, page: f.reference("page") };
       break;
     }
-    case "node.set": {
-      const set: NodeSet = { kind, node: textNode(f, "node") };
-      if (f.has("brief")) set.brief = f.text("brief", BRIEF);
-      if (f.has("description")) set.description = f.text("description", BODY);
-      if (set.brief === undefined && set.description === undefined) {
-        f.fail("VALIDATION_FAILED", "A set gives a brief or a description", "description");
-      }
-      if (set.brief !== undefined && set.node.kind !== "space") {
-        f.fail("VALIDATION_FAILED", "An area's and a project's brief are their own", "brief");
-      }
-      op = set;
+    case "node.set":
+      op = {
+        kind,
+        ...nodeSetFields(
+          f,
+          (g) => textNode(g, "node"),
+          (node) => node.kind === "space",
+        ),
+      };
       break;
-    }
-    case "node.instruct": {
-      op = { kind, node: textNode(f, "node"), text: f.text("text", BODY) };
+    case "node.instruct":
+      op = { kind, ...nodeInstructFields(f, (g) => textNode(g, "node")) };
       break;
-    }
     case "area.patch":
     case "project.patch": {
       const owner = kind === "area.patch" ? "area" : "project";
@@ -2887,4 +2857,84 @@ export function checkBaseOf(base: Base, asOf: AsOf): void {
     );
   }
   if (base.seq > asOf.seq) fail("BASE_FROM_FUTURE", "The base is newer than the space", "base");
+}
+
+const pageRef = (f: Fields): string => f.reference("page");
+
+/**
+ * The page operations' and the node texts' fields, as both writers read them; the page, the holder
+ * and the node are each schema's own, read by the function given. The keys keep their order: a
+ * commit stores the operation as read.
+ */
+export function pageCreateFields<O>(
+  f: Fields,
+  owner: (f: Fields) => O,
+): Omit<PageCreate, "kind" | "owner"> & { owner: O } {
+  return {
+    owner: owner(f),
+    title: f.text("title", { chars: WRITE_LIMITS.title, line: true }),
+    brief: f.has("brief") ? f.text("brief", BRIEF) : "",
+    body: f.has("body") ? f.text("body", BODY) : "",
+  };
+}
+
+export function pageEditFields<K>(
+  f: Fields,
+  page: (f: Fields) => K,
+): Omit<PageEdit, "kind" | "page"> & { page: K } {
+  return {
+    page: page(f),
+    old: f.text("old", { bytes: WRITE_LIMITS.note }),
+    new: f.text("new", { ...BODY, empty: true }),
+  };
+}
+
+export function pageAppendFields<K>(
+  f: Fields,
+  page: (f: Fields) => K,
+): Omit<PageAppend, "kind" | "page"> & { page: K } {
+  return { page: page(f), text: f.text("text", { bytes: WRITE_LIMITS.note }) };
+}
+
+export function pageSetFields<K>(
+  f: Fields,
+  page: (f: Fields) => K,
+): Omit<PageSet, "kind" | "page"> & { page: K } {
+  const set: Omit<PageSet, "kind" | "page"> & { page: K } = { page: page(f) };
+  if (f.has("title")) set.title = f.text("title", { chars: WRITE_LIMITS.title, line: true });
+  if (f.has("brief")) set.brief = f.text("brief", BRIEF);
+  if (f.has("body")) set.body = f.text("body", BODY);
+  if (f.has("from_seq")) set.from_seq = f.int("from_seq", RANGES.seq.min, RANGES.seq.max);
+  if (set.body !== undefined && set.from_seq !== undefined) {
+    f.fail("VALIDATION_FAILED", "Give the body or the version it comes from, not both", "body");
+  }
+  if (Object.keys(set).length === 1) {
+    f.fail("VALIDATION_FAILED", "A set gives a title, a brief, a body or a version", "body");
+  }
+  return set;
+}
+
+/** A node's brief or description; `briefOn` says whether the node holds a brief of this kind. */
+export function nodeSetFields<N>(
+  f: Fields,
+  node: (f: Fields) => N,
+  briefOn: (node: N) => boolean,
+): Omit<NodeSet, "kind" | "node"> & { node: N } {
+  const set: Omit<NodeSet, "kind" | "node"> & { node: N } = { node: node(f) };
+  if (f.has("brief")) set.brief = f.text("brief", BRIEF);
+  if (f.has("description")) set.description = f.text("description", BODY);
+  if (set.brief === undefined && set.description === undefined) {
+    f.fail("VALIDATION_FAILED", "A set gives a brief or a description", "description");
+  }
+  if (set.brief !== undefined && !briefOn(set.node)) {
+    f.fail("VALIDATION_FAILED", "An area's and a project's brief are their own", "brief");
+  }
+  return set;
+}
+
+export function nodeInstructFields<N>(
+  f: Fields,
+  node: (f: Fields) => N,
+): Omit<NodeInstruct, "kind" | "node"> & { node: N } {
+  return { node: node(f), text: f.text("text", BODY) };
 }
