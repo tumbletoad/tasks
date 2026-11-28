@@ -3,7 +3,7 @@
 // opens its task, a reader's place holds while lines come, and older lines load as the end comes
 // near. Fixture text only.
 import { expect, type Page } from "@playwright/test";
-import { test } from "./fixture.ts";
+import { built, test as base } from "./fixture.ts";
 import {
   axeFound,
   picture,
@@ -13,7 +13,26 @@ import {
   violations,
   watchViolations,
 } from "./page.ts";
-import { SLOW_MS, type World } from "./world.ts";
+import { SLOW_MS, startWorld, type World } from "./world.ts";
+
+/**
+ * A world of its own for this file: its agents add, finish and trash tasks, which no other file's
+ * counts and searches may meet in the worker's shared world.
+ */
+const test = base.extend<object, { activity: World }>({
+  activity: [
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, use) => {
+      const world = await startWorld(built());
+      try {
+        await use(world);
+      } finally {
+        await world.close();
+      }
+    },
+    { scope: "worker", timeout: 240_000 },
+  ],
+});
 
 interface Added {
   readonly tasks: readonly { readonly ref: string }[];
@@ -57,7 +76,7 @@ async function open(page: Page, world: World): Promise<void> {
 test.describe("[A5.activity.e2e] the Activity screen", () => {
   test("an agent's changes come in as lines without a reload, the person's own do not, and a line opens its task", async ({
     page,
-    world,
+    activity: world,
   }) => {
     await watchViolations(page);
     await open(page, world);
@@ -138,7 +157,7 @@ test.describe("[A5.activity.e2e] the Activity screen", () => {
 
   test("lines that come keep a reader's place, come into sight at the top, and older ones load on", async ({
     page,
-    world,
+    activity: world,
   }) => {
     const project = test.info().project.name;
     // More than one read's worth of lines.
@@ -202,7 +221,7 @@ test.describe("[A5.activity.e2e] the Activity screen", () => {
 
   test("screenshots of Activity with lines, empty and as a line comes, in Sumi and Washi, and axe finds nothing", async ({
     browser,
-    world,
+    activity: world,
   }) => {
     const project = test.info().project.name;
     // A mix of what agents do.
@@ -223,7 +242,7 @@ test.describe("[A5.activity.e2e] the Activity screen", () => {
       },
       "agent",
     );
-    const twin = await add(world, `Plan the offsite, again (${project})`);
+    const twin = await add(world, `Plan the offsite, a duplicate (${project})`);
     await world.op(space, "task.delete", { tasks: [twin], base: await asOf(world, twin) }, "agent");
     await world.op(
       space,
