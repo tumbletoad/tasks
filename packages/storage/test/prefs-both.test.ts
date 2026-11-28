@@ -157,11 +157,8 @@ describe("[S2.prefs.both] a space's preferences, the same on both writers", () =
       { do: "task", title: "Book the van", effort: "M" },
       { do: "mark" },
       { do: "levels", keys: ["Small", "M", "L"], moves: [{ from: "S", to: "Small" }] },
-      {
-        step: { do: "size", task: "Fix the export", effort: "S", base: "marked" },
-        differs:
-          "both refuse the stale save; today names a conflict, the tree the level (a row in the table)",
-      },
+      // A stale save of a level renamed since is a conflict on both, whatever the list holds now.
+      { do: "size", task: "Fix the export", effort: "S", base: "marked" },
       {
         do: "levels",
         keys: ["M", "L"],

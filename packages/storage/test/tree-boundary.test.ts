@@ -324,7 +324,7 @@ describe("[S2.tree.boundary] the tree writer keeps today's guarantees at the req
       { request_id: "shared-request-id-01" },
     );
     expect(reused.error?.code).toBe("REQUEST_ID_REUSED");
-    expect(typeof (reused.error?.data as { at?: unknown }).at).toBe("number");
+    expect(typeof reused.error?.at).toBe("number");
     const extra = {
       warnings: ["folder not checked on this machine"],
       answer: { made: ["Garden"] },

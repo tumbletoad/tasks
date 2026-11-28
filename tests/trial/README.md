@@ -22,16 +22,23 @@ For real agents, `agents.toml` holds machine.toml `[[instance]]` tables, for exa
 id = "claude"
 target = "claude-cli"
 label = "Claude Code"
+run_permission = "read-only"
 
 [[instance]]
 id = "codex"
 target = "codex-cli"
 label = "Codex"
+run_permission = "read-only"
 ```
 
-The trial never writes into an agent's home. Each world is a new TTasks home in a temporary
-folder. The agent's program keeps its own sign-in, and the run's tools come from the run's own
-folder. Run it against a real agent only with the owner's word: it spends their subscription.
+Each instance runs read only, or the trial refuses it: the agent works in the person's own profile,
+with their own instructions, and with write access it once edited a repository of theirs outside the
+world. A model goes in `args_prefix` (`["--model", "..."]` for Claude Code, `["-c", 'model="..."']`
+for Codex). Read only, Claude Code stops at a read outside the run's folder: `--add-dir` there names
+the folders its own instructions read. The trial never writes into an agent's home. Each world is a
+new TTasks home in a temporary folder. The agent's program keeps its own sign-in, and the run's
+tools come from the run's own folder. Run it against a real agent only with the owner's word: it
+spends their subscription.
 
 Every world seeds a space with `--tasks` tasks. It then adds project Trial in area Lumen, with:
 

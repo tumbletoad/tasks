@@ -5,7 +5,7 @@
 // calls through them are recorded as the run's, list, show and stop work as for a Codex run, and
 // a signed-out Claude Code ends the run with the command to sign in. Fixture spaces only.
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { instanceReadiness } from "@ttasks/launch";
@@ -23,7 +23,7 @@ import {
 import { classSession } from "@ttasks/service/test/ops-helpers";
 import { newId, type Id } from "@ttasks/storage";
 import { seedMira } from "@ttasks/testkit";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, onTestFinished, test } from "vitest";
 import { callTools, type ToolCall } from "../../runs/test/codex-server.ts";
 import { BIN, fileTexts, runMain } from "./cli-harness.ts";
 
@@ -39,6 +39,8 @@ let cleanup = (): void => undefined;
 let spaceId = "";
 let task = "";
 let log = "";
+/** While this file exists, the fake agent does not send its last result. */
+let hold = "";
 let service: RunningService | undefined;
 
 const RUN_CALLS: readonly ToolCall[] = [
@@ -85,6 +87,7 @@ beforeAll(async () => {
     JSON.parse(readFileSync(join(seeded.folder, "space.json"), "utf8")) as { space_id: Id<"sp"> }
   ).space_id;
   log = join(root, "fake.jsonl");
+  hold = join(root, "hold");
   registerSpaces(
     home,
     [seeded.folder],
@@ -93,6 +96,7 @@ beforeAll(async () => {
       answer: ANSWER_MARK,
       pace: 0.3,
       log,
+      holdWhile: hold,
       callTool: { calls: RUN_CALLS, home },
     }) +
       claudeInstance("claude-slow", { fixture: "windows-interrupt", pace: 2 }) +
@@ -176,6 +180,11 @@ const runsOf = async (): Promise<{ id: string; instance: string; state: string }
 
 describe("[A4.3.11.run.door-claude] ttasks run with a Claude Code instance: the same door, the same record", () => {
   test("the request is on the program's input only, the tools file is private with the only TTasks entry and a ticket no command line carries, and the agent's calls are recorded as the run's", async () => {
+    // The run stays live until the checks below have read it.
+    writeFileSync(hold, "");
+    onTestFinished(() => {
+      rmSync(hold, { force: true });
+    });
     const running = user(["run", task, "--instance", "claude", "--wait", "-"], REQUEST_MARK);
     await waitFor(
       () =>
@@ -218,6 +227,7 @@ describe("[A4.3.11.run.door-claude] ttasks run with a Claude Code instance: the 
       instance: "claude",
       session: `se_${live.slice("ru_".length)}`,
     });
+    rmSync(hold);
 
     const ran = await running;
     expect(ran.code, ran.stdout + ran.stderr).toBe(0);

@@ -49,7 +49,7 @@ import { byOf } from "./errors.ts";
 import type { FoldersHere } from "./here.ts";
 
 /** One statement of a read. Only the parameters the statement names are bound. */
-interface Statement {
+export interface Statement {
   readonly sql: string;
   readonly mode: "get" | "all";
 }
@@ -66,7 +66,7 @@ function bindFor(sql: string, params: Readonly<Record<string, string | number | 
 }
 
 /** Runs the statements in one deferred transaction on the reader: one snapshot. */
-async function snapshot(
+export async function snapshot(
   reader: WorkerConnection,
   statements: readonly Statement[],
   params: Readonly<Record<string, string | number | null>> = {},
@@ -508,7 +508,7 @@ export function historyOf(row: Row): { seq: number; actor: string; what: string 
   };
 }
 
-const notFound = (): AppError =>
+export const notFound = (): AppError =>
   new AppError({
     code: "not_found",
     message: "No task has this reference in this space.",

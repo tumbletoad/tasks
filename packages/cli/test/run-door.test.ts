@@ -23,7 +23,7 @@ import { FINAL_RUN_STATES, type RunRecord } from "@ttasks/contracts/runs";
 import { RunMachine, type RunEnd } from "@ttasks/runs";
 import { newId, type Id } from "@ttasks/storage";
 import { seedMira } from "@ttasks/testkit";
-import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, onTestFinished, test, vi } from "vitest";
 import { callTools, type ToolCall } from "../../runs/test/codex-server.ts";
 import { runLine } from "../src/runs.ts";
 import { BIN, fileTexts, runMain } from "./cli-harness.ts";
@@ -41,6 +41,8 @@ let cleanup = (): void => undefined;
 let spaceId = "";
 let task = "";
 let log = "";
+/** While this file exists, the fake agent's turn does not complete. */
+let hold = "";
 /** Writes machine.toml with the `codex` instance set up for these spaces (none: every space). */
 let setUp: (spaces: readonly string[]) => void = () => undefined;
 let service: RunningService | undefined;
@@ -106,11 +108,13 @@ beforeAll(async () => {
     JSON.parse(readFileSync(join(seeded.folder, "space.json"), "utf8")) as { space_id: Id<"sp"> }
   ).space_id;
   log = join(root, "fake.jsonl");
+  hold = join(root, "hold");
   const scenario = {
     fixture: "windows-tool",
     answer: ANSWER_MARK,
     pace: 0.3,
     log,
+    holdWhile: hold,
     callTool: { calls: RUN_CALLS, home },
   };
   // Two instances that can run, one of them set up for another space only: a run in this space
@@ -203,6 +207,11 @@ describe("[A4.3.11.run.door] ttasks run: a person starts a background run of a t
   });
 
   test("the request reaches the agent over its protocol only, the answer is in the run's record, and the agent's tool call is recorded as the run's", async () => {
+    // The run stays live until the checks below have read it.
+    writeFileSync(hold, "");
+    onTestFinished(() => {
+      rmSync(hold, { force: true });
+    });
     const running = user(["run", task, "--wait", "-"], REQUEST_MARK);
     // While the run runs, no process carries the request on its command line.
     await waitFor(
@@ -219,6 +228,7 @@ describe("[A4.3.11.run.door] ttasks run: a person starts a background run of a t
     const live = (await service?.runs.list(spaceId, task))?.[0]?.run.id ?? "";
     expect(service?.runs.allows("codex", spaceId, live)).toBe(true);
     expect(service?.ops.homes?.may("codex", spaceId)).toBe(false);
+    rmSync(hold);
     const ran = await running;
     expect(ran.code, ran.stdout + ran.stderr).toBe(0);
     expect(ran.stdout).toContain(ANSWER_MARK);

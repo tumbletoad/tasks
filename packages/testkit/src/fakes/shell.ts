@@ -6,7 +6,8 @@
 // - `noise`: only noise; exit 0;
 // - `half`: the opening fence and the environment, never the closing fence; exit 0;
 // - `fail`: nothing; exit 1;
-// - `hang`: starts a child that also hangs (in its process group), and never answers;
+// - `hang`: starts a child that also hangs (in its process group), records the child's pid as a
+//   second line in FAKE_SHELL_LOG, and never answers;
 // - `huge`: endless output without fences;
 // - `linger`: the fenced environment like `ok`, then never exits (an EXIT trap or a logout script
 //   that hangs).
@@ -65,9 +66,10 @@ switch (mode) {
     break;
   case "hang": {
     // A child in the same process group that would keep the pipe open: the deadline ends both.
-    spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
       stdio: ["ignore", "inherit", "ignore"],
     });
+    if (log !== undefined) appendFileSync(log, `${JSON.stringify({ child: child.pid })}\n`);
     setInterval(() => undefined, 1000);
     break;
   }

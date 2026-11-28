@@ -30,7 +30,7 @@ import { claimCopy } from "../restore/claim.ts";
 import { checkSwapPath } from "../restore/folders.ts";
 import { recoverSpaceWith } from "../restore/recover.ts";
 import { restoreInPlaceWith, type RestoreSeams } from "../restore/restore.ts";
-import type { SchemaStep } from "../schema.ts";
+import { encodeRevision, type SchemaStep } from "../schema.ts";
 import { repairSearchIndex } from "../search/remake.ts";
 import {
   beginSpaceWriter,
@@ -42,6 +42,8 @@ import {
 import { checkSpacePath } from "../space-path.ts";
 import { literalPath } from "../sqlite-uri.ts";
 import { CheckedDriver } from "../startup-check.ts";
+import { TREE_USER_VERSION } from "../tree/schema.ts";
+import { TreeSpaceWriter } from "../tree/space-writer.ts";
 import { checkMachine, SpaceWriter, type MachineInfo, type WriteSeams } from "../write/writer.ts";
 import {
   checkHolderFacts,
@@ -198,6 +200,8 @@ const spaceInfo = (handle: number, opened: OpenedSpace): OpenedSpaceInfo => ({
     incarnation: opened.space.authority.incarnation,
   },
   lastSeq: opened.space.lastSeq,
+  // A tree space, read or written: its reads name the tree's tables (`backend`).
+  ...(encodeRevision(opened.revision) === TREE_USER_VERSION ? { backend: "tree" as const } : {}),
 });
 
 /**
@@ -251,7 +255,7 @@ export function serve(
   };
 
   const connections = new Map<number, Connection>();
-  const writers = new Map<number, SpaceWriter>();
+  const writers = new Map<number, SpaceWriter | TreeSpaceWriter>();
   const held = new Map<number, Held>();
   /** Each open space writer's writer.lock, by the writer's handle. */
   const locks = new Map<number, WriterLock>();
@@ -269,10 +273,15 @@ export function serve(
     if (held.has(handle)) throw misuse("This connection waits for its claim");
     throw misuse("No open connection has this handle");
   };
-  const writer = (handle: number): SpaceWriter => {
+  const writer = (handle: number): SpaceWriter | TreeSpaceWriter => {
     const found = writers.get(handle);
     if (found === undefined) throw misuse("No space writer has this handle");
     return found;
+  };
+  /** Today's writer of a space: what only it does yet is refused on a tree space. */
+  const today = (handle: number): SpaceWriter => {
+    const found = writer(handle);
+    return found instanceof TreeSpaceWriter ? found.notYet() : found;
   };
   /**
    * Holds a writable connection SQLite just opened at `path` under a new handle, with the claim
@@ -380,6 +389,11 @@ export function serve(
             migration = { from, to, backup, seqs, manifestWritten };
             ready = { ...opened, revision: to, readOnlyReasons: [] };
           }
+        }
+        if (encodeRevision(ready.revision) === TREE_USER_VERSION) {
+          // A tree space keeps its index in every commit: nothing to repair on open.
+          writers.set(handle, new TreeSpaceWriter(ready.conn, machine));
+          return spaceInfo(handle, ready);
         }
         // A migration made the index just now. Otherwise the owner's open repairs or refreshes it
         // here, so search works without the person doing anything: the tasks are the truth.
@@ -603,13 +617,13 @@ export function serve(
         actor: ({ handle, actorKind, label }) => writer(handle).actor(actorKind, label),
         submit: ({ handle, request }) => writer(handle).submit(request),
         receipt: ({ handle, lookup }) => writer(handle).receipt(lookup) ?? null,
-        launch: ({ handle, launch }) => writer(handle).launch(launch) ?? null,
-        openLaunches: ({ handle, machine }) => writer(handle).openLaunches(machine),
-        projected: ({ handle, batch }) => writer(handle).projected(batch),
-        queueProjection: ({ handle, keys }) => writer(handle).queueProjection(keys),
-        repairSearchIndex: ({ handle }) => writer(handle).repairSearchIndex(checked, steps),
-        run: ({ handle, run }) => writer(handle).run(run) ?? null,
-        openRuns: ({ handle, machine }) => writer(handle).openRuns(machine),
+        launch: ({ handle, launch }) => today(handle).launch(launch) ?? null,
+        openLaunches: ({ handle, machine }) => today(handle).openLaunches(machine),
+        projected: ({ handle, batch }) => today(handle).projected(batch),
+        queueProjection: ({ handle, keys }) => today(handle).queueProjection(keys),
+        repairSearchIndex: ({ handle }) => today(handle).repairSearchIndex(checked, steps),
+        run: ({ handle, run }) => today(handle).run(run) ?? null,
+        openRuns: ({ handle, machine }) => today(handle).openRuns(machine),
         exec: ({ handle, sql }) => {
           connection(handle).exec(sql);
           return null;
