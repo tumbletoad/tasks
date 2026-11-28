@@ -5439,7 +5439,7 @@
     },
     {
       "id": "A5.3.13.e2e.search-address",
-      "title": "In Chromium and Firefox against the real service: a search's address holds its words, filters and expanded result, so the address opened in a new tab, a reload, Back and Forward show that search; typing adds no history entry per letter, and Back leaves the search in one step",
+      "title": "In Chromium and Firefox against the real service: a capture draft switched to search, the search typed on and its expanded result leave the address free of the words, typing adds no history entry per keystroke, and a reload, Back and Forward bring the search back",
       "source": "A5 3.3, A5 3.13",
       "owner": "M5",
       "kind": "ci",

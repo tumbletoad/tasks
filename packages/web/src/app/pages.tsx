@@ -51,6 +51,8 @@ export function useExpandInUrl(): (task: TaskRow | undefined, gone?: boolean) =>
           return task === undefined ? rest : { ...rest, task: task.ref };
         },
         replace: task !== undefined || gone,
+        // A search keeps its query in the history entry (route.ts).
+        state: true,
       });
     },
     [navigate],

@@ -6,7 +6,6 @@
 //   /                              the machine's default space, resolved by the page
 //   /?task=<ref>                   a task in the default space (`ttasks open <task>` without a space)
 //   /s/<space ID>/<view…>          a view of the space, at most five plain segments
-//   /s/<space ID>/search?q=<words> a search of the space
 //   /s/<space ID>/task/<ref>       a task of the space, expanded
 //
 // The skeleton's task links (`/s/<space>/t/<ref>`) still land on the task.
@@ -53,12 +52,20 @@ export interface PageRoute {
 const QUERY_MAX = 500;
 
 /**
- * The search of the search route's address (`?q=`): its words and filters, so a reload, a copied
- * link and a bookmark open that search.
+ * The search a history entry of the search route holds. What the person types is the person's
+ * words, so the page keeps it in the tab's history entry (a reload, Back and Forward bring it
+ * back) and never in the address, where a copied link, the browser's history and anything that
+ * syncs addresses would hold it. A `?q=` in the address is read too: the page's own links to a
+ * filter (Today's numbers) and older links use it, and the search route moves it into the entry.
  */
-export function searchQueryOf(location: { readonly search: unknown }): string {
-  const q = (location.search as { q?: unknown } | null | undefined)?.q;
-  return typeof q === "string" && q.length <= QUERY_MAX ? q : "";
+export function searchQueryOf(location: {
+  readonly state: unknown;
+  readonly search: unknown;
+}): string {
+  const kept = (location.state as { q?: unknown } | null | undefined)?.q;
+  if (typeof kept === "string" && kept.length <= QUERY_MAX) return kept;
+  const linked = (location.search as { q?: unknown } | null | undefined)?.q;
+  return typeof linked === "string" && linked.length <= QUERY_MAX ? linked : "";
 }
 
 export interface Fragment {

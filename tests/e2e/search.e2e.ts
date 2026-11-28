@@ -64,7 +64,7 @@ async function open(page: Page, world: World, path: string): Promise<void> {
   await showsSpace(page, world.mira.name);
 }
 
-/** A search's own address, as a reload or a link opens it: the sign-in's route holds no query. */
+/** A search's own URL, as a reload or a link opens it: the sign-in's route holds no query. */
 async function openSearch(page: Page, world: World, q: string): Promise<void> {
   await open(page, world, "/today");
   await page.goto(`${world.origin}/s/${world.mira.id}/search?q=${encodeURIComponent(q)}`);
@@ -186,13 +186,13 @@ test.describe("[A7.3.12.m5-10.e2e.search] Search results are a list like any oth
 
     await searching(page).fill(word);
     await expect(titles(page, "To do")).toHaveCount(2);
-    await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/search\\?q=${word}$`));
+    await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/search$`));
 
     // Expanding a result puts it in the URL, as in any view.
     const row = page.locator(`main li[data-task="${first ?? ""}"]`);
     await row.locator('[data-part="title"]').click();
     await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true");
-    await expect(page).toHaveURL(new RegExp(`/search\\?q=${word}&task=${first ?? ""}$`));
+    await expect(page).toHaveURL(new RegExp(`/search\\?task=${first ?? ""}$`));
     await row.locator('[data-part="title"]').click();
 
     // Check-off through the one edit path: the toast's Undo; the row stays, checked, after its hold.
@@ -475,7 +475,7 @@ test.describe("[A5.3.13.e2e.search-now] A search result changes the task as it s
   });
 });
 
-test.describe("[A5.3.13.e2e.search-address] A search's address holds its words and filters", () => {
+test.describe("[A5.3.13.e2e.search-address] What the person types in the top field stays out of the address", () => {
   test("a result opened while typing stays expanded when the refined query lands", async ({
     page,
     world,
@@ -490,57 +490,99 @@ test.describe("[A5.3.13.e2e.search-address] A search's address holds its words a
     await stopClock(page);
     await searching(page).fill(query);
     await title.click();
-    await expect(page).toHaveURL(new RegExp(`/search\\?.*task=${ref ?? ""}`));
+    const address = `${world.origin}/s/${world.mira.id}/search?task=${ref ?? ""}`;
+    await expect(page).toHaveURL(address);
 
     await page.clock.resume();
     await expect(page.getByRole("button", { name: `Add “${query}” as a task` })).toBeVisible();
-    const address = new URL(page.url());
-    expect(address.searchParams.get("q")).toBe(query);
-    expect(address.searchParams.get("task")).toBe(ref);
+    await expect(page).toHaveURL(address);
     await expect(title).toHaveAttribute("aria-expanded", "true");
     await picture(page, "search-opened-during-typing.png");
   });
 
-  test("a search with two words and a filter, opened from its address in a new tab, shows the same results; typing adds no history entry per letter, and Back leaves the search in one step", async ({
+  test("a draft switched to search, the search typed on and its expanded result: the address holds none of the words; a reload, Back and Forward bring the search back", async ({
     page,
     world,
   }) => {
     const word = "juniper";
-    await addTasks(world, [
+    const [first] = await addTasks(world, [
       { title: `Bottle the ${word} cordial`, area: "home", priority: 1 },
-      { title: `Sieve the ${word} jelly`, area: "home", priority: 2 },
-      { title: `Bottle the ${word} gin`, area: "home", priority: 3 },
+      { title: `Sieve ${word} jelly`, area: "home", priority: 2 },
     ]);
-    const query = `bottle ${word} p:1`;
+    const address = new RegExp(`/s/${world.mira.id}/search$`);
     await open(page, world, "/today");
-    const entries = await page.evaluate(() => history.length);
-    await page.keyboard.press("/");
-    await searching(page).pressSequentially(query);
+    await adding(page).fill(`Bottle the ${word}`);
+    await page.getByRole("button", { name: "Search instead" }).click();
+    await expect(searching(page)).toHaveValue(`Bottle the ${word}`);
     await expect(titles(page, "To do")).toHaveText([`Bottle the ${word} cordial`]);
-    expect(new URL(page.url()).searchParams.get("q")).toBe(query);
-    // One entry for the search, however many letters it took.
-    expect(await page.evaluate(() => history.length)).toBe(entries + 1);
+    await expect(page).toHaveURL(address);
 
-    const tab = await page.context().newPage();
-    await tab.goto(page.url());
-    await showsSpace(tab, world.mira.name);
-    await expect(searching(tab)).toHaveValue(query);
-    await expect(titles(tab, "To do")).toHaveText([`Bottle the ${word} cordial`]);
-    await tab.close();
+    // Typing on: no words in the address, and no history entry per keystroke.
+    const entries = await page.evaluate(() => history.length);
+    await searching(page).fill("");
+    await searching(page).pressSequentially(word);
+    await expect(
+      page.getByRole("button", { name: `Add “${word}” as a task`, exact: true }),
+    ).toBeVisible();
+    await expect(titles(page, "To do")).toHaveCount(2);
+    await expect(page).toHaveURL(address);
+    expect(await page.evaluate(() => history.length)).toBe(entries);
+
+    // An expanded result is in the address, as in any view; the words still are not.
+    const title = page.locator(`main li[data-task="${first ?? ""}"] [data-part="title"]`);
+    await title.click();
+    await expect(title).toHaveAttribute("aria-expanded", "true");
+    await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/search\\?task=${first ?? ""}$`));
+    expect(page.url()).not.toContain(word);
+
+    // The skip link takes the keyboard to the list without leaving the search's entry.
+    const skip = page.getByRole("link", { name: "Skip to the list" });
+    await skip.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("main#main")).toBeFocused();
+    await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/search\\?task=${first ?? ""}$`));
+    expect(await page.evaluate(() => history.length)).toBe(entries);
+    // An entry with a fragment (an older build's skip link) keeps its search on reload too.
+    await page.evaluate(() => {
+      history.replaceState(history.state, "", `${location.pathname}${location.search}#main`);
+    });
 
     await page.reload();
     await showsSpace(page, world.mira.name);
-    await expect(searching(page)).toHaveValue(query);
-    await expect(titles(page, "To do")).toHaveText([`Bottle the ${word} cordial`]);
+    await expect(searching(page)).toHaveValue(word);
+    await expect(titles(page, "To do")).toHaveCount(2);
+    await expect(title).toHaveAttribute("aria-expanded", "true");
+
     await page.goBack();
     await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/today$`));
     await expect(adding(page)).toBeVisible();
     await page.goForward();
-    await expect(searching(page)).toHaveValue(query);
+    await expect(searching(page)).toHaveValue(word);
+    await expect(titles(page, "To do")).toHaveCount(2);
+    expect(page.url()).not.toContain(word);
   });
 
-  test("Today's Late link opens its search in a new tab", async ({ page, world }) => {
-    await open(page, world, "/today");
+  test("an older link with words in ?q= opens its search and the words leave the address; Today's Late link works in a new tab", async ({
+    page,
+    world,
+  }) => {
+    const word = "bilberry";
+    const [first] = await addTasks(world, [
+      { title: `Poach the ${word} halves`, area: "home", priority: 1 },
+    ]);
+    const address = new RegExp(`/s/${world.mira.id}/search$`);
+    await openSearch(page, world, word);
+    await expect(searching(page)).toHaveValue(word);
+    await expect(titles(page, "To do")).toHaveText([`Poach the ${word} halves`]);
+    await expect(page).toHaveURL(address);
+    const title = page.locator(`main li[data-task="${first ?? ""}"] [data-part="title"]`);
+    await title.click();
+    await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/search\\?task=${first ?? ""}$`));
+    await page.reload();
+    await showsSpace(page, world.mira.name);
+    await expect(searching(page)).toHaveValue(word);
+
+    await page.goto(`${world.origin}/s/${world.mira.id}/today`);
     const late = page.getByRole("link", { name: /^Late: / });
     const href = (await late.getAttribute("href")) ?? "";
     expect(href).toMatch(/\/search\?q=is%3Aoverdue$/);
@@ -548,7 +590,7 @@ test.describe("[A5.3.13.e2e.search-address] A search's address holds its words a
     await tab.goto(`${world.origin}${href}`);
     await showsSpace(tab, world.mira.name);
     await expect(searching(tab)).toHaveValue("is:overdue");
-    await expect(tab).toHaveURL(new RegExp(`/s/${world.mira.id}/search\\?q=is%3Aoverdue$`));
+    await expect(tab).toHaveURL(address);
     await tab.close();
   });
 });

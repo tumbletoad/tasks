@@ -475,9 +475,10 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A website you visit cannot read or change your tasks through the page.
 - Logs hold no task text, and there is no telemetry. Task text leaves TTasks only where you send it:
   what you copy, what an agent reads through its connection, and what a phone you paired reads.
-- A search's words and filters are in the page's address, so a copied link, a bookmark and a
-  reload open that search. The browser's history, and anything that syncs addresses, holds them
-  too: one entry per search, not per letter. A new task's words stay out of the address.
+- What you type in the top field, a search included, stays out of the page's address, so a copied
+  link and the browser's history list hold the search page but not your words. A reload, Back and
+  Forward bring the search back in that tab; the search's link opened in another tab is an empty
+  search.
 - A paste into the top field that is more than a title loses no word: its first line becomes the
   title, and the rest is shown under the field and goes in the new task's context, also after a
   reload. A search keeps the first 500 characters and says so.
