@@ -39,7 +39,8 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 2.4 | Nested projects, subtasks and the finishing dialog, notes on projects and the space, page comments, links, sources on any node | todo: 2.3 |
 | 2.5 | The app: the sidebar tree, the derived status line, the expanded task's Brief, Description, Knowledge and subtasks | todo: 2.3 |
 | 2.6 | Folders on any node, places retired, folders after a restore, Settings > Folders, a project's rename and archive in the app | todo: 2.3 |
-| 2b.1 | The short design for routines | todo: 2.2 |
+| 2b.1 | The short design for routines | review (#235) |
+| 2b.4 | The schedule calculator: the stored form, the next date and due time through daylight saving, the claim after an absence, and a schedule's words | doing |
 | 2b.2 | Tasks that come back on a schedule | todo: 2b.1 |
 | 2b.3 | Agent runs on a schedule (Refresh, tidying), Refresh in the top bar, Continue interactively | todo: 2b.1 |
 | 3.1 | The projector for the tree on disk, built beside step 2 and live with the tree's migration | todo: 2.1 |
