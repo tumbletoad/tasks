@@ -935,7 +935,6 @@ export function readAsOf(conn: Connection): AsOf {
   };
 }
 
-
 /** A task a change of levels moves: the size it held, and where it is. */
 interface Mover {
   id: Id<"t">;
@@ -1005,7 +1004,6 @@ export function offList(conn: Connection, refPrefix: string): { off_list?: OffLi
   }
   return found.size === 0 ? {} : { off_list: [...found.values()] };
 }
-
 
 /**
  * A space's writer: the only write connection of an open space (A1 3.9). It owns the connection
