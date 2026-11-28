@@ -157,10 +157,12 @@ describe("[A3.3.3.mcp.tool-list] one tool list on every connection, online and o
         "get_task",
         "organize",
         "preferences",
+        "read",
         "reopen_task",
         "search",
         "status",
         "update_task",
+        "write_page",
       ]);
       expect(offline.initialize.result["instructions"]).toBe(INSTRUCTIONS);
       expect(replayed.unanswered).toEqual([]);

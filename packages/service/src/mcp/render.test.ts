@@ -68,7 +68,7 @@ const row = (n: number, title: string) => ({
 
 describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget", () => {
   test("every listed tool has a compact rendering", () => {
-    expect(TOOLS.length).toBe(11);
+    expect(TOOLS.length).toBe(13);
     for (const tool of tools) expect(hasRenderer(tool.name), tool.name).toBe(true);
   });
 
@@ -94,7 +94,7 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
     // A follow-up by its input path: its title is the caller's own and is not echoed (A3 3.2.5).
     expect(renderResult("task.finish", example("task.finish", 0))).toBe(
       [
-        "completed M-14 · wrapped · 1 learning · as_of 1.1047.5n0w8k3q",
+        "completed M-14 · wrapped · library: nothing reusable · as_of 1.1047.5n0w8k3q",
         "follow_ups.0: created M-31",
       ].join("\n"),
     );
@@ -292,13 +292,13 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
       author: "user",
       for_agents: true,
       at,
-      text: `${String(n)}${cjk(999)}`,
+      text: `${String(n)}${cjk(1_499)}`,
     }));
     task["instructions"] = notes;
     const text = renderResult("task.get", digest);
     expect(resultTokens(text)).toBeLessThanOrEqual(DIGEST_TOKENS);
     const shown = notes.filter((note) => text.includes(note.text));
-    // Each 1,000-character CJK note is about 2,000 estimated tokens: none fits a digest.
+    // Each 1,500-character CJK note is about 3,000 estimated tokens: none fits a digest.
     expect(shown).toHaveLength(0);
     expect(text).toContain("From the user, for agents (0 of 3 shown):");
     expect(text).toContain(

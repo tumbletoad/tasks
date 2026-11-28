@@ -84,6 +84,12 @@ export const PageReadResult = z.union([
         task_pages: z.int().min(0).max(1_000_000).describe("Task pages not here"),
       })
       .describe("What this answer left out: the cursor reads on"),
+    offset: z
+      .int()
+      .min(1)
+      .max(1_000_000)
+      .describe("Rows of each list read before these")
+      .optional(),
     cursor: ReadCursor.optional(),
   }),
 ]);

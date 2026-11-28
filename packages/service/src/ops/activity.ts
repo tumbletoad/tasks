@@ -5,7 +5,7 @@
 // at the end and a commit never changes, so a page is the commits before or after a number, read
 // by their key. Values travel only for fields that hold no free text, and a place by its name.
 import type { Row, WorkerConnection } from "@ttasks/storage";
-import { hasFolderTable } from "./read.ts";
+import { hasFolderTable, hasPageTable } from "./read.ts";
 
 /** The actors whose changes the Activity screen lists: not the person, the system or an import. */
 const ACTORS = "c.actor_kind IN ('agent', 'routine')";
@@ -34,14 +34,14 @@ const VALUED =
 /** The thing a change belongs to: its kind and ID. */
 const subject = (folders: boolean) =>
   "CASE WHEN task_id IS NOT NULL THEN 'task' WHEN entity = 'areas' THEN 'area' " +
-  "WHEN entity = 'projects' THEN 'project' " +
+  "WHEN entity = 'projects' THEN 'project' WHEN entity = 'pages' THEN 'page' " +
   (folders
     ? "WHEN entity = 'folders' THEN (SELECT owner_kind FROM folders f WHERE f.id = entity_id) " +
       "WHEN entity = 'runs' AND (SELECT task_id FROM runs r WHERE r.id = entity_id) IS NOT NULL " +
       "THEN 'task' "
     : "") +
   "END AS subject, CASE WHEN task_id IS NOT NULL THEN task_id " +
-  "WHEN entity IN ('areas', 'projects') THEN entity_id " +
+  "WHEN entity IN ('areas', 'projects', 'pages') THEN entity_id " +
   (folders
     ? "WHEN entity = 'folders' THEN (SELECT owner_id FROM folders f WHERE f.id = entity_id) " +
       "WHEN entity = 'runs' THEN (SELECT task_id FROM runs r WHERE r.id = entity_id) "
@@ -65,6 +65,10 @@ const NAMES =
   "deleted_at FROM projects WHERE id IN (SELECT value FROM json_each($groups)) UNION ALL " +
   "SELECT 'area', id, title, NULL, deleted_at FROM areas WHERE id IN " +
   "(SELECT value FROM json_each($groups))";
+/** From 0.6, the pages a page of lines touched, with their references. */
+const PAGE_NAMES =
+  " UNION ALL SELECT 'page', id, title, ref, deleted_at FROM pages WHERE id IN " +
+  "(SELECT value FROM json_each($pages))";
 
 /** A value a line shows. */
 export type ActivityValue = string | number | boolean | null;
@@ -77,7 +81,7 @@ export interface ActivityAct {
 }
 
 export interface ActivityTarget {
-  readonly kind: "task" | "project" | "area";
+  readonly kind: "task" | "project" | "area" | "page";
   readonly id: string;
   readonly name: string;
   readonly ref?: string;
@@ -119,7 +123,7 @@ const record = (value: unknown): Record<string, unknown> =>
 
 type Kind = ActivityTarget["kind"];
 const isKind = (value: unknown): value is Kind =>
-  value === "task" || value === "project" || value === "area";
+  value === "task" || value === "project" || value === "area" || value === "page";
 
 interface RawAct {
   readonly op: string;
@@ -183,6 +187,7 @@ export async function readActivity(
   // Each commit's targets in the order it touched them, and the acts that touched none.
   const taskIds = new Set<string>();
   const groupIds = new Set<string>();
+  const pageIds = new Set<string>();
   const drafts = found.map((commit) => {
     const seq = Number(commit["seq"]);
     const targets = new Map<string, Draft>();
@@ -215,14 +220,14 @@ export async function readActivity(
         looseSeen.add(op);
         continue;
       }
-      (kind === "task" ? taskIds : groupIds).add(id);
+      (kind === "task" ? taskIds : kind === "page" ? pageIds : groupIds).add(id);
       const key = `${kind}:${id}`;
       let target = targets.get(key);
       if (target === undefined) {
         target = { kind, id, created: false, acts: [], seen: new Set() };
         targets.set(key, target);
       }
-      const table = { task: "tasks", project: "projects", area: "areas" }[kind];
+      const table = { task: "tasks", project: "projects", area: "areas", page: "pages" }[kind];
       // A field of a child (a note's body) is no field of its target: the operation says it.
       const ownField = change["entity"] === table ? field : undefined;
       if (change["entity"] === table && change["action"] === "create") target.created = true;
@@ -234,11 +239,16 @@ export async function readActivity(
     return { commit, targets: [...targets.values()], loose };
   });
 
+  const pages = pageIds.size > 0 && (await hasPageTable(reader));
   const [nameRows] = await reader.transaction("deferred", [
     {
-      sql: NAMES,
+      sql: pages ? NAMES + PAGE_NAMES : NAMES,
       mode: "all",
-      params: { tasks: JSON.stringify([...taskIds]), groups: JSON.stringify([...groupIds]) },
+      params: {
+        tasks: JSON.stringify([...taskIds]),
+        groups: JSON.stringify([...groupIds]),
+        ...(pages ? { pages: JSON.stringify([...pageIds]) } : {}),
+      },
     },
   ]);
   const named = new Map(
@@ -299,7 +309,7 @@ export async function readActivity(
           kind: target.kind,
           id: target.id,
           name: row === undefined ? "" : String(row["name"]),
-          ...(target.kind === "task" && row !== undefined
+          ...((target.kind === "task" || target.kind === "page") && row !== undefined
             ? { ref: `${prefix}-${String(row["ref"])}` }
             : {}),
           ...(deleted === null || deleted === undefined ? {} : { trash: true as const }),

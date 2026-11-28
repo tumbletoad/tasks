@@ -176,6 +176,7 @@ describe("[A3.3.4.folders.agent] an agent's task in the folder it works in", () 
       await call(agent, "task.finish", {
         task: added.tasks[0]?.ref ?? "",
         outcome: "Fixture outcome.",
+        library: "nothing reusable",
         follow_ups: [{ title: "Fixture old follow-up", folder: "cwd" }],
         cwd: folder("old-site", "pages"),
         base: read.as_of,
