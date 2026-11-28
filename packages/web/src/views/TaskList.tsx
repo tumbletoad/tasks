@@ -331,10 +331,10 @@ export function TaskList({
       if (expandedRow !== undefined && !shown.some((task) => task.id === expandedRow.id)) {
         shown.push(expandedRow);
       }
-      groups = group(shown, state.areas.values(), state.projects.values());
+      groups = group(shown, state.nodes);
     }
-    return itemsOf(groups, state.areas, state.projects, areaSlots(state.areas.values()));
-  }, [tasks, state.areas, state.projects, filter, group, groupsOf, expandedRow]);
+    return itemsOf(groups, state.nodes, areaSlots(state.nodes));
+  }, [tasks, state.nodes, filter, group, groupsOf, expandedRow]);
 
   // Where the expanded row is now, for the next update (a view's own groups keep it there). Taken
   // after the commit, so a render React throws away (a transition it interrupted, a StrictMode
@@ -536,8 +536,7 @@ export function TaskList({
         .get({ task: id })
         .then((answer) => {
           if (!applies() || answer.view !== "digest") return;
-          const { areas, projects } = live.getState();
-          const row = rowOfFacts(answer.task, areas, projects, latest.current.today);
+          const row = rowOfFacts(answer.task, live.getState().nodes, latest.current.today);
           setUnresolved(undefined);
           setInjected(row);
           readOut.current?.(row);
@@ -746,14 +745,14 @@ export function TaskList({
     const settled = () => {
       if (asking.current === wantedRef) asking.current = undefined;
     };
-    const { areas, projects } = state;
+    const { nodes } = state;
     api.client.task
       .get({ task: wantedRef })
       .then((read) => {
         settled();
         if (!applies() || read.view !== "digest") return;
         handled.current = wantedRef;
-        const found = rowOfFacts(read.task, areas, projects, latest.current.today);
+        const found = rowOfFacts(read.task, nodes, latest.current.today);
         setInjected(found);
         expandTask(found);
       })

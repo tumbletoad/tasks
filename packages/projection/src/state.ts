@@ -52,7 +52,7 @@ export interface TrustedRecord {
   identity: SpaceIdentity;
   /** The watermark last published: it never moves backwards within one identity. */
   watermark: number;
-  /** The renderer its files were made by (render.ts RENDERER); 1 before records said. */
+  /** The renderer its files were made by (render.ts RENDERER). */
   renderer: number;
   /** Every file the projection placed and holds as its own, by its path in the tree. */
   readonly files: Map<string, FileRecord>;
@@ -258,8 +258,7 @@ export class TrustedState {
     const read = this.#read(this.#record);
     if (read.kind !== "read") return read;
     const value = read.value;
-    const { space_id, epoch, incarnation, watermark, told } = value;
-    const renderer = value["renderer"] ?? 1;
+    const { space_id, epoch, incarnation, watermark, told, renderer } = value;
     if (
       typeof space_id !== "string" ||
       !isCount(renderer) ||

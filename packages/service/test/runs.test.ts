@@ -127,7 +127,6 @@ async function addTask(home: string, service: RunningService, n: number): Promis
 
 const input = (task: string): Omit<NewRun, "machine"> => ({
   task,
-  routine: null,
   instance: "claude-work",
   adapter: "claude-print",
   place: null,

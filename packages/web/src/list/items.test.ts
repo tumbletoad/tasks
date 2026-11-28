@@ -1,15 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { areaSlots, groupTasks } from "@ttasks/client/today";
-import type { AreaRow, ProjectRow, TaskRow } from "@ttasks/client/store";
+import type { TaskRow } from "@ttasks/client/store";
+import { areaNode, projectNode, TEST_SPACE, treeOf } from "@ttasks/client/test/nodes";
 import { itemsOf, moveFrom } from "./items.ts";
 
-const area = (id: string, title: string, position: string): AreaRow => ({ id, title, position });
-const project = (id: string, area_id: string, title: string, position: string): ProjectRow => ({
-  id,
-  area_id,
-  title,
-  position,
-});
 const task = (id: string, fields: Partial<TaskRow> = {}): TaskRow => ({
   id,
   ref: `M-${id}`,
@@ -20,29 +14,24 @@ const task = (id: string, fields: Partial<TaskRow> = {}): TaskRow => ({
   position: id,
   created_at: 1,
   version: 1,
+  parent: TEST_SPACE,
   ...fields,
 });
 
-const AREAS = new Map([
-  ["a1", area("a1", "Lumen", "a")],
-  ["a2", area("a2", "Home", "b")],
-]);
-const PROJECTS = new Map([["p1", project("p1", "a1", "Portal", "a")]]);
+const NODES = treeOf(
+  areaNode({ id: "a1", title: "Lumen", position: "a" }),
+  areaNode({ id: "a2", title: "Home", position: "b" }),
+  projectNode("a1", { id: "p1", title: "Portal", position: "a" }),
+);
 const TASKS = [
-  task("t1", { area_id: "a1" }),
-  task("t2", { area_id: "a1", project_id: "p1" }),
-  task("t3", { area_id: "a1", project_id: "p1" }),
-  task("t4", { area_id: "a2" }),
+  task("t1", { parent: "a1" }),
+  task("t2", { parent: "p1" }),
+  task("t3", { parent: "p1" }),
+  task("t4", { parent: "a2" }),
   task("t5", { inbox: true }),
 ];
 
-const build = () =>
-  itemsOf(
-    groupTasks(TASKS, AREAS.values(), PROJECTS.values()),
-    AREAS,
-    PROJECTS,
-    areaSlots(AREAS.values()),
-  );
+const build = () => itemsOf(groupTasks(TASKS, NODES), NODES, areaSlots(NODES));
 
 describe("[A5.3.25.web.items] a grouped list as one sequence of items", () => {
   test("headings and labels are items; each row knows its place, its set and its area", () => {
@@ -65,8 +54,8 @@ describe("[A5.3.25.web.items] a grouped list as one sequence of items", () => {
     const t1 = items[3];
     expect(t1?.kind === "row" && [t1.posinset, t1.setsize, t1.slot]).toEqual([1, 1, 1]);
     // Area and project rows by identity: an unchanged row gets the same objects.
-    expect(t3?.kind === "row" && t3.area).toBe(AREAS.get("a1"));
-    expect(t3?.kind === "row" && t3.project).toBe(PROJECTS.get("p1"));
+    expect(t3?.kind === "row" && t3.area).toBe(NODES.get("a1"));
+    expect(t3?.kind === "row" && t3.project).toBe(NODES.get("p1"));
     const t4 = items[8];
     expect(t4?.kind === "row" && t4.slot).toBe(2);
   });

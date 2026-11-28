@@ -26,6 +26,7 @@ export const ID_PREFIXES = {
   run: "ru",
   project: "p",
   routine: "ro",
+  occurrence: "oc",
   note: "n",
   proposal: "pr",
   log: "l",

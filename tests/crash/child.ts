@@ -14,7 +14,7 @@
 // First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
 import "../../packages/bridge/src/safe-exit.ts";
 import { join } from "node:path";
-import { backupSpaceWith, backupsFolder } from "../../packages/storage/src/backup/backup.ts";
+import { backupSpaceWith, makeDurableFolder } from "../../packages/storage/src/backup/backup.ts";
 import { DATA_SUFFIX } from "../../packages/storage/src/backup/sidecar.ts";
 import { StorageError } from "../../packages/storage/src/errors.ts";
 import type { Id } from "../../packages/storage/src/ids.ts";
@@ -30,6 +30,7 @@ import {
 import { FIXTURE_MACHINE } from "../../packages/storage/test/fixture-requests.ts";
 import {
   armFromEnvironment,
+  backupsBeside,
   emit,
   faultSeam,
   reduce,
@@ -75,6 +76,8 @@ async function main(): Promise<void> {
   const checked = await CheckedDriver.check(nodeSqliteDriver);
   // What the service does before a space opens (A1 3.18).
   finishInterruptedRestore(plan.folder);
+  const backupDir = backupsBeside(plan.folder);
+  makeDurableFolder(backupDir);
   const worker = await StorageWorker.start({
     driver: "node:sqlite",
     entry: new URL("./fault-worker.ts", import.meta.url),
@@ -96,6 +99,7 @@ async function main(): Promise<void> {
       machine,
       timeoutMs: REQUEST_TIMEOUT_MS,
       busyTimeoutMs: BUSY_TIMEOUT_MS,
+      backupDir,
       queueLimit: 100_000,
     });
     const migration = handle.migration;
@@ -185,7 +189,7 @@ async function main(): Promise<void> {
     running = backupSpaceWith(
       checked,
       plan.folder,
-      { kind, busyTimeoutMs: BUSY_TIMEOUT_MS },
+      { kind, backupDir, busyTimeoutMs: BUSY_TIMEOUT_MS },
       { at: backupSeam, steps: HARNESS_STEPS },
     ).then(
       (record) => {
@@ -213,7 +217,7 @@ async function main(): Promise<void> {
     await handle.close();
     emit({ t: "restore-start", backup: chosen });
     const restored = await worker
-      .restoreInPlace(join(backupsFolder(plan.folder), `${chosen}${DATA_SUFFIX}`), plan.folder, {
+      .restoreInPlace(join(backupDir, `${chosen}${DATA_SUFFIX}`), plan.folder, {
         machineId: machine.id,
         knownEpochs,
         busyTimeoutMs: BUSY_TIMEOUT_MS,

@@ -129,7 +129,6 @@ export interface LiveRun {
   readonly space: string;
   /** The copy of its space it started in: its session writes there only. */
   readonly copy?: string;
-  /** Null for a routine's run. */
   readonly task: string | null;
   readonly instance: string;
   readonly session: string;
@@ -243,7 +242,7 @@ export interface RunBlocker {
   readonly space: string;
   readonly space_name: string | null;
   readonly run: string;
-  /** The task's reference, such as `MIRA-12`, or null for a routine's run. */
+  /** The task's reference, such as `MIRA-12`, or null for a run whose task was redacted. */
   readonly task: string | null;
   readonly state: string;
 }
@@ -405,7 +404,7 @@ export class RunService {
     if (hosted === undefined) throw new Error("The space is not open on this machine");
     const settings = this.#settings();
     const limits = input.limits ?? {
-      ...RUN_LIMITS[input.routine === null ? "task" : "routine"],
+      ...RUN_LIMITS.task,
       ...timeLimits(settings),
     };
     // No round may take the run before its command is known.
@@ -513,7 +512,6 @@ export class RunService {
       .queue(
         {
           task: task.id,
-          routine: null,
           instance: instance.id,
           adapter: runAdapter(instance),
           place: null,

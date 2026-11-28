@@ -45,7 +45,7 @@ const SQL = {
   lastPosition: "SELECT max(position) AS p FROM nodes WHERE parent_id = $parent AND kind = $kind",
   slugTaken: "SELECT 1 FROM nodes WHERE parent_id = $parent AND kind = 'project' AND slug = $slug",
   task:
-    "SELECT n.id, n.parent_id, n.title, n.brief, n.description, n.deleted_at, n.fp AS node_fp, " +
+    "SELECT n.id, n.kind, n.parent_id, n.title, n.brief, n.description, n.deleted_at, n.fp AS node_fp, " +
     "n.created_seq AS node_seq, t.* FROM nodes n JOIN tasks t ON t.id = n.id WHERE n.id = $id",
   /** The live tasks below a node, at any depth, nearest first. */
   subtree:
@@ -72,6 +72,11 @@ const SQL = {
     "SELECT p.*, o.deleted_at IS NULL AS shown FROM pages p JOIN nodes o ON o.id = p.owner_id " +
     "WHERE p.id = $id OR p.ref = $ref",
   pageOwner: "SELECT owner_id FROM pages WHERE id = $id",
+  /** The routines not paused in project `$id` and the projects below it. */
+  unpausedRoutines:
+    "WITH RECURSIVE down(id) AS (SELECT $id UNION ALL SELECT n.id FROM nodes n JOIN down " +
+    "ON n.parent_id = down.id WHERE n.kind = 'project') SELECT r.id FROM routines r " +
+    "JOIN nodes n ON n.id = r.id WHERE r.paused = 0 AND n.parent_id IN (SELECT id FROM down)",
 } as const;
 
 export const problem = (code: string, message: string, field?: string, data?: unknown): never => {
@@ -106,10 +111,20 @@ export function findNode(tx: Tx, key: unknown): Row | undefined {
   return at;
 }
 
-/** A task by its key: live, in the Trash (`deleted` true), or either. */
-function liveTask(tx: Tx, key: unknown, field = "task", deleted: boolean | "either" = false): Row {
+/**
+ * A task by its key: live, in the Trash (`deleted` true), or either. `kinds` adds a routine, which
+ * the Trash takes; every other task command refuses one.
+ */
+function liveTask(
+  tx: Tx,
+  key: unknown,
+  field = "task",
+  deleted: boolean | "either" = false,
+  kinds: readonly string[] = ["task"],
+): Row {
   const found = findNode(tx, key);
-  if (found?.["kind"] !== "task") return problem("NOT_FOUND", "The space has no such task", field);
+  if (found === undefined || !kinds.includes(String(found["kind"])))
+    return problem("NOT_FOUND", "The space has no such task", field);
   const task = tx.get(SQL.task, { id: String(found["id"]) }) as Row;
   if (deleted !== "either" && (task["deleted_at"] !== null) !== deleted) {
     problem(
@@ -130,12 +145,13 @@ export const endOf = (tx: Tx, parent: string, kind: string): string => {
 export const refText = (tx: Tx, ref: unknown): string =>
   formatTaskRef(tx.space.refPrefix, Number(ref));
 
-/** Where a new or moved task goes: a live project, a live task, or the space. */
-function parentFor(tx: Tx, under: unknown, field: string): Row {
+/** Where a new or moved task goes: a live project, a live task, or the space; never a routine. */
+export function parentFor(tx: Tx, under: unknown, field: string): Row {
   const found =
     under === undefined ? tx.get(SQL.node, { id: tx.space.spaceId }) : findNode(tx, under);
   if (found === undefined)
     return problem("NOT_FOUND", "Nothing of that name to put it under", field);
+  if (found["kind"] === "routine") problem("VALIDATION_FAILED", "A routine holds no tasks", field);
   if (found["deleted_at"] !== null) problem("DELETED", "That task is in the Trash", field);
   if (found["archived_at"] !== null && found["archived_at"] !== undefined) {
     problem("INVALID_TRANSITION", "That project is archived", field);
@@ -419,8 +435,10 @@ const taskReopen: Run = (tx, input) => {
   };
 };
 
+const TRASHED = ["task", "routine"] as const;
+
 const nodesTrash: Run = (tx, input) => {
-  const task = liveTask(tx, input["task"], "task", "either");
+  const task = liveTask(tx, input["task"], "task", "either", TRASHED);
   // A task in the Trash already is no change: two tabs that both asked get the same answer.
   if (task["deleted_at"] !== null)
     return { task: { id: task["id"], ref: refText(tx, task["ref"]) }, tasks: 0 };
@@ -435,11 +453,16 @@ const nodesTrash: Run = (tx, input) => {
     tx.guard("tasks", id, id);
     tx.set("nodes", id, id, { deleted: { deleted_at: tx.at, deleted_by: tx.author } });
   }
+  // A routine in the Trash is paused, and Restore brings it back paused.
+  if (task["kind"] === "routine") {
+    const id = String(task["id"]);
+    tx.set("routines", id, id, { paused: { paused: 1 } });
+  }
   return { task: { id: ids[0], ref: refText(tx, task["ref"]) }, tasks: ids.length };
 };
 
 const nodesRestore: Run = (tx, input) => {
-  const task = liveTask(tx, input["task"], "task", "either");
+  const task = liveTask(tx, input["task"], "task", "either", TRASHED);
   const id = String(task["id"]);
   if (task["deleted_at"] === null) return { task: { id, ref: refText(tx, task["ref"]) }, tasks: 0 };
   const parent = tx.get(SQL.node, { id: String(task["parent_id"]) });
@@ -566,8 +589,14 @@ const projectArchived =
     if (project?.["kind"] !== "project")
       return problem("NOT_FOUND", "The space has no such project", "project");
     const id = String(project["id"]);
-    if ((project["archived_at"] !== null) !== archived)
-      tx.set("nodes", id, id, { archived: archived ? tx.at : null });
+    if ((project["archived_at"] !== null) === archived) return { project: { id } };
+    tx.set("nodes", id, id, { archived: archived ? tx.at : null });
+    // An archive pauses the routines in the project, and an unarchive leaves them paused.
+    if (archived) {
+      for (const r of tx.all(SQL.unpausedRoutines, { id })) {
+        tx.set("routines", String(r["id"]), String(r["id"]), { paused: { paused: 1 } });
+      }
+    }
     return { project: { id } };
   };
 

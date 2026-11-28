@@ -11,10 +11,10 @@ const AREAS = [
   { id: "a_cafe", title: "Café" },
 ];
 const PROJECTS = [
-  { id: "p_lumen", title: "Lumen Health", area_id: "a_work" },
-  { id: "p_garden", title: "Garden", area_id: "a_home" },
-  { id: "p_repairs", title: "Repairs", area_id: "a_home" },
-  { id: "p_repairs2", title: "Repairs", area_id: "a_cafe" },
+  { id: "p_lumen", title: "Lumen Health", parent: "a_work" },
+  { id: "p_garden", title: "Garden", parent: "a_home" },
+  { id: "p_repairs", title: "Repairs", parent: "a_home" },
+  { id: "p_repairs2", title: "Repairs", parent: "a_cafe" },
 ];
 const ctx = { today: TODAY, areas: AREAS, projects: PROJECTS };
 const read = (text: string, more: Partial<Parameters<typeof parseCapture>[1]> = {}) =>
@@ -197,7 +197,7 @@ describe("[A5.3.13.web.capture] a quick capture reads its shortcuts and leaves t
 
   test("an archived group's name means it and files nothing there: never a live project of the same name; #area/project still picks the live one", () => {
     const garden = { id: "a_garden", title: "Garden" };
-    const shed = { id: "p_shed", title: "Shed", area_id: "a_home" };
+    const shed = { id: "p_shed", title: "Shed", parent: "a_home" };
     const archived = { areas: [garden], projects: [shed] };
     const live = read("Weed the beds #garden", { areas: [...AREAS, garden] });
     expect(live.chips).toMatchObject([{ kind: "area", area: garden }]);
@@ -220,5 +220,17 @@ describe("[A5.3.13.web.capture] a quick capture reads its shortcuts and leaves t
     expect(
       read("Weed #home", { archived: { areas: [{ id: "a_old", title: "Home" }], projects: [] } }),
     ).toMatchObject({ chips: [{ kind: "area", area: { id: "a_home" } }] });
+  });
+
+  test("a project made without an area is named as an area and filed as the project it is", () => {
+    const kiln = { id: "p_kiln", title: "Kiln" };
+    const capture = read("Fire the pots #kiln", { areas: [...AREAS, kiln] });
+    expect(capture.chips).toMatchObject([{ kind: "area", area: kiln }]);
+    expect(capture.draft).toEqual({ title: "Fire the pots", inbox: false, project: "Kiln" });
+    expect(read("Glaze", { areas: [...AREAS, kiln], here: { area: "p_kiln" } }).draft).toEqual({
+      title: "Glaze",
+      inbox: false,
+      project: "Kiln",
+    });
   });
 });

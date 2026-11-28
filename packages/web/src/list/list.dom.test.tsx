@@ -7,6 +7,7 @@
 // render count. Layout is stubbed (happy-dom lays nothing out): every item is 52 px high and the
 // window 800 px, which is what the virtualiser reads.
 import { act, type ReactNode } from "react";
+import { areaNode, nodesOf } from "@ttasks/client/test/nodes";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Api } from "../api.ts";
@@ -48,7 +49,7 @@ function task(n: number, fields: Partial<TaskRow> = {}): TaskRow {
     status: "open",
     inbox: false,
     lifecycle: "active",
-    area_id: "a_1",
+    parent: "a_1",
     position: `p${String(n).padStart(5, "0")}`,
     created_at: Date.UTC(2026, 10, 1),
     version: 1,
@@ -62,8 +63,7 @@ function snapshot(tasks: readonly TaskRow[]): SnapshotMessage {
     space: SPACE,
     cursor: CURSOR,
     tasks,
-    areas: [{ id: "a_1", title: "Lumen", position: "a" }],
-    projects: [],
+    nodes: nodesOf(SPACE.id, areaNode({ id: "a_1", title: "Lumen", position: "a" }, SPACE.id)),
     instances: [
       { key: "cx", app: "Codex", label: "Codex · work", glyph: "Cx", ring: 6, route: "terminal" },
     ],
@@ -263,15 +263,16 @@ describe("[A5.3.22.web.list-keys] the list's keyboard and focus", () => {
     document.activeElement?.closest<HTMLElement>("li[data-key]")?.dataset["key"];
 
   test("one title in the tab order; j, k, the arrows, Home, End, [ and ] move it", () => {
-    const tasks = [task(1), task(2), task(3, { area_id: "a_2" }), task(4, { area_id: "a_2" })];
+    const tasks = [task(1), task(2), task(3, { parent: "a_2" }), task(4, { parent: "a_2" })];
     mount(<TaskList view="open" filter={OPEN} empty="" />);
     act(() => {
       live.store.push({
         ...snapshot(tasks),
-        areas: [
-          { id: "a_1", title: "Lumen", position: "a" },
-          { id: "a_2", title: "Home", position: "b" },
-        ],
+        nodes: nodesOf(
+          SPACE.id,
+          areaNode({ id: "a_1", title: "Lumen", position: "a" }, SPACE.id),
+          areaNode({ id: "a_2", title: "Home", position: "b" }, SPACE.id),
+        ),
       });
       live.store.flush();
     });
@@ -351,7 +352,7 @@ describe("[A5.3.22.web.list-keys] the list's keyboard and focus", () => {
   });
 
   test("a focused row that an update moves to another group stays where it was until focus leaves", () => {
-    const tasks = [task(1), task(2), task(3, { area_id: "a_2" })];
+    const tasks = [task(1), task(2), task(3, { parent: "a_2" })];
     mount(
       <>
         <button type="button" id="outside" />
@@ -361,10 +362,11 @@ describe("[A5.3.22.web.list-keys] the list's keyboard and focus", () => {
     act(() => {
       live.store.push({
         ...snapshot(tasks),
-        areas: [
-          { id: "a_1", title: "Lumen", position: "a" },
-          { id: "a_2", title: "Home", position: "b" },
-        ],
+        nodes: nodesOf(
+          SPACE.id,
+          areaNode({ id: "a_1", title: "Lumen", position: "a" }, SPACE.id),
+          areaNode({ id: "a_2", title: "Home", position: "b" }, SPACE.id),
+        ),
       });
       live.store.flush();
     });
@@ -372,8 +374,8 @@ describe("[A5.3.22.web.list-keys] the list's keyboard and focus", () => {
     act(() => {
       title?.focus();
     });
-    const moved = { ...task(2), area_id: "a_2", title: "Task 2, moved", version: 2 };
-    apply(batch([moved], ["area_id", "title"], "agent"));
+    const moved = { ...task(2), parent: "a_2", title: "Task 2, moved", version: 2 };
+    apply(batch([moved], ["grouping", "title"], "agent"));
     // The same element keeps focus, in its old group, and shows the new data.
     expect(document.activeElement).toBe(title);
     expect(title?.isConnected).toBe(true);

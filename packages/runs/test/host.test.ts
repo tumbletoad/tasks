@@ -67,7 +67,6 @@ async function bareHost(options: {
   const queued = await machine.queue(
     {
       task: "t_0000000000000000000000000a",
-      routine: null,
       instance: "claude-work",
       adapter: "claude-print",
       place: null,

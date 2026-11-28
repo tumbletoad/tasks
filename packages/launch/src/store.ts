@@ -261,7 +261,6 @@ export class RunRefused extends Error {
 const ID = (prefix: string): RegExp => new RegExp(`^${prefix}_[0-7][0-9a-hjkmnp-tv-z]{25}$`);
 export const TASK_ID = ID("t");
 export const RUN_ID = ID("ru");
-export const ROUTINE_ID = ID("ro");
 export const MACHINE_ID = ID("m");
 export const PLACE_ID = ID("pl");
 export const SESSION_ID = ID("se");
@@ -465,18 +464,16 @@ function checkLimits(value: unknown): RunLimits {
 }
 
 /**
- * Checks a run's input, as every backend does before it writes: IDs by their pattern, exactly one
- * of task and routine, the adapter, the permission (never `inherit`), the limits and the
+ * Checks a run's input, as every backend does before it writes: IDs by their pattern, the adapter, the permission (never `inherit`), the limits and the
  * request text's size. Returns it without undefined values or unknown keys.
  */
 export function checkNewRun(value: unknown): NewRun {
   if (typeof value !== "object" || value === null) return refuseRun("", "Expected a run");
   const input = value as Record<string, unknown>;
-  const { task, routine, machine, instance, adapter, place, session, request, briefHash } = input;
+  const { task, machine, instance, adapter, place, session, request, briefHash } = input;
   const { permission, limits, ...more } = input;
   const known = new Set([
     "task",
-    "routine",
     "machine",
     "instance",
     "adapter",
@@ -488,13 +485,7 @@ export function checkNewRun(value: unknown): NewRun {
   if (Object.entries(more).some(([key, v]) => !known.has(key) && v !== undefined)) {
     return refuseRun("", "The run has a field it does not take");
   }
-  if (task !== null && !matches(TASK_ID, task)) return refuseRun("task", "Expected a task ID");
-  if (routine !== null && !matches(ROUTINE_ID, routine)) {
-    return refuseRun("routine", "Expected a routine ID");
-  }
-  if ((task === null) === (routine === null)) {
-    return refuseRun("task", "A run belongs to a task or a routine, exactly one");
-  }
+  if (!matches(TASK_ID, task)) return refuseRun("task", "Expected a task ID");
   if (!matches(MACHINE_ID, machine)) return refuseRun("machine", "Expected a machine ID");
   if (!matches(INSTANCE_KEY, instance)) return refuseRun("instance", "Expected an instance key");
   if (!(RUN_ADAPTERS as readonly unknown[]).includes(adapter)) {
@@ -506,13 +497,13 @@ export function checkNewRun(value: unknown): NewRun {
   if (session !== undefined && !matches(SESSION_ID, session)) {
     return refuseRun("session", "Expected a session ID");
   }
-  // A task's run needs the person's instruction; a routine's takes its template. The
-  // instruction is judged as the space stores it, so every backend keeps and refuses the same text.
+  // The instruction is judged as the space stores it, so every backend keeps and refuses the same
+  // text.
   const stored = typeof request === "string" ? normaliseRunText(request) : request;
-  if (routine !== null ? stored !== null : typeof stored !== "string" || stored.trim() === "") {
-    return refuseRun("request", "A task's run takes an instruction, a routine's none");
+  if (typeof stored !== "string" || stored.trim() === "") {
+    return refuseRun("request", "A run takes an instruction");
   }
-  if (typeof stored === "string" && utf8(stored) > RUN_REQUEST_MAX_BYTES) {
+  if (utf8(stored) > RUN_REQUEST_MAX_BYTES) {
     return refuseRun("request", "The instruction is larger than its limit");
   }
   if (!matches(SHA256, briefHash)) {
@@ -523,13 +514,12 @@ export function checkNewRun(value: unknown): NewRun {
   }
   return {
     task,
-    routine,
     machine,
     instance,
     adapter: adapter as NewRun["adapter"],
     place,
     ...(session === undefined ? {} : { session }),
-    request: stored as string | null,
+    request: stored,
     briefHash,
     permission: permission as NewRun["permission"],
     limits: checkLimits(limits),

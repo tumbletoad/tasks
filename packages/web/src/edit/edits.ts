@@ -168,6 +168,8 @@ export interface EditDeps {
   readonly onChanges: (listener: (changes: Changes) => void) => () => void;
   /** The live row of a task, by its reference (a conflict names tasks by reference). */
   readonly rowOf: (ref: string) => TaskRow | undefined;
+  /** The space's ID: the parent of a task in no area. */
+  readonly space: () => string | undefined;
   /** The effort levels the screen shows, keyed as a kept size remembers them (levelsKey). */
   readonly levels?: () => string;
   readonly newRequest: () => string;
@@ -424,13 +426,10 @@ const STEP_FIELDS: ReadonlySet<string> = new Set(["title", "summary"]);
  * value the page offers no way to choose again (the Inbox, no area). Any other value is put back by
  * choosing it again.
  */
-function isStep(task: Pick<TaskRow, "inbox" | "area_id" | "project_id">, change: Change): boolean {
+function isStep(task: Pick<TaskRow, "inbox" | "parent">, change: Change, space?: string): boolean {
   if (change.fields.every((field) => STEP_FIELDS.has(field))) return true;
   const outOfInbox = task.inbox && change.set?.["inbox"] === false;
-  const firstArea =
-    change.fields.includes("grouping") &&
-    task.area_id === undefined &&
-    task.project_id === undefined;
+  const firstArea = change.fields.includes("grouping") && task.parent === space;
   return outOfInbox || firstArea;
 }
 
@@ -687,7 +686,7 @@ export class Edits {
     };
     void sent.settled.then(shown, shown);
     // Any other change shows its value at once and needs no toast: it is put back by choosing again.
-    const step = options.undo === true || isStep(task, change);
+    const step = options.undo === true || isStep(task, change, this.#deps.space());
     if (!step) this.#moved();
     const saved: Omit<Toast, "key"> | undefined = step
       ? { kind: "undo", text: change.said, action: this.#stepped(sent) }
@@ -747,21 +746,19 @@ export class Edits {
     );
   }
 
-  /**
-   * Whether a kept edit was made against a history the screen no longer shows: its base is of
-   * another history (the space was restored since), or a failed edit has none (kept by an earlier
-   * build). No base makes sending it again an informed choice, so it is not sent:
-   * its value can be copied or discarded.
-   */
   /** Whether a kept size was chosen from effort levels the screen no longer shows (levelsKey). */
   relevelled(unsaved: Unsaved): boolean {
     const { source } = unsaved.change;
     const now = this.#deps.levels?.();
     if (source?.kind !== "effort" || source.effort === undefined || now === undefined) return false;
-    // A size kept by an earlier build does not say its levels: it is chosen again.
     return source.levels !== now;
   }
 
+  /**
+   * Whether a kept edit was made against a history the screen no longer shows: its base is of
+   * another history (the space was restored since), or a failed edit has none. No base makes
+   * sending it again an informed choice, so it is not sent: its value can be copied or discarded.
+   */
   restored(unsaved: Unsaved): boolean {
     if (unsaved.base === undefined) return unsaved.reason === "failed";
     const now = this.#deps.asOf();

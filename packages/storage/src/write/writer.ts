@@ -435,7 +435,7 @@ interface StagedOp {
    * on the same task and instance is in flight, which the operation returns instead (A4 3.9.1).
    */
   launch?: { task: Id<"t">; reference: string; existing: boolean };
-  /** `run.create`: the resolved task, or null for a routine's run. */
+  /** `run.create`: the resolved task. */
   runTask?: Id<"t"> | null;
   /**
    * A draft that matched a task by source key (with its match), or a later operation of such a
@@ -2385,7 +2385,7 @@ export class SpaceWriter {
         }
         case "run.create": {
           // A run is not a child of its task, as a launch is not (runs.ts): its rows carry no task.
-          const parent = op.task === undefined ? null : task(op.task, "task");
+          const parent = task(op.task, "task");
           const machine = request.actor.machine_id;
           if (conn.prepare(SQL.machine).get({ id: machine }) === undefined) {
             problem(NO_MACHINE.code, NO_MACHINE.message, i, NO_MACHINE.field);
@@ -2397,7 +2397,7 @@ export class SpaceWriter {
           }
           const id = newId("ru", random);
           draftRuns.add(id);
-          const record = { ...(parent === null ? {} : { task: parent }), ...inputOf(op, "task") };
+          const record = { task: parent, ...inputOf(op, "task") };
           return { i, op, target: id, task: null, touches: [], record, runTask: parent };
         }
         case "run.transition": {
@@ -4609,13 +4609,12 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       conn.prepare(RUN_SQL.insert).run({
         id: staged.target,
         task: staged.runTask ?? null,
-        routine: op.routine ?? null,
         session: op.session ?? null,
         instance: op.instance,
         machine: actor.machine_id,
         adapter: op.adapter,
         place: op.place,
-        request: op.request ?? null,
+        request: op.request,
         spec: sortedJson({
           brief_hash: op.brief_hash,
           permission: op.permission,

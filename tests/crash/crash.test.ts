@@ -53,7 +53,6 @@ const SLICE: readonly Kill[] = [
   at("restore", "claimed"),
   at("restore", "moved-aside"),
   at("restore", "moved-into-place"),
-  at("restore", "backups-carried"),
   { kind: "timer", sends: 25, afterMs: 1 },
   { kind: "none" },
 ];

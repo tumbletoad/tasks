@@ -149,12 +149,12 @@ describe("[A5.3.5.service.finished] the read of finished tasks behind Completed"
     expect(ordered(every)).toBe(true);
   }, 120_000);
 
-  test("the feed's compact row: the area's ID, the version, the creation time, no lookup by name", async () => {
+  test("the feed's compact row: its parent, the area, the version, the creation time, no lookup by name", async () => {
     const [row] = (await finished({ checked_off: true, limit: 1 })).rows;
     expect(row).toMatchObject({
       lifecycle: "completed",
       wrap_state: "pending",
-      area_id: fx.areas.home,
+      parent: fx.areas.home,
       completed_at: Date.UTC(2026, 10, 25, 12),
       finished_at: Date.UTC(2026, 10, 25, 12),
     });

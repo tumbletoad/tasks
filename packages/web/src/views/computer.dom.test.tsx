@@ -38,6 +38,7 @@ const working: TaskRow = {
   title: "Fix appointment time zones",
   status: "open",
   inbox: false,
+  parent: "sp_0123456789abcdefghjkmnpqrs",
   lifecycle: "active",
   position: "p1",
   created_at: 0,
@@ -51,8 +52,7 @@ function snapshot(tasks: readonly TaskRow[]): SnapshotMessage {
     space: SPACE,
     cursor: CURSOR,
     tasks,
-    areas: [],
-    projects: [],
+    nodes: [],
     instances: [],
   };
 }
@@ -544,6 +544,7 @@ const task = (n: number): TaskRow => ({
   title: `Fixture task ${String(n)}`,
   status: "open",
   inbox: false,
+  parent: "sp_0123456789abcdefghjkmnpqrs",
   lifecycle: "active",
   position: `p${String(n)}`,
   created_at: 0,

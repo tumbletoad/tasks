@@ -4,6 +4,7 @@
 // without expanding every task. It comes and goes with the draft, also when another tab of the
 // browser writes or sends it.
 import { PRODUCT_ID } from "@ttasks/brand";
+import { areaNode, nodesOf } from "@ttasks/client/test/nodes";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -28,7 +29,7 @@ function task(n: number): TaskRow {
     status: "open",
     inbox: false,
     lifecycle: "active",
-    area_id: "a_1",
+    parent: "a_1",
     position: `p${String(n).padStart(5, "0")}`,
     created_at: Date.UTC(2026, 10, 1),
     version: 1,
@@ -72,8 +73,7 @@ beforeEach(() => {
       space: SPACE,
       cursor: { epoch: 1, incarnation: "ai_0123456789abcdefghjkmnpq", seq: 10 },
       tasks: [task(1), task(2)],
-      areas: [{ id: "a_1", title: "Lumen", position: "a" }],
-      projects: [],
+      nodes: nodesOf(SPACE.id, areaNode({ id: "a_1", title: "Lumen", position: "a" }, SPACE.id)),
       instances: [],
     });
     live.store.flush();

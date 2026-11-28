@@ -200,7 +200,6 @@ export {
 export { NODE_IO, type FileIo } from "./files.ts";
 export {
   backupSpace,
-  backupsFolder,
   makeDurableFolder,
   type BackupRecord,
   type BackupSeams,
@@ -210,7 +209,6 @@ export {
   backupHistories,
   compareInHistory,
   listBackups,
-  listBackupsIn,
   removeBackupLeftovers,
   verifyBackup,
   type BackupHistory,
@@ -219,13 +217,6 @@ export {
   type ListedState,
 } from "./backup/list.ts";
 export { BUNDLE_POLICY, type BundlePolicy } from "./backup/policy.ts";
-export {
-  moveOldBackups,
-  oldDailies,
-  recordedOldDailies,
-  type MoveResult,
-  type StayReason,
-} from "./backup/move.ts";
 export {
   applyRetention,
   dailyBackupDue,
@@ -236,12 +227,7 @@ export {
   type RetentionResult,
   type RetentionRules,
 } from "./backup/retention.ts";
-export {
-  BACKUP_KINDS,
-  BACKUPS_FOLDER,
-  type BackupKind,
-  type BackupSidecar,
-} from "./backup/sidecar.ts";
+export { BACKUP_KINDS, type BackupKind, type BackupSidecar } from "./backup/sidecar.ts";
 export { finishInterruptedRestore, type ResumeReport } from "./restore/folders.ts";
 export type { RecoveredSpace } from "./restore/recover.ts";
 export {

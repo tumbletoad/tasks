@@ -8,7 +8,7 @@ import { useEdits } from "../edit/useEdits.ts";
 import { refusalText } from "../folder/FolderDialog.tsx";
 import { archivedGroup } from "@ttasks/client/today";
 import { useT } from "../i18n/intl.tsx";
-import type { AreaRow, ProjectRow } from "@ttasks/client/store";
+import type { NodeRow } from "@ttasks/client/store";
 import type { Msg } from "../row/model.ts";
 import { useLive } from "../store/hooks.ts";
 import css from "./Archived.module.css";
@@ -25,8 +25,8 @@ const styles = classes(css, ["act", "line", "words"]);
  * live; a refusal is said in a toast.
  */
 export function useUnarchive(): (
-  group: Pick<AreaRow | ProjectRow, "id" | "title">,
-  area?: AreaRow,
+  group: Pick<NodeRow, "id" | "title">,
+  area?: NodeRow,
 ) => Promise<boolean> {
   const t = useT();
   const say = useToast();
@@ -48,7 +48,7 @@ export function useUnarchive(): (
           // Known only from its receipt, the answer names no area: the page's own rows say it then.
           const stays =
             "receipt" in result
-              ? area?.lifecycle === "archived"
+              ? area?.state === "archived"
                 ? area.title
                 : undefined
               : result.group?.area?.archived === true
@@ -81,8 +81,8 @@ export function ArchivedLine({
   const t = useT();
   const unarchive = useUnarchive();
   const state = useLive();
-  const areaRow = area === undefined ? undefined : state.areas.get(area);
-  const projectRow = project === undefined ? undefined : state.projects.get(project);
+  const areaRow = area === undefined ? undefined : state.nodes.get(area);
+  const projectRow = project === undefined ? undefined : state.nodes.get(project);
   const shelved = archivedGroup(areaRow, projectRow);
   if (shelved === undefined) return null;
   const name = shelved.row.title;

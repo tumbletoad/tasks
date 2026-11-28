@@ -12,6 +12,7 @@ const starred: TaskRow = {
   position: "a0",
   created_at: 1,
   version: 3,
+  parent: "sp_a",
   focus_on: "2026-11-10",
 };
 

@@ -27,7 +27,7 @@ import { useEdits } from "../edit/useEdits.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { is } from "../keys/keymap.ts";
 import { useIntl } from "react-intl";
-import type { AreaRow, ProjectRow, TaskRow } from "@ttasks/client/store";
+import type { NodeRow, TaskRow } from "@ttasks/client/store";
 import { Expanded } from "../task/Expanded.tsx";
 import { NotSaved, Pen, TextEditor, useEditing, useSaved } from "../task/TextEditor.tsx";
 import { useTextWrites } from "../task/textWrites.ts";
@@ -103,9 +103,9 @@ const NO_CANNOT: Cannot = new Map();
 
 export interface RowProps {
   readonly task: TaskRow;
-  readonly area: AreaRow | undefined;
+  readonly area: NodeRow | undefined;
   readonly slot: number | undefined;
-  readonly project: ProjectRow | undefined;
+  readonly project: NodeRow | undefined;
   readonly instances: readonly Instance[];
   /** The instances the space last opened a task in and ran one with here. */
   readonly last?: LastUsed;

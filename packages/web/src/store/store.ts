@@ -22,11 +22,10 @@ import {
   type Settled,
   DEFAULT_SCALES,
   type AgentChange,
-  type AreaRow,
   type BatchMessage,
   type Cursor,
+  type Nodes,
   type PageRow,
-  type ProjectRow,
   type Scales,
   type SnapshotMessage,
   type SpaceHead,
@@ -81,8 +80,8 @@ export interface LiveState {
   readonly tasks: ReadonlyMap<string, TaskRow>;
   /** The finished and dropped tasks a question waits on, as `tasks` is made. */
   readonly asking: ReadonlyMap<string, TaskRow>;
-  readonly areas: ReadonlyMap<string, AreaRow>;
-  readonly projects: ReadonlyMap<string, ProjectRow>;
+  /** The space and its projects, by ID. */
+  readonly nodes: Nodes;
   /** The pages shown, without their bodies. */
   readonly pages: ReadonlyMap<string, PageRow>;
   readonly instances: readonly Instance[];
@@ -178,8 +177,7 @@ export class LiveStore {
     gone: undefined,
     tasks: new Map(),
     asking: new Map(),
-    areas: new Map(),
-    projects: new Map(),
+    nodes: new Map(),
     pages: new Map(),
     instances: [],
     scales: DEFAULT_SCALES,
@@ -432,8 +430,7 @@ export class LiveStore {
         space: held.space,
         tasks: this.#pending.view(held.tasks),
         asking: this.#pending.view(held.asking),
-        areas: held.areas,
-        projects: held.projects,
+        nodes: held.nodes,
         pages: held.pages,
         instances: held.instances,
         scales: this.#pending.scales(held.scales),

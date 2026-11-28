@@ -139,7 +139,6 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
         const run = await store.createRun(
           {
             task,
-            routine: null,
             machine,
             instance: "claude-work",
             adapter: "claude-print",

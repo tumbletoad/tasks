@@ -12,6 +12,7 @@ import { useUnarchive } from "../app/Archived.tsx";
 import { useToast } from "../app/frame.ts";
 import setup from "../app/Setup.module.css";
 import { Session } from "../context.ts";
+import { projectWithoutArea, topLevel, trail } from "@ttasks/client/store";
 import { liveGroups } from "@ttasks/client/today";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
@@ -47,7 +48,10 @@ const ARRIVE_MS = 10_000;
 
 /** The project's area once the feed holds it, or undefined after `ARRIVE_MS`. */
 function arrival(live: Live, project: string): Promise<string | undefined> {
-  const area = () => live.getState().projects.get(project)?.area_id;
+  const area = () => {
+    const [top, below] = trail(live.getState().nodes, project);
+    return below === undefined ? undefined : top?.id;
+  };
   if (area() !== undefined) return Promise.resolve(area());
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
@@ -83,12 +87,10 @@ export function AddProject({
   const nameId = useId();
   const areaId = useId();
   // An archived area takes no new project: it is not offered, also when the page on screen is its.
+  // Nor is a project made without an area, which holds none.
   const areas = useMemo(
-    () =>
-      liveGroups(state.areas.values(), []).areas.sort((a, b) =>
-        a.position < b.position ? -1 : a.position > b.position ? 1 : 0,
-      ),
-    [state.areas],
+    () => liveGroups(state.nodes).areas.filter((a) => !projectWithoutArea(a.id)),
+    [state.nodes],
   );
   const [text, setText] = useState("");
   const [look, setLook] = useState<FolderLook>();
@@ -113,8 +115,8 @@ export function AddProject({
   const shelved =
     shown !== NEW_AREA || typed === "" || areas.some((a) => sameName(a.title, typed))
       ? undefined
-      : [...state.areas.values()].find(
-          (a) => a.lifecycle === "archived" && sameName(a.title, typed),
+      : topLevel(state.nodes).find(
+          (a) => a.state === "archived" && !projectWithoutArea(a.id) && sameName(a.title, typed),
         );
 
   const open = (project: string, areaOf: string | undefined) => {

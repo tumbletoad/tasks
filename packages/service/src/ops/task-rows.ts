@@ -159,9 +159,15 @@ const LAST_OPEN =
   "ORDER BY l.created_at DESC, l.id DESC LIMIT 1";
 const LAST_USED =
   `json_object('open', (SELECT l.instance_id ${LAST_OPEN}), ` +
-  `'open_route', (SELECT l.route ${LAST_OPEN}), ` +
   "'run', (SELECT r.instance_id FROM runs r WHERE r.task_id = t.id " +
   "ORDER BY r.queued_at DESC, r.id DESC LIMIT 1)) AS x_last";
+
+/**
+ * The node a task `t` sits under in the tree, from today's columns: its project, else its area,
+ * else the space. Part of the feed's adapter (http/feed.ts), until the tree is the space's own.
+ */
+export const PARENT_OF_TASK =
+  "COALESCE(t.project_id, t.area_id, (SELECT space_id FROM space WHERE one = 1))";
 
 /**
  * A task row's columns. `folders`: the space has the folders and runs tables (schema 0.5 on); a
@@ -171,12 +177,8 @@ const LAST_USED =
 export function taskColumns(folders: boolean): string {
   return (
     "t.id, t.ref, t.title, t.summary, t.lifecycle, t.status, t.inbox, t.priority, t.effort, " +
-    "t.due_date, t.due_at, t.due_tz, t.planned_for, t.focus_on, t.owner, t.waiting_on, t.area_id, " +
-    "t.project_id, t.parent_id, t.position, t.wrap_state, t.completed_at, t.deleted_at, " +
-    // The tree's parent, from today's columns (the feed's adapter, feed.ts): a task sits under its
-    // project, else its area, else the space.
-    "COALESCE(t.parent_id, t.project_id, t.area_id, (SELECT space_id FROM space WHERE one = 1)) " +
-    "AS parent, " +
+    "t.due_date, t.due_at, t.due_tz, t.planned_for, t.focus_on, t.owner, t.waiting_on, " +
+    `${PARENT_OF_TASK} AS parent, t.position, t.wrap_state, t.completed_at, t.deleted_at, ` +
     "t.created_at, t.version, t.touched, " +
     `CASE WHEN t.lifecycle <> 'active' THEN ${FINISHED_AT_SQL} END AS finished_at, ` +
     // When a waiting task's wait began (the Waiting view's age): the commit whose write its status
@@ -315,11 +317,10 @@ export function runOf(open: unknown, asks?: unknown): CompactRun | undefined {
 function lastOf(value: unknown): LastUsed | undefined {
   const used = parsed(value);
   if (!isPlain(used)) return undefined;
-  const { open, open_route: route, run } = used;
+  const { open, run } = used;
   if (typeof open !== "string" && typeof run !== "string") return undefined;
   return {
     ...(typeof open === "string" ? { open } : {}),
-    ...(typeof route === "string" ? { open_route: route } : {}),
     ...(typeof run === "string" ? { run } : {}),
   };
 }

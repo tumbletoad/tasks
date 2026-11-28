@@ -87,15 +87,15 @@ describe("[A5.archived.service.feed] an archived group reaches the page, keeps i
     // A page open meanwhile learns it from the batch.
     const { batch } = await readBatch(reader, start);
     const rows = batch.events.flatMap((e) => e.entities.map((x) => x.row ?? {}));
-    expect(titled(rows, "Attic")).toMatchObject({ lifecycle: "archived" });
-    expect(titled(rows, "Bikes")).toMatchObject({ lifecycle: "archived" });
+    expect(titled(rows, "Attic")).toMatchObject({ state: "archived" });
+    expect(titled(rows, "Bikes")).toMatchObject({ state: "archived" });
 
     // A page opened after learns it from the snapshot, with every task still open.
     const snapshot = await readSnapshot(reader);
-    expect(titled(snapshot.areas, "Attic")).toMatchObject({ lifecycle: "archived" });
-    expect(titled(snapshot.areas, "Garage")).toMatchObject({ lifecycle: "active" });
-    expect(titled(snapshot.projects, "Bikes")).toMatchObject({ lifecycle: "archived" });
-    expect(titled(snapshot.projects, "Boxes")).toMatchObject({ lifecycle: "active" });
+    expect(titled(snapshot.nodes, "Attic")).toMatchObject({ state: "archived" });
+    expect(titled(snapshot.nodes, "Garage")).toMatchObject({ state: "active" });
+    expect(titled(snapshot.nodes, "Bikes")).toMatchObject({ state: "archived" });
+    expect(titled(snapshot.nodes, "Boxes")).toMatchObject({ state: "active" });
     for (const title of [
       "Fixture sort the boxes",
       "Fixture label the boxes",
@@ -105,7 +105,7 @@ describe("[A5.archived.service.feed] an archived group reaches the page, keeps i
     }
 
     // The page's Unarchive names the group by its ID, based on what it shows.
-    const attic = String(titled(snapshot.areas, "Attic")?.["id"]);
+    const attic = String(titled(snapshot.nodes, "Attic")?.["id"]);
     const back = await call("group.manage", {
       action: "unarchive",
       path: attic,
@@ -114,12 +114,12 @@ describe("[A5.archived.service.feed] an archived group reaches the page, keeps i
       request_id: rid(),
     });
     expect(back).toMatchObject({ result: "unarchived", group: { kind: "area", id: attic } });
-    expect(titled((await readSnapshot(reader)).areas, "Attic")).toMatchObject({
-      lifecycle: "active",
+    expect(titled((await readSnapshot(reader)).nodes, "Attic")).toMatchObject({
+      state: "active",
     });
     await call("history.undo", { request_id: rid() });
-    expect(titled((await readSnapshot(reader)).areas, "Attic")).toMatchObject({
-      lifecycle: "archived",
+    expect(titled((await readSnapshot(reader)).nodes, "Attic")).toMatchObject({
+      state: "archived",
     });
   });
 });

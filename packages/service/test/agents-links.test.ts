@@ -185,7 +185,6 @@ async function run(title: string, nativeId: string): Promise<string> {
   const queued = await store.createRun(
     {
       task: task.id,
-      routine: null,
       machine: w.service.ops.machine.id,
       instance: "codex-work",
       adapter: "codex",

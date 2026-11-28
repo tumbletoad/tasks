@@ -21,6 +21,7 @@ const TASK: TaskRow = {
   position: "p1",
   created_at: Date.UTC(2026, 10, 1),
   version: 1,
+  parent: SPACE.id,
 };
 
 const flush = async () => {
@@ -48,8 +49,7 @@ describe("[A5.3.11.web.edit-queue] the page's own leaving ends a wait behind ano
       space: SPACE,
       cursor: { epoch: 1, incarnation: "ai_0123456789abcdefghjkmnpq", seq: 10 },
       tasks: [TASK],
-      areas: [],
-      projects: [],
+      nodes: [],
       instances: [],
     };
     store.push(snapshot);
@@ -68,6 +68,7 @@ describe("[A5.3.11.web.edit-queue] the page's own leaving ends a wait behind ano
       failed: () => false,
       onChanges: (listener) => store.onChanges(listener),
       rowOf: () => TASK,
+      space: () => SPACE.id,
       newRequest: () => `rq-${String((requests += 1))}`,
     });
     const answered = (seq: number) => ({

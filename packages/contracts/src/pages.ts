@@ -97,8 +97,7 @@ export const CompactPage = z.strictObject({
   ref: PageRef,
   title: z.string().describe("Title"),
   brief: z.string().describe("One line: what a reader finds in it; empty: none given"),
-  owner_kind: z.enum(PAGE_OWNER_KINDS).describe("What holds it"),
-  owner_id: z.string().max(40).describe("The space's, area's, project's or task's ID"),
+  owner_id: z.string().max(40).describe("The space's, a project's or a task's ID"),
   task: z
     .strictObject({
       ref: TaskRef,
@@ -107,12 +106,7 @@ export const CompactPage = z.strictObject({
     })
     .describe("The task it is on, as it is now")
     .optional(),
-  area_id: z.string().regex(idPattern("a")).describe("Its area, also through its task").optional(),
-  project_id: z
-    .string()
-    .regex(idPattern("p"))
-    .describe("Its project, also through its task")
-    .optional(),
+  under: z.string().max(40).describe("The node it lies under, also through its task"),
   version: Seq.describe("Row version: the commit that changed it last"),
   by: By.describe("Who changed it last"),
   at: z.int().min(0).max(Number.MAX_SAFE_INTEGER).describe("When, in milliseconds since 1970"),

@@ -446,9 +446,6 @@ export const CompactTaskRow = z.strictObject({
   focus_on: z.string().describe("Day starred for").optional(),
   owner: z.string().describe("Owner").optional(),
   waiting_on: z.string().describe("Who or what it waits on").optional(),
-  area_id: z.string().describe("Area ID").optional(),
-  project_id: z.string().describe("Project ID").optional(),
-  parent_id: z.string().describe("Parent task ID").optional(),
   parent: z.string().describe("The node it sits under: a task, a project or the space"),
   position: z.string().describe("Order key within its group"),
   wrap_state: WrapState.optional(),
@@ -500,10 +497,6 @@ export const CompactTaskRow = z.strictObject({
   last: z
     .strictObject({
       open: z.string().describe("The instance of its newest Open that was not refused").optional(),
-      open_route: z
-        .string()
-        .describe("How that Open opened: t3-mcp names T3 Code also when its instance is gone")
-        .optional(),
       run: z.string().describe("The instance of its newest run").optional(),
     })
     .describe("The agent instances it was last opened in and last ran with")

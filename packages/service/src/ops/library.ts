@@ -5,6 +5,7 @@
 import { AppError } from "@ttasks/contracts";
 import { formatTaskRef, PAGE_SHOWN, type Row, type WorkerConnection } from "@ttasks/storage";
 import { byOf } from "./errors.ts";
+import { PARENT_OF_TASK } from "./task-rows.ts";
 import { resolveGroup } from "./groups.ts";
 import { hasPageTable, spaceFacts, type GroupNames, type SpaceFacts } from "./read.ts";
 import { negativeMatch, wordsMatch } from "../search/plan.ts";
@@ -445,7 +446,8 @@ const compactSql = (seq: string, extra = ""): string =>
   "SELECT p.id, p.ref, p.title, p.brief, p.owner_kind, p.owner_id, p.version, p.deleted_at AS own_deleted, " +
   `${PAGE_SHOWN} AS shown, t.ref AS task_ref, t.title AS task_title, t.lifecycle AS task_lifecycle, ` +
   "coalesce(t.deleted_at, r.deleted_at, ar.deleted_at) AS owner_deleted, " +
-  "coalesce(t.project_id, r.id) AS project_id, coalesce(t.area_id, r.area_id, ar.id) AS area_id, " +
+  `CASE p.owner_kind WHEN 'task' THEN ${PARENT_OF_TASK} WHEN 'space' THEN ` +
+  "(SELECT space_id FROM space WHERE one = 1) ELSE p.owner_id END AS under, " +
   "coalesce(t.title, r.title, ar.title) AS owner_title, " +
   `${WHO}${extra} FROM pages p LEFT JOIN tasks t ON p.owner_kind = 'task' AND t.id = p.owner_id ` +
   "LEFT JOIN projects r ON p.owner_kind = 'project' AND r.id = p.owner_id " +
@@ -462,7 +464,6 @@ export function compactPage(prefix: string, row: Row): Record<string, unknown> {
     ref: formatTaskRef(prefix, Number(row["ref"])),
     title: text(row["title"]),
     brief: text(row["brief"]),
-    owner_kind: row["owner_kind"],
     owner_id: row["owner_id"],
     ...(row["owner_kind"] === "task"
       ? {
@@ -473,8 +474,7 @@ export function compactPage(prefix: string, row: Row): Record<string, unknown> {
           },
         }
       : {}),
-    ...(typeof row["area_id"] === "string" ? { area_id: row["area_id"] } : {}),
-    ...(typeof row["project_id"] === "string" ? { project_id: row["project_id"] } : {}),
+    under: row["under"],
     version: Number(row["version"]),
     by: lastOf(row).by,
     at: Number(row["at"]),

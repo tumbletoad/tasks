@@ -11,7 +11,7 @@
 //   empty batch that still advances coverage, and the feed sends empty batches as heartbeats.
 // - The compact form: each event names its commit (`seq`, `op_id`, `request_id`, actor, kind) and
 //   the entities it touched, `{type, id, task?, row, changed, created?}`. `row` is the compact row
-//   of a task, area, project or node (the working set's kinds) and null for the rest (notes, log
+//   of a task, a node of the tree or a page (the working set's kinds) and null for the rest (notes, log
 //   entries, sources, links, places, launches): a client refetches the task those touch. No body
 //   of a note, no context, outcome or other long text is in the feed, and of a log entry only the
 //   start of an agent's question that waits for the person, on its task's row.
@@ -30,13 +30,7 @@ import type { CompactNode, PreferenceRead } from "@ttasks/contracts";
 import { RUN_WAITS, WAITS, type Row, type WorkerConnection } from "@ttasks/storage";
 import { hasFolderTable, hasPageTable } from "../ops/read.ts";
 import { COMPACT_PAGE, compactPage, LIVE_PAGES } from "../ops/library.ts";
-import {
-  compact,
-  taskColumns,
-  taskRows,
-  type CompactRow,
-  type FeedHere,
-} from "../ops/task-rows.ts";
+import { taskColumns, taskRows, type CompactRow, type FeedHere } from "../ops/task-rows.ts";
 import { PREFERENCE_ROWS, spacePreferencesOf } from "../ops/preferences.ts";
 
 export type { FeedHere } from "../ops/task-rows.ts";
@@ -102,8 +96,6 @@ export interface SnapshotMessage {
    * tasks' rows carry theirs.
    */
   readonly asking: readonly CompactRow[];
-  readonly areas: readonly CompactRow[];
-  readonly projects: readonly CompactRow[];
   /**
    * The space's tree above its tasks: the space, then every live project, each under its parent.
    * A task row's `parent` names one of them. A batch carries a changed project's row as an entity
@@ -287,7 +279,7 @@ function nodeOf(table: "areas" | "projects", row: Row, space: string): CompactNo
   };
 }
 
-/** The node's field each of an area's or a project's changed fields is. */
+/** The node's field each of an area's or a project's changed fields is; a brief is none. */
 const NODE_FIELDS: Readonly<Record<string, string>> = {
   title: "title",
   color: "color",
@@ -299,8 +291,8 @@ const NODE_FIELDS: Readonly<Record<string, string>> = {
 /** The words entities are named by in the feed. Another table is `other`. */
 export const ENTITY_TYPES: Readonly<Record<string, string>> = {
   tasks: "task",
-  areas: "area",
-  projects: "project",
+  areas: "node",
+  projects: "node",
   notes: "note",
   log_entries: "log",
   sources: "source",
@@ -382,8 +374,6 @@ export async function readSnapshot(
       };
     }),
     asking: await taskRows(asking as Row[], head.ref_prefix, here),
-    areas: (areas as Row[]).map((row) => compact(row)),
-    projects: (projects as Row[]).map((row) => compact(row)),
     nodes: [
       { id: head.id, kind: "space", title: head.name, state: "active" },
       ...(areas as Row[]).map((row) => nodeOf("areas", row, head.id)),
@@ -461,14 +451,12 @@ export async function readBatch(
     const id = row["id"];
     if (typeof id === "string") rows.set(`tasks:${id}`, row);
   }
-  const nodes = new Map<string, CompactRow>();
   for (const [table, list] of [
     ["areas", areas],
     ["projects", projects],
   ] as const) {
     for (const row of list as Row[]) {
-      rows.set(`${table}:${String(row["id"])}`, compact(row));
-      nodes.set(String(row["id"]), nodeOf(table, row, head.id));
+      rows.set(`${table}:${String(row["id"])}`, nodeOf(table, row, head.id));
     }
   }
   /** The pages of each task, project or area a batch moved to the Trash or back. */
@@ -505,7 +493,7 @@ export async function readBatch(
     project === undefined
       ? []
       : [...rows]
-          .filter(([k, r]) => k.startsWith("tasks:") && r["project_id"] === project)
+          .filter(([k, r]) => k.startsWith("tasks:") && r["parent"] === project)
           .map(([k]) => k);
   // A run's task: its row shows the task's newest run.
   const runTask = new Map(
@@ -564,28 +552,12 @@ export async function readBatch(
       };
       entities.set(key, found);
     }
-    const field = change["field"];
+    const given = change["field"];
+    const field =
+      typeof given === "string" && (table === "areas" || table === "projects")
+        ? NODE_FIELDS[given]
+        : given;
     if (typeof field === "string" && !found.changed.includes(field)) found.changed.push(field);
-    // An area or a project is a node of the tree too: the event carries its node row after it.
-    if (table === "areas" || table === "projects") {
-      let node = entities.get(`nodes:${id}`);
-      if (node === undefined) {
-        const changed: string[] = [];
-        node = {
-          changed,
-          entity: {
-            type: "node",
-            id,
-            row: withheld.has(key) ? null : (nodes.get(id) ?? null),
-            changed,
-            ...(change["action"] === "create" ? { created: true as const } : {}),
-          },
-        };
-        entities.set(`nodes:${id}`, node);
-      }
-      const as = typeof field === "string" ? NODE_FIELDS[field] : undefined;
-      if (as !== undefined && !node.changed.includes(as)) node.changed.push(as);
-    }
     // A source, link, folder, run or launch of a task, and a folder of its project, change what
     // the task's row shows: the event carries the task's row too, after the child, as a change
     // that names no field of the task.

@@ -475,7 +475,7 @@ export async function requestRestart(
 /** A run an update would cut short, as the service names it (`runs/blocking`). */
 export interface HeldRun {
   readonly space_name: string | null;
-  /** The task's reference, or null for a routine's run. */
+  /** The task's reference, or null for a run whose task was redacted. */
   readonly task: string | null;
   readonly state: string;
 }

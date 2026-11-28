@@ -26,9 +26,8 @@ export interface TaskRow {
   readonly focus_on?: string;
   readonly owner?: string;
   readonly waiting_on?: string;
-  readonly area_id?: string;
-  readonly project_id?: string;
-  readonly parent_id?: string;
+  /** The node it sits under: a project, or the space. */
+  readonly parent: string;
   readonly position: string;
   readonly wrap_state?: string;
   readonly completed_at?: number;
@@ -141,7 +140,7 @@ export const TASK_FIELD_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   source_at: ["source_at"],
   reviewed_at: ["reviewed_at"],
   due: ["due_date", "due_at", "due_tz"],
-  grouping: ["area_id", "project_id", "position"],
+  grouping: ["parent", "position"],
   lifecycle: ["lifecycle", "completed_at", "completed_by", "archived_reason"],
   wrap: ["wrap_state", "outcome", "wrapped_at", "wrapped_by"],
   deleted: ["deleted_at", "deleted_by"],
@@ -184,40 +183,35 @@ export function withTaskRow<R>(shown: R, after: Readonly<Record<string, unknown>
   return { ...Object.fromEntries(kept), ...after } as R;
 }
 
-export interface AreaRow {
+/** A node of the space's tree: the space, or a project under the space or another project. */
+export interface NodeRow {
   readonly id: string;
+  readonly kind: "space" | "project";
+  /** None for the space. */
+  readonly parent?: string;
   readonly title: string;
-  readonly position: string;
-  readonly color?: number | string;
-  readonly lifecycle?: string;
-  readonly deleted_at?: number;
-}
-
-export interface ProjectRow {
-  readonly id: string;
-  readonly area_id?: string;
-  readonly title: string;
-  readonly position: string;
-  readonly lifecycle?: string;
+  /** Its order among its siblings; none for the space. */
+  readonly position?: string;
+  readonly color?: string;
+  /** `archived`: kept, with its tasks, but out of the places new work is filed into. */
+  readonly state: string;
   readonly deleted_at?: number;
 }
 
 /**
  * A knowledge page as the feed carries it: everything but its body, which the page's own screen
- * reads. Its owner is the space, an area, a project or a task; `area_id` and `project_id` are its
- * place, also through its task.
+ * reads. Its owner is the space, a project or a task (then `task` names it); `under` is the node it
+ * lies under, also through its task.
  */
 export interface PageRow {
   readonly id: string;
   readonly ref: string;
   readonly title: string;
   readonly brief: string;
-  readonly owner_kind: "space" | "area" | "project" | "task";
   readonly owner_id: string;
   /** The task it is on, as the task is now. */
   readonly task?: { readonly ref: string; readonly title: string; readonly lifecycle: string };
-  readonly area_id?: string;
-  readonly project_id?: string;
+  readonly under: string;
   /** The commit that changed it last. */
   readonly version: number;
   /** Who changed it last: `user`, `import` or `agent:<instance>`. */
@@ -288,9 +282,9 @@ export interface Cursor {
 }
 
 /** The kinds of row the open working set holds. */
-export type RowType = "task" | "area" | "project" | "page";
+export type RowType = "task" | "node" | "page";
 
-export type AnyRow = TaskRow | AreaRow | ProjectRow | PageRow;
+export type AnyRow = TaskRow | NodeRow | PageRow;
 
 export interface FeedEntity {
   readonly type: string;
@@ -298,7 +292,7 @@ export interface FeedEntity {
   /** The task a child entity (a note, a log entry, a launch) belongs to. */
   readonly task?: string;
   /**
-   * The compact post-change row as of the batch's `through`, for a task, area, project or page. Null
+   * The compact post-change row as of the batch's `through`, for a task, a node or a page. Null
    * for the other kinds, and for a working-set row the service withholds (A5 3.15).
    */
   readonly row: Readonly<Record<string, unknown>> | null;
@@ -341,8 +335,8 @@ export interface SnapshotMessage {
   readonly agent_changes?: readonly AgentChange[];
   /** The finished and dropped tasks on which a question waits for the person. */
   readonly asking?: readonly TaskRow[];
-  readonly areas: readonly AreaRow[];
-  readonly projects: readonly ProjectRow[];
+  /** The space and its projects, each under its parent. */
+  readonly nodes: readonly NodeRow[];
   /** Every page of the space that is shown; none from a service before pages. */
   readonly pages?: readonly PageRow[];
   readonly instances: readonly Instance[];
@@ -478,10 +472,7 @@ const isRun = (v: unknown): boolean =>
   isRecord(v) && isString(v["id"]) && isString(v["state"]) && isString(v["instance"]);
 
 const isLast = (v: unknown): boolean =>
-  isRecord(v) &&
-  optional(v["open"], isString) &&
-  optional(v["open_route"], isString) &&
-  optional(v["run"], isString);
+  isRecord(v) && optional(v["open"], isString) && optional(v["run"], isString);
 
 const isQuestion = (v: unknown): boolean =>
   isRecord(v) &&
@@ -509,8 +500,7 @@ export function taskRow(value: unknown): TaskRow | undefined {
     typeof v["inbox"] !== "boolean" ||
     !isNumber(v["created_at"]) ||
     !isNumber(v["version"]) ||
-    !optional(v["area_id"], isString) ||
-    !optional(v["project_id"], isString) ||
+    !isString(v["parent"]) ||
     !optional(v["deleted_at"], isNumber) ||
     !optional(v["touched"], isNumber) ||
     !optional(v["waiting_since"], isNumber) ||
@@ -530,39 +520,23 @@ export function taskRow(value: unknown): TaskRow | undefined {
   return v as unknown as TaskRow;
 }
 
-export function areaRow(value: unknown): AreaRow | undefined {
+export function nodeRow(value: unknown): NodeRow | undefined {
   if (!isRecord(value)) return undefined;
   const v = value;
   if (
     !isString(v["id"]) ||
+    (v["kind"] !== "space" && v["kind"] !== "project") ||
     !isString(v["title"]) ||
-    !isString(v["position"]) ||
-    !optional(v["color"], (c) => isString(c) || isNumber(c)) ||
-    !optional(v["lifecycle"], isString) ||
+    !isString(v["state"]) ||
+    !optional(v["parent"], isString) ||
+    !optional(v["position"], isString) ||
+    !optional(v["color"], isString) ||
     !optional(v["deleted_at"], isNumber)
   ) {
     return undefined;
   }
-  return v as unknown as AreaRow;
+  return v as unknown as NodeRow;
 }
-
-export function projectRow(value: unknown): ProjectRow | undefined {
-  if (!isRecord(value)) return undefined;
-  const v = value;
-  if (
-    !isString(v["id"]) ||
-    !isString(v["title"]) ||
-    !isString(v["position"]) ||
-    !optional(v["area_id"], isString) ||
-    !optional(v["lifecycle"], isString) ||
-    !optional(v["deleted_at"], isNumber)
-  ) {
-    return undefined;
-  }
-  return v as unknown as ProjectRow;
-}
-
-const OWNER_KINDS: ReadonlySet<unknown> = new Set(["space", "area", "project", "task"]);
 
 const isPageTask = (v: unknown): boolean =>
   isRecord(v) && isString(v["ref"]) && isString(v["title"]) && isString(v["lifecycle"]);
@@ -575,14 +549,12 @@ export function pageRow(value: unknown): PageRow | undefined {
     !isString(v["ref"]) ||
     !isString(v["title"]) ||
     !isString(v["brief"]) ||
-    !OWNER_KINDS.has(v["owner_kind"]) ||
     !isString(v["owner_id"]) ||
+    !isString(v["under"]) ||
     !isNumber(v["version"]) ||
     !isString(v["by"]) ||
     !isNumber(v["at"]) ||
     !optional(v["task"], isPageTask) ||
-    !optional(v["area_id"], isString) ||
-    !optional(v["project_id"], isString) ||
     !optional(v["why"], isString) ||
     !optional(v["deleted_at"], isNumber)
   ) {
@@ -594,17 +566,16 @@ export function pageRow(value: unknown): PageRow | undefined {
 /** The checker for each kind of row the working set holds. */
 export const ROW_OF: Readonly<Record<RowType, (value: unknown) => AnyRow | undefined>> = {
   task: taskRow,
-  area: areaRow,
-  project: projectRow,
+  node: nodeRow,
   page: pageRow,
 };
 
 export const isRowType = (type: string): type is RowType =>
-  type === "task" || type === "area" || type === "project" || type === "page";
+  type === "task" || type === "node" || type === "page";
 
 /**
  * Whether a row belongs to the open working set, exactly as the service's snapshot chooses it:
- * active tasks that are not deleted, and live areas, projects and pages.
+ * active tasks that are not deleted, and live nodes and pages.
  */
 export function inWorkingSet(type: RowType, row: AnyRow): boolean {
   if (row.deleted_at !== undefined) return false;
@@ -752,8 +723,7 @@ export function messageOf(value: unknown): FeedMessage | { type: "unreadable" } 
         tasks: rowsOf(value["tasks"], taskRow),
         agent_changes: agentChangesOf(value["agent_changes"]),
         asking: rowsOf(value["asking"], taskRow),
-        areas: rowsOf(value["areas"], areaRow),
-        projects: rowsOf(value["projects"], projectRow),
+        nodes: rowsOf(value["nodes"], nodeRow),
         pages: rowsOf(value["pages"], pageRow),
         instances: instancesOf(value["instances"]),
         scales: scalesOf(value["preferences"]),

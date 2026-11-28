@@ -46,6 +46,8 @@ const SQL = {
     "SELECT 1 FROM notes WHERE owner_id = $task AND ordinal = $ordinal AND deleted_at IS NULL",
   launch: "SELECT * FROM launches WHERE id = $id",
   run: "SELECT * FROM runs WHERE id = $id",
+  attempts:
+    "SELECT count(*) AS n FROM runs WHERE task_id = $task AND json_extract(spec, '$.due_at') = $due",
 } as const;
 
 /** The request's machine, which must have its record in the space. */
@@ -72,11 +74,8 @@ function folderOn(tx: Tx, id: unknown, machine: string): string | null {
   return id;
 }
 
-/**
- * A launch or a run row as today's decoders read one: the tree names a folder, not a place, and a
- * run belongs to a task, never to a routine.
- */
-const asToday = (row: Row): Row => ({ ...row, place_id: null, routine_id: null });
+/** A launch or a run row as today's decoders read one: the tree names a folder, not a place. */
+export const asToday = (row: Row): Row => ({ ...row, place_id: null });
 
 const launchCreate: Run = (tx, input) => {
   const task = liveTask(tx, input["task"]);
@@ -145,6 +144,10 @@ const runCreate: Run = (tx, input) => {
   const machine = machineOf(tx);
   const folder = folderOn(tx, input["folder"], machine);
   const id = tx.newId("ru");
+  const due = typeof input["due_at"] === "number" ? input["due_at"] : undefined;
+  // A run for a routine's time carries its due time, and its attempt counts the runs for that time.
+  const attempt =
+    due === undefined ? 1 : Number(tx.get(SQL.attempts, { task, due })?.["n"] ?? 0) + 1;
   tx.create(
     "runs",
     {
@@ -155,12 +158,14 @@ const runCreate: Run = (tx, input) => {
       machine_id: machine,
       adapter: String(input["adapter"]),
       folder_id: folder,
-      request: str(input, "request") ?? null,
+      request: String(input["request"]),
       spec: sortedJson({
         brief_hash: input["brief_hash"],
         permission: input["permission"],
         limits: input["limits"],
+        ...(due === undefined ? {} : { due_at: due }),
       }),
+      attempt,
       state: "queued",
       reason: null,
       detail: runDetailText({ evidence: {}, at: { queued: tx.at } }),
@@ -280,9 +285,8 @@ export const RUNS: Readonly<Record<string, Command>> = {
   },
   "run.create": {
     check: (f) => {
-      // A run on the tree belongs to a task: routines are nodes with tables of their own.
-      if (f.has("routine")) f.fail("VALIDATION_FAILED", "A run belongs to a task", "routine");
-      return withFolder(f, runCreateFields);
+      const due = f.has("due_at") ? f.instant("due_at") : undefined;
+      return { ...withFolder(f, runCreateFields), ...(due === undefined ? {} : { due_at: due }) };
     },
     run: runCreate,
   },

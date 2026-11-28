@@ -28,6 +28,7 @@ const row = (n: number, removed: Removal | undefined, deleted = true): TrashedRo
   title: `Fixture task ${String(n)}`,
   status: "open",
   inbox: false,
+  parent: "sp_0123456789abcdefghjkmnpqrs",
   lifecycle: "active",
   position: "a0",
   created_at: 1,

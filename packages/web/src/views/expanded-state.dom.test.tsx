@@ -5,6 +5,7 @@
 // task the view does not hold, the title editor's base, focus when the card closes, the detail
 // read again after a fresh snapshot, and a thread entry that keeps focus while entries arrive.
 import { PRODUCT_ID } from "@ttasks/brand";
+import { areaNode, nodesOf } from "@ttasks/client/test/nodes";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -33,7 +34,7 @@ function task(n: number, fields: Partial<TaskRow> = {}): TaskRow {
     status: "open",
     inbox: false,
     lifecycle: "active",
-    area_id: "a_1",
+    parent: "a_1",
     position: `p${String(n).padStart(5, "0")}`,
     created_at: Date.UTC(2026, 10, 1),
     version: 1,
@@ -76,8 +77,7 @@ function snapshot(tasks: readonly TaskRow[], seq = CURSOR.seq): SnapshotMessage 
     space: SPACE,
     cursor: { ...CURSOR, seq },
     tasks,
-    areas: [{ id: "a_1", title: "Lumen", position: "a" }],
-    projects: [],
+    nodes: nodesOf(SPACE.id, areaNode({ id: "a_1", title: "Lumen", position: "a" }, SPACE.id)),
     instances: [],
   };
 }
