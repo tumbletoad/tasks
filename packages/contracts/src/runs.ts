@@ -374,10 +374,10 @@ export const RUN_EVIDENCE_FIELDS = {
   /** The agent home the run started its app in, as a digest: never the path. */
   home: "id",
   /**
-   * How the run's processes start, recorded with `starting`: `cgroup` or `job`, a group the
-   * operating system counts, or `tree`, none.
+   * The process group the run's processes start in, recorded with `starting`: `cgroup` or `job`,
+   * a group the operating system counts, or `tree`, none.
    */
-  container: "id",
+  process_group: "id",
 } as const satisfies Record<string, RunEvidenceKind>;
 
 export type RunEvidenceKey = keyof typeof RUN_EVIDENCE_FIELDS;
