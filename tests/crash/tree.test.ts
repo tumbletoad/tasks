@@ -23,8 +23,12 @@ interface RoundEnd {
   killed: boolean;
 }
 
-/** Runs one child with `plan`, killing it at its armed point or `afterMs` after its first send. */
-async function round(plan: TreePlan, afterMs?: number): Promise<RoundEnd> {
+/**
+ * Runs one child with `plan`, killing it at its armed point, or `afterMs` after its first send. A
+ * round that begins with a resend arms its timer only once the resend is answered (`resend`), so
+ * the answer to a lost reply is checked in every run, however slow the machine.
+ */
+async function round(plan: TreePlan, afterMs?: number, resend?: string): Promise<RoundEnd> {
   const child = spawn(process.execPath, [CHILD], {
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
@@ -40,7 +44,11 @@ async function round(plan: TreePlan, afterMs?: number): Promise<RoundEnd> {
     const message = JSON.parse(line) as TreeMessage;
     messages.push(message);
     if (message.t === "at") kill();
-    if (message.t === "send" && afterMs !== undefined) timer ??= setTimeout(kill, afterMs);
+    const starts =
+      resend === undefined
+        ? message.t === "send"
+        : message.t === "ack" && message.request_id === resend;
+    if (starts && afterMs !== undefined) timer ??= setTimeout(kill, afterMs);
   });
   child.stdin.on("error", () => undefined);
   child.stdin.end(JSON.stringify(plan));
@@ -173,6 +181,7 @@ describe("[S2.tree.crash] the tree writer survives a kill at each write point an
         const end = await round(
           { folder, arm, requests: planned },
           typeof kill === "number" ? kill : undefined,
+          resend?.request_id,
         );
         expect(end.messages.filter((m) => m.t === "error")).toEqual([]);
         const at = end.messages.find((m) => m.t === "at");
