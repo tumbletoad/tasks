@@ -6771,7 +6771,7 @@
     },
     {
       "id": "S5.link.rows",
-      "title": "A phone's task row keeps the task's own fields and loses where it opens on this machine, the agents it was last opened in and the run's instance; a batch's rows the same; private, link-local and loopback peers are let in and public ones are not",
+      "title": "A phone's feed row of a task keeps the task's own fields and loses where it opens on this machine, the agents it was last opened in and the run's instance; a question's author and a batch's actor read as the agent app's name, never its instance key or session; private, link-local and loopback peers are let in and public ones are not",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -6827,14 +6827,28 @@
     },
     {
       "id": "S5.link.saved",
-      "title": "Remove and the Run switch answer once saved: a Remove that was not saved says so, holds at once, stays listed to remove again and is saved by Remove again; Run on that was not saved stays off, Run off that was not saved holds at once",
+      "title": "Remove and the Run switch answer once saved: a Remove that was not saved says so, holds at once, stays listed to remove again and is saved by Remove again; Run on that was not saved stays off, Run off that was not saved holds at once, and Run on counts for the phone only once its save is done",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.run-saved",
+      "title": "A phone's Run switch, on and then off, reads back as switched after the service's store is closed and opened again",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.told",
+      "title": "Against the real service, with an agent's evidence and question written under its instance key and session, a task folder and Run on: every listed call's answer and error and the feed's snapshot and batch hold no instance key, session, folder path or machine name; an error a handler raised reaches a phone as its code and fixed words, with none of its message, hint or data",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "S5.link.answers",
-      "title": "A phone's answers keep what its screens use and leave out a task's folder, a launch's request, a note's launches, the person's skills, a run's agent instance, its cleanup and its error; a capture may send a task's own fields only, and a page read takes a page's reference only",
+      "title": "A phone's answers keep what its screens use and leave out a task's folder, a launch's request, a note's launches, the person's skills, a run's agent instance, its cleanup and its error; an author reads as the person, an import or the agent app's name, never its instance key or session; a capture may send a task's own fields only, and a page read takes a page's reference only",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

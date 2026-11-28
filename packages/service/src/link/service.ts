@@ -28,7 +28,7 @@ import { networkInterfaces } from "node:os";
 import type { Socket } from "node:net";
 import type { TLSSocket } from "node:tls";
 import { PRODUCT_NAME } from "@ttasks/brand";
-import { AppError, ERROR_CODES, type ErrorBody } from "@ttasks/contracts";
+import { AppError, ERROR_CODES } from "@ttasks/contracts";
 import { WebSocketServer, type WebSocket } from "ws";
 import { OneTimeSecrets } from "../http/auth.ts";
 import type { HttpLog } from "../http/events.ts";
@@ -37,7 +37,8 @@ import type { UiLaunches } from "../http/launches.ts";
 import { isLive, type Grant, type GrantStore } from "../local/index.ts";
 import { copyOf, findSpace, isAmbiguity } from "../ops/copies.ts";
 import { opCall, type OpsHost } from "../ops/index.ts";
-import { PHONE_CALLS } from "./allowed.ts";
+import { authorsFrom, PHONE_CALLS, phoneError, phoneRefusal, project } from "./allowed.ts";
+import { phoneBatch, phoneSnapshot } from "./rows.ts";
 import { certPin } from "./cert.ts";
 import { keepPort, loadOrCreateHome, type LinkHome } from "./home.ts";
 
@@ -68,7 +69,7 @@ export interface LinkOptions {
   readonly grants: LinkGrants;
   readonly ops: OpsHost;
   readonly feed: FeedHub;
-  readonly launches: Pick<UiLaunches, "run" | "runs" | "stop">;
+  readonly launches: Pick<UiLaunches, "run" | "runs" | "stop" | "instances">;
   readonly log: HttpLog;
   readonly now: () => number;
   /** Where the listener binds. Default: every IPv4 interface. Tests: 127.0.0.1. */
@@ -143,8 +144,7 @@ const shortText = (v: unknown, max: number): string | undefined =>
     ? v.trim()
     : undefined;
 
-const forbidden = (message: string, rule: string) =>
-  new AppError({ code: "forbidden", message, data: { rule } });
+const forbidden = (message: string, rule: string) => phoneRefusal("forbidden", message, { rule });
 
 /** A change that holds in this process but did not reach the disk: the person tries again. */
 const notSaved = (holds: string) =>
@@ -172,6 +172,8 @@ export class LinkService {
   readonly #sockets = new Map<WebSocket, string>();
   /** Removed phones whose removal has not reached the disk: Settings lists them to remove again. */
   readonly #unsaved = new Set<string>();
+  /** Phones whose Run on is not saved yet: it does not count for them until it is. */
+  readonly #runPending = new Set<string>();
   readonly #wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
   readonly #unrevoke: () => void;
   #conn = 0;
@@ -239,7 +241,7 @@ export class LinkService {
       space_name: names.get(g.spaces[0]) ?? null,
       paired_at: g.created_at,
       last_used_at: g.last_used_at,
-      run: g.scopes.includes(RUN_SCOPE),
+      run: this.#runs(g),
       removing: g.revoked_at !== null,
     }));
     const ticket = input["ticket"];
@@ -321,14 +323,35 @@ export class LinkService {
       throw new AppError({ code: "invalid_input", message: "Expected run: true or false." });
     }
     const grants = this.#options.grants;
-    grants.setScopes(grant.grant_id, run ? [...EDIT_SCOPES, RUN_SCOPE] : [...EDIT_SCOPES]);
+    const id = grant.grant_id;
+    // Run on counts only once it is saved: until then the phone still has Run off.
+    if (run) this.#runPending.add(id);
+    grants.setScopes(id, run ? [...EDIT_SCOPES, RUN_SCOPE] : [...EDIT_SCOPES]);
     try {
       await grants.flush();
     } catch {
-      if (run) grants.setScopes(grant.grant_id, [...EDIT_SCOPES]);
+      if (run) grants.setScopes(id, [...EDIT_SCOPES]);
       throw notSaved(run ? "Run stays off for this phone." : "Run is off for this phone now.");
+    } finally {
+      this.#runPending.delete(id);
     }
     return { run };
+  }
+
+  /** Whether the phone may start and stop runs: its switch is on, and saved. */
+  #runs(grant: Grant): boolean {
+    return grant.scopes.includes(RUN_SCOPE) && !this.#runPending.has(grant.grant_id);
+  }
+
+  /** How a phone names who wrote something in `space`: the person, an import, an app's name. */
+  #authors(space: string) {
+    let instances: readonly { readonly key: string; readonly app: string }[] = [];
+    try {
+      instances = this.#options.launches.instances(space);
+    } catch {
+      // No instance known: every agent is named `agent`.
+    }
+    return authorsFrom(instances);
   }
 
   /**
@@ -602,11 +625,14 @@ export class LinkService {
         protocol: LINK_PROTOCOL,
         space: { id: space, name },
         phone: grantId,
-        run: grant.scopes.includes(RUN_SCOPE),
+        run: this.#runs(grant),
       },
       call: (call, reply) => {
         void this.#call(grantId, pin, call).then((answer) => reply(answer).catch(() => undefined));
       },
+      snapshot: (snapshot, copy, reason) =>
+        phoneSnapshot(snapshot, copy, this.#authors(space), reason),
+      batch: (batch) => phoneBatch(batch, this.#authors(space)),
     });
     return "served";
   }
@@ -627,11 +653,9 @@ export class LinkService {
       status,
       body,
     });
+    // Every error a phone is told goes through one filter (allowed.ts phoneError).
     const failed = (error: unknown) => {
-      const body: ErrorBody =
-        error instanceof AppError
-          ? error.toBody()
-          : { code: "internal", message: "The service failed. The details are in its log." };
+      const body = phoneError(error);
       return reply(ERROR_CODES[body.code].http, { error: body });
     };
     try {
@@ -639,13 +663,10 @@ export class LinkService {
       const body = message["body"] ?? {};
       const copy = message["copy"];
       if (!validId || typeof path !== "string" || !isRecord(body)) {
-        throw new AppError({
-          code: "invalid_input",
-          message: "A call needs an ID, a path and a body.",
-        });
+        throw phoneRefusal("invalid_input", "A call needs an ID, a path and a body.");
       }
       if (copy !== undefined && (typeof copy !== "string" || !/^[0-9a-f]{24}$/u.test(copy))) {
-        throw new AppError({ code: "invalid_input", message: "A copy is 24 hex characters." });
+        throw phoneRefusal("invalid_input", "A copy is 24 hex characters.");
       }
       const grant = this.#options.grants.get(grantId);
       if (grant === undefined || !isLive(grant, this.#date())) {
@@ -653,7 +674,8 @@ export class LinkService {
       }
       this.#options.grants.touch(grantId, this.#date());
       const space = grant.spaces[0] ?? "";
-      const scopes = grant.scopes;
+      // Run counts only once its switch is saved.
+      const scopes = this.#runs(grant) ? grant.scopes : grant.scopes.filter((s) => s !== RUN_SCOPE);
       const result = await this.#route(path, body, space, scopes, grantId, pin, copy);
       return reply(200, { result });
     } catch (error) {
@@ -686,11 +708,11 @@ export class LinkService {
     const field =
       Object.keys(body).find((key) => !allowed.input.includes(key)) ?? allowed.check?.(body);
     if (field !== undefined) {
-      throw new AppError({
-        code: "forbidden",
-        message: `A phone cannot send this. Use ${PRODUCT_NAME} on the computer.`,
-        data: { rule: "phone_field", field },
-      });
+      throw phoneRefusal(
+        "forbidden",
+        `A phone cannot send this. Use ${PRODUCT_NAME} on the computer.`,
+        { rule: "phone_field", field },
+      );
     }
     if (allowed.right === "run" && !scopes.includes(RUN_SCOPE)) {
       throw forbidden(
@@ -706,10 +728,10 @@ export class LinkService {
     }
     // The granted space by its ID alone: a space of another ID is never found by its name.
     if (copyOf(this.#options.ops.spaces(), space)?.reader === undefined) {
-      throw new AppError({
-        code: "space_unavailable",
-        message: "The space this phone was paired for is not open on the computer now.",
-      });
+      throw phoneRefusal(
+        "space_unavailable",
+        "The space this phone was paired for is not open on the computer now.",
+      );
     }
     const { launches } = this.#options;
     let result: unknown;
@@ -736,6 +758,6 @@ export class LinkService {
         { op: path.slice("/api/v1/op/".length), input: body, space },
       );
     }
-    return allowed.output(result);
+    return project(result, allowed.output, this.#authors(space));
   }
 }

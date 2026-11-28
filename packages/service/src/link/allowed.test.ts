@@ -5,13 +5,16 @@ import type { ServiceDb } from "../http/service-db.ts";
 import type { FeedHub } from "../http/ws.ts";
 import type { Grant } from "../local/index.ts";
 import type { OpsHost } from "../ops/index.ts";
-import { PHONE_CALLS } from "./allowed.ts";
+import { authorsFrom, PHONE_CALLS, project } from "./allowed.ts";
 import { EDIT_SCOPES, LinkService, RUN_SCOPE } from "./service.ts";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
   for (const c of cleanups.splice(0)) c();
 });
+
+const seenBy = (path: string, value: unknown) =>
+  project(value, call(path).output, authorsFrom([{ key: "codex-home", app: "Codex" }]));
 
 const call = (path: string) => {
   const found = PHONE_CALLS[path];
@@ -21,7 +24,7 @@ const call = (path: string) => {
 
 describe("[S5.link.answers] a phone sees what its screens use, and nothing of this computer", () => {
   test("a task's folder, a launch's request, a note's launches and the person's skills stay out", () => {
-    const seen = call("/api/v1/op/task.get").output({
+    const seen = seenBy("/api/v1/op/task.get", {
       view: "digest",
       as_of: { seq: 1 },
       bound: true,
@@ -34,6 +37,7 @@ describe("[S5.link.answers] a phone sees what its screens use, and nothing of th
         notes: [
           {
             ref: "n1",
+            author: "agent:codex-home:se_fixturesession0001",
             text: "Fixture note",
             request_for: [{ launch: "LABCDE", instance: "codex" }],
           },
@@ -43,8 +47,11 @@ describe("[S5.link.answers] a phone sees what its screens use, and nothing of th
       skills_unread: 2,
     });
     const text = JSON.stringify(seen);
-    for (const kept of ["Fixture", "Fixture note", "M-1"]) expect(text).toContain(kept);
-    for (const gone of ["folder", "~/work", "request", "skill", "codex", "bound"]) {
+    for (const kept of ["Fixture", "Fixture note", "M-1", '"author":"Codex"'])
+      expect(text).toContain(kept);
+    expect(authorsFrom([])("agent:other:se_1")).toBe("agent");
+    expect(authorsFrom([])("user")).toBe("user");
+    for (const gone of ["folder", "~/work", "request", "skill", "codex", "se_fixture", "bound"]) {
       expect(text).not.toContain(gone);
     }
   });
@@ -67,9 +74,7 @@ describe("[S5.link.answers] a phone sees what its screens use, and nothing of th
       version: 3,
     };
     for (const path of ["/api/v1/launch/runs", "/api/v1/launch/run", "/api/v1/launch/stop"]) {
-      const seen = JSON.stringify(
-        call(path).output(path.endsWith("runs") ? { runs: [run] } : { run }),
-      );
+      const seen = JSON.stringify(seenBy(path, path.endsWith("runs") ? { runs: [run] } : { run }));
       expect(seen).toContain("Fixture answer");
       expect(seen).not.toContain("codex-home");
       expect(seen).not.toContain("cleanup");
@@ -92,10 +97,14 @@ describe("[S5.link.answers] a phone sees what its screens use, and nothing of th
 describe("[S5.link.saved] Remove and the Run switch answer once they are saved", () => {
   async function linked() {
     let fail = false;
+    let hold: Promise<void> | undefined;
     const fake = {
       grants: () => Promise.resolve([]),
       dropGrants: () => Promise.resolve(),
-      putGrants: () => (fail ? Promise.reject(new Error("disk")) : Promise.resolve()),
+      putGrants: async () => {
+        await hold;
+        if (fail) throw new Error("disk");
+      },
     } as unknown as ServiceDb;
     const grants = await DurableGrants.open(fake);
     const temp = tempRoot("link-saved");
@@ -126,6 +135,9 @@ describe("[S5.link.saved] Remove and the Run switch answer once they are saved",
       phone: grant.grant_id,
       failing: (on: boolean) => {
         fail = on;
+      },
+      holding: (until: Promise<void> | undefined) => {
+        hold = until;
       },
     };
   }
@@ -163,5 +175,22 @@ describe("[S5.link.saved] Remove and the Run switch answer once they are saved",
     expect(row(grants, phone)?.scopes).not.toContain(RUN_SCOPE);
     failing(false);
     expect(await link.rights({ phone, run: false })).toEqual({ run: false });
+  });
+
+  test("Run on counts only once it is saved, never while its save is out", async () => {
+    const { link, phone, holding } = await linked();
+    let release = () => undefined as void;
+    holding(
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const switched = link.rights({ phone, run: true });
+    // The save is out: the phone does not have Run yet.
+    expect(link.view({}).phones[0]?.run).toBe(false);
+    release();
+    holding(undefined);
+    expect(await switched).toEqual({ run: true });
+    expect(link.view({}).phones[0]?.run).toBe(true);
   });
 });

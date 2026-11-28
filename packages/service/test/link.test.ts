@@ -2,13 +2,15 @@
 // built from Node's TLS pairs with it, and everything it may and may not do is tried. The phone
 // listens on loopback here; on a computer it listens on the private network. Fixture data only.
 import { mkdirSync } from "node:fs";
+import { hostname } from "node:os";
 import { connect as netConnect } from "node:net";
 import { join } from "node:path";
 import { connect } from "node:tls";
-import { registry } from "@ttasks/contracts";
+import { AppError, registry } from "@ttasks/contracts";
 import { afterEach, describe, expect, test } from "vitest";
 import { SPACE_HEADER } from "../src/http/app.ts";
-import { PHONE_CALLS } from "../src/link/allowed.ts";
+import { PHONE_CALLS, phoneError } from "../src/link/allowed.ts";
+import { opCall } from "../src/ops/index.ts";
 import { LINK_PATH, PAIRING_MS } from "../src/link/service.ts";
 import { post } from "./http-client.ts";
 import { httpWorld, signIn, type HttpWorld } from "./http-world.ts";
@@ -23,6 +25,9 @@ import {
 } from "./phone-client.ts";
 
 const SLOW = { timeout: 300_000 };
+/** An agent's instance key and session, as the actor of what it writes: never told to a phone. */
+const INSTANCE = "codex-fixture-instance";
+const SESSION = "se_fixturesession00000000001";
 
 const worlds: HttpWorld[] = [];
 afterEach(async () => {
@@ -491,4 +496,97 @@ describe("[S5.link.remove] Remove ends a phone's access at once; the listener cl
       expect(next.kind).toBe("removed");
     },
   );
+});
+
+describe("[S5.link.told] everything a phone is told, answers, errors and the feed, names nothing of this computer", () => {
+  test(
+    "every listed call's answer and error, and the feed's rows, hold no instance key, session, folder path or machine name",
+    SLOW,
+    async () => {
+      const p = await page("link-told");
+      const { link, hello } = await paired(p);
+      const ops = p.world.service.ops;
+      if (ops === undefined) throw new Error("no ops");
+      const added = await link.call("/api/v1/op/task.add", {
+        tasks: [{ title: "Fixture task the agent works on" }],
+        request_id: "fixture-request-told-01",
+      });
+      const made = (added.body["result"] as { tasks: { ref: string; id: string }[] }).tasks[0];
+      const ref = made?.ref ?? "";
+      const id = made?.id ?? "";
+      // An agent writes under its instance key and session; the person gives the task a folder.
+      const agent = (request: string, kind: string, text: string) =>
+        opCall(
+          ops,
+          {
+            class: "ui",
+            env: {},
+            principal: {
+              audience: "agent",
+              actorKind: "agent",
+              label: `agent:${INSTANCE}:${SESSION}`,
+              scope: `session:${SESSION}`,
+              origin: "mcp",
+            },
+          },
+          { op: "entry.add", input: { task: ref, kind, text, request_id: request }, space: "Mira" },
+        );
+      await agent("fixture-request-told-02", "evidence", "Fixture evidence from the agent");
+      await agent("fixture-request-told-03", "question", "Fixture question from the agent?");
+      const folder = join(p.world.root, "fixture-told-folder");
+      mkdirSync(folder, { recursive: true });
+      const user = await p.world.user();
+      await user.call("op/call", {
+        op: "folder.manage",
+        input: { action: "set", task: ref, folder, request_id: "fixture-request-told-04" },
+      });
+      const phone = (hello["link"] as { phone: string }).phone;
+      await p.machine("phone_rights", { phone, run: true });
+      link.send({ type: "subscribe" });
+      await link.next((m) => m["type"] === "snapshot");
+      const calls: [string, unknown][] = [
+        ["/api/v1/op/task.get", { task: ref }],
+        ["/api/v1/op/task.get", { task: ref, sections: ["notes", "log", "history", "sources"] }],
+        ["/api/v1/op/task.finish", { task: ref, request_id: "fixture-request-told-05" }],
+        ["/api/v1/op/task.reopen", { task: ref, request_id: "fixture-request-told-06" }],
+        ["/api/v1/op/page.read", { target: ref }],
+        ["/api/v1/launch/runs", { task: id }],
+        ["/api/v1/launch/run", { task: id, request_id: "fixture-request-told-07" }],
+        ["/api/v1/launch/stop", { run: "ru_00000000000000000000000000" }],
+      ];
+      for (const path of Object.keys(PHONE_CALLS)) calls.push([path, {}]);
+      for (const [path, body] of calls) await link.call(path, body);
+      await agent("fixture-request-told-08", "evidence", "Fixture evidence after the snapshot");
+      await link.next(
+        (m) => m["type"] === "batch" && JSON.stringify(m).includes("fixture-request-told-08"),
+      );
+      const told = JSON.stringify(link.messages);
+      expect(told).toContain("Fixture evidence from the agent");
+      expect(told).toContain("Fixture question from the agent?");
+      for (const secret of [INSTANCE, SESSION, "fixture-told-folder", folder]) {
+        expect(told).not.toContain(secret);
+      }
+      const machine = hostname();
+      if (machine.length >= 4) expect(told.toLowerCase()).not.toContain(machine.toLowerCase());
+    },
+  );
+
+  test("an error a handler raised reaches a phone as its code and fixed words, with none of its details", () => {
+    const leaky = new AppError({
+      code: "service_unavailable",
+      message: `No agent could start in ${String.raw`C:\work\fixture`} on ${INSTANCE}`,
+      hint: "Fixture hint",
+      data: { instances: [INSTANCE], backup: "fixture-backup-2026.ttbackup", retryable: true },
+    });
+    const told = phoneError(leaky);
+    expect(told).toEqual({
+      code: "service_unavailable",
+      message: "The computer cannot do this now. Try again later.",
+      data: { retryable: true },
+    });
+    expect(phoneError(new Error(`at ${INSTANCE}`))).toEqual({
+      code: "internal",
+      message: "The computer failed to do this.",
+    });
+  });
 });
