@@ -106,8 +106,14 @@ const TASK: Spec = {
   log: [LOG],
   sources: [SOURCE],
 };
+/** A page a card lists: its title and brief, to open and read. */
+const PAGE_ROW: Spec = { ...keep("ref", "title", "brief", "at"), by: "author" };
+/** A level above a task (its project, its area, the space) with its pages: what is known above. */
+const LEVEL: Spec = { ...keep("kind", "id", "title", "brief", "count"), pages: [PAGE_ROW] };
 const TASK_GET: Spec = {
-  ...keep("view", "as_of", "before"),
+  ...keep("view", "as_of", "before", "pages_more"),
+  pages: [PAGE_ROW],
+  trail: [LEVEL],
   task: TASK,
   sections: {
     ...keep("context", "context_slice"),

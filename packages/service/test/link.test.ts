@@ -589,3 +589,74 @@ describe("[S5.link.told] everything a phone is told, answers, errors and the fee
     });
   });
 });
+
+describe("[S5.link.knowledge] a phone reads a task's pages and what is known above it, titles and briefs only", () => {
+  test(
+    "task.get names the task's pages and each level's above it; page.read opens one; nothing for agents comes along",
+    SLOW,
+    async () => {
+      const p = await page("link-knowledge");
+      const { link } = await paired(p);
+      const added = await link.call("/api/v1/op/task.add", {
+        tasks: [{ title: "Fixture task with pages" }],
+        request_id: "fixture-request-knowledge-01",
+      });
+      const ref = (added.body["result"] as { tasks: { ref: string }[] }).tasks[0]?.ref ?? "";
+      const user = await p.world.user();
+      const write = (input: Record<string, unknown>) =>
+        user.call("op/call", { op: "page.write", input }, { timeoutMs: 60_000 });
+      await write({
+        action: "create",
+        on: ref,
+        title: "Fixture page on the task",
+        brief: "What the task's page holds",
+        body: "Fixture body of the task's page.",
+        why: "fixture",
+        request_id: "fixture-request-knowledge-02",
+      });
+      await write({
+        action: "create",
+        on: "space",
+        title: "Fixture page of the space",
+        brief: "What the space's page holds",
+        body: "Fixture body of the space's page.",
+        why: "fixture",
+        request_id: "fixture-request-knowledge-03",
+      });
+
+      const read = await link.call("/api/v1/op/task.get", {
+        task: ref,
+        sections: ["context", "notes", "log"],
+      });
+      expect(read.status).toBe(200);
+      const result = read.body["result"] as {
+        pages?: Record<string, unknown>[];
+        trail?: Record<string, unknown>[];
+      };
+      const own = result.pages?.[0];
+      expect(own).toMatchObject({
+        title: "Fixture page on the task",
+        brief: "What the task's page holds",
+      });
+      expect(Object.keys(own ?? {}).sort()).toEqual(["at", "brief", "by", "ref", "title"]);
+      const space = result.trail?.find((level) => level["kind"] === "space");
+      expect(space?.["pages"]).toEqual([
+        expect.objectContaining({
+          title: "Fixture page of the space",
+          brief: "What the space's page holds",
+        }),
+      ]);
+      for (const level of result.trail ?? []) {
+        expect(
+          Object.keys(level).every((k) =>
+            ["kind", "id", "title", "brief", "count", "pages"].includes(k),
+          ),
+        ).toBe(true);
+      }
+
+      const opened = await link.call("/api/v1/op/page.read", { target: String(own?.["ref"]) });
+      expect(opened.status).toBe(200);
+      expect(JSON.stringify(opened.body)).toContain("Fixture body of the task's page.");
+    },
+  );
+});
