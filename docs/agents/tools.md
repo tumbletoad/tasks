@@ -87,10 +87,10 @@ What agents and routines did in the space, one line per change, newest first.
 | `lines[].by` | string, max 200 | yes | The actor's label, such as agent:codex |
 | `lines[].kind` | string, max 40 | no | The change's kind when it is no plain change: undo, redo |
 | `lines[].targets` | object[], max 50 items | yes | What it touched, in order |
-| `lines[].targets[].kind` | "task" \| "project" \| "area" | yes | What it is |
+| `lines[].targets[].kind` | "task" \| "project" \| "area" \| "page" | yes | What it is |
 | `lines[].targets[].id` | string, max 40 | yes | Its ID |
 | `lines[].targets[].name` | string, max 1000 | yes | Its title or name now |
-| `lines[].targets[].ref` | string, max 20 | no | A task's reference, such as M-14 |
+| `lines[].targets[].ref` | string, max 20 | no | A task's or a page's reference, such as M-14 |
 | `lines[].targets[].trash` | true | no | It is in the Trash now |
 | `lines[].targets[].created` | true | no | The change made it |
 | `lines[].targets[].acts` | object[], max 40 items | yes | What the change did to it, in order |

@@ -36,10 +36,10 @@ export const ActivityAct = z.strictObject({
 
 /** A thing a change touched, as it is now, with what the change did to it. */
 export const ActivityTarget = z.strictObject({
-  kind: z.enum(["task", "project", "area"]).describe("What it is"),
+  kind: z.enum(["task", "project", "area", "page"]).describe("What it is"),
   id: z.string().max(40).describe("Its ID"),
   name: z.string().max(1000).describe("Its title or name now"),
-  ref: z.string().max(20).describe("A task's reference, such as M-14").optional(),
+  ref: z.string().max(20).describe("A task's or a page's reference, such as M-14").optional(),
   trash: z.literal(true).describe("It is in the Trash now").optional(),
   created: z.literal(true).describe("The change made it").optional(),
   acts: z.array(ActivityAct).max(40).describe("What the change did to it, in order"),

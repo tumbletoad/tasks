@@ -232,7 +232,8 @@
                         "enum": [
                           "task",
                           "project",
-                          "area"
+                          "area",
+                          "page"
                         ],
                         "type": "string"
                       },
@@ -242,7 +243,7 @@
                         "type": "string"
                       },
                       "ref": {
-                        "description": "A task's reference, such as M-14",
+                        "description": "A task's or a page's reference, such as M-14",
                         "maxLength": 20,
                         "type": "string"
                       },
