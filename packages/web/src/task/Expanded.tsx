@@ -62,9 +62,11 @@ import { useTextWrites, type TextWrites } from "./textWrites.ts";
 import { TEXT_MAX } from "../unsent.ts";
 import { actorOf, Thread } from "./Thread.tsx";
 import { useDetail } from "./useDetail.ts";
+import { Knowledge } from "../library/Knowledge.tsx";
 
 const styles = classes(css, [
   "body",
+  "side",
   "content",
   "outcome",
   "context",
@@ -830,7 +832,11 @@ export function Expanded({
   return (
     <div className={styles.body} data-part="expanded" hidden={hidden}>
       {/* First in the document: below 1,024 px the facts come before the content (A5 3.7). */}
-      <Facts task={facts} clock={clock} />
+      <div className={styles.side}>
+        <Facts task={facts} clock={clock} />
+        {/* Under the facts, from the card's first frame: it never moves what is drawn. */}
+        <Knowledge task={task} />
+      </div>
       <div className={styles.content}>
         {/* First in the content, above all that its reads bring in: the composer and its strip
             keep their place from the card's first frame, whatever the thread holds. */}

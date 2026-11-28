@@ -6763,6 +6763,38 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.pages.web.card",
+      "title": "A task's card shows its Knowledge from the live store: the task's own pages, a new page on the task, and what is known above it (project, area, space, nearest first) folded with its count; each page opens with the way back to the list with the task expanded",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.build",
+      "title": "Build this project's library, on a project's Library with no pages: an ordinary task there with the person's note for agents saying what to build, then the task expanded in the project's list; a Library with pages has no such button",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.today",
+      "title": "Today's Changes names the pages an agent changed last in the past seven days, newest first, beside the tasks; a page the person changed after the agent is not named",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.pages.web.activity",
+      "title": "Activity reads an agent's page changes as what they did to the page (text changed, text added, renamed, moved, moved to the Trash), and pages made by one change as a count",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.pages.web.trash",
       "title": "The pages in the Trash list where each was, who moved it there and why, and restore with their own Restore",
       "source": "Step 1 design, pull request 228",

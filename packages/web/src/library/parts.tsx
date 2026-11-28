@@ -1,6 +1,6 @@
 // The pieces the Library and a page's screen share: who changed something and how long ago, a text
 // the person corrects with the pen, and a list of pages to open.
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useContext, useEffect, type ReactNode } from "react";
 import { useIntl, type IntlShape } from "react-intl";
 import type { Instance } from "../api.ts";
@@ -154,10 +154,12 @@ export function Penned({
   );
 }
 
-/** Where the person is now, for a page's way back: the address and its name. */
-export function useFrom(label: string): { readonly path: string; readonly label: string } {
-  const path = useRouterState({ select: (s) => `${s.location.pathname}${s.location.searchStr}` });
-  return { path, label };
+/**
+ * Where the person is as they open a page, for its way back: the address, `?task=` included, and
+ * its name. Read when the link is followed, so it is the address of that moment.
+ */
+export function fromHere(label: string): { readonly path: string; readonly label: string } {
+  return { path: `${location.pathname}${location.search}`, label };
 }
 
 /**
@@ -170,7 +172,8 @@ export function PageList({
   label,
 }: {
   readonly pages: readonly PageRow[];
-  readonly from: { readonly path: string; readonly label: string };
+  /** The name of where the person is: the page's way back. */
+  readonly from: string;
   /** The list's name. */
   readonly label: string;
 }) {
@@ -185,7 +188,7 @@ export function PageList({
           <Link
             to="/s/$space/page/$ref"
             params={{ space, ref: page.ref }}
-            state={{ from }}
+            state={() => ({ from: fromHere(from) })}
             className={styles.row}
             data-part="page-row"
           >
