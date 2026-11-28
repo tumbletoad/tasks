@@ -6667,6 +6667,20 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.top.web.paste",
+      "title": "A paste into the top field that is more than a title loses no word: one line that fits is the field's as it is; its first line becomes the title, cut at a word when it does not fit, with the text around a selection kept; everything after it is kept for the new task's context, and a second paste adds to it",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.top.e2e.paste",
+      "title": "Against the real service in Chromium: a paste into the top field that is more than a title puts its first line in the field and says under it that the rest goes in the task's context; the rest keeps across a reload and becomes the added task's context; it can be left out; a paste that fits is the field's as it is; screenshots at 1,440 and 390 px in Sumi and Washi and axe finds nothing in the top bar",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.while-away.web.asking",
       "title": "The page holds every finished or dropped task an agent's question waits on, from the snapshot and the batches after it: a row with questions outside the open tasks joins, one dismissed, answered or deleted leaves, and a reopened one is an open task again",
       "owner": "M5",
