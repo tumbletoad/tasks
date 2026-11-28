@@ -292,10 +292,7 @@ export function TopBar({
     setCaret(at);
   });
 
-  /**
-   * Writes the search into the tab's history entry (route.ts), replacing it: typing is not a
-   * history of its own.
-   */
+  /** Writes the search into the address, replacing the entry: typing is not a history of its own. */
   const writeQuery = (q: string) => {
     clearTimeout(pending.current);
     if (written.current === q) return;
@@ -303,8 +300,10 @@ export function TopBar({
     void navigate({
       to: "/s/$space/search",
       params: { space },
-      search: ({ task }) => (task === undefined ? {} : { task }),
-      state: q === "" ? {} : { q },
+      search: ({ task }) => ({
+        ...(q === "" ? {} : { q }),
+        ...(task === undefined ? {} : { task }),
+      }),
       replace: true,
     });
   };
@@ -316,7 +315,7 @@ export function TopBar({
     void navigate({
       to: "/s/$space/search",
       params: { space },
-      state: initial === "" ? {} : { q: initial },
+      search: initial === "" ? {} : { q: initial },
     });
     field.current?.focus();
   };

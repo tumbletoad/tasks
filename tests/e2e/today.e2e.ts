@@ -259,7 +259,7 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
       await expect(dateOf(page)).toHaveText(today.full);
       const overdue = await countIn(late);
       await late.click();
-      await expect(page).toHaveURL(/\/search$/);
+      await expect(page).toHaveURL(/\/search\?q=is%3Aoverdue$/);
       await expect(page.getByRole("textbox", { name: "Search" })).toHaveValue("is:overdue");
       await expect(page.locator("main li[data-key]")).toHaveCount(overdue, { timeout: SLOW_MS });
       await page.goBack();
@@ -287,7 +287,7 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
       );
       await expect(due).toHaveAttribute("aria-label", `Due today: ${String(dueToday)}`);
       await due.click();
-      await expect(page).toHaveURL(/\/search$/);
+      await expect(page).toHaveURL(/\/search\?q=due%3Atoday/);
       await expect(page.getByRole("textbox", { name: "Search" })).toHaveValue(/^due:today /);
       await expect(page.locator("main li[data-key]")).toHaveCount(dueToday, { timeout: SLOW_MS });
       await expect(row(page, deposit)).toHaveCount(0);
