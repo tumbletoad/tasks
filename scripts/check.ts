@@ -18,7 +18,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, matchesGlob, relative, resolve } from "node:path";
 import { chromium } from "@playwright/test";
 import { createVitest, type TestModule } from "vitest/node";
-import { LAB_DIR, SETUP_FILES, testFiles } from "../vitest.config.ts";
+import { SETUP_FILES, testFiles } from "../vitest.config.ts";
 import {
   browserFilters,
   E2E_DIR,
@@ -32,7 +32,7 @@ import {
   type Fit,
   type Selection,
 } from "./check-plan.ts";
-import { changedSince, isLabPath } from "./lab-tests.ts";
+import { changedSince } from "./verify-base.ts";
 import { checkIdsQuickly, E2E_CONFIG, type CollectedTest } from "./manifest.ts";
 import { binPath, repoRoot, runNodeCaptured, type Captured } from "./run.ts";
 import { CRUISE_ROOTS, generated, runtime, typecheck } from "./steps.ts";
@@ -165,8 +165,7 @@ async function cruise(): Promise<{ ok: boolean; output: string; graph: Cruise | 
 
 const isProductTest = (path: string) =>
   testFiles.include.some((g) => matchesGlob(path, g)) &&
-  !testFiles.exclude.some((g) => matchesGlob(path, g)) &&
-  !path.startsWith(`${LAB_DIR}/`);
+  !testFiles.exclude.some((g) => matchesGlob(path, g));
 
 /** One line of the summary: a step, what it covered and how it went. */
 interface Result {
@@ -302,10 +301,7 @@ const repo = repoFromCruise(cruised.graph, [...new Set([...files, ...changed])],
   readFileSync(join(repoRoot, p), "utf8"),
 );
 const tests = files.filter(isProductTest);
-const isTest = (p: string) =>
-  isProductTest(p) ||
-  (p.startsWith(E2E_DIR) && p.endsWith(".e2e.ts")) ||
-  p.startsWith(`${LAB_DIR}/`);
+const isTest = (p: string) => isProductTest(p) || (p.startsWith(E2E_DIR) && p.endsWith(".e2e.ts"));
 const selection: Selection = select(
   changed,
   repo,
@@ -461,8 +457,7 @@ pending.push(
 
 const results = await Promise.all(pending);
 
-// What the check did not run. Never empty: the lab tests, the crash run and the other systems are
-// always CI's.
+// What the check did not run. Never empty: the crash run and the other systems are always CI's.
 const notRun: string[] = [];
 const selected = selection.run.length + selection.deferred.length;
 if (fit !== null && fit.left.length > 0) {
@@ -497,10 +492,6 @@ notRun.push(
   browserRan.length > 0
     ? `browser tests in Firefox, and ${plural(others, "other end-to-end file")}${over} (pnpm e2e)`
     : `browser tests (pnpm e2e): ${ciSized && browser.over.length > 0 ? "a CI-sized change" : browser.why}`,
-);
-const lab = changed.filter((p) => isLabPath(p));
-notRun.push(
-  lab.length > 0 ? `lab tests: ${plural(lab.length, "lab file")} changed` : "lab tests (spikes/)",
 );
 notRun.push("the crash run (pnpm crash)");
 notRun.push(`other operating systems: this ran on ${platformName ?? process.platform} only`);

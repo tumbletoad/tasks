@@ -61,6 +61,6 @@ export async function typecheck(
 }
 
 /** The folders dependency-cruiser checks. */
-export const CRUISE_ROOTS = ["packages", "scripts", "tests", "spikes"].filter((d) =>
+export const CRUISE_ROOTS = ["packages", "scripts", "tests"].filter((d) =>
   existsSync(join(repoRoot, d)),
 );
