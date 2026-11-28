@@ -159,6 +159,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.pages.contract",
+      "title": "The page entries pass the registry check beside the registry, and the feed's page rows, a page leaving the live lists and the conflict of a Restore match their shapes",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.5.registry.zod-ajv-parity",
       "title": "Zod and Ajv give the same verdict on every example and its mutations, and at the boundaries of every field, used by an example or not",
       "source": "A3 5, A3 decision 2, A7 3.8 M1.01",
