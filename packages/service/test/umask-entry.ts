@@ -39,6 +39,7 @@ import { ServiceExit } from "../src/hub/exit.ts";
 import type { HostFacts } from "../src/hub/paths.ts";
 import { startService, type RunningService } from "../src/hub/service.ts";
 import { runAdmin } from "../src/hub/space-admin.ts";
+import { readyBackupsFolder } from "../src/hub/space-settings.ts";
 import type { LaunchOptions } from "../src/launch/index.ts";
 import { spaceCheck } from "../src/version/candidate.ts";
 import { writeVersionManifest } from "../src/version/folder.ts";
@@ -51,11 +52,12 @@ import {
 import { openSession, serviceEnv, within } from "./harness.ts";
 import { classSession } from "./ops-helpers.ts";
 import { CLI_BIN, shimEnv, SUCCESS_FIXTURE, track, type Child } from "./shim-harness.ts";
-import { backupsBeside } from "../../storage/test/backup-helpers.ts";
 
 const root = process.argv[2];
 if (root === undefined) throw new Error("usage: umask-entry.ts <root>");
 const home = join(root, "h");
+// Where the service keeps the spaces' backups (paths.ts Layout.backups).
+const backupsRoot = `${home}-backups`;
 const spaces = join(root, "sp");
 const folder = join(spaces, "work");
 const t3home = join(root, "t3");
@@ -165,7 +167,10 @@ try {
     { op: "append", array: "spaces", entries: { id: spaceId, path: folder } },
   ]);
   if (!edited.ok) throw new Error(`machine.toml not written: ${edited.reason}`);
-  await runAdmin({ kind: "backup", folder, backupDir: backupsBeside(folder) });
+  // The space's backups folder, made as the service makes it before a backup.
+  const backupDir = readyBackupsFolder({ dir: join(backupsRoot, spaceId), set: false });
+  if (backupDir === undefined) throw new Error("the backups folder was not made");
+  await runAdmin({ kind: "backup", folder, backupDir });
 
   const first = await start();
   await first.spacesSettled;
@@ -231,7 +236,7 @@ try {
   // What the running service made, its socket included.
   const entries = new Map<string, Entry>();
   const runtime = first.runtime.endpoint.kind === "unix" ? first.runtime.endpoint.dir : undefined;
-  const tops = [home, spaces, ...(runtime === undefined ? [] : [runtime])];
+  const tops = [home, backupsRoot, spaces, ...(runtime === undefined ? [] : [runtime])];
   for (const top of tops) walk(top, entries);
   const firstSpaces = first.spaces().map((s) => s.state);
   await first.stop();
@@ -297,7 +302,7 @@ try {
   const secondSpaces = second.spaces().map((s) => s.state);
   const portAgain = second.http?.status().port ?? null;
   await second.stop();
-  const backups = listBackups(backupsBeside(folder)).backups.length;
+  const backups = listBackups(join(backupsRoot, spaceId)).backups.length;
 
   process.stdout.write(
     `${JSON.stringify({
