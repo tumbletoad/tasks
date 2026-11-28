@@ -1100,22 +1100,6 @@ describe("[S2.replay.folders] today's service requests through both backends: ma
   );
 });
 
-/** A sequence in a new space of each backend: what it sets is the space's, for every later read. */
-async function replayIn(name: string, steps: Sequence<Step>): Promise<void> {
-  const spaces = await newSpaces(w, name);
-  try {
-    await both(
-      {
-        today: backend(w.service.ops, () => spaces.today),
-        tree: backend(w.service.ops, () => spaces.tree),
-      },
-      steps,
-    );
-  } finally {
-    await spaces.close();
-  }
-}
-
 /** A space's settings, as the settings page and `prefs-set.test.ts` send them. */
 const PREFS: Sequence<Step> = [
   {
